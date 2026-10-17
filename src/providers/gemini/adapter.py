@@ -235,8 +235,9 @@ class GeminiProvider(OptionalFeatures):
     async def stream(self, request: SendRequest):
         if request.provider_id != self.id or request.account_id != self.account_id:
             raise ValueError("request belongs to another provider/account")
-        if request.project_id:
-            raise FeatureUnavailable(Capability.PROJECTS)
+        from .notebooks import notebook_id
+
+        project = notebook_id(request.project_id) if request.project_id else None
         if request.effort not in (None, "", "standard", "extended"):
             raise ValueError("unsupported Gemini thinking option")
         async with self._gate:
@@ -246,7 +247,10 @@ class GeminiProvider(OptionalFeatures):
             if request.temporary and request.conversation_id and metadata is None:
                 raise ProviderError("Geçici Gemini bağlamı artık bellekte değil")
             chat = client.start_chat(
-                metadata=metadata, cid=request.conversation_id or "", model=model
+                metadata=metadata,
+                cid=request.conversation_id or "",
+                model=model,
+                **({"gem": project} if project else {}),
             )
             try:
                 async for chunk in chat.send_message_stream(

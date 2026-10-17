@@ -124,7 +124,7 @@ resources = archive.resources("chatgpt/default", "conversation", "remote-chat-id
 
 Gemini's native notebooks appear beside ChatGPT projects, with their own `notebook` type and provider/account identity. Their names, instructions, resource metadata and chat lists use the existing Gemini account's connected browser. No separate NotebookLM login is required. This follows [Gemini's notebook workflow](https://support.google.com/gemini/answer/16972047?hl=en).
 
-Open Gemini through **Settings → Accounts → Connected browser** and keep that signed-in Gemini page available while refreshing notebooks. The notebook bridge uses read operations observed in Gemini's own frontend; it never exports browser credentials to the application. Notebook operations are currently **read-only**: creating/editing notebooks, moving chats into them and sending with notebook context are not implemented. Unsupported writes are reported explicitly.
+Open Gemini through **Settings → Accounts → Connected browser** and keep that signed-in Gemini page available while refreshing notebooks. The notebook bridge uses read operations observed in Gemini's own frontend; it never exports browser credentials to the application. To start a conversation in a notebook, choose a Gemini model, select the notebook with `/project`, and send your message. The native notebook identity is passed into that conversation's provider context. Earlier saved Gemini notebook URL identities remain compatible. Creating/editing notebooks and moving existing chats into notebooks are still unsupported and are reported explicitly.
 
 ## Adding an extension
 
@@ -233,7 +233,7 @@ Development currently stays under **Unreleased**. [CHANGELOG.md](CHANGELOG.md) f
 
 ### Current limits
 
-Web endpoints can change independently of this project. Gemini discovery and a temporary Flash-Lite request have been checked against a real account through controlled terminal input; that does not validate every model or desktop terminal. ChatGPT project writes, file compatibility and Windows/macOS execution still need live platform checks. Project sharing is rejected before creation when the native form does not offer it. Native Gemini notebook reads have been checked against a signed-in account; notebook writes, bulk remote file downloads, archive transfer and complete localization remain unfinished.
+Web endpoints can change independently of this project. Gemini discovery and a temporary Flash-Lite request have been checked against a real account through controlled terminal input; that does not validate every model or desktop terminal. ChatGPT project writes, file compatibility and Windows/macOS execution still need live platform checks. Project sharing is rejected before creation when the native form does not offer it. Native Gemini notebook reads and a temporary notebook-context message have been checked against a signed-in account. A normal persisted notebook conversation has not been separately verified. Notebook management writes, bulk remote file downloads, archive transfer and complete localization remain unfinished.
 
 ## License and credits
 

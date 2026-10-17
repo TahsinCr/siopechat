@@ -868,7 +868,10 @@ class ChatView:
             self.status = "Proje başka bir sağlayıcı hesabına ait; önce o hesapta sohbet açın"
             self.app.invalidate()
             return
-        if project.get("metadata", {}).get("read_only"):
+        if project.get("metadata", {}).get("read_only") and not (
+            project.get("metadata", {}).get("supports_chat")
+            or (self.provider_id == "gemini" and project.get("kind") == "notebook")
+        ):
             self.status = "Gemini defteri şu anda salt okunur · F9 ile ayrıntıları açın"
             self.app.invalidate()
             return
@@ -2934,9 +2937,14 @@ class ChatView:
             )
             self.app.invalidate()
             return
-        if self.current_project.get("metadata", {}).get(
-            "read_only"
-        ) and not self.input.text.lstrip().startswith("/"):
+        if (
+            self.current_project.get("metadata", {}).get("read_only")
+            and not (
+                self.current_project.get("metadata", {}).get("supports_chat")
+                or (self.provider_id == "gemini" and self.current_project.get("kind") == "notebook")
+            )
+            and not self.input.text.lstrip().startswith("/")
+        ):
             self.status = "Bu Gemini defteri salt okunur · defter bağlamında gönderim henüz desteklenmiyor · taslak korundu"
             self.app.invalidate()
             return

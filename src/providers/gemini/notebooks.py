@@ -7,10 +7,25 @@ The bridge reads within the signed-in Gemini origin and never exports credential
 
 import asyncio
 import json
+import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 from ..errors import ProviderError
 from ..models import Conversation, Origin, Page, Project, Resource
+
+
+def notebook_id(value):
+    """Accept native IDs and the earlier Gemini-only browser URL identities."""
+    if isinstance(value, str) and value.startswith("https://"):
+        url = urlparse(value)
+        if url.netloc == "gemini.google.com" and re.fullmatch(
+            r"/notebook/[A-Za-z0-9_-]{6,}/?", url.path
+        ):
+            value = "notebooks/" + url.path.rstrip("/").rsplit("/", 1)[1]
+    if not isinstance(value, str) or not re.fullmatch(r"notebooks/[A-Za-z0-9_-]{6,}", value):
+        raise ValueError("unsupported Gemini notebook identity")
+    return value
 
 
 def field(value, index, default=None):
@@ -49,6 +64,7 @@ def project_from_native(row, account_id):
             "native": row,
             "notebook_type": field(settings, 4),
             "read_only": True,
+            "supports_chat": True,
         },
     )
 
@@ -58,6 +74,8 @@ class Notebooks:
         self.cdp_url, self.account_id = cdp_url, account_id
 
     async def read(self, remote=None, mode=None, cursor=None):
+        if remote:
+            remote = notebook_id(remote)
         script = Path(__file__).parent.parent / "scripts" / "notebooks.cjs"
         process = await asyncio.create_subprocess_exec(
             "node",
@@ -97,6 +115,7 @@ class Notebooks:
         return Page(tuple(project_from_native(row, self.account_id) for row in rows))
 
     async def chats(self, remote, cursor=None):
+        remote = notebook_id(remote)
         parts = await self.read(remote, mode="chats", cursor=cursor)
         rows = [row for part in parts for row in field(part, 2, []) or []]
         conversations = []
@@ -115,6 +134,7 @@ class Notebooks:
         return Page(tuple(conversations), cursor_value if isinstance(cursor_value, str) else None)
 
     async def get(self, remote):
+        remote = notebook_id(remote)
         parts = await self.read(remote)
         rows = [row for part in parts for row in part if field(row, 0) == remote]
         if len(rows) != 1:

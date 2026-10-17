@@ -10,6 +10,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Added
 
+- Gemini notebook-context chat requests, including compatibility with earlier saved Gemini notebook URL identities.
+
 - Optional SQLite archive extension with provider/account isolation, ordered message/content records, projects/notebooks, memberships, resource paths and synchronization state.
 - Replaceable archive repository and provider mapping interfaces, content-addressed file storage and paginated data access for other extensions.
 - Bounded hot cache, single-flight background revalidation, explicit refresh and synchronization indicators.
@@ -48,6 +50,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 - Competing settings-page filler, repeated shortcut hints and SDK logs written over the terminal interface.
 
 ### Fixed
+
+- Valid Gemini notebook chats being rejected with `projects: unsupported` before sending.
 
 - Wrapped terminal controls crashing with an out-of-range cursor after content shrinks or project lists change.
 - Project trees and pickers mixing ChatGPT projects with Gemini notebooks after changing model accounts.
