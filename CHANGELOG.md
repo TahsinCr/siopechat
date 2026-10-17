@@ -49,6 +49,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Fixed
 
+- Revalidate the restored active conversation at startup without clearing its visible history or draft.
+
 - Reopening a saved chat waiting for the entire remote history before displaying it.
 - Cold history loads blocking tab creation/navigation; late load results now update their owning tab only.
 - First history Markdown rendering blocking the UI and cached renders being discarded on reopening.

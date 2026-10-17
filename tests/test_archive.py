@@ -304,6 +304,17 @@ class ArchiveIntegrationTests(unittest.TestCase):
         self.assertEqual((archive.files.root / resource["path"]).read_text(), "Research source")
         self.assertTrue(source.exists())
 
+    def test_cached_startup_revalidates_active_chat_without_resetting_draft(self):
+        self.accounts.load = Mock(return_value={"id": "one", "messages": []})
+        with terminal(account_service=self.accounts) as (view, _):
+            view._read_in_background = immediate
+            view.conversation_id = "@chatgpt/default/one"
+            view.input.text = "Continue drafting"
+            view.refresh_open_conversation()
+            self.accounts.load.assert_called_once_with("@chatgpt/default/one", "chatgpt/default")
+            self.assertEqual(view.input.text, "Continue drafting")
+            self.assertFalse(view.loading_conversation)
+
     def test_active_archive_pointer_survives_restart_and_can_be_cleared(self):
         archive = self.api.get("archive")
         archive.put(

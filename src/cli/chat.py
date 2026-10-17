@@ -343,6 +343,17 @@ class ChatView:
             return self.account_service.archive()
         return None
 
+    def refresh_open_conversation(self):
+        if not self.account_service or not self.conversation_id or not self.archive_service():
+            return
+        conversation_id, key = self.conversation_id, self.account_key
+        self._read_in_background(
+            lambda: self.account_service.load(conversation_id, key),
+            lambda _: None,
+            lambda reason: setattr(self, "status", "Sohbet senkronize edilemedi: " + reason),
+            session_bound=False,
+        )
+
     def apply_archive_updates(self):
         archive = self.archive_service()
         if archive is None or archive.revision == self._archive_revision:
@@ -3679,6 +3690,8 @@ class ChatView:
             self.refresh_sidebar()
             if self.load_on_start and self.conversation_id is not None:
                 self.resume_conversation(self.conversation_id)
+            else:
+                self.refresh_open_conversation()
 
         try:
             from prompt_toolkit.patch_stdout import patch_stdout
