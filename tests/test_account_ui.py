@@ -90,6 +90,8 @@ class AccountUiTests(unittest.IsolatedAsyncioTestCase):
                 )
                 v.open_filters()
                 self.assertTrue(v.forms.visible)
+                attrs = v.app._merged_style.get_attrs_for_style_str("class:dialog.body")
+                self.assertEqual(attrs.bgcolor, "252525")
                 self.assertEqual(
                     set(v.forms.fields["providers"].current_values), {"chatgpt", "gemini"}
                 )

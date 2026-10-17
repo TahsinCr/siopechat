@@ -42,6 +42,7 @@ class Accounts:
         self.api = api
         self.root = api.get("paths")
         self._providers = {}
+        self.cdp_url = None
         self._verified = set()
         self._loop = None
         self._thread = None
@@ -97,7 +98,9 @@ class Accounts:
     def session(self, key):
         item = self.item(key)
         if key == "chatgpt/default":
-            return self.api.get("backend").create_session()
+            return self.api.get("backend").create_session(
+                self.cdp_url or f"http://127.0.0.1:{item['port']}"
+            )
         directory = self.directory(key)
         return BrowserSession(
             SessionPaths(

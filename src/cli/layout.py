@@ -183,8 +183,7 @@ def workspace_layout(view):
                     DynamicContainer(lambda: view.forms.container),
                     filter=Condition(lambda: view.forms.visible),
                 ),
-                left=4,
-                right=4,
+                width=lambda: min(64, max(20, view.terminal_width() - 8)),
                 top=3,
             ),
             Float(

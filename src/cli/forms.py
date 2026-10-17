@@ -38,8 +38,9 @@ class Forms:
                 widget.control.focus_on_click = Condition(lambda: True)
             self.fields[key] = widget
             body.append(widget)
+            body.append(Window(height=1))
         body.append(
-            Window(height=2, content=FormattedTextControl(lambda: self.error), wrap_lines=True)
+            Window(height=1, content=FormattedTextControl(lambda: self.error), wrap_lines=True)
         )
 
         def save():
@@ -69,9 +70,10 @@ class Forms:
         )(lambda _: save())
         self.container = Dialog(
             title=title,
-            body=HSplit(body, padding=1, key_bindings=keys),
+            body=HSplit(body, padding=0, key_bindings=keys),
             buttons=[Button("Uygula", handler=save), Button("İptal", handler=self.close)],
-            with_background=True,
+            width=64,
+            with_background=False,
         )
         self.visible = True
         self.view.app.layout.update_parents_relations()

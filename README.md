@@ -13,10 +13,10 @@ Python 3.10+, Node.js 22+ and Chrome/Chromium are needed for the ChatGPT compati
 ```sh
 python -m pip install -e .
 ./siopechat.sh --help
-./siopechat.sh login
-./siopechat.sh auth
 ./siopechat.sh
 ```
+
+Start the terminal, open **Settings → Accounts**, add/select an account, open **Connected browser**, sign in and **Verify**. A valid saved session can be verified without reopening a browser. Gemini requires Python 3.11+. The `login`/`auth` management commands remain available for the legacy default ChatGPT account.
 
 On Windows Command Prompt use `siopechat.bat`; PowerShell can use `siopechat.ps1`. `siopechat.sh` is the Linux/macOS shell launcher and `siopechat.py` is the shared Python entry point. Startup logic is shared in `src/bootstrap.py`; the existing `python/` environment is reused when present. Launchers never create a project virtual environment.
 
@@ -32,6 +32,7 @@ src/
   settings.py            defaults, field schemas and config.json persistence
   actions.py             ActionService: dispatch, search and shortcut mapping
   tasks.py               TaskService: streaming jobs and bounded observers
+  accounts.py            isolated account adapters, browser login and routing
   backend.py             compatibility IPC service, sessions and snapshots
   extension.py           public extension API and lifecycle
   language.py            merged translation catalog
@@ -58,7 +59,7 @@ The chat UI is separated into `cli/chat.py`, `cli/markdown.py`, `cli/widgets.py`
 
 The top-level `keybindings` object contains every built-in terminal shortcut by action ID. Change values there (for example, `"ui.command_palette": "c-p"`); `/help` prints the active map, the command palette searches built-in commands and registered actions, and the editable Settings form shows and saves the mappings without restarting. You can also change one from the CLI: `./siopechat.sh action settings.change '{"section":"keybindings","key":"ui.command_palette","value":"f9"}'`.
 
-`data/` is created automatically at the project root and is excluded from Git. Workspace SQLite data and new compatibility snapshots live there. Legacy snapshots remain readable without moving or deleting them. Existing session and Chrome profile locations are retained outside the project tree; credentials are not put into `config.json`.
+`data/` is created automatically at the project root and is excluded from Git. Workspace SQLite data and new compatibility snapshots live there. Legacy snapshots remain readable without moving or deleting them. The default ChatGPT account retains its existing session/profile paths. Additional accounts use separate directories under `data/accounts/`; credentials are not put into `config.json`.
 
 Set `SIOPECHAT_HOME` to select another configuration/data root. An installed application without a checkout uses the working directory unless this variable is set.
 
@@ -74,11 +75,11 @@ Set `SIOPECHAT_HOME` to select another configuration/data root. An installed app
 ./siopechat.py workspace list
 ```
 
-Language bundles are owned by their extension and merged under namespaced keys, with locale and English fallback. Disabling an extension removes its live contributions and preserves its saved configuration. Optional theme JSON files live under the root themes/ directory; the built-in default lives in src/theme.py. Invalid optional theme files are recorded as failures without disabling the default. Full live theming of the compatibility terminal remains a later migration step.
+Language bundles are owned by their extension and merged under namespaced keys, with locale and English fallback. Disabling an extension removes its live contributions and preserves its saved configuration. Optional theme JSON files live under the root themes/ directory; the built-in default lives in src/theme.py. Invalid optional theme files are recorded as failures without disabling the default. Some legacy status text still needs localization/theme coverage.
 
 ## Independent provider use
 
-The `providers/` directory has no imports from the application, terminal, extension system, settings or database. It can be copied into another project with its own dependencies (currently `httpx` plus Node/Chrome for live ChatGPT operations).
+The `providers/` directory has no imports from the application, terminal, extension system, settings or database. It can be copied into another project with its own dependencies (`httpx` plus Node/Chrome for live ChatGPT operations, or `gemini-webapi` for Gemini).
 
 ```python
 from pathlib import Path
@@ -105,7 +106,7 @@ The common contracts cover browser login, explicit authentication, local snapsho
 
 ## Current migration boundary
 
-The terminal uses a full-width tab strip with a persistent compact SiopeChat brand, centered tabs capped at 26 cells and navigation/new controls fixed at the right, thin tab separators and close/previous/next/new controls. Active tabs change text color without a different background. The sidebar is collapsible and stays between 22 and 30 cells. The bottom selection bar shows orange model, green effort and blue clickable project state, wrapping on narrow terminals. User/assistant messages use grey/black surfaces and green `>` / orange robot markers; available reasoning summaries use a blue surface and brain marker before the answer. Role markers belong to the first message line and scroll with it. Reading width is capped at 100 cells. Explicit transcript background painting covers empty cells after panel changes. Neutral charcoal surfaces keep emphasis on the conversation; Send stays at the edge of the composer; a return-to-latest control appears only while reading older messages. One bottom status line provides F1 help and clickable settings/account controls, without persistent shortcut instructions. Settings opens as a workspace tab with General, Providers, Accounts, Extensions and Keyboard categories. Account operations live inside that panel; the footer only shows a connection indicator. Click a chat to load its provider-returned history; click a project arrow to expand its chats or **ⓘ** for instructions and resource metadata. Mouse input is enabled by default and can be disabled in Settings; use the terminal's Shift-selection gesture when selecting text with mouse reporting active.
+The terminal uses a full-width tab strip with a persistent compact SiopeChat brand, centered tabs capped at 26 cells and navigation/new controls fixed at the right, thin tab separators and close/previous/next/new controls. Active tabs change text color without a different background. The sidebar is collapsible and stays between 22 and 30 cells. The bottom selection bar shows orange model, green effort and blue clickable project state, wrapping on narrow terminals. User/assistant messages use grey/black surfaces and green `>` / orange robot markers; available reasoning summaries use a blue surface and brain marker before the answer. Role markers belong to the first message line and scroll with it. Reading width is capped at 100 cells. Explicit transcript background painting covers empty cells after panel changes. Neutral charcoal surfaces keep emphasis on the conversation; Send stays at the edge of the composer; a return-to-latest control appears only while reading older messages. One bottom status line provides F1 help and clickable settings/account controls, without persistent shortcut instructions. Settings opens as a workspace tab with General, Providers, Accounts, Extensions and Keyboard categories. Shared account/filter/file/project forms use a centered, bounded charcoal surface with clear checked and focused states. Account operations live inside that panel; the footer only shows a connection indicator. Click a chat to load its provider-returned history; click a project arrow to expand its chats or **ⓘ** for instructions and resource metadata. Mouse input is enabled by default and can be disabled in Settings; use the terminal's Shift-selection gesture when selecting text with mouse reporting active.
 
 The full-screen terminal keeps the whole conversation in its transcript view and uses prompt_toolkit's normal resize handling. It no longer clears the terminal or replays conversation text when a chat opens or the window resizes. Use the mouse wheel, visible previous/next controls or `PageUp`/`PageDown` to scroll the transcript. `Ctrl+Home` goes to the beginning and `Ctrl+End` / **Son mesaja git** returns to live following. Manual scrolling pauses following while a response continues in the background.
 
@@ -121,19 +122,19 @@ Search fields support normal editing, including Backspace, Delete, spaces, Home/
 
 `F5`, the bottom status line or `/settings` opens the categorized settings workspace. Settings is a normal reusable tab, not a popup. Extensions has enabled/disabled controls that run the extension lifecycle. Search application, provider, extension and shortcut fields, select a row, edit its value and Save (`Ctrl+S`). Use Left/Right on the settings list or the clickable choice arrows to cycle dynamically supplied options. Tab/Shift+Tab moves between fields and buttons; Esc closes. Language, terminal theme, mouse input and shortcuts apply immediately; model/effort defaults use the current provider catalog. The form validates and atomically persists values through the same `settings.change` action used by the CLI and extensions. Disabling the layout extension hides its sidebar section.
 
-`F12`, the connection indicator, `/session`, `/login` or `/logout` opens the Accounts category inside Settings. **Oturumu doğrula** reuses the saved session without opening a browser when it is still valid. For first login or an expired session, open **Bağlı tarayıcı**, sign in there and verify. **Varsayılan tarayıcı** opens the website using the operating system's default browser, but cannot automatically import that browser's session. Local logout requires confirmation, stops the daemon before removing the saved application session, clears sensitive UI caches and prevents automatic reconnection within that UI session. It retains website login, browser profile and local conversation files; sign out on the website separately when needed. The terminal never asks for a password.
+`F12`, the connection indicator, `/session`, `/login` or `/logout` opens the Accounts category inside Settings. **Oturumu doğrula** reuses the saved session without opening a browser when it is still valid. For first login or an expired session, open **Bağlı tarayıcı**, sign in there and verify. **Varsayılan tarayıcı** opens the website using the operating system's default browser, but cannot automatically import that browser's session. Local logout requires confirmation, removes the selected application session and clears that account’s sensitive UI state. The legacy default-account logout also stops its daemon. It retains website login, browser profile and local conversation files; sign out on the website separately when needed. The terminal never asks for a password.
 
 Clicking the composer restores typing focus after selecting a message. Global command shortcuts also work from transcript focus; Ctrl+D quits with an empty draft, while retaining Delete behavior inside search/settings text fields. Consecutive mouse-wheel events accumulate their scroll distance even before a redraw. The composer grows upward to six visible lines, then scrolls internally. Its scrollbar appears only when needed. `Ctrl+A` selects all text, `Ctrl+C` copies a selection, `Ctrl+X` cuts editable text, and `Ctrl+V` pastes text or uses the image path when no text is available. Bracketed terminal paste is also supported. Click a message and use `Ctrl+A` / `Ctrl+C` to select/copy that message's original text. A selection takes priority over response interruption. Native clipboard helpers support Linux/macOS/Windows; OSC 52 is a fallback when supported by the terminal.
 
 `/project` opens the project picker. `/proje` is the same command. Choosing a project moves the current existing chat; **Projesiz** removes its project membership. An unsent draft simply adopts the selection. The UI preserves history, draft text and the tab, and only updates membership after server confirmation; failure remains visible without a false success. `/project info` and F9 open project details. The draft carries its project ID through IPC into the actual provider request body; `/project ID` accepts a loaded project ID. Project lists and subsequent pages remain dynamically loaded.
 
-`/temporary`, `/private` or `Alt+T` starts a temporary chat. Temporary state is per tab and cannot be combined with a project. Requests set the provider's history-disabled flag. Local conversation files and active-conversation pointers are not written; continuation is kept in bounded daemon memory (up to 32 contexts, two million text characters per context), forgotten when a completed temporary tab closes or the UI exits normally, and lost when the daemon stops. A missing context fails explicitly rather than becoming a saved conversation. Temporary sends require direct transport; browser recipe capture/fallback is disabled so private prompts are not inserted into a persistent browser draft. This is an experimental web-protocol integration, not anonymous or zero-retention messaging: [OpenAI may retain temporary chats for up to 30 days](https://help.openai.com/en/articles/8914046). Real-account temporary/project sends and project membership mutations have not been validated by the offline tests. The membership write uses the undocumented conversation PATCH body and read-back validation; compatibility with the current live website remains unverified.
+`/temporary`, `/private` or `Alt+T` starts a temporary chat. Temporary state is per tab and cannot be combined with a project. Requests set the provider's history-disabled flag. Local conversation files and active-conversation pointers are not written; continuation is kept in adapter memory (up to 32 contexts; ChatGPT additionally bounds text per context), forgotten when a completed temporary tab closes or the UI exits normally, and lost when the owning provider stops. A missing context fails explicitly rather than becoming a saved conversation. Temporary sends require direct transport; browser recipe capture/fallback is disabled so private prompts are not inserted into a persistent browser draft. This is an experimental web-protocol integration, not anonymous or zero-retention messaging: [OpenAI may retain temporary chats for up to 30 days](https://help.openai.com/en/articles/8914046). Real-account temporary/project sends and project membership mutations have not been validated by the offline tests. The membership write uses the undocumented conversation PATCH body and read-back validation; compatibility with the current live website remains unverified.
 
 Provider-returned visible reasoning/summary content is kept separately from the final answer in history, streaming events and task snapshots. The General setting `show_reasoning` controls display. Hidden protocol nodes and tool-directed messages are not shown; unavailable reasoning is never fabricated.
 
 Status-only redraws reuse the rendered transcript, Markdown caches stay bounded, and authentication prefers the saved snapshot over re-capturing browser traffic. Authenticated HTTP calls are restricted to the provider origin; session snapshots and IPC messages have size limits. These controls do not remove provider usage limits or guarantee account restrictions cannot occur.
 
-Saved workspaces appear in **Düzenler** and invoke the layout extension. Completing localization/theme coverage of legacy transcript messages, archive synchronization, cross-provider transfer and Gemini/Claude adapters remain future work. `CHATGPT_WEB_MODEL`, `CHATGPT_WEB_CDP_URL` and `CHATGPT_WEB_SEND_MODE` remain compatibility settings. Persistent daemons with an older IPC protocol are replaced at startup before discovery commands are sent. Web endpoints are undocumented and can change independently of this application.
+Saved workspaces appear in **Düzenler** and invoke the layout extension. Completing localization/theme coverage of legacy transcript messages, archive synchronization, cross-provider transfer and a Claude adapter remain future work. Saved workspace metadata exists, but saving/restoring the new live split groups is not wired into that storage yet. `CHATGPT_WEB_MODEL`, `CHATGPT_WEB_CDP_URL` and `CHATGPT_WEB_SEND_MODE` remain compatibility settings. Persistent daemons with an older IPC protocol are replaced at startup before discovery commands are sent. Web endpoints are undocumented and can change independently of this application.
 
 ## Development
 
@@ -141,7 +142,7 @@ Use the existing environment; install project dependencies with `python -m pip i
 
 ```sh
 PYTHONPATH=src python/bin/python -m unittest discover -s tests -v
-node --test tests/js/browser.test.cjs
+node --test tests/js/*.test.cjs
 uvx --from 'ruff>=0.11,<1' ruff check src extensions themes tests siopechat.py
 uvx --from 'ruff>=0.11,<1' ruff format --check src extensions themes tests siopechat.py
 ```
@@ -154,7 +155,7 @@ Shift+Enter inserts a newline with CSI-u and xterm modified-Enter sequences. Alt
 
 ### Split conversations
 
-With the layout extension enabled, click **Böl** beside Send or run `/split` (Alt+V) / `/split-down` (Alt+H), then select another conversation from the sidebar. Up to four panes form one tab group. Click a pane header to type into it; other panes keep their own scroll positions. `/unsplit` (Alt+U) returns to one pane. Disabling the extension removes its presentation without deleting conversations. Account adapters queue operations within one account; separate accounts can progress independently.
+With the layout extension enabled, click **Böl** beside Send or run `/split` (Alt+V) / `/split-down` (Alt+H), then select another conversation from the sidebar. Up to four panes form one tab group. Click a pane header to type into it; other panes keep their own scroll positions. Switching tabs preserves manual reading position; role markers use the same fixed gutter in every pane. `/unsplit` (Alt+U) returns to one pane. Disabling the extension removes its presentation without deleting conversations. Account adapters queue operations within one account; separate accounts can progress independently.
 
 ### Gemini transport
 
@@ -177,3 +178,7 @@ Keyboard mappings, the command palette and Settings → Shortcuts use the same c
 For an account that supports project creation, use the sidebar header **+**, `/project-new` or Alt+P. Choose a name, private/shared visibility and default/project-only memory. The ChatGPT component drives the connected website’s own form and reads back the new project/memory. It does not guess a private creation endpoint or retry creation automatically. A changed or missing control fails only this operation. Shared creation fails before submission if the native form does not offer sharing; use the website’s sharing step in that case. Live creation/sharing compatibility is still unverified.
 
 [Google now documents notebooks and a Gemini Notebook connection](https://support.google.com/gemini/answer/16972047?co=GENIE.Platform%3DDesktop&hl=en). Availability and operations depend on the account. The current Gemini transport has no verified notebook project contract, so this adapter exposes chats and does not claim automatic NotebookLM synchronization.
+
+### Verification limits
+
+Offline tests exercise actual terminal key processing/render cells and controlled provider/browser transports. They do not prove compatibility with the current ChatGPT/Google websites. Live Gemini login/models/history, file uploads and ChatGPT project writes still require authenticated-account checks. Windows/macOS launchers share Python startup logic but have not been run on those operating systems in this checkout. Browser-session access remains subject to provider limits; this client does not remove limits or promise protection against account restrictions.

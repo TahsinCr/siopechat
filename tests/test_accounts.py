@@ -30,6 +30,27 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(config["providers"]["default"], "gemini")
         self.assertNotIn("cookie", json.dumps(config))
 
+    def test_late_session_result_does_not_change_another_account(self):
+        from tests.test_cli_interaction import terminal
+
+        with terminal(session_action=lambda action: {"action": action}) as (view, _):
+            pending = []
+            view._read_in_background = lambda *args, **kw: pending.append(args)
+            view.session_dialog.perform("verify")
+            read, success, _ = pending.pop()
+            view.account_key = self.gemini
+            view.session_state = {"account": "Gemini", "authenticated": False}
+            view.session_action = lambda _: self.fail("must keep captured callback")
+            self.assertEqual(read(), {"action": "verify"})
+            success({"authenticated": True})
+            self.assertFalse(view.session_state["authenticated"])
+            self.assertFalse(view.session_dialog.loading)
+
+    def test_default_account_honors_debug_browser_override(self):
+        self.accounts.cdp_url = "http://127.0.0.1:9333"
+        self.assertEqual(self.accounts.session("chatgpt/default").cdp_url, self.accounts.cdp_url)
+        self.assertNotEqual(self.accounts.session(self.gemini).cdp_url, self.accounts.cdp_url)
+
     def test_mixed_list_filter_and_account_pagination(self):
         self.accounts.status = lambda _: {"saved_snapshot": True}
         for key in ("chatgpt/default", self.gemini):

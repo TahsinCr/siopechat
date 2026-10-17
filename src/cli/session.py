@@ -60,11 +60,7 @@ class SessionDialog:
                                 Window(
                                     content=self.account_control,
                                     right_margins=[ScrollbarMargin(display_arrows=True)],
-                                    height=lambda: (
-                                        min(6, len(self.view.account_service.items()) + 1)
-                                        if self.view.account_service
-                                        else 1
-                                    ),
+                                    height=D(min=1, preferred=6, max=6),
                                 ),
                                 Button("＋ Hesap ekle", handler=self.view.add_account),
                                 Window(height=1, char="─", style="class:separator"),
@@ -109,11 +105,16 @@ class SessionDialog:
             return []
         return [
             (
-                "class:tab.active" if item["key"] == self.view.account_key else "class:button",
+                "class:menu.selection"
+                if index == self.account_index
+                and self.view.app.layout.current_control is self.account_control
+                else "class:tab.active"
+                if item["key"] == self.view.account_key
+                else "class:button",
                 f" {item['icon']} {item['label']} · {item['provider']}\n",
                 on_click(lambda key=item["key"]: self.choose_account(key)),
             )
-            for item in self.view.account_service.items()
+            for index, item in enumerate(self.view.account_service.items())
         ]
 
     def move_account(self, delta):
@@ -182,8 +183,13 @@ class SessionDialog:
             self.message = self.view.text("session_unavailable", "Oturum bağlantısı kurulmamış")
             self.view.app.invalidate()
             return
+        key = self.view.account_key
+        callback = self.view.session_action
+        account_busy = any(
+            tab.get("busy") and tab.get("account_key", key) == key for tab in self.view.tabs
+        )
         if action in ("logout", "verify", "connect_browser") and (
-            self.view.busy
+            account_busy
             or self.view.loading_conversation
             or self.view.uploading_image
             or self.view.background_jobs
@@ -198,6 +204,10 @@ class SessionDialog:
 
         def success(result):
             self.loading = False
+            if self.view.account_key != key:
+                self.message = "Hesap işlemi tamamlandı"
+                self.view.app.invalidate()
+                return
             self.view.session_state.update(result)
             if action == "logout":
                 self.view.after_logout()
@@ -221,14 +231,14 @@ class SessionDialog:
             self.view.app.invalidate()
 
         def failure(reason):
-            if action == "verify":
+            if action == "verify" and self.view.account_key == key:
                 self.view.session_state["authenticated"] = False
             self.loading = False
             self.message = str(reason)
             self.view.app.invalidate()
 
         self.view._read_in_background(
-            lambda: self.view.session_action(action), success, failure, session_bound=False
+            lambda: callback(action), success, failure, session_bound=False
         )
 
     def logout(self):

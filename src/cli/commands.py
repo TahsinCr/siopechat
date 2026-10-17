@@ -142,6 +142,7 @@ def run_fullscreen(
     from .settings import SettingsPanel
 
     accounts = api.get("accounts")
+    accounts.cdp_url = cdp_url
     key = accounts.active()
     if key != "chatgpt/default":
         cached_conversation = accounts.cache(key).load_cached_conversation()

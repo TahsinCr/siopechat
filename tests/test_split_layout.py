@@ -25,6 +25,10 @@ class SplitTests(unittest.IsolatedAsyncioTestCase):
             try:
                 await self.settle(lambda: v.transcript_window.render_info is not None)
                 self.assertEqual(v.layout_controller.columns(), 2)
+                pane = next(iter(v.layout_controller._panes.values()))
+                pane.render()
+                self.assertTrue(pane.message_ranges)
+                self.assertEqual(pane.body.left_margins[0].get_width(None), 3)
                 self.assertLess(v.main_width(), v.workspace_width())
                 v.select_tab(1)
                 v.app.invalidate()
@@ -40,6 +44,16 @@ class SplitTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 v.app.exit()
                 await run
+
+    async def test_tab_switch_preserves_manual_reading_position(self):
+        with interaction.terminal() as (v, _):
+            v.follow_output = False
+            v.transcript_window.vertical_scroll = 12
+            v.new_tab()
+            self.assertTrue(v.follow_output)
+            v.switch_tab(-1)
+            self.assertFalse(v.follow_output)
+            self.assertEqual(v.transcript_window.vertical_scroll, 12)
 
     async def test_pending_split_can_cancel_and_cannot_duplicate_same_tab(self):
         with interaction.terminal(layout_factory=SplitLayout) as (v, _):

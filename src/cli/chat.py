@@ -539,6 +539,10 @@ class ChatView:
             "project": self.current_project,
             "temporary": self.temporary,
             "pending_attachments": self.pending_attachments,
+            "follow_output": self.follow_output,
+            "scroll": self.transcript_window.vertical_scroll
+            if hasattr(self, "transcript_window")
+            else 0,
             "busy": self.active_busy(),
             "completed_pending": False,
         }
@@ -808,10 +812,17 @@ class ChatView:
         )
 
     def render_composer_actions(self):
-        left = " ◌ Geçici sohbet " if self.temporary else ""
+        compact = self.main_width() < 42
+        left = (" ◌ " if compact else " ◌ Geçici sohbet ") if self.temporary else ""
         controls = []
         if self.attach_file_callback:
-            controls.append(("class:button", " ＋ Dosya ", on_click(self.open_attachment)))
+            controls.append(
+                (
+                    "class:button",
+                    " ＋ " if compact else " ＋ Dosya ",
+                    on_click(self.open_attachment),
+                )
+            )
         if self.pending_attachments:
             controls.append(
                 (
@@ -821,10 +832,14 @@ class ChatView:
                 )
             )
         if self.layout_enabled:
-            controls.append(("class:button", " ◫ Böl ", on_click(self.begin_split)))
+            controls.append(
+                ("class:button", " ◫ " if compact else " ◫ Böl ", on_click(self.begin_split))
+            )
         if not self.follow_output:
             controls.append(("class:button", " ↓ ", on_click(self.scroll_bottom)))
-        controls.append(("class:button", " Gönder ↑ ", on_click(self.submit_prompt)))
+        controls.append(
+            ("class:button", " ↑ " if compact else " Gönder ↑ ", on_click(self.submit_prompt))
+        )
         used = get_cwidth(left) + sum(get_cwidth(f[1]) for f in controls)
         return FormattedText(
             [
@@ -2110,7 +2125,11 @@ class ChatView:
             self.status = "Yanıt bu sekmede tamamlandı"
         else:
             self.status = f"Sekme {self.active_tab + 1}/{len(self.tabs)}"
-        self.scroll_bottom()
+        self.follow_output = tab.get("follow_output", True)
+        self.transcript_window.vertical_scroll = (
+            10**9 if self.follow_output else tab.get("scroll", 0)
+        )
+        self.app.invalidate()
         if focus:
             self.app.layout.focus(
                 self.settings_dialog.category_control if self.tab_kind == "settings" else self.input

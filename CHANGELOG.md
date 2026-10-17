@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Account and narrow-pane polish
+
+- Preserve the default account's explicit CDP URL override and prevent late session results from updating another account's UI state.
+- Highlight keyboard account selection, allow its list to shrink with the terminal and compact composer controls inside narrow split panes.
+- Use the shared role gutter in inactive panes, track theme changes and preserve manual reading position across tab switches.
+- Keep shared account/filter/file/project forms compact and centered, with charcoal surfaces and visible checked/selected states instead of toolkit default blue/white dialogs.
+- Reconcile README setup, provider/data ownership, concurrency and remaining verification boundaries.
+
 ### Independent tab activity
 
 - Keep request status, cancellation connections and elapsed time per tab; completing one request no longer clears another tab's activity.
@@ -49,7 +57,7 @@
 ### Clean development baseline
 
 - Start SiopeChat history from the current modular Python application. No numbered releases or tags yet; subsequent features receive separate commits.
-- Keep independent provider contracts, ChatGPT web-session transport, dynamic model/effort discovery, project reads, temporary chats and confirmed project-membership writes.
+- Keep independent provider contracts, ChatGPT web-session transport, dynamic model/effort discovery, project reads, temporary chats and read-back guarded project-membership writes.
 - Include tabbed terminal conversations, a collapsible project/chat sidebar, categorized settings/accounts, keyboard commands, clipboard editing and role-aware Markdown rendering.
 - Keep settings/actions/runtime/extension modules directly under src, with bundled layout extensions and themes outside src. Reuse existing Python environments and shared Windows/macOS/Linux launchers.
 - Preserve vendored container/event origins and licenses. Exclude sessions, local data, environments and agent memory from Git.

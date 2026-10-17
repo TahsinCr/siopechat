@@ -7,7 +7,7 @@ from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.margins import ScrollbarMargin
 
 from cli.markdown import MessageRenderer
-from cli.widgets import TranscriptWindow, fit_text, on_click
+from cli.widgets import TranscriptGutter, TranscriptWindow, fit_text, on_click
 
 
 class SplitLayout:
@@ -135,6 +135,8 @@ class _Pane:
         self.cache_key = None
         self.cached = ANSI("")
         self.follow = True
+        self.messages = []
+        self.message_ranges = []
         self.header = FormattedTextControl(self.render_header)
         self.control = FormattedTextControl(self.render, get_cursor_position=self.cursor)
         self.body = TranscriptWindow(
@@ -142,6 +144,7 @@ class _Pane:
             wrap_lines=True,
             style="class:transcript",
             char=" ",
+            left_margins=[TranscriptGutter(self)],
             right_margins=[ScrollbarMargin(display_arrows=True)],
             on_manual_scroll=self.pause,
         )
@@ -176,33 +179,31 @@ class _Pane:
     def render(self):
         tab = self.tab()
         width = self.view.transcript_width()
-        messages = tab.get("messages", [])
+        self.messages = tab.get("messages", [])
+        if self.renderer.theme is not self.view.renderer.theme:
+            self.renderer = MessageRenderer()
+            self.renderer.theme = self.view.renderer.theme
+            self.cache_key = None
         key = (
             width,
-            tuple((m.get("role"), m.get("text")) for m in messages),
+            tuple((m.get("role"), m.get("text")) for m in self.messages),
             self.view.show_reasoning,
+            bool(tab.get("busy")),
         )
         if key != self.cache_key:
-            values = []
-            for i, message in enumerate(messages):
+            values, self.message_ranges, line = [], [], 0
+            for i, message in enumerate(self.messages):
                 role = message["role"]
                 if role == "reasoning" and not self.view.show_reasoning:
                     continue
-                marker, color = {"user": (">", "86d49b"), "reasoning": ("🧠", "75b5ef")}.get(
-                    role, ("🤖", "f0ad66")
+                value = self.renderer.render(
+                    role, message.get("text", ""), width, i > 0, bool(tab.get("busy"))
                 )
-                values.append(
-                    f"\x1b[38;2;{int(color[:2], 16)};{int(color[2:4], 16)};{int(color[4:], 16)}m{marker}\x1b[0m "
-                    + self.renderer.render(
-                        role,
-                        message.get("text", ""),
-                        max(8, width - 3),
-                        i > 0,
-                        bool(tab.get("busy")),
-                    )
-                )
-            rendered = "".join(values)
-            self.line_count = rendered.count("\n") + 1
-            self.cached = ANSI(rendered)
+                end = line + value.count("\n")
+                self.message_ranges.append((line, end, i))
+                values.append(value)
+                line = end
+            self.line_count = line + 1
+            self.cached = ANSI("".join(values))
             self.cache_key = key
         return self.cached
