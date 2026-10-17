@@ -210,3 +210,8 @@ Themes accept semantic color tokens, terminal and Markdown overrides, and bounde
 ### Provider preferences and frontend boundaries
 
 The last model/effort choice is saved per account. Settings lists providers with enabled switches and keeps Save/Close at the bottom right. Ctrl+D asks for a repeat confirmation when drafts or replies are open. The command palette also works from Settings and collects declared extension action arguments. Shared view/settings registries live outside cli, and create_application does not import the terminal frontend. Local extensions/<id>/plugin.py modules are discovered at startup.
+
+
+### macOS Finder launcher
+
+Open siopechat.command in Finder, or run it from a terminal. It delegates to the same siopechat.sh/Python startup used on Linux.

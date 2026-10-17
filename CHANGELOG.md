@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Executable siopechat.command launcher for macOS Finder, delegating to shared startup.
+
 ### Changed
 
 - Remember account model/effort choices, replace the default-provider selector with enabled switches, dock settings controls and make palette/exit shortcuts work across focus changes.
