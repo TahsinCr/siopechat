@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Terminal output and responsive settings
+
+- Suppress only Gemini SDK namespace logs by default, including unconditional quota/init messages, without removing host log handlers. Coordinate incidental stdout/stderr with the full-screen renderer.
+- Remove the settings page's competing filler, size the list/value columns from the current terminal and use compact category navigation below 76 columns.
+- Scroll the settings/account page to focused controls in short windows; resize account buttons and stack them in narrow panels.
+- Add actual renderer resize coverage down to 40×12 and an SDK logging regression without account traffic.
+
 ### Account and narrow-pane polish
 
 - Preserve the default account's explicit CDP URL override and prevent late session results from updating another account's UI state.

@@ -39,9 +39,10 @@ class GeminiProvider(OptionalFeatures):
         }
     )
 
-    def __init__(self, cookie_file: Path, account_id="default", client_factory=None):
+    def __init__(self, cookie_file: Path, account_id="default", client_factory=None, *, quiet=True):
         self.cookie_file = Path(cookie_file)
         self.account_id = account_id
+        self.quiet = quiet
         self._factory = client_factory
         self._client = None
         self._gate = asyncio.Lock()
@@ -63,6 +64,12 @@ class GeminiProvider(OptionalFeatures):
                 raise ProviderError(
                     "Gemini için Python 3.11+ ve gemini-webapi bağımlılığı gerekir"
                 ) from None
+            if self.quiet:
+                # verbose=False does not cover quota/init/background SDK logs.
+                # Keep other application loggers and their handlers untouched.
+                from gemini_webapi.utils.logger import logger
+
+                logger.disable("gemini_webapi")
             factory = GeminiClient
         client = factory(values["__Secure-1PSID"], values.get("__Secure-1PSIDTS"))
         try:

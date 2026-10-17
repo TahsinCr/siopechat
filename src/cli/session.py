@@ -3,7 +3,7 @@
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.layout import HSplit, VSplit, Window
+from prompt_toolkit.layout import DynamicContainer, HSplit, VSplit, Window
 from prompt_toolkit.layout.containers import ConditionalContainer
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import D
@@ -36,6 +36,17 @@ class SessionDialog:
             ),
             "logout": Button("Çıkış", width=24, handler=self.logout),
         }
+        self.wide_actions = HSplit(
+            [
+                VSplit(
+                    [self.buttons["verify"], self.buttons["default_browser"]], padding=2, height=1
+                ),
+                VSplit(
+                    [self.buttons["connect_browser"], self.buttons["logout"]], padding=2, height=1
+                ),
+            ]
+        )
+        self.stacked_actions = HSplit(list(self.buttons.values()))
         self.close_button = Button("Kapat", handler=self.close)
         keys = KeyBindings()
         account_focus = Condition(
@@ -76,16 +87,7 @@ class SessionDialog:
                         content=FormattedTextControl(self.render_help),
                         wrap_lines=True,
                     ),
-                    VSplit(
-                        [self.buttons["verify"], self.buttons["default_browser"]],
-                        padding=2,
-                        height=1,
-                    ),
-                    VSplit(
-                        [self.buttons["connect_browser"], self.buttons["logout"]],
-                        padding=2,
-                        height=1,
-                    ),
+                    DynamicContainer(self.action_layout),
                     Window(
                         height=D(min=1, preferred=2, max=3),
                         content=FormattedTextControl(lambda: self.message),
@@ -99,6 +101,14 @@ class SessionDialog:
             ),
             title=lambda: self.view.text("session", "Hesap ve oturum"),
         )
+
+    def action_layout(self):
+        width = self.view.settings_dialog.content_width() - 4
+        stacked = width < 48
+        button_width = max(10, min(24, width if stacked else (width - 2) // 2))
+        for button in self.buttons.values():
+            button.width = button.window.width = button_width
+        return self.stacked_actions if stacked else self.wide_actions
 
     def render_accounts(self):
         if self.view.account_service is None:

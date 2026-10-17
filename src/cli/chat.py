@@ -3185,7 +3185,10 @@ class ChatView:
                 self.resume_conversation(self.conversation_id)
 
         try:
-            self.app.run(pre_run=started)
+            from prompt_toolkit.patch_stdout import patch_stdout
+
+            with patch_stdout(raw=True):
+                self.app.run(pre_run=started)
         finally:
             if self.forget_temporary and not self.busy:
                 self._save_active_tab()

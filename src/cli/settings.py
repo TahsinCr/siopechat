@@ -5,7 +5,7 @@ import json
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.layout import HSplit, VSplit, Window
+from prompt_toolkit.layout import DynamicContainer, HSplit, ScrollablePane, VSplit, Window
 from prompt_toolkit.layout.containers import ConditionalContainer
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import D
@@ -133,7 +133,7 @@ class SettingsDialog:
         self.category_control = FormattedTextControl(
             self.render_categories,
             focusable=True,
-            get_cursor_position=lambda: Point(0, self.category_index * 2),
+            get_cursor_position=lambda: Point(0, 0 if self.compact() else self.category_index * 2),
         )
         self.search = TextArea(
             height=1, prompt=" Ara  ", multiline=False, style="class:settings.search"
@@ -148,7 +148,7 @@ class SettingsDialog:
             content=self.control,
             wrap_lines=False,
             always_hide_cursor=True,
-            height=D(min=3),
+            height=lambda: D.exact(self.list_height()),
             right_margins=[ScrollbarMargin(display_arrows=True)],
         )
         self.editor = TextArea(height=1, multiline=False, style="class:settings.editor")
@@ -228,28 +228,56 @@ class SettingsDialog:
         self.keys.add("enter", filter=category_focus)(
             lambda _: self.choose_category(self.categories[self.category_index][0])
         )
-        self.container = HSplit(
+        self.keys.add("left", filter=category_focus)(lambda _: self.move_category(-1))
+        self.keys.add("right", filter=category_focus)(lambda _: self.move_category(1))
+        content = DynamicContainer(
+            lambda: self.view.session_dialog.container if self.category == "accounts" else form
+        )
+        self.page = ScrollablePane(content, width=D(weight=1), height=D(weight=1))
+        navigation = Window(
+            content=self.category_control,
+            style="class:settings.nav",
+            height=lambda: 1 if self.compact() else None,
+        )
+        wide = VSplit(
             [
-                VSplit(
-                    [
-                        Window(content=self.category_control, width=19, style="class:settings.nav"),
-                        Window(width=1, char="│", style="class:separator"),
-                        ConditionalContainer(
-                            form, filter=Condition(lambda: self.category != "accounts")
-                        ),
-                        ConditionalContainer(
-                            self.view.session_dialog.container,
-                            filter=Condition(lambda: self.category == "accounts"),
-                        ),
-                    ]
-                ),
-            ],
+                HSplit([navigation], width=19),
+                Window(width=1, char="│", style="class:separator"),
+                self.page,
+            ]
+        )
+        narrow = HSplit(
+            [
+                navigation,
+                Window(height=1, char="─", style="class:separator"),
+                self.page,
+            ]
+        )
+        self.container = HSplit(
+            [DynamicContainer(lambda: narrow if self.compact() else wide)],
             key_bindings=self.keys,
             modal=True,
             style="class:settings",
         )
 
+    def compact(self):
+        return self.view.terminal_width() < 76
+
+    def content_width(self):
+        return max(12, self.view.terminal_width() - (0 if self.compact() else 20) - 1)
+
+    def list_height(self):
+        rows = self.view.app.output.get_size().rows if hasattr(self.view, "app") else 24
+        return max(1, rows - 12 - (2 if self.compact() else 0))
+
     def render_categories(self):
+        if self.compact():
+            key, title = self.categories[self.category_index]
+            return [
+                ("class:button", " ‹ ", on_click(lambda: self.move_category(-1))),
+                ("class:settings.category.active", self.view.text("category_" + key, title)),
+                ("class:button", " › ", on_click(lambda: self.move_category(1))),
+            ]
         return [
             (
                 "class:settings.category.active"
@@ -365,7 +393,7 @@ class SettingsDialog:
         self.save()
 
     def render_rows(self):
-        width = max(10, self.view.terminal_width() - 25)
+        width = max(10, self.content_width() - 2)
         rows = []
         for i, row in enumerate(self.filtered):
             title = row.get("title") or row["key"]

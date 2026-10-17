@@ -182,3 +182,9 @@ For an account that supports project creation, use the sidebar header **+**, `/p
 ### Verification limits
 
 Offline tests exercise actual terminal key processing/render cells and controlled provider/browser transports. They do not prove compatibility with the current ChatGPT/Google websites. Live Gemini login/models/history, file uploads and ChatGPT project writes still require authenticated-account checks. Windows/macOS launchers share Python startup logic but have not been run on those operating systems in this checkout. Browser-session access remains subject to provider limits; this client does not remove limits or promise protection against account restrictions.
+
+### Terminal output and responsive settings
+
+The Gemini adapter suppresses its SDK namespace logs by default, including messages the SDK emits despite `verbose=False`; it leaves host logging handlers intact. Independent-library callers can pass `quiet=False` when they manage SDK logging themselves. The full-screen terminal also uses prompt_toolkit stdout/stderr coordination for incidental output.
+
+Settings fills the available page. Below 76 columns, categories become a compact previous/current/next strip; list rows and value columns follow the current terminal dimensions. The settings/account page scrolls to focused controls on short terminals, and account actions stack when their content area is narrow. Resizing does not discard the draft setting value.

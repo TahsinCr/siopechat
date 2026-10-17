@@ -124,10 +124,7 @@ def workspace_layout(view):
                 filter=Condition(lambda: view.tab_kind != "settings"),
             ),
             ConditionalContainer(
-                HSplit(
-                    [view.settings_dialog.container, Window(style="class:settings", char=" ")],
-                    style="class:settings",
-                ),
+                view.settings_dialog.container,
                 filter=Condition(lambda: view.tab_kind == "settings"),
             ),
             ConditionalContainer(

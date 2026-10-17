@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 from providers import ConversationBound, ReplaceText, SendRequest
 from providers.gemini import GeminiProvider
@@ -36,6 +36,34 @@ class GeminiTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.provider = GeminiProvider(cookie_file, "test", client_factory=lambda *_: self.client)
         self.addAsyncCleanup(self.provider.close)
+
+    async def test_sdk_logging_is_quiet_without_removing_host_sinks(self):
+        try:
+            import gemini_webapi
+            from gemini_webapi.utils.logger import logger as sdk_logger
+            from loguru import logger
+        except ImportError:
+            self.skipTest("Gemini SDK requires Python 3.11+")
+        records = []
+        sink = logger.add(lambda message: records.append(message.record), level="TRACE")
+        namespace = {"__name__": "gemini_webapi.client", "logger": sdk_logger}
+        exec("def emit():\n    logger.info('quota test')", namespace)
+
+        async def initialize(**kwargs):
+            namespace["emit"]()
+
+        self.client.init.side_effect = initialize
+        provider = GeminiProvider(self.provider.cookie_file)
+        try:
+            with patch.object(gemini_webapi, "GeminiClient", return_value=self.client):
+                await provider.models()
+            self.assertFalse(any(r["name"].startswith("gemini_webapi") for r in records))
+            # Disabling is namespace scoped; it must not remove the caller's sink.
+            self.assertIn(sink, logger._core.handlers)
+        finally:
+            await provider.close()
+            logger.remove(sink)
+            logger.enable("gemini_webapi")
 
     async def test_models_use_account_names_and_real_extended_flag(self):
         catalog = await self.provider.models()
