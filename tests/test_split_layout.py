@@ -2,8 +2,9 @@
 
 import asyncio
 import unittest
+from unittest.mock import patch
 
-from extensions.layout.panes import SplitLayout
+from extensions.layout.panes import SplitLayout, _Pane
 from tests import test_cli_interaction as interaction
 
 
@@ -54,6 +55,21 @@ class SplitTests(unittest.IsolatedAsyncioTestCase):
             v.switch_tab(-1)
             self.assertFalse(v.follow_output)
             self.assertEqual(v.transcript_window.vertical_scroll, 12)
+
+    async def test_inactive_busy_pane_keeps_old_message_render_cache(self):
+        with interaction.terminal(layout_factory=SplitLayout) as (v, _):
+            v.tabs[0]["messages"] = [
+                {"role": "user", "text": "Old"},
+                {"role": "assistant", "text": "New"},
+            ]
+            v.tabs[0]["busy"] = True
+            pane = _Pane(v, v.tabs[0]["tab_id"])
+            with patch.object(pane.renderer, "render", wraps=pane.renderer.render) as render:
+                pane.render()
+                self.assertFalse(render.call_args_list[0].args[-1])
+                self.assertTrue(render.call_args_list[-1].args[-1])
+                pane.render()
+                self.assertEqual(render.call_count, 2)
 
     async def test_pending_split_can_cancel_and_cannot_duplicate_same_tab(self):
         with interaction.terminal(layout_factory=SplitLayout) as (v, _):

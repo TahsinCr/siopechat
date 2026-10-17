@@ -28,7 +28,7 @@ def terminal(output=None, **callbacks):
         yield view, pipe
 
 
-def immediate(read, success, failure):
+def immediate(read, success, failure, **kwargs):
     try:
         success(read())
     except Exception as error:

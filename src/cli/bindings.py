@@ -173,7 +173,7 @@ def key_bindings(view) -> KeyBindings:
 
     def refresh_action(_event: Any) -> None:
         view.refresh_sidebar()
-        view.refresh_provider_catalog()
+        view.refresh_provider_catalog(force=True)
 
     def settings_action(_event: Any) -> None:
         view.settings_dialog.open()

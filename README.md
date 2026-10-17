@@ -181,7 +181,7 @@ For an account that supports project creation, use the sidebar header **+**, `/p
 
 ### Verification limits
 
-Offline tests exercise actual terminal key processing/render cells and controlled provider/browser transports. They do not prove compatibility with the current ChatGPT/Google websites. Live Gemini login/models/history, file uploads and ChatGPT project writes still require authenticated-account checks. Windows/macOS launchers share Python startup logic but have not been run on those operating systems in this checkout. Browser-session access remains subject to provider limits; this client does not remove limits or promise protection against account restrictions.
+Offline tests exercise actual terminal key processing/render cells and controlled provider/browser transports. They do not prove compatibility with the current ChatGPT/Google websites. Gemini model discovery and one Flash-Lite temporary send through controlled terminal input have been checked live; other models, complete history flows, file uploads and ChatGPT project writes still require authenticated-account checks. Windows/macOS launchers share Python startup logic but have not been run on those operating systems in this checkout. Browser-session access remains subject to provider limits; this client does not remove limits or promise protection against account restrictions.
 
 ### Terminal output and responsive settings
 
@@ -196,3 +196,7 @@ Account caches never fall back to another provider's legacy conversation files. 
 Account model/effort catalogs share one in-flight discovery and a five-minute memory cache. A successful account-local snapshot (`data/accounts/<provider>/<id>/models.json`) makes the picker available immediately after restart while live discovery refreshes it. Snapshots carry their account identity, contain model metadata rather than credentials and are removed on local logout. F10 forces live discovery; failures retain the last usable catalog.
 
 Model discovery has a 30-second budget, each account's history page has a 20-second budget, and ordinary host reads have a 45-second upper bound. A slow history account does not prevent other accounts' pages from returning. Gemini initialization cleans up on cancellation. These are read/discovery limits, not an automatic retry policy for message sends.
+
+New chat tabs keep explicit account/catalog/effort context. Pickers reuse that account's current catalog immediately, and an empty/obsolete selected model resolves to its valid default before sending. Catalog/project requests track account identity and request generation: late completions cannot clear a newer load indicator or replace another provider's models. Background refresh status names the outstanding list and retains request/error status instead of masking it with a generic busy message. Successful account pages still appear when another account times out; its last displayed records remain available.
+
+A live smoke check used actual Prompt Toolkit Enter processing with the real Gemini account: while history was refreshing, a temporary Flash-Lite request returned `TAMAM` and the tab returned to Ready. This is a controlled terminal-input check, not a Konsole desktop check or validation of every model. The probe bypassed active-pointer writes and did not store a conversation snapshot.

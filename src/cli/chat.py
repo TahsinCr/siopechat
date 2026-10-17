@@ -117,6 +117,9 @@ class ChatView:
         self.provider_features = frozenset({Capability.PROJECTS})
         self.provider_filter = None
         self._account_projects = {}
+        self._account_catalogs = {}
+        self._catalog_requests = {}
+        self._project_requests = {}
         self.attach_file_callback = None
         self.settings_rows_callback = settings_rows
         self.change_setting = change_setting
@@ -313,6 +316,7 @@ class ChatView:
 
         if self.account_service:
             self.bind_account(self.account_key)
+            self.normalize_model_selection()
             self._save_active_tab()
 
         self.action_cleanup = action_host(self) if action_host else None
@@ -343,6 +347,15 @@ class ChatView:
         self.account_key = key
         self.provider_id = key.split("/")[0]
         self.provider_features = self.account_service.capabilities(key)
+        known = self._account_catalogs.get(key)
+        if known is None and hasattr(self.account_service, "cached_models"):
+            known = self.account_service.cached_models(key)
+        self.catalog = known or ModelCatalog(FeatureState.UNKNOWN)
+        if known:
+            self._account_catalogs[key] = known
+        self.catalog_error = self.catalog.reason
+        self.catalog_loading = key in self._catalog_requests
+        self.projects_loading = key in self._project_requests
         for name, callback in self.account_service.callbacks(key).items():
             setattr(self, name, callback)
         self.session_state = self.account_service.status(key)
@@ -367,8 +380,8 @@ class ChatView:
         if self.tab_kind == "chat" and (self.messages or self.conversation_id or self.input.text):
             self.new_tab()
         self.bind_account(key)
-        self.catalog = ModelCatalog(FeatureState.UNKNOWN)
-        self.model, self.effort = "", None
+        self.model = self.catalog.default_chat_model.id if self.catalog.default_chat_model else ""
+        self.effort = self.catalog.effort(self.model, self.effort_preference)
         self.current_project = {}
         self.project_items = {}
         self.projects_loaded = False
@@ -949,6 +962,9 @@ class ChatView:
             else []
         )
         self.session_epoch += 1
+        self._account_catalogs.pop(self.account_key, None)
+        self._catalog_requests.pop(self.account_key, None)
+        self._project_requests.pop(self.account_key, None)
         self.sidebar_refresh_generation += 1
         self.sidebar_items.clear()
         self.project_items.clear()
@@ -1345,6 +1361,7 @@ class ChatView:
             cursor = None
             workspaces: list[dict[str, Any]] = []
             sidebar_error = None
+            partial_error = None
             workspace_error = None
             try:
                 page = self.list_history_page(None) if self.list_history_page else None
@@ -1354,6 +1371,14 @@ class ChatView:
                     if isinstance(item, dict)
                 ]
                 cursor = page.get("cursor") if page is not None else None
+                if page and page.get("errors"):
+                    partial_error = "Yenilenemeyen hesaplar: " + ", ".join(page["errors"])
+                    failed = set(page.get("failed_accounts", []))
+                    conversations.extend(
+                        item
+                        for item in self.sidebar_items
+                        if origin(item.get("id"), self.account_key)[0] in failed
+                    )
             except Exception as error:
                 sidebar_error = str(error)
             try:
@@ -1386,11 +1411,11 @@ class ChatView:
                 if sidebar_error is None:
                     self.history_cursor = cursor
                 self.sidebar_items = chats + saved_workspaces
-                self.sidebar_error = sidebar_error
+                self.sidebar_error = sidebar_error or partial_error
                 self.workspace_error = workspace_error
                 self.sidebar_loading = False
-                if sidebar_error or workspace_error:
-                    self.status = "Sol panel yenilenemedi; son kayıtlar korunuyor"
+                if sidebar_error or workspace_error or partial_error:
+                    self.status = partial_error or "Sol panel yenilenemedi; son kayıtlar korunuyor"
                 self.filter_sidebar()
                 if getattr(self, "sidebar_refresh_pending", False):
                     self.sidebar_refresh_pending = False
@@ -1432,66 +1457,94 @@ class ChatView:
 
         threading.Thread(target=work, daemon=True).start()
 
-    def refresh_provider_catalog(self) -> None:
-        if self.load_catalog is None or self.catalog_loading:
+    def refresh_provider_catalog(self, force=False) -> None:
+        key = self.account_key
+        if self.load_catalog is None or key in self._catalog_requests:
+            self.catalog_loading = key in self._catalog_requests
             return
+        token = uuid.uuid4().hex
+        self._catalog_requests[key] = token
         self.catalog_loading = True
-        account_key = self.account_key
+        epoch = self.session_epoch
+        callback = self.load_catalog
+        if self.account_service and hasattr(self.account_service, "models"):
+
+            def callback():
+                return self.account_service.models(key, force=force)
+
+        def finish():
+            if self._catalog_requests.get(key) == token:
+                self._catalog_requests.pop(key, None)
+            self.catalog_loading = self.account_key in self._catalog_requests
 
         def success(catalog):
-            if self.account_key != account_key:
-                self.catalog_loading = False
-                self.refresh_provider_catalog()
+            finish()
+            if epoch != self.session_epoch:
                 return
             if not isinstance(catalog, ModelCatalog):
                 failure("Sağlayıcı model kataloğu geçersiz")
                 return
-            self.catalog_loading = False
-            self.catalog = catalog
-            self.session_state["authenticated"] = catalog.state == FeatureState.AVAILABLE
-            self.catalog_error = catalog.reason
-            preference = getattr(self, "default_model_preference", "")
-            if not self.model and any(m.id == preference for m in catalog.chat_models):
-                self.model = preference
-            self._save_active_tab()
+            self._account_catalogs[key] = catalog
+            if self.account_key == key:
+                self._save_active_tab()
             for tab in self.tabs:
-                if tab.get("busy") or tab.get("account_key", account_key) != account_key:
+                if tab.get("account_key") != key:
                     continue
                 tab["catalog"] = catalog
+                if tab.get("busy"):
+                    continue
                 selected = next((m for m in catalog.chat_models if m.id == tab.get("model")), None)
                 if selected is None and catalog.default_chat_model is not None:
                     tab["response_model"] = tab.get("response_model") or tab.get("model")
                     selected = catalog.default_chat_model
                     tab["model"] = selected.id
-                if selected is not None and tab.get("effort") not in {
-                    e.id for e in selected.efforts
-                }:
+                if selected and tab.get("effort") not in {e.id for e in selected.efforts}:
                     tab["effort"] = catalog.effort(
                         selected.id, tab.get("effort_preference", self.effort_preference)
                     )
-            self.model = self.tabs[self.active_tab].get("model") or ""
-            self.effort = self.tabs[self.active_tab].get("effort")
-            self.last_response_model = self.tabs[self.active_tab].get("response_model")
-            self.status = f"{len(catalog.chat_models)} model · hazır"
-            if self.palette_visible:
+            if self.account_key != key:
+                self.app.invalidate()
+                return
+            self.catalog = catalog
+            self.catalog_error = catalog.reason
+            self.session_state["authenticated"] = catalog.state == FeatureState.AVAILABLE
+            tab = self.tabs[self.active_tab]
+            self.model = tab.get("model") or ""
+            self.effort = tab.get("effort")
+            self.last_response_model = tab.get("response_model")
+            if not self.active_busy():
+                self.status = f"{len(catalog.chat_models)} model · hazır"
+            if self.palette_visible and self.palette_mode in ("models", "effort"):
                 query = self.palette_search.text
-                if self.palette_mode == "projects":
-                    self.open_project_picker()
-                else:
-                    self.open_palette(self.palette_mode)
+                self.open_palette(self.palette_mode)
                 self.palette_search.text = query
             self.app.invalidate()
 
         def failure(reason):
-            self.catalog_loading = False
-            if self.account_key != account_key:
-                self.refresh_provider_catalog()
-                return
-            self.catalog_error = reason
-            self.status = f"Model kataloğu alınamadı: {reason} · F10 yeniden dene"
+            finish()
+            if epoch == self.session_epoch and self.account_key == key:
+                self.catalog_error = reason
+                self.status = f"Model kataloğu alınamadı: {reason} · F10 yeniden dene"
             self.app.invalidate()
 
-        self._read_in_background(self.load_catalog, success, failure)
+        self._read_in_background(callback, success, failure, session_bound=False)
+
+    def normalize_model_selection(self):
+        if self.catalog.state != FeatureState.AVAILABLE or self.active_busy():
+            return
+        selected = next((m for m in self.catalog.chat_models if m.id == self.model), None)
+        if selected is None:
+            preferred = getattr(self, "default_model_preference", "")
+            selected = next(
+                (m for m in self.catalog.chat_models if m.id == preferred),
+                self.catalog.default_chat_model,
+            )
+            if selected:
+                if self.model:
+                    self.last_response_model = self.model
+                self.model = selected.id
+        if selected and self.effort not in {choice.id for choice in selected.efforts}:
+            self.effort = self.catalog.effort(selected.id, self.effort_preference)
 
     def select_model(self, model_id: str) -> None:
         if self.tabs[self.active_tab].get("busy"):
@@ -1526,17 +1579,29 @@ class ChatView:
         self.app.invalidate()
 
     def refresh_projects(self, more: bool = False) -> None:
-        if self.list_projects_callback is None or self.projects_loading:
+        if Capability.PROJECTS not in self.provider_features:
+            self.projects_loading = False
+            self.project_items = {}
+            self.projects_loaded = True
+            return
+        account_key = self.account_key
+        if self.list_projects_callback is None or account_key in self._project_requests:
             return
         cursor = self.project_cursor if more else None
+        token = uuid.uuid4().hex
+        self._project_requests[account_key] = token
         self.projects_loading = True
-        account_key = self.account_key
         callback = self.list_projects_callback
+        epoch = self.session_epoch
+
+        def finish():
+            if self._project_requests.get(account_key) == token:
+                self._project_requests.pop(account_key, None)
+            self.projects_loading = self.account_key in self._project_requests
 
         def success(result):
-            if self.account_key != account_key:
-                self.projects_loading = False
-                self.refresh_projects()
+            finish()
+            if epoch != self.session_epoch or self.account_key != account_key:
                 return
             if not isinstance(result, dict) or not isinstance(result.get("items"), list):
                 failure("Proje listesi geçersiz")
@@ -1570,12 +1635,14 @@ class ChatView:
                 self.open_project_picker()
 
         def failure(reason):
-            self.projects_loading = False
+            finish()
+            if epoch != self.session_epoch or self.account_key != account_key:
+                return
             self.project_error = reason
             self.status = f"Proje listesi alınamadı: {reason}"
             self.filter_sidebar()
 
-        self._read_in_background(lambda: callback(cursor), success, failure)
+        self._read_in_background(lambda: callback(cursor), success, failure, session_bound=False)
 
     def load_project_chats(self, project_id: str, more: bool = False) -> None:
         if self.list_project_chats_callback is None or project_id in self.project_chats_loading:
@@ -2063,6 +2130,9 @@ class ChatView:
         self._save_active_tab()
         self.tabs.append(
             {
+                "account_key": self.account_key,
+                "catalog": self.catalog,
+                "effort_preference": self.effort_preference,
                 "conversation_id": None,
                 "title": "New conversation",
                 "messages": [],
@@ -2093,7 +2163,12 @@ class ChatView:
         tab.setdefault("tab_id", uuid.uuid4().hex)
         if self.account_service:
             self.bind_account(tab.get("account_key", self.account_key))
-            self.catalog = tab.get("catalog") or ModelCatalog(FeatureState.UNKNOWN)
+            self.catalog = (
+                self._account_catalogs.get(self.account_key)
+                or tab.get("catalog")
+                or ModelCatalog(FeatureState.UNKNOWN)
+            )
+            self.catalog_loading = self.account_key in self._catalog_requests
         self.temporary = bool(tab.get("temporary"))
         self.message_selection = False
         self.selected_message_ref = None
@@ -2109,6 +2184,8 @@ class ChatView:
         self.effort = tab.get("effort")
         self.last_response_model = tab.get("response_model")
         self.effort_preference = tab.get("effort_preference", self.effort_preference)
+        self.normalize_model_selection()
+        tab.update(model=self.model, effort=self.effort, catalog=self.catalog)
         self.input.text = tab.get("draft", "")
         self.current_project = dict(tab.get("project") or {})
         self.pending_attachments = list(tab.get("pending_attachments") or [])
@@ -2134,6 +2211,8 @@ class ChatView:
             self.app.layout.focus(
                 self.settings_dialog.category_control if self.tab_kind == "settings" else self.input
             )
+        if self.account_service and self.catalog.state == FeatureState.UNKNOWN:
+            self.refresh_provider_catalog()
 
     def close_tab(self) -> None:
         self.close_overlays()
@@ -2207,8 +2286,18 @@ class ChatView:
                 else "Dosya yükleniyor"
             )
             return FormattedText([("", f" {frame} {phase} · {elapsed} · {self.status} ")])
-        if self.catalog_loading or self.sidebar_loading or self.projects_loading:
-            return FormattedText([("", " ● Sağlayıcı verileri güncelleniyor")])
+        pending = [
+            label
+            for label, active in (
+                ("Modeller", self.catalog_loading),
+                ("Sohbetler", self.sidebar_loading),
+                ("Projeler", self.projects_loading),
+            )
+            if active
+        ]
+        if pending:
+            status = self.status if self.status not in ("Ready", "") else "Hazır"
+            return FormattedText([("", f" • {status} · {', '.join(pending)} yenileniyor")])
         if self.status not in ("Ready", ""):
             return FormattedText([("", f" • {self.status} ")])
         if self.pending_attachments:
@@ -2435,6 +2524,7 @@ class ChatView:
         self.app.invalidate()
 
     def submit_prompt(self) -> None:
+        self.normalize_model_selection()
         if self.tab_kind == "project":
             self.status = "Bu sekme proje bilgilerini gösterir; sohbet listesinden bir sohbet açın"
             self.app.invalidate()
@@ -3179,8 +3269,8 @@ class ChatView:
                     lambda reason: setattr(self, "status", reason),
                     session_bound=False,
                 )
-            self.refresh_sidebar()
             self.refresh_provider_catalog()
+            self.refresh_sidebar()
             if self.load_on_start and self.conversation_id is not None:
                 self.resume_conversation(self.conversation_id)
 

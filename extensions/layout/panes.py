@@ -197,7 +197,11 @@ class _Pane:
                 if role == "reasoning" and not self.view.show_reasoning:
                     continue
                 value = self.renderer.render(
-                    role, message.get("text", ""), width, i > 0, bool(tab.get("busy"))
+                    role,
+                    message.get("text", ""),
+                    width,
+                    i > 0,
+                    bool(tab.get("busy")) and i == len(self.messages) - 1,
                 )
                 end = line + value.count("\n")
                 self.message_ranges.append((line, end, i))

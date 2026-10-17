@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Account-bound terminal catalogs and send readiness
+
+- Preserve account, model catalog and effort context in new tabs; select a valid cached default before sending when the previous model is empty or obsolete.
+- Track catalog/project requests per account and generation, clear pending flags on failure/logout, and prevent late results from replacing another account's state.
+- Keep request/error status visible during metadata refresh, retain failed accounts' last sidebar entries and allow already-selected chats to send while lists update.
+- Keep old message rendering cached inside busy inactive panes.
+- Reproduce the empty selected-model block, then verify Enter-to-Gemini temporary Flash-Lite sending while history refresh remains pending.
+
 ### Bounded account discovery
 
 - Share model discovery per account, cache catalogs for five minutes and persist an account-tagged last-known catalog for immediate startup pickers.
