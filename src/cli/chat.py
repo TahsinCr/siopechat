@@ -1283,11 +1283,8 @@ class ChatView:
         projects: dict[str, list[dict[str, Any]]] = {
             key: []
             for key, project in self.project_items.items()
-            if origin(key, self.account_key)[0] == self.account_key
-            and (
-                self.provider_filter is None
-                or project.get("provider_id", origin(key)[0].split("/")[0]) in self.provider_filter
-            )
+            if self.provider_filter is None
+            or project.get("provider_id", origin(key)[0].split("/")[0]) in self.provider_filter
         }
         unassigned: list[dict[str, Any]] = []
         for item in conversations:
@@ -1296,8 +1293,7 @@ class ChatView:
             if isinstance(project, dict):
                 project_id = project.get("id") or project_id
             if isinstance(project_id, str) and project_id:
-                if origin(project_id, self.account_key)[0] == self.account_key:
-                    projects.setdefault(project_id, []).append(item)
+                projects.setdefault(project_id, []).append(item)
             else:
                 unassigned.append(item)
 

@@ -51,6 +51,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Fixed
 
+- Sidebar projects disappearing when switching model accounts: the sidebar lists providers together; only the conversation project picker is scoped to the model account.
+
 - Gemini notebook sends now include native notebook context settings alongside the notebook identity; an identity passed as a Gem alone did not establish notebook context.
 - Expired Gemini sessions silently falling back to an unauthenticated guest account and exposing an incomplete model catalog.
 - The send status remaining at “Preparing secure request” while waiting for provider output.
@@ -60,7 +62,7 @@ The project is currently unreleased; no release dates or tags have been assigned
 - Valid Gemini notebook chats being rejected with `projects: unsupported` before sending.
 
 - Wrapped terminal controls crashing with an out-of-range cursor after content shrinks or project lists change.
-- Project trees and pickers mixing ChatGPT projects with Gemini notebooks after changing model accounts.
+- Conversation project pickers offering projects from another model account.
 
 - Revalidate the restored active conversation at startup without clearing its visible history or draft.
 
