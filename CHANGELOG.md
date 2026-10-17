@@ -1,108 +1,64 @@
 # Changelog
 
+All notable changes to SiopeChat are documented here.
+
+The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
+Numbered releases will follow [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
+The project is currently unreleased; no release dates or tags have been assigned.
+
 ## Unreleased
 
 ### Added
 
-- Executable siopechat.command launcher for macOS Finder, delegating to shared startup.
+- Independent ChatGPT and Gemini web-session adapters with account-scoped model discovery, history and streaming.
+- Multiple accounts, isolated browser profiles, session verification, local logout and mixed-provider sidebar filtering.
+- Tabbed conversations, visible background reply status, project navigation and command/action search.
+- Optional layout extension with side-by-side or stacked panes, grouped tabs and workspace metadata storage.
+- Account-specific remembered model and effort selections across new tabs and restarts.
+- Provider enable/disable controls with a minimum of one enabled provider and configured account.
+- File attachment forms, temporary chats and native ChatGPT project creation with memory/privacy fields.
+- Shared extension lifecycle, automatic local extension discovery and argument forms for contributed actions.
+- JSON and Python themes with semantic tokens, terminal/Markdown overrides and bounded layout options.
+- Linux/macOS shell, macOS Finder `.command`, Windows CMD and PowerShell launchers sharing Python startup.
+- GPL-3.0-only license, usage and extension/theme documentation, and an actual terminal screenshot using sample data.
 
 ### Changed
 
-- Remember account model/effort choices, replace the default-provider selector with enabled switches, dock settings controls and make palette/exit shortcuts work across focus changes.
-- Separate shared view/settings services from CLI titles/styles; discover local extensions and collect action arguments.
+- Keep small shared modules directly under `src/`; place terminal commands, styles and widgets under `src/cli`.
+- Separate the shared view registry and settings catalog from the terminal frontend for future GUI reuse.
+- Cache account catalogs in memory for five minutes and restore account-tagged snapshots before live discovery completes.
+- Coalesce simultaneous discovery requests and bound model, history and host read operations.
+- Keep settings Save/Close controls at the bottom right; adapt categories and account actions to narrow screens.
+- Use one canonical terminal action catalog for shortcuts, command search and shortcut settings.
 
-### Added
+### Removed
 
-- Semantic theme tokens, JSON/Python theme loading, terminal/Markdown overrides and bounded layout options.
+- The global default-provider selector; providers are enabled independently and conversations retain their account identity.
+- Application-name package wrappers, the extra `.venv` setup path and `requirements.txt` management.
+- Competing settings-page filler, repeated shortcut hints and SDK logs written over the terminal interface.
 
-### Account-bound terminal catalogs and send readiness
+### Fixed
 
-- Preserve account, model catalog and effort context in new tabs; select a valid cached default before sending when the previous model is empty or obsolete.
-- Track catalog/project requests per account and generation, clear pending flags on failure/logout, and prevent late results from replacing another account's state.
-- Keep request/error status visible during metadata refresh, retain failed accounts' last sidebar entries and allow already-selected chats to send while lists update.
-- Keep old message rendering cached inside busy inactive panes.
-- Reproduce the empty selected-model block, then verify Enter-to-Gemini temporary Flash-Lite sending while history refresh remains pending.
+- Preserve an explicit provider-default effort choice as an absent request override after restore and refresh.
 
-### Bounded account discovery
+- Empty selected models preventing sends despite an available catalog.
+- New tabs losing their provider catalog or model/effort context.
+- Gemini and additional accounts reopening legacy ChatGPT conversation files.
+- Stuck refresh indicators and late account results overwriting newer request state.
+- A slow account blocking successful history results from other accounts.
+- Shift+Enter handling, composer focus restoration and accumulated mouse-wheel scrolling.
+- Ctrl+D silently doing nothing with a draft; exit now offers a timed repeat confirmation.
+- Command search and Enter execution from settings, with editing keys retained in search fields.
+- Tab widths, right-aligned tab controls and settings scaling down to small terminal dimensions.
+- Background streams clearing another tab's activity, cancellation connection or elapsed time.
+- Reasoning from later turns modifying earlier reasoning messages.
+- Re-rendering old messages unnecessarily in busy inactive panes.
+- Explicit CDP URL overrides being lost in account routing.
 
-- Share model discovery per account, cache catalogs for five minutes and persist an account-tagged last-known catalog for immediate startup pickers.
-- Bound model discovery, individual history pages and ordinary host reads; isolate a slow account and clean up cancelled Gemini initialization.
-- Preserve host cache ownership, clear catalogs on logout and keep provider construction thread-safe.
+### Security
 
-### Provider cache isolation
-
-- Disable legacy ChatGPT active-pointer and conversation fallback for Gemini and additional ChatGPT accounts. Preserve migration only for the original default ChatGPT account.
-- Prevent an empty Gemini workspace from reopening a ChatGPT conversation under a Gemini identity; keep existing files and credentials intact.
-- Cover empty accounts, stale contaminated pointers, explicit-ID reads and valid account-local caches in regression tests.
-
-### Terminal output and responsive settings
-
-- Suppress only Gemini SDK namespace logs by default, including unconditional quota/init messages, without removing host log handlers. Coordinate incidental stdout/stderr with the full-screen renderer.
-- Remove the settings page's competing filler, size the list/value columns from the current terminal and use compact category navigation below 76 columns.
-- Scroll the settings/account page to focused controls in short windows; resize account buttons and stack them in narrow panels.
-- Add actual renderer resize coverage down to 40×12 and an SDK logging regression without account traffic.
-
-### Account and narrow-pane polish
-
-- Preserve the default account's explicit CDP URL override and prevent late session results from updating another account's UI state.
-- Highlight keyboard account selection, allow its list to shrink with the terminal and compact composer controls inside narrow split panes.
-- Use the shared role gutter in inactive panes, track theme changes and preserve manual reading position across tab switches.
-- Keep shared account/filter/file/project forms compact and centered, with charcoal surfaces and visible checked/selected states instead of toolkit default blue/white dialogs.
-- Reconcile README setup, provider/data ownership, concurrency and remaining verification boundaries.
-
-### Independent tab activity
-
-- Keep request status, cancellation connections and elapsed time per tab; completing one request no longer clears another tab's activity.
-- Allow up to four pending tab requests, with per-account provider serialization and independent account instances. Preserve the captured provider callback across account switches.
-- Scope thought stream identities to each turn and keep the active message list connected after tab restoration.
-- Allow multiline draft editing while a reply is pending. Test overlapping controlled streams, tab switches, cancellation ownership and repeated reasoning turns.
-
-### Project creation
-
-- Add capability-gated project creation, sidebar button, `/project-new` and Alt+P with name, privacy and memory fields.
-- Drive the native ChatGPT form and read back the new project/memory; fail unsupported sharing before submitting rather than silently creating private.
-- Record the Notebook/Gemini Notebook research boundary: automatic notebook synchronization is not implemented or claimed. Native creation/sharing still needs live-account verification.
-
-### Shared command catalog
-
-- Replace the duplicated built-in palette list with canonical keyboard action handlers, shared readable titles and category ordering in Settings.
-- Expose running terminal actions through the extension ActionService and withdraw them on close; deduplicate palette entries.
-- Add configurable Alt+M/Alt+E model/thinking pickers.
-
-### Account-aware terminal
-
-- Wire the terminal to account-scoped ChatGPT/Gemini providers, with account creation/selection, separate profiles/session files/cache identities and local logout.
-- Add mixed-provider conversation icons and a multi-select sidebar filter that stays hidden for a single configured provider; retain per-account pagination.
-- Add shared keyboard/mouse forms and a file attachment button/path picker; carry actual uploaded document/image metadata or Gemini file paths into sends.
-- Guard model catalog updates by account and snapshot send callbacks before a tab switch. Live browser/account/file compatibility remains a separate verification step.
-
-### Gemini provider
-
-- Add the independent Gemini web-session adapter with dynamic account models, history, streamed thought/answer separation, temporary contexts and file inputs.
-- Map standard/extended thinking to the transport flag and validate provider/account origin on every send.
-- Add gemini-webapi for Python 3.11+; keep ChatGPT usable on Python 3.10. Google live account flows are not exercised by offline tests.
-
-### Split conversation views
-
-- Add the layout extension’s real side-by-side/stacked pane renderer, up to four panes, pane focus and grouped tab labels.
-- Add a Split button, sidebar selection step, `/split`, `/split-down`, `/unsplit` and configurable Alt+V/H/U actions.
-- Keep layouts optional and preserve conversations when the extension is disabled.
-
-### Terminal input and settings
-
-- Distinguish Shift+Enter sequences from ordinary Enter, with Alt+Enter/Ctrl+J fallbacks and configurable bindings.
-- Give settings a full-height scrollable list, aligned values and an integrated editor; support wheel and page navigation.
-- Cap all tab widths and pin previous/next/new controls at the right edge.
-
-### Clean development baseline
-
-- Start SiopeChat history from the current modular Python application. No numbered releases or tags yet; subsequent features receive separate commits.
-- Keep independent provider contracts, ChatGPT web-session transport, dynamic model/effort discovery, project reads, temporary chats and read-back guarded project-membership writes.
-- Include tabbed terminal conversations, a collapsible project/chat sidebar, categorized settings/accounts, keyboard commands, clipboard editing and role-aware Markdown rendering.
-- Keep settings/actions/runtime/extension modules directly under src, with bundled layout extensions and themes outside src. Reuse existing Python environments and shared Windows/macOS/Linux launchers.
-- Preserve vendored container/event origins and licenses. Exclude sessions, local data, environments and agent memory from Git.
-- Offline baseline: 170 Python tests and 8 Node tests; live ChatGPT project mutations, real split panes, Gemini, multi-account UI and NotebookLM remain unverified or unimplemented at this point.
-
-### Preference correction
-
-- Preserve provider-default effort across catalog refreshes, new tabs and restarts.
+- Keep credentials out of configuration and isolate account caches and browser profiles.
+- Restrict browser helpers to local debugging endpoints and the expected provider origin.
+- Avoid local conversation snapshots for temporary chats and reject unsupported temporary transport fallbacks.
+- Fail unsupported public project creation before submission and validate native project writes by reading them back.
+- Preserve third-party copyright notices and treat local Python themes/extensions as trusted executable code.
