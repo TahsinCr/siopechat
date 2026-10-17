@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Independent tab activity
+
+- Keep request status, cancellation connections and elapsed time per tab; completing one request no longer clears another tab's activity.
+- Allow up to four pending tab requests, with per-account provider serialization and independent account instances. Preserve the captured provider callback across account switches.
+- Scope thought stream identities to each turn and keep the active message list connected after tab restoration.
+- Allow multiline draft editing while a reply is pending. Test overlapping controlled streams, tab switches, cancellation ownership and repeated reasoning turns.
+
 ### Project creation
 
 - Add capability-gated project creation, sidebar button, `/project-new` and Alt+P with name, privacy and memory fields.

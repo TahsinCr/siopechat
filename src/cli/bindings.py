@@ -115,7 +115,7 @@ def key_bindings(view) -> KeyBindings:
                 view.submit_prompt()
 
     def newline(event: Any) -> None:
-        if event.app.layout.current_control is view.input.control and not view.busy:
+        if event.app.layout.current_control is view.input.control:
             view.input.buffer.insert_text("\n")
 
     def paste(_event: Any) -> None:
@@ -131,7 +131,7 @@ def key_bindings(view) -> KeyBindings:
             view.sidebar_search.control,
         ):
             control.buffer.reset()
-        elif view.busy:
+        elif view.active_busy():
             view.status = "Stopping response…"
             connection = view.cancel_connection
             if connection is not None:

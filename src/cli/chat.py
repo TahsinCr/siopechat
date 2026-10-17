@@ -539,7 +539,7 @@ class ChatView:
             "project": self.current_project,
             "temporary": self.temporary,
             "pending_attachments": self.pending_attachments,
-            "busy": self.busy and self.busy_tab_index == getattr(self, "active_tab", None),
+            "busy": self.active_busy(),
             "completed_pending": False,
         }
 
@@ -2016,11 +2016,28 @@ class ChatView:
         self.app.layout.focus(self.input)
         self.app.invalidate()
 
+    def active_busy(self) -> bool:
+        tabs = getattr(self, "tabs", [])
+        index = getattr(self, "active_tab", 0)
+        return bool(
+            (tabs and tabs[index].get("busy")) or (self.busy and self.busy_tab_index == index)
+        )
+
+    def _sync_activity(self) -> None:
+        running = [i for i, tab in enumerate(self.tabs) if tab.get("busy")]
+        self.busy = bool(running)
+        self.busy_tab_index = (
+            self.active_tab if self.active_tab in running else running[0] if running else None
+        )
+        tab = self.tabs[self.active_tab]
+        self.active_started = tab.get("started") if tab.get("busy") else None
+        self.cancel_connection = tab.get("connection") if tab.get("busy") else None
+
     def _save_active_tab(self) -> None:
         previous = self.tabs[self.active_tab]
         state = self._new_tab_state()
         state["tab_id"] = previous.get("tab_id") or uuid.uuid4().hex
-        self.tabs[self.active_tab] = state
+        previous.update(state)
 
     def new_tab(self) -> None:
         self.close_overlays()
@@ -2072,7 +2089,7 @@ class ChatView:
         )
         self.conversation_id = tab["conversation_id"]
         self.title = tab["title"]
-        self.messages = list(tab["messages"])
+        self.messages = tab["messages"]
         self.model = tab["model"]
         self.effort = tab.get("effort")
         self.last_response_model = tab.get("response_model")
@@ -2080,6 +2097,7 @@ class ChatView:
         self.input.text = tab.get("draft", "")
         self.current_project = dict(tab.get("project") or {})
         self.pending_attachments = list(tab.get("pending_attachments") or [])
+        self._sync_activity()
         completed_pending = bool(tab.get("completed_pending"))
         tab["completed_pending"] = False
         if self.set_active_conversation is not None:
@@ -2420,8 +2438,8 @@ class ChatView:
             self.status = "A background operation is active · draft kept"
             self.app.invalidate()
             return
-        if self.busy:
-            self.status = "Yanıt sürüyor · taslak korundu; açık sekmelere geçebilirsiniz"
+        if self.active_busy() or sum(bool(tab.get("busy")) for tab in self.tabs) >= 4:
+            self.status = "Bu sohbetin yanıtını bekleyin · aynı anda en fazla 4 bekleyen istek"
             self.app.invalidate()
             return
         prompt = self.input.text.strip()
@@ -2447,6 +2465,8 @@ class ChatView:
         self.tabs[self.active_tab]["busy"] = True
         self.tabs[self.active_tab]["completed_pending"] = False
         self.active_started = time.monotonic()
+        self.tabs[self.active_tab]["started"] = self.active_started
+        self.tabs[self.active_tab]["connection"] = None
         self.last_elapsed = None
         self.status = "Preparing secure request…"
         self.scroll_bottom()
@@ -2791,8 +2811,8 @@ class ChatView:
     def open_resume(self) -> None:
         if self.palette_visible:
             self.close_overlays()
-        if self.busy or self.background_jobs:
-            self.status = "Active work is using the compatibility daemon; finish it before loading another chat"
+        if self.active_busy() or self.background_jobs or (self.busy and not self.account_service):
+            self.status = "Bu sohbetin işlemi tamamlanınca başka bir sohbet yükleyin"
             self.app.invalidate()
             return
         if self.loading_conversation or self.resume_visible:
@@ -2868,13 +2888,6 @@ class ChatView:
         self.resume_conversation(conversation_id)
 
     def resume_conversation(self, conversation_id: str) -> None:
-        if self.account_service:
-            context, _ = origin(conversation_id, self.account_key)
-            if context != self.account_key:
-                self.bind_account(context)
-                self.catalog = ModelCatalog(FeatureState.UNKNOWN)
-                self.model, self.effort = "", None
-                self.refresh_provider_catalog()
         if self.temporary:
             count = len(self.tabs)
             self.new_tab()
@@ -2884,10 +2897,17 @@ class ChatView:
             self.status = "Yükleme tamamlanınca başka bir sohbet açabilirsiniz"
             self.app.invalidate()
             return
-        if self.busy or self.background_jobs:
-            self.status = "Active work is using the compatibility daemon; finish it before loading another chat"
+        if self.active_busy() or self.background_jobs or (self.busy and not self.account_service):
+            self.status = "Bu sohbetin işlemi tamamlanınca başka bir sohbet yükleyin"
             self.app.invalidate()
             return
+        if self.account_service:
+            context, _ = origin(conversation_id, self.account_key)
+            if context != self.account_key:
+                self.bind_account(context)
+                self.catalog = ModelCatalog(FeatureState.UNKNOWN)
+                self.model, self.effort = "", None
+                self.refresh_provider_catalog()
         target_tab = self.active_tab
         self.loading_conversation = True
         self.loading_started = time.monotonic()
@@ -2895,9 +2915,11 @@ class ChatView:
         self.app.layout.focus(self.input)
         self.app.invalidate()
 
+        load_callback = self.load_conversation
+
         def load_selected() -> None:
             try:
-                conversation = self.load_conversation(conversation_id)
+                conversation = load_callback(conversation_id)
                 messages = []
                 for message in conversation.get("messages", []):
                     visible = visible_chat_message(message)
@@ -2968,6 +2990,8 @@ class ChatView:
         send_callback=None,
     ) -> None:
         rendered = ""
+        stream_id = uuid.uuid4().hex
+        started = self.tabs[tab_index].get("started", self.active_started)
         final_message_id = None
         elapsed = None
         final_status = "Ready"
@@ -2976,7 +3000,9 @@ class ChatView:
         resolved_model: str | None = None
 
         def register_connection(connection: Any) -> None:
-            self.cancel_connection = connection
+            self.tabs[tab_index]["connection"] = connection
+            if tab_index == self.active_tab:
+                self.cancel_connection = connection
 
         def on_event(event: dict[str, Any]) -> None:
             nonlocal rendered, final_message_id
@@ -2985,7 +3011,7 @@ class ChatView:
                 text = event.get("text")
                 if not isinstance(text, str):
                     return
-                identity = event.get("message_id") or "reasoning"
+                identity = stream_id + ":" + str(event.get("message_id") or "reasoning")
                 with self.lock:
                     item = next(
                         (item for item in messages if item.get("stream_id") == identity), None
@@ -3084,8 +3110,8 @@ class ChatView:
             if tab_index < len(self.tabs):
                 self.tabs[tab_index]["pending_attachments"] = list(attachments)
         finally:
-            if self.active_started is not None:
-                elapsed = time.monotonic() - self.active_started
+            if started is not None:
+                elapsed = time.monotonic() - started
 
             def finish_turn() -> None:
                 if tab_index >= len(self.tabs):
@@ -3100,10 +3126,9 @@ class ChatView:
                 tab["effort"] = effort
                 tab["busy"] = False
                 tab["completed_pending"] = tab_index != self.active_tab
-                self.busy = False
-                self.busy_tab_index = None
-                self.active_started = None
-                self.cancel_connection = None
+                tab["started"] = None
+                tab["connection"] = None
+                self._sync_activity()
                 if tab_index == self.active_tab:
                     self.conversation_id = resolved_id
                     self.title = tab["title"]

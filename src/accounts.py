@@ -327,6 +327,7 @@ class Accounts:
             tuple(attachments),
         )
         provider = self.provider(key)
+        stream_id = uuid.uuid4().hex
 
         async def consume():
             remote_id, text, reasoning = remote, "", ""
@@ -339,6 +340,7 @@ class Accounts:
                             "type": "delta" if isinstance(event, TextDelta) else "replace",
                             "text": event.text,
                             "channel": event.channel,
+                            "message_id": stream_id + ":" + (event.channel or "final"),
                         }
                     )
                     if event.channel == "analysis":

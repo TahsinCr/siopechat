@@ -111,7 +111,7 @@ The full-screen terminal keeps the whole conversation in its transcript view and
 
 The sidebar groups project-linked chats under **Projeler**, unassigned chats under **Sohbetler**, and saved layout-extension workspaces under **Düzenler**. `Ctrl+G` opens the sidebar and focuses its tree; use `Up`/`Down` and `Enter` to open a chat or expand/collapse a section. `Space` toggles the focused project/section, `Ctrl+F` focuses search, and `F7` hides or shows the sidebar. Search covers loaded chats. The first history page contains at most 50 chats; **Daha eski sohbetleri yükle…** fetches another page on demand. Refresh reloads the first page. `Ctrl+R` opens the same recent-chat list; `Enter` opens the selected conversation in a tab. `/resume ID` opens a known conversation directly.
 
-Tabs support new (`Ctrl+T`), switch (`Alt+Left`/`Alt+Right`), and close (`Ctrl+W`). Switching to an already open tab works while a reply streams; `●` marks an active reply and `✓` marks a reply finished in another tab. The compatibility daemon accepts one provider operation at a time, so loading a new chat or sending another prompt waits until the active operation finishes. It does not yet run concurrent provider requests across tabs.
+Tabs support new (`Ctrl+T`), switch (`Alt+Left`/`Alt+Right`), and close (`Ctrl+W`). Switching to an already open tab works while a reply streams; `●` marks an active reply and `✓` marks a reply finished in another tab. Up to four tabs can have pending requests. Each tab retains its own stream, cancellation connection and elapsed time. Account-scoped adapters serialize operations within one account; different account instances can progress independently. The legacy management daemon still serializes its own operations.
 
 Projects come from the account's web project list, including shared projects. Expand a project with Enter/Space to load one conversation page; **Daha fazla sohbet…** and **Daha fazla proje…** load subsequent pages. F9 or `/project info` opens instructions and resource metadata in a separate read-only tab, preserving the chat. Project files are listed without downloading their contents. F10 or `/refresh` refreshes models, projects and recent chats. Loading and errors are independent, and a failed refresh retains the last good data. Older conversation snapshots refresh once to recover missing project metadata.
 
@@ -154,7 +154,7 @@ Shift+Enter inserts a newline with CSI-u and xterm modified-Enter sequences. Alt
 
 ### Split conversations
 
-With the layout extension enabled, click **Böl** beside Send or run `/split` (Alt+V) / `/split-down` (Alt+H), then select another conversation from the sidebar. Up to four panes form one tab group. Click a pane header to type into it; other panes keep their own scroll positions. `/unsplit` (Alt+U) returns to one pane. Disabling the extension removes its presentation without deleting conversations. The compatibility ChatGPT daemon still serializes remote operations.
+With the layout extension enabled, click **Böl** beside Send or run `/split` (Alt+V) / `/split-down` (Alt+H), then select another conversation from the sidebar. Up to four panes form one tab group. Click a pane header to type into it; other panes keep their own scroll positions. `/unsplit` (Alt+U) returns to one pane. Disabling the extension removes its presentation without deleting conversations. Account adapters queue operations within one account; separate accounts can progress independently.
 
 ### Gemini transport
 

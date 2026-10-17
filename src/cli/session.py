@@ -124,7 +124,7 @@ class SessionDialog:
             self.view.app.invalidate()
 
     def choose_account(self, key):
-        if self.loading or self.view.busy or self.view.background_jobs:
+        if self.loading or self.view.background_jobs:
             return
         self.view.select_account(key)
         self.confirm_logout = False

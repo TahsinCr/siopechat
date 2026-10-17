@@ -3,6 +3,8 @@
 import asyncio
 import json
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -122,6 +124,74 @@ class WorkspaceTests(unittest.TestCase):
             v.run_send("Q", [], 0, v.messages, None, "model", None)
             self.assertEqual([m["role"] for m in v.messages], ["user", "reasoning", "assistant"])
             self.assertEqual(v.messages[-1]["text"], "Answer")
+
+    def test_reasoning_identity_is_scoped_to_each_turn(self):
+        def send(*args, **kw):
+            args[3]({"type": "delta", "channel": "analysis", "text": "Summary"})
+            args[3]({"type": "replace", "text": "Answer"})
+            return {}
+
+        with terminal() as (v, _):
+            for _ in range(2):
+                v.messages.extend(
+                    [{"role": "user", "text": "Q"}, {"role": "assistant", "text": ""}]
+                )
+                v.run_send("Q", [], 0, v.messages, None, "model", None, send_callback=send)
+            thoughts = [m for m in v.messages if m["role"] == "reasoning"]
+            self.assertEqual([m["text"] for m in thoughts], ["Summary", "Summary"])
+            self.assertNotEqual(thoughts[0]["stream_id"], thoughts[1]["stream_id"])
+
+    def test_background_streams_keep_tab_state_and_cancellation_separate(self):
+        gates = [threading.Event(), threading.Event()]
+        started = [threading.Event(), threading.Event()]
+        connections = [Mock(), Mock()]
+
+        def sender(index):
+            def send(*args, **kw):
+                args[4](connections[index])
+                started[index].set()
+                if not gates[index].wait(2):
+                    raise TimeoutError("test gate")
+                args[3]({"type": "replace", "channel": "analysis", "text": f"Thought {index}"})
+                args[3]({"type": "replace", "text": f"Answer {index}"})
+                return {"conversation_id": f"chat-{index}"}
+
+            return send
+
+        with terminal() as (v, _):
+            try:
+                for index in range(2):
+                    v.send_prompt = sender(index)
+                    v.input.text = f"Question {index}"
+                    v.submit_prompt()
+                    self.assertTrue(started[index].wait(1))
+                    if index == 0:
+                        v.new_tab()
+                v.switch_tab(-1)
+                self.assertIs(v.cancel_connection, connections[0])
+                self.assertTrue(v.active_busy())
+                # Finish one request while the other remains active.
+                gates[0].set()
+                deadline = time.monotonic() + 1
+                while v.tabs[0].get("busy") and time.monotonic() < deadline:
+                    time.sleep(0.005)
+                self.assertFalse(v.tabs[0]["busy"])
+                self.assertTrue(v.tabs[1]["busy"])
+                self.assertTrue(v.busy)
+                self.assertIsNone(v.cancel_connection)
+                self.assertEqual(v.messages[-1]["text"], "Answer 0")
+                v.switch_tab(1)
+                self.assertIs(v.cancel_connection, connections[1])
+                self.assertEqual(v.messages[0]["text"], "Question 1")
+            finally:
+                for gate in gates:
+                    gate.set()
+                deadline = time.monotonic() + 1
+                while v.busy and time.monotonic() < deadline:
+                    time.sleep(0.005)
+            self.assertFalse(v.busy)
+            self.assertEqual(v.messages[-1]["text"], "Answer 1")
+            self.assertEqual(v.tabs[0]["messages"][-1]["text"], "Answer 0")
 
     def test_closed_temporary_tab_forgets_remote_context_locally(self):
         forgotten = Mock(return_value={"forgotten": True})
