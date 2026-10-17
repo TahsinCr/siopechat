@@ -7,14 +7,13 @@ from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import DynamicContainer, HSplit, ScrollablePane, VSplit, Window
 from prompt_toolkit.layout.containers import ConditionalContainer
-from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import D
 from prompt_toolkit.layout.margins import ScrollbarMargin
 from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Button, TextArea
 
 from .actions import action_order, action_title
-from .widgets import SelectionWindow, fit_text, on_click
+from .widgets import BoundedTextControl, SelectionWindow, fit_text, on_click
 
 
 def SettingsPanel(api):
@@ -43,7 +42,7 @@ class SettingsDialog:
             ("keybindings", "Kısayollar"),
         ]
         self.category_index = 0
-        self.category_control = FormattedTextControl(
+        self.category_control = BoundedTextControl(
             self.render_categories,
             focusable=True,
             get_cursor_position=lambda: Point(0, 0 if self.compact() else self.category_index * 2),
@@ -53,7 +52,7 @@ class SettingsDialog:
         )
         self.search.control.focus_on_click = Condition(lambda: True)
         self.search.buffer.on_text_changed += lambda _: self.filter()
-        self.control = FormattedTextControl(
+        self.control = BoundedTextControl(
             self.render_rows, focusable=True, get_cursor_position=lambda: Point(0, self.index)
         )
         self.window = SelectionWindow(
@@ -114,16 +113,14 @@ class SettingsDialog:
                 Window(height=1, char="─", style="class:separator"),
                 self.window,
                 Window(height=1, char="─", style="class:separator"),
-                Window(height=2, content=FormattedTextControl(self.render_detail)),
+                Window(height=2, content=BoundedTextControl(self.render_detail)),
                 ConditionalContainer(
                     self.editor,
                     filter=Condition(
                         lambda: self.current is not None and type(self.current["value"]) is not bool
                     ),
                 ),
-                Window(
-                    height=1, wrap_lines=False, content=FormattedTextControl(self.render_choices)
-                ),
+                Window(height=1, wrap_lines=False, content=BoundedTextControl(self.render_choices)),
             ],
             modal=False,
             key_bindings=self.keys,
@@ -167,9 +164,7 @@ class SettingsDialog:
                 Window(height=1, char="─", style="class:separator"),
                 VSplit(
                     [
-                        Window(
-                            content=FormattedTextControl(lambda: self.message), width=D(weight=1)
-                        ),
+                        Window(content=BoundedTextControl(lambda: self.message), width=D(weight=1)),
                         ConditionalContainer(
                             self.save_button, filter=Condition(lambda: self.category != "accounts")
                         ),

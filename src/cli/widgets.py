@@ -5,11 +5,26 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.data_structures import Point
 from prompt_toolkit.layout import Window
+from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.margins import Margin
 from prompt_toolkit.layout.processors import Processor, Transformation
 from prompt_toolkit.mouse_events import MouseButton, MouseEventType
 from prompt_toolkit.utils import get_cwidth
+
+
+class BoundedTextControl(FormattedTextControl):
+    """Clamp a dynamic cursor against the exact content snapshot being rendered."""
+
+    def create_content(self, width, height):
+        content = super().create_content(width, height)
+        cursor = content.cursor_position
+        if cursor is not None and content.line_count:
+            y = min(max(0, cursor.y), content.line_count - 1)
+            length = sum(len(part[1]) for part in content.get_line(y))
+            content.cursor_position = Point(min(max(0, cursor.x), length), y)
+        return content
 
 
 def fit_text(text: str, width: int) -> str:

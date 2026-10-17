@@ -19,7 +19,6 @@ from prompt_toolkit.data_structures import Point
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import ANSI, FormattedText
 from prompt_toolkit.layout import Layout, Window
-from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import D
 from prompt_toolkit.layout.margins import ConditionalMargin, ScrollbarMargin
 from prompt_toolkit.styles import Style
@@ -46,6 +45,7 @@ from .session import SessionDialog
 from .settings import SettingsDialog
 from .styles import DEFAULT_TERMINAL_STYLE, terminal_style
 from .widgets import (
+    BoundedTextControl,
     ComposerPlaceholderProcessor,
     SlashCommandCompleter,
     TranscriptWindow,
@@ -230,7 +230,7 @@ class ChatView:
         self.tabs: list[dict[str, Any]] = [dict(self._new_tab_state(), tab_id=uuid.uuid4().hex)]
         self.active_tab = 0
 
-        self.transcript_control = FormattedTextControl(
+        self.transcript_control = BoundedTextControl(
             text=self.render_formatted_transcript,
             focusable=True,
             get_cursor_position=self.transcript_cursor_position,
@@ -270,7 +270,7 @@ class ChatView:
         self.resume_search.buffer.on_text_changed += lambda _buffer: self.filter_resume()
         self.sidebar_search = TextArea(height=1, prompt=" Ara ", style="class:sidebar.search")
         self.sidebar_search.buffer.on_text_changed += lambda _buffer: self.filter_sidebar()
-        self.sidebar_control = FormattedTextControl(
+        self.sidebar_control = BoundedTextControl(
             text=self.render_sidebar,
             focusable=True,
             get_cursor_position=lambda: Point(x=0, y=self.sidebar_index),
@@ -280,7 +280,7 @@ class ChatView:
         )
         self.palette_search = TextArea(height=1, prompt="⌕ ", style="class:palette.search")
         self.palette_search.buffer.on_text_changed += lambda _buffer: self.filter_palette()
-        self.palette_control = FormattedTextControl(
+        self.palette_control = BoundedTextControl(
             text=self.render_palette,
             focusable=True,
             get_cursor_position=lambda: Point(x=0, y=self.palette_index),
@@ -288,7 +288,7 @@ class ChatView:
         self.palette_window = Window(
             content=self.palette_control, wrap_lines=False, always_hide_cursor=True
         )
-        self.resume_list_control = FormattedTextControl(
+        self.resume_list_control = BoundedTextControl(
             text=self.render_resume_list,
             focusable=True,
             get_cursor_position=lambda: Point(x=0, y=self.resume_index),
@@ -832,6 +832,7 @@ class ChatView:
                 "detail": "Sohbeti taşı / yeni sohbete bağla",
             }
             for project_id, item in self.project_items.items()
+            if origin(project_id, self.account_key)[0] == self.account_key
         ]
         self.palette_items.append(
             {"id": "command.temporary", "title": "Yeni geçici sohbet", "detail": "Yerel kayıt yok"}
@@ -1279,8 +1280,11 @@ class ChatView:
         projects: dict[str, list[dict[str, Any]]] = {
             key: []
             for key, project in self.project_items.items()
-            if self.provider_filter is None
-            or project.get("provider_id", origin(key)[0].split("/")[0]) in self.provider_filter
+            if origin(key, self.account_key)[0] == self.account_key
+            and (
+                self.provider_filter is None
+                or project.get("provider_id", origin(key)[0].split("/")[0]) in self.provider_filter
+            )
         }
         unassigned: list[dict[str, Any]] = []
         for item in conversations:
@@ -1289,7 +1293,8 @@ class ChatView:
             if isinstance(project, dict):
                 project_id = project.get("id") or project_id
             if isinstance(project_id, str) and project_id:
-                projects.setdefault(project_id, []).append(item)
+                if origin(project_id, self.account_key)[0] == self.account_key:
+                    projects.setdefault(project_id, []).append(item)
             else:
                 unassigned.append(item)
 
@@ -1434,6 +1439,7 @@ class ChatView:
                 if not (row["kind"] == "section" and row.get("id") == "projects")
             ]
         self.sidebar_rows = rows
+        self.sidebar_index = min(max(0, self.sidebar_index), max(0, len(rows) - 1))
         self.sidebar_index = min(self.sidebar_index, max(0, len(rows) - 1))
 
     @staticmethod

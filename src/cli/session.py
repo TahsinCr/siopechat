@@ -5,12 +5,11 @@ from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import DynamicContainer, HSplit, VSplit, Window
 from prompt_toolkit.layout.containers import ConditionalContainer
-from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import D
 from prompt_toolkit.layout.margins import ScrollbarMargin
 from prompt_toolkit.widgets import Button, Frame
 
-from .widgets import on_click
+from .widgets import BoundedTextControl, on_click
 
 
 class SessionDialog:
@@ -21,7 +20,7 @@ class SessionDialog:
         self.confirm_logout = False
         self.message = ""
         self.account_index = 0
-        self.account_control = FormattedTextControl(
+        self.account_control = BoundedTextControl(
             self.render_accounts,
             focusable=True,
             get_cursor_position=lambda: Point(0, self.account_index),
@@ -80,17 +79,17 @@ class SessionDialog:
                         filter=Condition(lambda: self.view.account_service is not None),
                     ),
                     Window(
-                        height=2, content=FormattedTextControl(self.render_state), wrap_lines=True
+                        height=2, content=BoundedTextControl(self.render_state), wrap_lines=True
                     ),
                     Window(
                         height=D(min=1, preferred=4, max=4),
-                        content=FormattedTextControl(self.render_help),
+                        content=BoundedTextControl(self.render_help),
                         wrap_lines=True,
                     ),
                     DynamicContainer(self.action_layout),
                     Window(
                         height=D(min=1, preferred=2, max=3),
-                        content=FormattedTextControl(lambda: self.message),
+                        content=BoundedTextControl(lambda: self.message),
                         wrap_lines=True,
                     ),
                 ],

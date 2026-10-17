@@ -3,11 +3,10 @@
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.layout import DynamicContainer, HSplit, VSplit, Window
-from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.margins import ScrollbarMargin
 
 from cli.markdown import MessageRenderer
-from cli.widgets import TranscriptGutter, TranscriptWindow, fit_text, on_click
+from cli.widgets import BoundedTextControl, TranscriptGutter, TranscriptWindow, fit_text, on_click
 
 
 class SplitLayout:
@@ -137,8 +136,8 @@ class _Pane:
         self.follow = True
         self.messages = []
         self.message_ranges = []
-        self.header = FormattedTextControl(self.render_header)
-        self.control = FormattedTextControl(self.render, get_cursor_position=self.cursor)
+        self.header = BoundedTextControl(self.render_header)
+        self.control = BoundedTextControl(self.render, get_cursor_position=self.cursor)
         self.body = TranscriptWindow(
             content=self.control,
             wrap_lines=True,

@@ -41,7 +41,7 @@ This project uses unofficial web-session transports. It requires your own provid
 ## Working with conversations
 
 - **Tabs:** keep drafts, scroll positions and conversation state separate. Active replies and replies completed in another tab have distinct indicators.
-- **Sidebar:** search loaded chats, expand projects and load older pages when needed. ChatGPT uses a white rosette (`❋`); Gemini uses a light-blue star (`✦`). Chat titles use the same text color. Open conversations are bold white in the sidebar and tab labels are pure white. Projects display their names rather than qualified internal IDs. ChatGPT and Gemini conversations have provider icons; a multi-select filter appears when multiple providers are configured.
+- **Sidebar:** search loaded chats, expand projects and load older pages when needed. ChatGPT uses a white rosette (`❋`); Gemini uses a light-blue star (`✦`). Chat titles use the same text color. Open conversations are bold white in the sidebar and tab labels are pure white. Projects display their names rather than qualified internal IDs. The project tree and project picker follow the current model account: ChatGPT projects for GPT, Gemini notebooks for Gemini. ChatGPT and Gemini conversations have provider icons; a multi-select filter appears when multiple providers are configured.
 - **Models and effort:** a new chat lists models from the selected account of each enabled provider. Choosing a model routes that draft to its provider/account; an existing chat remains tied to its original account. Lists come from the accounts, rather than a hardcoded version list. The last model and effort selection is remembered per account and reused in new chats, including an explicit provider-default effort choice. An obsolete choice falls back to an available model.
 - **Projects:** ChatGPT project chats, instructions and resource metadata are available in the sidebar. `/project` moves the current chat or assigns a new draft; **Unassigned** removes membership. `/project-new` opens the creation form.
 - **Files:** use the attachment command or button to choose a file. This client limits each file to 20 MiB; provider restrictions still apply.
@@ -67,7 +67,7 @@ Up to four tabs can have pending requests. Operations within one account are que
 | `F10` | Refresh provider data |
 | `Ctrl+D` / `Ctrl+Q` | Exit; repeat within three seconds if a draft or reply is open |
 
-Shift+Enter adds a line when the terminal sends a distinct modified-Enter sequence. Alt+Enter and Ctrl+J are alternatives. The composer grows before scrolling. Ctrl+A/C/X/V select, copy, cut and paste; selecting a message lets you copy its original text. In search and settings editors, Ctrl+D retains its text-editing meaning.
+Shift+Enter adds a line when the terminal sends a distinct modified-Enter sequence. Alt+Enter and Ctrl+J are alternatives. Dynamic text controls bound their cursor to the exact rendered snapshot, including after long-history reloads, provider filtering and resize. The composer grows before scrolling. Ctrl+A/C/X/V select, copy, cut and paste; selecting a message lets you copy its original text. In search and settings editors, Ctrl+D retains its text-editing meaning.
 
 Every default shortcut is listed under `keybindings` in `config.json` and can be edited in Settings. The palette uses the same action IDs as keyboard bindings and extensions. Extension actions can declare fields so the palette asks for their arguments.
 

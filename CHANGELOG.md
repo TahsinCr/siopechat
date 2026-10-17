@@ -49,6 +49,9 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Fixed
 
+- Wrapped terminal controls crashing with an out-of-range cursor after content shrinks or project lists change.
+- Project trees and pickers mixing ChatGPT projects with Gemini notebooks after changing model accounts.
+
 - Revalidate the restored active conversation at startup without clearing its visible history or draft.
 
 - Reopening a saved chat waiting for the entire remote history before displaying it.
