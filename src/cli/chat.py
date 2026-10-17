@@ -2974,7 +2974,7 @@ class ChatView:
         self.tabs[self.active_tab]["started"] = self.active_started
         self.tabs[self.active_tab]["connection"] = None
         self.last_elapsed = None
-        self.status = "Preparing secure request…"
+        self.status = "Yanıt bekleniyor…"
         self.scroll_bottom()
         threading.Thread(
             target=self.run_send,

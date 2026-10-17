@@ -55,7 +55,12 @@ class GeminiTests(unittest.IsolatedAsyncioTestCase):
         self.client.init.side_effect = initialize
         provider = GeminiProvider(self.provider.cookie_file)
         try:
-            with patch.object(gemini_webapi, "GeminiClient", return_value=self.client):
+            with (
+                patch.object(gemini_webapi, "GeminiClient", return_value=self.client),
+                patch(
+                    "providers.gemini.transport.notebook_client_type", side_effect=lambda base: base
+                ),
+            ):
                 await provider.models()
             self.assertFalse(any(r["name"].startswith("gemini_webapi") for r in records))
             # Disabling is namespace scoped; it must not remove the caller's sink.

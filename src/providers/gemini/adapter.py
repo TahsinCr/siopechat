@@ -81,7 +81,9 @@ class GeminiProvider(OptionalFeatures):
                 from gemini_webapi.utils.logger import logger
 
                 logger.disable("gemini_webapi")
-            factory = GeminiClient
+            from .transport import notebook_client_type
+
+            factory = notebook_client_type(GeminiClient)
         client = factory(values["__Secure-1PSID"], values.get("__Secure-1PSIDTS"))
         try:
             await client.init(timeout=45, auto_close=False, auto_refresh=False, verbose=False)
@@ -93,13 +95,20 @@ class GeminiProvider(OptionalFeatures):
             raise AccountPaused(
                 "Gemini oturumu doğrulanamadı; bağlı tarayıcıdan tekrar doğrulayın"
             ) from None
+        status = getattr(client, "account_status", None)
+        if getattr(status, "name", None) == "UNAUTHENTICATED" or status == 1016:
+            await client.close()
+            raise AccountPaused(
+                "Gemini oturumu sona ermiş; misafir oturumunda gönderim yapılmadı. "
+                "Hesaplar → Bağlı tarayıcı ile giriş yapıp oturumu doğrulayın."
+            )
         self._client = client
         return client
 
     async def close(self):
-        if self._client is not None:
-            await self._client.close()
-            self._client = None
+        client, self._client = self._client, None
+        if client is not None:
+            await client.close()
 
     async def session_status(self):
         return SessionStatus(
@@ -232,7 +241,37 @@ class GeminiProvider(OptionalFeatures):
             raise FeatureUnavailable(Capability.PROJECTS)
         return await self.notebooks.chats(project_id, cursor)
 
+    stream_idle_timeout = 120
+    stream_total_timeout = 600
+
     async def stream(self, request: SendRequest):
+        iterator = self._stream(request)
+        deadline = asyncio.get_running_loop().time() + self.stream_total_timeout
+        try:
+            while True:
+                try:
+                    remaining = deadline - asyncio.get_running_loop().time()
+                    if remaining <= 0:
+                        raise ProviderError("Gemini isteği 10 dakikalık süre sınırını aştı")
+                    event = await asyncio.wait_for(
+                        anext(iterator), timeout=min(self.stream_idle_timeout, remaining)
+                    )
+                except StopAsyncIteration:
+                    break
+                except asyncio.TimeoutError:
+                    if asyncio.get_running_loop().time() >= deadline:
+                        raise ProviderError(
+                            "Gemini isteği 10 dakikalık süre sınırını aştı"
+                        ) from None
+                    raise ProviderError(
+                        "Gemini 120 saniye boyunca veri döndürmedi; istek durduruldu. "
+                        "Yeniden göndermeden önce bağlı tarayıcıdaki sohbeti kontrol edin."
+                    ) from None
+                yield event
+        finally:
+            await iterator.aclose()
+
+    async def _stream(self, request: SendRequest):
         if request.provider_id != self.id or request.account_id != self.account_id:
             raise ValueError("request belongs to another provider/account")
         from .notebooks import notebook_id
@@ -240,8 +279,21 @@ class GeminiProvider(OptionalFeatures):
         project = notebook_id(request.project_id) if request.project_id else None
         if request.effort not in (None, "", "standard", "extended"):
             raise ValueError("unsupported Gemini thinking option")
+        from contextlib import nullcontext
+
+        from .notebooks import field
+        from .transport import notebook_transport
+
         async with self._gate:
             client = await self._connect()
+            context = None
+            if project:
+                if self.notebooks is None:
+                    raise ProviderError("Gemini defteri için bağlı tarayıcı gerekli")
+                notebook = await self.notebooks.get(project)
+                context = field(field(notebook.metadata.get("native"), 1), 12)
+                if not isinstance(context, list) or not context or context[0] not in (1, 2):
+                    raise ProviderError("Gemini defter bağlamı okunamadı; verileri yenileyin")
             model = client.resolve_model(request.model) if request.model else None
             metadata = self._temporary.get(request.conversation_id) if request.temporary else None
             if request.temporary and request.conversation_id and metadata is None:
@@ -250,19 +302,21 @@ class GeminiProvider(OptionalFeatures):
                 metadata=metadata,
                 cid=request.conversation_id or "",
                 model=model,
-                **({"gem": project} if project else {}),
             )
             try:
-                async for chunk in chat.send_message_stream(
-                    request.prompt,
-                    files=[item["path"] for item in request.attachments],
-                    temporary=request.temporary,
-                    extended_thinking=request.effort == "extended",
-                ):
-                    if chunk.thoughts:
-                        yield ReplaceText(chunk.thoughts, "analysis")
-                    yield ReplaceText(chunk.text or "", "final")
+                with notebook_transport(client, project, context) if project else nullcontext():
+                    async for chunk in chat.send_message_stream(
+                        request.prompt,
+                        files=[item["path"] for item in request.attachments],
+                        temporary=request.temporary,
+                        extended_thinking=request.effort == "extended",
+                    ):
+                        if chunk.thoughts:
+                            yield ReplaceText(chunk.thoughts, "analysis")
+                        yield ReplaceText(chunk.text or "", "final")
             except asyncio.CancelledError:
+                raise
+            except ProviderError:
                 raise
             except Exception:
                 raise ProviderError(

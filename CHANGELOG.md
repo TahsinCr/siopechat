@@ -51,6 +51,12 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Fixed
 
+- Gemini notebook sends now include native notebook context settings alongside the notebook identity; an identity passed as a Gem alone did not establish notebook context.
+- Expired Gemini sessions silently falling back to an unauthenticated guest account and exposing an incomplete model catalog.
+- The send status remaining at “Preparing secure request” while waiting for provider output.
+- Unbounded Gemini stream waits: idle cancellation after 120 seconds and a 10-minute overall deadline, with explicit guidance before retrying.
+- Notebook transport compatibility now handles SDK endpoint enums, keeps context across reconnects, and restores request scope on cancellation or failure.
+
 - Valid Gemini notebook chats being rejected with `projects: unsupported` before sending.
 
 - Wrapped terminal controls crashing with an out-of-range cursor after content shrinks or project lists change.
