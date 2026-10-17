@@ -1550,9 +1550,8 @@ class ChatView:
                     selected = catalog.default_chat_model
                     tab["model"] = selected.id
                 if selected and tab.get("effort") not in {e.id for e in selected.efforts}:
-                    tab["effort"] = catalog.effort(
-                        selected.id, tab.get("effort_preference", self.effort_preference)
-                    )
+                    preferred = tab.get("effort_preference", self.effort_preference)
+                    tab["effort"] = catalog.effort(selected.id, preferred) if preferred else None
             if self.account_key != key:
                 self.app.invalidate()
                 return
@@ -1595,7 +1594,11 @@ class ChatView:
                     self.last_response_model = self.model
                 self.model = selected.id
         if selected and self.effort not in {choice.id for choice in selected.efforts}:
-            self.effort = self.catalog.effort(selected.id, self.effort_preference)
+            self.effort = (
+                self.catalog.effort(selected.id, self.effort_preference)
+                if self.effort_preference
+                else None
+            )
 
     def select_model(self, model_id: str) -> None:
         if self.tabs[self.active_tab].get("busy"):
@@ -1607,7 +1610,11 @@ class ChatView:
             self.status = "Bu model normal sohbet kataloğunda yok · F10 yenile · /model ile seçin"
         else:
             self.model = selected.id
-            self.effort = self.catalog.effort(selected.id, self.effort_preference)
+            self.effort = (
+                self.catalog.effort(selected.id, self.effort_preference)
+                if self.effort_preference
+                else None
+            )
             self.remember_selection()
             self._save_active_tab()
             self.status = f"Model: {selected.chat_title or selected.title} · efor: {self.effort or 'sağlayıcı varsayılanı'}"

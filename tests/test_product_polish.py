@@ -69,6 +69,22 @@ class ProductServicesTests(unittest.TestCase):
         finally:
             fresh.runtime.close()
 
+    def test_explicit_default_effort_remains_an_absent_override(self):
+        self.accounts.select(self.gemini)
+        self.accounts.remember(self.gemini, "flash", None)
+        catalog = ModelCatalog(
+            FeatureState.AVAILABLE,
+            (Model("flash", "Flash", (Choice("extended", "Extended"),), "extended"),),
+        )
+        self.accounts._catalogs[self.gemini] = (time.monotonic(), catalog)
+        with interaction.terminal(account_service=self.accounts) as (v, _):
+            v._read_in_background = immediate
+            self.assertIsNone(v.effort)
+            v.refresh_provider_catalog()
+            self.assertIsNone(v.effort)
+            v.new_tab()
+            self.assertIsNone(v.effort)
+
     def test_disabling_a_provider_does_not_relabel_its_open_conversation(self):
         self.accounts.select(self.gemini)
         self.accounts._catalogs[self.gemini] = (

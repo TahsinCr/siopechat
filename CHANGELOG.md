@@ -102,3 +102,7 @@
 - Keep settings/actions/runtime/extension modules directly under src, with bundled layout extensions and themes outside src. Reuse existing Python environments and shared Windows/macOS/Linux launchers.
 - Preserve vendored container/event origins and licenses. Exclude sessions, local data, environments and agent memory from Git.
 - Offline baseline: 170 Python tests and 8 Node tests; live ChatGPT project mutations, real split panes, Gemini, multi-account UI and NotebookLM remain unverified or unimplemented at this point.
+
+### Preference correction
+
+- Preserve provider-default effort across catalog refreshes, new tabs and restarts.

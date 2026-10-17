@@ -215,3 +215,5 @@ The last model/effort choice is saved per account. Settings lists providers with
 ### macOS Finder launcher
 
 Open siopechat.command in Finder, or run it from a terminal. It delegates to the same siopechat.sh/Python startup used on Linux.
+
+The provider-default effort option is remembered without sending an explicit effort override.
