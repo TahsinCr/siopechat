@@ -133,7 +133,7 @@ Provider-returned visible reasoning/summary content is kept separately from the 
 
 Status-only redraws reuse the rendered transcript, Markdown caches stay bounded, and authentication prefers the saved snapshot over re-capturing browser traffic. Authenticated HTTP calls are restricted to the provider origin; session snapshots and IPC messages have size limits. These controls do not remove provider usage limits or guarantee account restrictions cannot occur.
 
-Saved workspaces appear in **Düzenler** and invoke the layout extension. Restoring split layouts, completing localization/theme coverage of legacy transcript messages, archive synchronization, cross-provider transfer and Gemini/Claude adapters remain future work. `CHATGPT_WEB_MODEL`, `CHATGPT_WEB_CDP_URL` and `CHATGPT_WEB_SEND_MODE` remain compatibility settings. Persistent daemons with an older IPC protocol are replaced at startup before discovery commands are sent. Web endpoints are undocumented and can change independently of this application.
+Saved workspaces appear in **Düzenler** and invoke the layout extension. Completing localization/theme coverage of legacy transcript messages, archive synchronization, cross-provider transfer and Gemini/Claude adapters remain future work. `CHATGPT_WEB_MODEL`, `CHATGPT_WEB_CDP_URL` and `CHATGPT_WEB_SEND_MODE` remain compatibility settings. Persistent daemons with an older IPC protocol are replaced at startup before discovery commands are sent. Web endpoints are undocumented and can change independently of this application.
 
 ## Development
 
@@ -151,3 +151,7 @@ Tests use controlled providers, temporary databases and mocked transports. They 
 ### Terminal editing and settings navigation
 
 Shift+Enter inserts a newline with CSI-u and xterm modified-Enter sequences. Alt+Enter and Ctrl+J are fallbacks when a terminal sends Shift+Enter indistinguishably from Enter. Settings lists use the available page height, aligned value columns and a scrollbar; the wheel, arrows and PageUp/PageDown move the selection with its editor.
+
+### Split conversations
+
+With the layout extension enabled, click **Böl** beside Send or run `/split` (Alt+V) / `/split-down` (Alt+H), then select another conversation from the sidebar. Up to four panes form one tab group. Click a pane header to type into it; other panes keep their own scroll positions. `/unsplit` (Alt+U) returns to one pane. Disabling the extension removes its presentation without deleting conversations. The compatibility ChatGPT daemon still serializes remote operations.

@@ -373,6 +373,11 @@ def run_fullscreen(
         refresh_on_start=bool(cached_conversation and "project_id" not in cached_conversation),
         forget_temporary=forget_temporary,
         move_conversation=move_conversation,
+        layout_factory=lambda view: (
+            api.get("workspaces").create_layout(view)
+            if api.settings.extension("layout").get("enabled", True)
+            else None
+        ),
         settings_rows=lambda: asyncio.run(api.actions.invoke("settings.show")),
         change_setting=change_setting,
         load_preferences=preferences,

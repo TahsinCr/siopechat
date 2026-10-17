@@ -44,6 +44,9 @@ def on_click(callback):
 
 class SlashCommandCompleter(Completer):
     COMMANDS = (
+        ("/split", "split beside; choose a chat from the sidebar"),
+        ("/split-down", "split below; choose a chat from the sidebar"),
+        ("/unsplit", "return to a single chat pane"),
         ("/new", "start a new conversation"),
         ("/tab-next", "switch to the next tab"),
         ("/tab-prev", "switch to the previous tab"),

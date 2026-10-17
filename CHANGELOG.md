@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Split conversation views
+
+- Add the layout extension’s real side-by-side/stacked pane renderer, up to four panes, pane focus and grouped tab labels.
+- Add a Split button, sidebar selection step, `/split`, `/split-down`, `/unsplit` and configurable Alt+V/H/U actions.
+- Keep layouts optional and preserve conversations when the extension is disabled.
+
 ### Terminal input and settings
 
 - Distinguish Shift+Enter sequences from ordinary Enter, with Alt+Enter/Ctrl+J fallbacks and configurable bindings.

@@ -1,7 +1,7 @@
 """Terminal composition only; controls and actions belong to their components."""
 
 from prompt_toolkit.filters import Condition
-from prompt_toolkit.layout import Float, FloatContainer, HSplit, VSplit, Window
+from prompt_toolkit.layout import DynamicContainer, Float, FloatContainer, HSplit, VSplit, Window
 from prompt_toolkit.layout.containers import ConditionalContainer
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.margins import ScrollbarMargin
@@ -61,7 +61,13 @@ def workspace_layout(view):
                             Window(width=1, char="│", style="class:separator"),
                             filter=view.sidebar_visible_filter,
                         ),
-                        conversation,
+                        DynamicContainer(
+                            lambda: (
+                                view.layout_controller.container(conversation)
+                                if view.layout_controller
+                                else conversation
+                            )
+                        ),
                     ]
                 ),
                 filter=Condition(lambda: view.tab_kind != "settings"),

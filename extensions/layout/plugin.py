@@ -15,6 +15,12 @@ class Workspaces:
     def __init__(self, path: Path):
         self.path = path
 
+    @staticmethod
+    def create_layout(view):
+        from .panes import SplitLayout
+
+        return SplitLayout(view)
+
     async def execute(self, command: str, name=None, workspace_id=None, path=None):
         store = await WorkspaceStore.open(Path(path) if path else self.path)
         if command == "create":

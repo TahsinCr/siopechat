@@ -71,6 +71,7 @@ DEFAULT_TERMINAL_STYLE = {
     "settings.enabled": "bold #86d49b",
     "tabs.border": "bg:#202020 #42576a",
     "tab.running": "bg:#202020 #86d49b",
+    "pane.header": "bg:#272c31 #b7c8db",
     "settings.search": "bg:#292d32 #d8e3ee",
     "settings.editor": "bg:#30363d #ffffff",
     "settings.value": "#90b6d4",

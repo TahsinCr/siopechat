@@ -8,6 +8,7 @@ import os
 import shutil
 import threading
 import time
+import uuid
 from datetime import datetime
 from io import StringIO
 from typing import Any, Callable
@@ -99,6 +100,7 @@ class ChatView:
         list_history_page=None,
         forget_temporary=None,
         move_conversation=None,
+        layout_factory=None,
     ) -> None:
         from .widgets import register_modified_enter
 
@@ -206,7 +208,7 @@ class ChatView:
         self.palette_index = 0
         self.sidebar_visible_filter = Condition(lambda: self.sidebar_visible)
         self.palette_filter = Condition(lambda: self.palette_visible)
-        self.tabs: list[dict[str, Any]] = [self._new_tab_state()]
+        self.tabs: list[dict[str, Any]] = [dict(self._new_tab_state(), tab_id=uuid.uuid4().hex)]
         self.active_tab = 0
 
         self.transcript_control = FormattedTextControl(
@@ -279,6 +281,9 @@ class ChatView:
         )
         self.session_dialog = SessionDialog(self)
         self.settings_dialog = SettingsDialog(self)
+        self.layout_enabled = True
+        self.layout_factory = layout_factory
+        self.layout_controller = layout_factory(self) if layout_factory else None
         self.bindings = key_bindings(self)
         self.app: Application[Any] = Application(
             layout=Layout(workspace_layout(self), focused_element=self.input),
@@ -332,15 +337,31 @@ class ChatView:
         prefix = fit_text(" ☰ SiopeChat ", max(0, width - 9))
         fragments = [("class:brand", prefix, on_click(self.toggle_sidebar))]
         available = max(0, width - get_cwidth(prefix) - 9)
-        count = min(len(self.tabs), max(1, available // 12))
-        indices = sorted(
-            sorted(range(len(self.tabs)), key=lambda i: (abs(i - self.active_tab), i))[:count]
-        )
+        entries = list(range(len(self.tabs)))
+        group_titles = {}
+        if self.layout_controller and self.layout_enabled:
+            self.layout_controller.active_group()
+            for group in self.layout_controller.groups:
+                members = [
+                    i for i, tab in enumerate(self.tabs) if tab.get("tab_id") in group["tabs"]
+                ]
+                if len(members) < 2:
+                    continue
+                representative = self.active_tab if self.active_tab in members else members[0]
+                group_titles[representative] = " ◫ ".join(
+                    self.title if i == self.active_tab else self.tabs[i].get("title", "Sohbet")
+                    for i in members
+                )
+                entries = [i for i in entries if i not in members or i == representative]
+        count = min(len(entries), max(1, available // 12))
+        indices = sorted(sorted(entries, key=lambda i: (abs(i - self.active_tab), i))[:count])
         base, remainder = divmod(available, max(1, len(indices)))
         for position, i in enumerate(indices):
             tab_width = min(26, base + (position < remainder))
             tab = self.tabs[i]
-            title = self.title if i == self.active_tab else tab.get("title", "Sohbet")
+            title = group_titles.get(i) or (
+                self.title if i == self.active_tab else tab.get("title", "Sohbet")
+            )
             marker = (
                 "● "
                 if tab.get("busy")
@@ -570,6 +591,8 @@ class ChatView:
     def render_composer_actions(self):
         left = " ◌ Geçici sohbet " if self.temporary else ""
         controls = []
+        if self.layout_enabled:
+            controls.append(("class:button", " ◫ Böl ", on_click(self.begin_split)))
         if not self.follow_output:
             controls.append(("class:button", " ↓ ", on_click(self.scroll_bottom)))
         controls.append(("class:button", " Gönder ↑ ", on_click(self.submit_prompt)))
@@ -635,6 +658,8 @@ class ChatView:
         self.show_reasoning = application.get("show_reasoning", True)
         self.mouse_enabled = application.get("mouse", True)
         self.layout_enabled = config.get("extensions", {}).get("layout", {}).get("enabled", True)
+        if self.layout_enabled and self.layout_controller is None and self.layout_factory:
+            self.layout_controller = self.layout_factory(self)
         self.translations = preferences.get("translations", self.translations)
         self.keybindings = dict(DEFAULT_KEYBINDINGS) | config.get("keybindings", {})
         self.bindings = key_bindings(self)
@@ -1499,12 +1524,16 @@ class ChatView:
                 if existing_tab is not None:
                     self.active_tab = existing_tab
                     self._restore_active_tab()
+                    if self.layout_controller:
+                        self.layout_controller.attach()
                     return
                 if conversation_id != self.conversation_id and (
                     self.conversation_id or self.messages
                 ):
                     self.new_tab()
                 self.resume_conversation(conversation_id)
+                if self.layout_controller:
+                    self.layout_controller.attach()
         elif item["kind"] == "workspace" and item.get("id"):
             self.run_action("layout.show", {"workspace_id": item["id"]})
         elif item["kind"] == "history_more":
@@ -1558,6 +1587,26 @@ class ChatView:
             {"id": "command.quit", "title": "Quit SiopeChat", "detail": "/exit"},
             {"id": "command.quit_alias", "title": "Quit SiopeChat", "detail": "/quit"},
         ]
+        if self.layout_enabled:
+            self.palette_items.extend(
+                [
+                    {
+                        "id": "layout.split",
+                        "title": "Düzen · Yan yana böl",
+                        "detail": "/split · Alt+V",
+                    },
+                    {
+                        "id": "layout.split_down",
+                        "title": "Düzen · Alt alta böl",
+                        "detail": "/split-down · Alt+H",
+                    },
+                    {
+                        "id": "layout.unsplit",
+                        "title": "Düzen · Bölmeyi kaldır",
+                        "detail": "/unsplit · Alt+U",
+                    },
+                ]
+            )
         self.palette_items.append(
             {"id": "command.session", "title": "Hesap, giriş ve çıkış", "detail": "/session · F12"}
         )
@@ -1660,6 +1709,15 @@ class ChatView:
         self.palette_visible = False
         self.app.layout.focus(self.input)
         action_id = item["id"]
+        if action_id in ("layout.split", "layout.split_down", "layout.unsplit"):
+            self.handle_command(
+                {
+                    "layout.split": "/split",
+                    "layout.split_down": "/split-down",
+                    "layout.unsplit": "/unsplit",
+                }[action_id]
+            )
+            return
         if action_id.startswith("project.select:"):
             self.choose_project(action_id.partition(":")[2])
             return
@@ -1728,7 +1786,10 @@ class ChatView:
         self.app.invalidate()
 
     def _save_active_tab(self) -> None:
-        self.tabs[self.active_tab] = self._new_tab_state()
+        previous = self.tabs[self.active_tab]
+        state = self._new_tab_state()
+        state["tab_id"] = previous.get("tab_id") or uuid.uuid4().hex
+        self.tabs[self.active_tab] = state
 
     def new_tab(self) -> None:
         self.close_overlays()
@@ -1766,6 +1827,7 @@ class ChatView:
 
     def _restore_active_tab(self, *, focus: bool = True) -> None:
         tab = self.tabs[self.active_tab]
+        tab.setdefault("tab_id", uuid.uuid4().hex)
         self.temporary = bool(tab.get("temporary"))
         self.message_selection = False
         self.selected_message_ref = None
@@ -1965,10 +2027,25 @@ class ChatView:
     def sidebar_width(self) -> int:
         return max(22, min(30, self.terminal_width() // 4))
 
-    def main_width(self) -> int:
+    def workspace_width(self) -> int:
         return max(
             1, self.terminal_width() - (self.sidebar_width() + 1 if self.sidebar_visible else 0)
         )
+
+    def main_width(self) -> int:
+        columns = (
+            self.layout_controller.columns()
+            if self.layout_controller and self.layout_enabled
+            else 1
+        )
+        return max(8, (self.workspace_width() - columns + 1) // columns)
+
+    def begin_split(self, axis="columns"):
+        if self.layout_controller:
+            self.layout_controller.begin(axis)
+        else:
+            self.status = "Layout eklentisi kullanılamıyor"
+            self.app.invalidate()
 
     def transcript_width(self) -> int:
         return min(100, max(8, self.main_width() - 5))
@@ -2174,6 +2251,11 @@ class ChatView:
             self.close_tab()
         elif name == "/search":
             self.open_sidebar_search()
+        elif name in ("/split", "/split-down"):
+            self.begin_split("rows" if name == "/split-down" else "columns")
+        elif name == "/unsplit":
+            if self.layout_controller:
+                self.layout_controller.unsplit()
         elif name == "/projects":
             self.show_projects()
         elif name == "/actions":

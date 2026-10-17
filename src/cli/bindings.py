@@ -218,6 +218,8 @@ def key_bindings(view) -> KeyBindings:
         elif view.resume_visible:
             view.close_resume()
         else:
+            if view.layout_controller:
+                view.layout_controller.pending = None
             view.app.layout.focus(view.input)
 
     def focus_composer(_event: Any) -> None:
@@ -300,6 +302,12 @@ def key_bindings(view) -> KeyBindings:
     composer_focused = Condition(lambda: view.app.layout.current_control is view.input.control)
     bind("chat.newline_shift", newline, composer_focused)
     bind("chat.newline_lf", newline, composer_focused)
+    bind("layout.split", lambda _: view.begin_split())
+    bind("layout.split_down", lambda _: view.begin_split("rows"))
+    bind(
+        "layout.unsplit",
+        lambda _: view.layout_controller.unsplit() if view.layout_controller else None,
+    )
     bind("chat.temporary", lambda _: view.new_temporary_chat())
     bind("command.session", lambda _: view.session_dialog.open())
     bind("chat.scroll_top", lambda _: view.scroll_top())
