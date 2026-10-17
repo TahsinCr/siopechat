@@ -1,0 +1,166 @@
+import asyncio
+import tempfile
+import threading
+import unittest
+from pathlib import Path
+
+from providers import Capability, ProviderRegistry, SendRequest, TextDelta
+from providers.chatgpt import BrowserSession, ChatGPTProvider, SessionPaths
+from providers.errors import FeatureUnavailable, RateLimited
+from providers.models import Choice, FeatureState, Model, ModelCatalog, SessionState
+from tasks import JobState, TaskService
+
+
+class FakeClient:
+    def __init__(self, session):
+        self.session = session
+        self.closed = threading.Event()
+        self.started = threading.Event()
+        self.failure = None
+        self.raw = {
+            "id": "remote",
+            "title": "Example",
+            "messages": [
+                {
+                    "id": "message",
+                    "author": {"role": "assistant"},
+                    "channel": "analysis",
+                    "content": {"parts": ["Visible summary", {"asset_pointer": "image-ref"}]},
+                    "citations": [{"url": "https://example.test"}],
+                }
+            ],
+        }
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+    def close(self):
+        self.closed.set()
+
+    def verify(self):
+        return {"items": []}
+
+    def list_page(self, offset, limit):
+        return {"items": [self.raw]}
+
+    def get_conversation(self, conversation_id):
+        return self.raw
+
+    def send_prompt(self, conversation_id, prompt, on_event):
+        on_event({"type": "delta", "text": "partial"})
+        self.started.set()
+        if not self.closed.wait(2):
+            raise RuntimeError("test did not release stream")
+        if self.failure:
+            raise self.failure
+        on_event({"type": "replace", "text": "finished"})
+        return "remote", self.raw, set()
+
+
+class ProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        root = Path(self.directory.name)
+        self.session = BrowserSession(
+            SessionPaths(root / "session.json", root / "cache", root / "profile")
+        )
+        self.client = FakeClient(self.session)
+        self.provider = ChatGPTProvider(self.session, client_factory=lambda _: self.client)
+
+    async def test_session_snapshot_is_not_mistaken_for_verified_authentication(self):
+        self.assertEqual((await self.provider.session_status()).state, SessionState.LOGIN_REQUIRED)
+        self.session.paths.session_file.write_text("{}")
+        self.assertEqual((await self.provider.session_status()).state, SessionState.UNKNOWN)
+        self.assertEqual((await self.provider.authenticate()).state, SessionState.AUTHENTICATED)
+
+    async def test_forget_session_retains_browser_profile_and_caches(self):
+        self.session.paths.session_file.write_text("{}")
+        self.session.paths.profile.mkdir()
+        self.session.paths.cache.mkdir()
+        result = await self.provider.forget_session()
+        self.assertEqual(result.state, SessionState.LOGIN_REQUIRED)
+        self.assertFalse(self.session.paths.session_file.exists())
+        self.assertTrue(self.session.paths.profile.exists())
+        self.assertTrue(self.session.paths.cache.exists())
+
+    async def test_history_keeps_provenance_thinking_channel_sources_and_native_fields(self):
+        page = await self.provider.list_chats(limit=1)
+        self.assertEqual(page.next_cursor, "1")
+        chat = page.items[0]
+        self.assertEqual(chat.origin.provider_id, "chatgpt")
+        self.assertEqual(chat.origin.remote_id, "remote")
+        self.assertEqual(chat.messages[0].channel, "analysis")
+        self.assertEqual(chat.messages[0].content[0].text, "Visible summary")
+        self.assertEqual(
+            chat.messages[0].metadata["citations"], self.client.raw["messages"][0]["citations"]
+        )
+        self.assertEqual(chat.metadata, self.client.raw)
+
+    async def test_discovery_is_implemented_but_project_mutations_stay_explicitly_unavailable(self):
+        description = await self.provider.describe()
+        self.assertEqual(description.feature(Capability.PROJECTS).state, FeatureState.AVAILABLE)
+        self.client.model_catalog = lambda: ModelCatalog(FeatureState.AVAILABLE)
+        self.client.list_projects = lambda cursor: {"items": [], "cursor": None}
+        self.assertEqual((await self.provider.models()).state, FeatureState.AVAILABLE)
+        self.assertEqual((await self.provider.list_projects()).items, ())
+        with self.assertRaises(FeatureUnavailable):
+            await self.provider.create_project("New project")
+
+    async def test_stream_produces_common_events_and_releases_transport(self):
+        self.client.closed.set()
+        events = [
+            event
+            async for event in self.provider.stream(
+                SendRequest("chatgpt", "default", "local", "hello")
+            )
+        ]
+        self.assertEqual(events[0], TextDelta("partial"))
+        self.assertEqual(events[-1].conversation_id, "remote")
+        self.assertTrue(self.client.closed.is_set())
+
+    async def test_job_cancellation_closes_sync_transport_and_waits_for_worker(self):
+        registry = ProviderRegistry()
+        registry.register(self.provider)
+        runtime = TaskService(registry)
+        job = runtime.submit(SendRequest("chatgpt", "default", "local", "hello"))
+        self.assertTrue(await asyncio.to_thread(self.client.started.wait, 2))
+        result = await asyncio.wait_for(runtime.cancel(job), 3)
+        self.assertEqual(result.state, JobState.CANCELLED)
+        self.assertEqual(result.text, "partial")
+        self.assertTrue(self.client.closed.is_set())
+        await runtime.close()
+
+    async def test_rate_limit_survives_adapter_and_is_not_retried(self):
+        self.client.closed.set()
+        self.client.failure = RateLimited(30)
+        with self.assertRaises(RateLimited) as raised:
+            async for _ in self.provider.stream(
+                SendRequest("chatgpt", "default", "local", "hello")
+            ):
+                pass
+        self.assertEqual(raised.exception.retry_after, 30)
+
+    async def test_runtime_health_overlay_leaves_unrelated_capabilities_usable(self):
+        registry = ProviderRegistry()
+        registry.register(self.provider)
+        registry.mark_unavailable("chatgpt", Capability.CHAT)
+        description = await registry.describe("chatgpt")
+        self.assertEqual(description.feature(Capability.CHAT).state, FeatureState.UNAVAILABLE)
+        self.assertEqual(description.feature(Capability.HISTORY).state, FeatureState.AVAILABLE)
+        self.assertIs(registry.require("chatgpt", Capability.HISTORY), self.provider)
+
+    def test_medium_effort_only_selected_when_catalog_supports_it(self):
+        catalog = ModelCatalog(
+            FeatureState.AVAILABLE,
+            (
+                Model("a", "A", (Choice("low", "Low"), Choice("medium", "Medium")), "low"),
+                Model("b", "B", (Choice("auto", "Automatic"),), "auto"),
+            ),
+        )
+        self.assertEqual(catalog.effort("a"), "medium")
+        self.assertEqual(catalog.effort("b"), "auto")
+        self.assertIsNone(catalog.effort("unknown"))

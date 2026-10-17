@@ -1,0 +1,9 @@
+{
+  "id": "soft",
+  "tokens": {
+    "background": "#20242b",
+    "foreground": "#d8dee9",
+    "accent": "#88c0d0",
+    "error": "#bf616a"
+  }
+}

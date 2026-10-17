@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "siopechat"
+version = "0.0.0"
+description = "Provider-oriented terminal workspace for AI web sessions"
+requires-python = ">=3.10"
+dependencies = [
+    "httpx>=0.27,<1",
+    "backports.strenum>=1.3.1,<2; python_version < '3.11'",
+    "exceptiongroup>=1.3.1,<2; python_version < '3.11'",
+    "prompt-toolkit>=3.0,<4",
+    "rich>=13,<15",
+]
+
+[project.scripts]
+siopechat = "bootstrap:main"
+
+[dependency-groups]
+dev = ["ruff>=0.11,<1"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+extend-exclude = [".serena", "src/utils/container", "src/utils/events", "src/utils/compatibility.py"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.setuptools]
+package-dir = {"" = "src", "extensions" = "extensions", "themes" = "themes"}
+py-modules = ["bootstrap", "settings", "actions", "tasks", "runtime", "extension", "backend", "language", "theme"]
+packages = ["cli", "providers", "providers.chatgpt", "utils", "utils.container", "utils.events", "lang", "extensions", "extensions.layout", "themes"]
+
+[tool.setuptools.package-data]
+"providers.chatgpt" = ["scripts/*.cjs", "scripts/browser/*.cjs", "scripts/sentinel/*.cjs"]
+"lang" = ["*.json"]
+"extensions.layout" = ["languages/*.json"]
+"themes" = ["*.json"]
+"utils" = ["LICENSE", "NOTICE"]
