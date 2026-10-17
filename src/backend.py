@@ -34,8 +34,9 @@ IPC_PROTOCOL = 6
 
 
 class BackendService:
-    def __init__(self, root: Path | None = None):
+    def __init__(self, root: Path | None = None, *, legacy_fallback: bool = True):
         self.root = Path(root) if root is not None else project_root()
+        self.legacy_fallback = legacy_fallback
         self._daemon_start_lock = threading.Lock()
 
     def auth_store_path(self) -> Path:
@@ -123,19 +124,18 @@ class BackendService:
             return None
 
         if conversation_id is None:
-            active = read(
-                (self.active_conversation_path(), legacy_data_dir() / "active-conversation.json")
-            )
+            paths = [self.active_conversation_path()]
+            if self.legacy_fallback:
+                paths.append(legacy_data_dir() / "active-conversation.json")
+            active = read(paths)
             candidate = active.get("conversation_id") if isinstance(active, dict) else None
             if not isinstance(candidate, str) or not candidate:
                 return None
             conversation_id = candidate
-        return read(
-            (
-                self.conversation_cache_path(conversation_id),
-                legacy_data_dir() / "conversations" / f"{conversation_id}.json",
-            )
-        )
+        paths = [self.conversation_cache_path(conversation_id)]
+        if self.legacy_fallback:
+            paths.append(legacy_data_dir() / "conversations" / f"{conversation_id}.json")
+        return read(paths)
 
     def rename_cached_conversation(self, conversation_id: str, title: str) -> None:
         cached = self.load_cached_conversation(conversation_id)

@@ -216,7 +216,7 @@ class Accounts:
         return self.cache(key).load_cached_conversation(remote)
 
     def cache(self, key):
-        return BackendService(self.directory(key))
+        return BackendService(self.directory(key), legacy_fallback=key == "chatgpt/default")
 
     def chat_record(self, key, chat):
         return {

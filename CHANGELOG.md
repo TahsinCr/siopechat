@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Provider cache isolation
+
+- Disable legacy ChatGPT active-pointer and conversation fallback for Gemini and additional ChatGPT accounts. Preserve migration only for the original default ChatGPT account.
+- Prevent an empty Gemini workspace from reopening a ChatGPT conversation under a Gemini identity; keep existing files and credentials intact.
+- Cover empty accounts, stale contaminated pointers, explicit-ID reads and valid account-local caches in regression tests.
+
 ### Terminal output and responsive settings
 
 - Suppress only Gemini SDK namespace logs by default, including unconditional quota/init messages, without removing host log handlers. Coordinate incidental stdout/stderr with the full-screen renderer.

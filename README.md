@@ -188,3 +188,5 @@ Offline tests exercise actual terminal key processing/render cells and controlle
 The Gemini adapter suppresses its SDK namespace logs by default, including messages the SDK emits despite `verbose=False`; it leaves host logging handlers intact. Independent-library callers can pass `quiet=False` when they manage SDK logging themselves. The full-screen terminal also uses prompt_toolkit stdout/stderr coordination for incidental output.
 
 Settings fills the available page. Below 76 columns, categories become a compact previous/current/next strip; list rows and value columns follow the current terminal dimensions. The settings/account page scrolls to focused controls on short terminals, and account actions stack when their content area is narrow. Resizing does not discard the draft setting value.
+
+Account caches never fall back to another provider's legacy conversation files. Legacy ChatGPT cache migration is restricted to `chatgpt/default`; Gemini and additional ChatGPT accounts start from their own data only. A stale pointer without a matching account-local record opens an empty workspace instead of importing a foreign conversation.
