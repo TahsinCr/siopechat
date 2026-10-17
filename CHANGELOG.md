@@ -31,6 +31,9 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Changed
 
+- Use a white ChatGPT rosette and light-blue Gemini icon while keeping conversation text consistent; render open chat labels in bold pure white.
+- Display project names without qualified account/remote IDs in navigation and project headings.
+
 - Keep small shared modules directly under `src/`; place terminal commands, styles and widgets under `src/cli`.
 - Separate the shared view registry and settings catalog from the terminal frontend for future GUI reuse.
 - Cache account catalogs in memory for five minutes and restore account-tagged snapshots before live discovery completes.

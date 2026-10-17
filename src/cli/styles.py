@@ -20,6 +20,12 @@ DEFAULT_MARKDOWN_STYLE = {
 }
 
 DEFAULT_TERMINAL_STYLE = {
+    "provider.chatgpt": "#ffffff",
+    "provider.gemini": "#8ecfff",
+    "sidebar.open": "bold #ffffff",
+    "tab.open": "bold #ffffff",
+    "sync": "#8ecfff",
+    "sync.error": "#f0ad66",
     "connection.connected": "bold #86d49b",
     "connection.disconnected": "#939393",
     "settings.enabled": "bold #86d49b",
@@ -58,7 +64,7 @@ DEFAULT_TERMINAL_STYLE = {
     "sidebar.header": "bg:#252525 bold #d4d4d4",
     "sidebar.search": "bg:#202020 #dedede",
     "sidebar.selected": "bg:#393939 #ffffff bold",
-    "sidebar.item": "#c7c7c7",
+    "sidebar.item": "#ffffff",
     "sidebar.muted": "#929292",
     "tabs": "bg:#202020 #999999",
     "tab.active": "bg:#202020 bold #a9cfff",
