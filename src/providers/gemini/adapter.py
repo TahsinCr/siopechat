@@ -74,6 +74,9 @@ class GeminiProvider(OptionalFeatures):
         client = factory(values["__Secure-1PSID"], values.get("__Secure-1PSIDTS"))
         try:
             await client.init(timeout=45, auto_close=False, auto_refresh=False, verbose=False)
+        except asyncio.CancelledError:
+            await client.close()
+            raise
         except Exception:
             await client.close()
             raise AccountPaused(

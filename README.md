@@ -190,3 +190,9 @@ The Gemini adapter suppresses its SDK namespace logs by default, including messa
 Settings fills the available page. Below 76 columns, categories become a compact previous/current/next strip; list rows and value columns follow the current terminal dimensions. The settings/account page scrolls to focused controls on short terminals, and account actions stack when their content area is narrow. Resizing does not discard the draft setting value.
 
 Account caches never fall back to another provider's legacy conversation files. Legacy ChatGPT cache migration is restricted to `chatgpt/default`; Gemini and additional ChatGPT accounts start from their own data only. A stale pointer without a matching account-local record opens an empty workspace instead of importing a foreign conversation.
+
+### Bounded discovery and model cache
+
+Account model/effort catalogs share one in-flight discovery and a five-minute memory cache. A successful account-local snapshot (`data/accounts/<provider>/<id>/models.json`) makes the picker available immediately after restart while live discovery refreshes it. Snapshots carry their account identity, contain model metadata rather than credentials and are removed on local logout. F10 forces live discovery; failures retain the last usable catalog.
+
+Model discovery has a 30-second budget, each account's history page has a 20-second budget, and ordinary host reads have a 45-second upper bound. A slow history account does not prevent other accounts' pages from returning. Gemini initialization cleans up on cancellation. These are read/discovery limits, not an automatic retry policy for message sends.

@@ -8,8 +8,10 @@ import mimetypes
 import os
 import subprocess
 import threading
+import time
 import uuid
 import webbrowser
+from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import asdict
 from pathlib import Path
 from urllib.parse import quote, unquote
@@ -18,7 +20,10 @@ from backend import BackendService
 from providers import Capability, ConversationBound, ReplaceText, SendRequest, TextDelta
 from providers.chatgpt import BrowserSession, ChatGPTClient, ChatGPTProvider, SessionPaths
 from providers.gemini import GeminiProvider
-from providers.models import SessionState
+from providers.models import FeatureState, ModelCatalog, SessionState
+
+MODEL_TIMEOUT = 30
+HISTORY_TIMEOUT = 20
 
 PROVIDERS = {
     "chatgpt": ("ChatGPT", "◈", "https://chatgpt.com/"),
@@ -44,6 +49,9 @@ class Accounts:
         self._providers = {}
         self.cdp_url = None
         self._verified = set()
+        self._catalogs = {}
+        self._catalog_tasks = {}
+        self._catalog_versions = {}
         self._loop = None
         self._thread = None
         self._lock = threading.Lock()
@@ -113,14 +121,15 @@ class Accounts:
         return self.provider(key).capabilities
 
     def provider(self, key):
-        if key not in self._providers:
-            item = self.item(key)
-            self._providers[key] = (
-                ChatGPTProvider(self.session(key), item["id"])
-                if item["provider"] == "chatgpt"
-                else GeminiProvider(self.directory(key) / "cookies.json", item["id"])
-            )
-        return self._providers[key]
+        with self._lock:
+            if key not in self._providers:
+                item = self.item(key)
+                self._providers[key] = (
+                    ChatGPTProvider(self.session(key), item["id"])
+                    if item["provider"] == "chatgpt"
+                    else GeminiProvider(self.directory(key) / "cookies.json", item["id"])
+                )
+            return self._providers[key]
 
     def _start(self):
         with self._lock:
@@ -131,9 +140,73 @@ class Accounts:
                 )
                 self._thread.start()
 
-    def call(self, coroutine):
+    def call(self, coroutine, timeout=45):
         self._start()
-        return asyncio.run_coroutine_threadsafe(coroutine, self._loop).result()
+
+        async def bounded():
+            return await asyncio.wait_for(coroutine, timeout)
+
+        future = asyncio.run_coroutine_threadsafe(bounded(), self._loop)
+        try:
+            return future.result(timeout=timeout + 1)
+        except (TimeoutError, asyncio.TimeoutError, FutureTimeout):
+            future.cancel()
+            raise TimeoutError(
+                "Sağlayıcı işlemi zaman aşımına uğradı; yeniden deneyebilirsiniz"
+            ) from None
+
+    def cached_models(self, key):
+        cached = self._catalogs.get(key)
+        if cached:
+            return cached[1]
+        path = self.directory(key) / "models.json"
+        try:
+            if path.stat().st_size > 256 * 1024:
+                return None
+            record = json.loads(path.read_text(encoding="utf-8"))
+            if record.get("account_key") != key:
+                return None
+            catalog = ModelCatalog.from_dict(record["catalog"])
+            if catalog.state != FeatureState.AVAILABLE:
+                return None
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            return None
+        self._catalogs.setdefault(key, (float("-inf"), catalog))
+        return self._catalogs[key][1]
+
+    def models(self, key, force=False):
+        async def discover():
+            cached = self._catalogs.get(key)
+            if cached and not force and time.monotonic() - cached[0] < 300:
+                return cached[1]
+            task = self._catalog_tasks.get(key)
+            if task is None:
+                version = self._catalog_versions.get(key, 0)
+
+                async def fetch():
+                    value = await asyncio.wait_for(self.provider(key).models(), MODEL_TIMEOUT)
+                    if not isinstance(value, ModelCatalog):
+                        raise ValueError("Sağlayıcı model kataloğu geçersiz")
+                    if value.state != FeatureState.AVAILABLE:
+                        raise RuntimeError(value.reason or "Model kataloğu şu anda kullanılamıyor")
+                    if version == self._catalog_versions.get(key, 0):
+                        self._catalogs[key] = (time.monotonic(), value)
+                        if value.state == FeatureState.AVAILABLE:
+                            try:
+                                self.api.get("backend").atomic_json_write(
+                                    self.directory(key) / "models.json",
+                                    {"account_key": key, "catalog": asdict(value)},
+                                )
+                            except OSError:
+                                pass  # A cache write failure must not discard the live catalog.
+                    return value
+
+                task = asyncio.create_task(fetch())
+                self._catalog_tasks[key] = task
+                task.add_done_callback(lambda done: self._catalog_tasks.pop(key, None))
+            return await asyncio.shield(task)
+
+        return self.call(discover())
 
     def close(self):
         if self._loop is not None:
@@ -180,7 +253,18 @@ class Accounts:
             return self.session(key).launch(PROVIDERS[item["provider"]][2])
         provider = self.provider(key)
         if action == "logout":
-            self.call(provider.forget_session())
+            self._catalog_versions[key] = self._catalog_versions.get(key, 0) + 1
+            self._catalogs.pop(key, None)
+            (self.directory(key) / "models.json").unlink(missing_ok=True)
+
+            async def forget():
+                task = self._catalog_tasks.get(key)
+                if task:
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+                await provider.forget_session()
+
+            self.call(forget())
             self._verified.discard(key)
             return dict(self.status(key), logged_out=True)
         if action == "verify":
@@ -251,8 +335,11 @@ class Accounts:
         async def collect():
             return await asyncio.gather(
                 *(
-                    self.provider(item["key"]).list_chats(
-                        cursor=cursors.get(item["key"]) if cursors else None, limit=50
+                    asyncio.wait_for(
+                        self.provider(item["key"]).list_chats(
+                            cursor=cursors.get(item["key"]) if cursors else None, limit=50
+                        ),
+                        HISTORY_TIMEOUT,
                     )
                     for item in accounts
                 ),
@@ -260,10 +347,11 @@ class Accounts:
             )
 
         pages = self.call(collect()) if accounts else []
-        items, errors, next_cursors = [], [], {}
+        items, errors, next_cursors, failed = [], [], {}, []
         for account, page in zip(accounts, pages):
             if isinstance(page, BaseException):
                 errors.append(account["label"])
+                failed.append(account["key"])
                 continue
             items.extend(self.chat_record(account["key"], chat) for chat in page.items)
             if page.next_cursor is not None:
@@ -272,6 +360,7 @@ class Accounts:
             "items": items,
             "cursor": json.dumps(next_cursors) if next_cursors else None,
             "errors": errors,
+            "failed_accounts": failed,
         }
 
     def list_projects(self, key, cursor=None):
@@ -458,7 +547,7 @@ class Accounts:
             "upload_image": lambda *args: self.upload_image(key, *args),
             "load_conversation": lambda value: self.load(value, key),
             "send_prompt": lambda *args, **kwargs: self.send(key, *args, **kwargs),
-            "load_catalog": lambda: self.call(provider.models()),
+            "load_catalog": lambda: self.models(key),
             "list_projects_callback": lambda cursor=None: self.list_projects(key, cursor),
             "get_project_callback": get_project,
             "list_project_chats_callback": project_chats,

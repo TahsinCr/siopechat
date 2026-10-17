@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Bounded account discovery
+
+- Share model discovery per account, cache catalogs for five minutes and persist an account-tagged last-known catalog for immediate startup pickers.
+- Bound model discovery, individual history pages and ordinary host reads; isolate a slow account and clean up cancelled Gemini initialization.
+- Preserve host cache ownership, clear catalogs on logout and keep provider construction thread-safe.
+
 ### Provider cache isolation
 
 - Disable legacy ChatGPT active-pointer and conversation fallback for Gemini and additional ChatGPT accounts. Preserve migration only for the original default ChatGPT account.
