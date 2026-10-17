@@ -1,0 +1,129 @@
+"""Terminal and Markdown styles derived from shared semantic theme tokens."""
+
+DEFAULT_MARKDOWN_STYLE = {
+    "markdown.text": "#e5e7eb",
+    "markdown.paragraph": "#e5e7eb",
+    "markdown.h1": "bold #f3f4f6",
+    "markdown.h2": "bold #f3f4f6",
+    "markdown.h3": "bold #f3f4f6",
+    "markdown.h4": "bold #e5e7eb",
+    "markdown.h5": "bold #d1d5db",
+    "markdown.h6": "bold #d1d5db",
+    "markdown.link": "underline #22d3ee",
+    "markdown.link_url": "underline #22d3ee",
+    "markdown.code": "#22d3ee",
+    "markdown.block_quote": "#9ca3af",
+    "markdown.hr": "#606060",
+    "markdown.list": "#e5e7eb",
+    "markdown.item.bullet": "#e5e7eb",
+    "markdown.item.number": "#e5e7eb",
+}
+
+DEFAULT_TERMINAL_STYLE = {
+    "connection.connected": "bold #86d49b",
+    "connection.disconnected": "#939393",
+    "settings.enabled": "bold #86d49b",
+    "tabs.border": "bg:#202020 #42576a",
+    "tab.running": "bg:#202020 #86d49b",
+    "pane.header": "bg:#272c31 #b7c8db",
+    "settings.search": "bg:#292d32 #d8e3ee",
+    "settings.editor": "bg:#30363d #ffffff",
+    "settings.value": "#90b6d4",
+    "settings": "bg:#202020 #dedede",
+    "settings.title": "bold #c3a6ff",
+    "settings.nav": "bg:#252525 #b7b7b7",
+    "settings.category": "bg:#252525 #b7b7b7",
+    "settings.category.active": "bg:#294858 bold #e0f3ff",
+    "message.selected": "bg:#34516b #ffffff",
+    "chat.context": "#a4b5c7",
+    "brand": "bg:#252525 bold #c3a6ff",
+    "transcript": "bg:#202020 #dedede",
+    "metadata.project": "bg:#242424 bold #679bd4",
+    "tab.divider": "bg:#202020 #454545",
+    "role.user": "bg:#202020 bold #86d49b",
+    "role.reasoning": "bg:#202020 #75b5ef",
+    "role.assistant": "bg:#202020 #f0ad66",
+    "metadata.effort": "bg:#242424 bold #86d49b",
+    "tab.close": "#929292",
+    "selection": "bold #e1e1e1",
+    "sidebar": "bg:#252525 #c7c7c7",
+    "": "bg:#202020 #dedede",
+    "toolbar": "bg:#262626 #dedede",
+    "button": "#bcbcbc",
+    "button.focused": "bg:#414141 #ffffff",
+    "title": "bold #eeeeee",
+    "chat.header": "bg:#242424 #c7c7c7",
+    "scrollbar.background": "bg:#242424",
+    "scrollbar.button": "bg:#505050",
+    "sidebar.header": "bg:#252525 bold #d4d4d4",
+    "sidebar.search": "bg:#202020 #dedede",
+    "sidebar.selected": "bg:#393939 #ffffff bold",
+    "sidebar.item": "#c7c7c7",
+    "sidebar.muted": "#929292",
+    "tabs": "bg:#202020 #999999",
+    "tab.active": "bg:#202020 bold #a9cfff",
+    "tab": "bg:#202020 #929292",
+    "tabs.help": "bg:#202020 #929292",
+    "palette.search": "bg:#202020 #eeeeee",
+    "palette.selected": "bg:#393939 #ffffff bold",
+    "palette.item": "#c7c7c7",
+    "separator": "#6b7280",
+    "activity": "#9ca3af",
+    "composer": "bg:#292929 #f9fafb",
+    "prompt": "bg:#292929 bold #f9fafb",
+    "placeholder": "bg:#292929 #9ca3af",
+    "metadata": "bg:#272727 #9ca3af",
+    "metadata.model": "bg:#242424 bold #f0ad66",
+    "metadata.ready": "bg:#272727 #86efac",
+    "help": "bg:#242424 #9ca3af",
+    "dialog.body": "bg:#252525 #dedede",
+    "dialog.body label": "#dedede",
+    "dialog.body button": "bg:#303030 #dedede",
+    "dialog.body button.focused": "bg:#414141 bold #ffffff",
+    "dialog.body frame.label": "bold #c3a6ff",
+    "checkbox": "#bcbcbc",
+    "checkbox-selected": "bg:#393939 #ffffff",
+    "checkbox-checked": "#86d49b",
+    "radio": "#bcbcbc",
+    "radio-selected": "bg:#393939 #ffffff",
+    "radio-checked": "#86d49b",
+    "frame.label": "#d4d4d4",
+    "frame.border": "#505050",
+    "resume.selected": "bg:#414141 #ffffff bold",
+    "resume.item": "#d1d5db",
+    "resume.time": "#9ca3af",
+    "completion-menu": "bg:#303030 #e5e7eb",
+    "completion-menu.completion": "bg:#303030 #e5e7eb",
+    "completion-menu.completion.current": "bg:#414141 #ffffff bold",
+    "completion-menu.meta.completion": "bg:#303030 #9ca3af",
+    "completion-menu.meta.completion.current": "bg:#414141 #eeeeee",
+}
+
+
+def terminal_style(tokens):
+    from prompt_toolkit.styles import Style
+
+    style = dict(DEFAULT_TERMINAL_STYLE)
+    if not tokens:
+        return Style.from_dict(style)
+    bg, fg = tokens["background"], tokens["foreground"]
+    style.update(
+        {
+            "": f"bg:{bg} {fg}",
+            "transcript": f"bg:{bg} {fg}",
+            "button": tokens["accent"],
+            "brand": f"bg:{bg} bold {tokens['accent']}",
+            "separator": tokens["border"],
+            "sidebar": f"bg:{tokens['surface']} {fg}",
+            "settings": f"bg:{bg} {fg}",
+            "settings.nav": f"bg:{tokens['surface']} {fg}",
+            "sidebar.muted": tokens["muted"],
+            "dialog.body": f"bg:{tokens['surface']} {fg}",
+        }
+    )
+    for name in ("model", "effort", "project"):
+        style["metadata." + name] = f"bold {tokens[name]}"
+    for role in ("user", "assistant", "reasoning"):
+        style["role." + role] = f"bg:{bg} {tokens[role + '_marker']}"
+    style.update(tokens.get("styles", {}))
+    return Style.from_dict(style)

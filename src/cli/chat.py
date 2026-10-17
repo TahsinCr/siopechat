@@ -33,7 +33,7 @@ from actions import action_order, action_title
 from providers import Capability
 from providers.models import FeatureState, ModelCatalog
 from settings import DEFAULT_KEYBINDINGS
-from theme import DEFAULT_TERMINAL_STYLE
+from .styles import DEFAULT_TERMINAL_STYLE, terminal_style
 from utils import clipboard
 
 from .bindings import key_bindings
@@ -588,7 +588,7 @@ class ChatView:
         indices = sorted(sorted(entries, key=lambda i: (abs(i - self.active_tab), i))[:count])
         base, remainder = divmod(available, max(1, len(indices)))
         for position, i in enumerate(indices):
-            tab_width = min(26, base + (position < remainder))
+            tab_width = min(getattr(self, "theme_options", {}).get("tab_width", 26), base + (position < remainder))
             tab = self.tabs[i]
             title = group_titles.get(i) or (
                 self.title if i == self.active_tab else tab.get("title", "Sohbet")
@@ -936,17 +936,16 @@ class ChatView:
             self.effort = self.catalog.effort(self.model, self.effort_preference)
             self._save_active_tab()
         tokens = preferences.get("tokens", {})
-        style = dict(DEFAULT_TERMINAL_STYLE)
-        if tokens:
-            style.update(
-                {
-                    "": f"bg:{tokens['background']} {tokens['foreground']}",
-                    "button": tokens["accent"],
-                    "transcript": f"bg:{tokens['background']} {tokens['foreground']}",
-                    "brand": f"bg:{tokens['background']} bold #c3a6ff",
-                }
-            )
-        self.app.style = Style.from_dict(style)
+        try:
+            self.app.style = terminal_style(tokens)
+            self.renderer.configure(tokens)
+            self.theme_options = tokens.get("options", {})
+            self._transcript_signature = None
+        except Exception:
+            self.app.style = Style.from_dict(DEFAULT_TERMINAL_STYLE)
+            self.renderer.configure({})
+            self.theme_options = {}
+            self.status = "Tema stilleri geçersiz; varsayılan görünüm kullanılıyor"
         self.settings_dialog.save_button.text = self.text("save", "Kaydet")
         self.settings_dialog.cancel_button.text = self.text("close", "Kapat")
         self.app.invalidate()
@@ -2385,7 +2384,12 @@ class ChatView:
             return shutil.get_terminal_size((100, 24)).columns
 
     def sidebar_width(self) -> int:
-        return max(22, min(30, self.terminal_width() // 4))
+        preferred = getattr(self, "theme_options", {}).get("sidebar_width")
+        return (
+            max(16, min(preferred, self.terminal_width() - 24))
+            if preferred
+            else max(22, min(30, self.terminal_width() // 4))
+        )
 
     def workspace_width(self) -> int:
         return max(
@@ -2408,7 +2412,10 @@ class ChatView:
             self.app.invalidate()
 
     def transcript_width(self) -> int:
-        return min(100, max(8, self.main_width() - 5))
+        return min(
+            getattr(self, "theme_options", {}).get("message_width", 100),
+            max(8, self.main_width() - 5),
+        )
 
     def render_formatted_transcript(self):
         rendered = self.render_transcript()
@@ -2469,7 +2476,10 @@ class ChatView:
         )
 
     def composer_height(self):
-        return min(6, self.composer_line_count())
+        return min(
+            getattr(self, "theme_options", {}).get("composer_max_lines", 6),
+            self.composer_line_count(),
+        )
 
     def transcript_cursor_position(self) -> Point:
         if self.follow_output:

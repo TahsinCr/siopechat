@@ -182,8 +182,8 @@ class ExtensionContext:
     def translations(self, locale, messages):
         self.api.languages.register(self.owner, locale, messages)
 
-    def theme(self, theme_id, tokens):
-        self.api.themes.register(self.owner, theme_id, tokens)
+    def theme(self, theme_id, tokens, **options):
+        self.api.themes.register(self.owner, theme_id, tokens, **options)
 
 
 class ExtensionManager:

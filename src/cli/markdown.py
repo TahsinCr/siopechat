@@ -16,7 +16,7 @@ from rich.syntax import Syntax
 from rich.text import Text
 from rich.theme import Theme
 
-from theme import DEFAULT_MARKDOWN_STYLE
+from .styles import DEFAULT_MARKDOWN_STYLE
 
 ANNOTATION_PATTERN = re.compile(r"\ue200([^\ue201\ue202]+)(?:\ue202(.*?))?\ue201")
 FILE_CITATION_PATTERN = re.compile(r"[ \t]*\[F\d+:L\d+(?:[ \t]*[-–—][ \t]*L?\d+)?\]")
@@ -174,9 +174,27 @@ def visible_chat_message(message: dict[str, Any]) -> dict[str, str] | None:
 class MessageRenderer:
     def __init__(self):
         self.theme = MARKDOWN_THEME
+        self.tokens = {}
         self.cache: OrderedDict[tuple[str, str, int, bool], str] = OrderedDict()
         self.cache_limit = 4096
         self.cache_character_limit = 4_000_000
+        self.cache_characters = 0
+
+    def configure(self, tokens):
+        styles = dict(DEFAULT_MARKDOWN_STYLE)
+        if tokens.get("foreground"):
+            for name in (
+                "markdown.text",
+                "markdown.paragraph",
+                "markdown.list",
+                "markdown.item.number",
+                "markdown.item.bullet",
+            ):
+                styles[name] = tokens["foreground"]
+        styles.update(tokens.get("markdown", {}))
+        self.theme = Theme(styles)
+        self.tokens = dict(tokens)
+        self.cache.clear()
         self.cache_characters = 0
 
     def render(
@@ -201,9 +219,15 @@ class MessageRenderer:
             soft_wrap=False,
             theme=self.theme,
         )
-        background = {"user": "#303030", "reasoning": "#1c2732"}.get(role, "#181818")
+        defaults = {"user": "#303030", "reasoning": "#1c2732"}
+        background = self.tokens.get(role + "_background", defaults.get(role, "#181818"))
         if role == "reasoning":
-            console.print(Text("Düşünme özeti", style="#75b5ef on #1c2732"))
+            console.print(
+                Text(
+                    "Düşünme özeti",
+                    style=f"{self.tokens.get('reasoning_marker', '#75b5ef')} on {background}",
+                )
+            )
         if text:
             console.print(
                 Padding(

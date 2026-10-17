@@ -183,6 +183,7 @@ class _Pane:
         if self.renderer.theme is not self.view.renderer.theme:
             self.renderer = MessageRenderer()
             self.renderer.theme = self.view.renderer.theme
+            self.renderer.tokens = self.view.renderer.tokens
             self.cache_key = None
         key = (
             width,

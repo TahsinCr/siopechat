@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Semantic theme tokens, JSON/Python theme loading, terminal/Markdown overrides and bounded layout options.
+
 ### Account-bound terminal catalogs and send readiness
 
 - Preserve account, model catalog and effort context in new tabs; select a valid cached default before sending when the previous model is empty or obsolete.

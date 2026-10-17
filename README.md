@@ -200,3 +200,8 @@ Model discovery has a 30-second budget, each account's history page has a 20-sec
 New chat tabs keep explicit account/catalog/effort context. Pickers reuse that account's current catalog immediately, and an empty/obsolete selected model resolves to its valid default before sending. Catalog/project requests track account identity and request generation: late completions cannot clear a newer load indicator or replace another provider's models. Background refresh status names the outstanding list and retains request/error status instead of masking it with a generic busy message. Successful account pages still appear when another account times out; its last displayed records remain available.
 
 A live smoke check used actual Prompt Toolkit Enter processing with the real Gemini account: while history was refreshing, a temporary Flash-Lite request returned `TAMAM` and the tab returned to Ready. This is a controlled terminal-input check, not a Konsole desktop check or validation of every model. The probe bypassed active-pointer writes and did not store a conversation snapshot.
+
+
+### Programmable themes
+
+Themes accept semantic color tokens, terminal and Markdown overrides, and bounded layout options. JSON themes and trusted Python files exporting THEME are loaded from themes/. See themes/graphite.py for a working example. Invalid optional frontend styles fall back without stopping the application.
