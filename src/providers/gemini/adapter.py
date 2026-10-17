@@ -39,7 +39,15 @@ class GeminiProvider(OptionalFeatures):
         }
     )
 
-    def __init__(self, cookie_file: Path, account_id="default", client_factory=None, *, quiet=True):
+    def __init__(
+        self,
+        cookie_file: Path,
+        account_id="default",
+        client_factory=None,
+        *,
+        quiet=True,
+        notebooks=None,
+    ):
         self.cookie_file = Path(cookie_file)
         self.account_id = account_id
         self.quiet = quiet
@@ -47,6 +55,9 @@ class GeminiProvider(OptionalFeatures):
         self._client = None
         self._gate = asyncio.Lock()
         self._temporary = {}
+        self.notebooks = notebooks
+        if notebooks is not None:
+            self.capabilities = self.capabilities | {Capability.PROJECTS}
 
     async def _connect(self):
         if self._client is not None:
@@ -205,6 +216,21 @@ class GeminiProvider(OptionalFeatures):
                 "Gemini sohbeti",
             )
             return Conversation(self._origin(conversation_id), title, tuple(messages))
+
+    async def list_projects(self, cursor=None):
+        if self.notebooks is None:
+            raise FeatureUnavailable(Capability.PROJECTS)
+        return await self.notebooks.list(cursor)
+
+    async def get_project(self, project_id):
+        if self.notebooks is None:
+            raise FeatureUnavailable(Capability.PROJECTS)
+        return await self.notebooks.get(project_id)
+
+    async def list_project_chats(self, project_id, cursor=None):
+        if self.notebooks is None:
+            raise FeatureUnavailable(Capability.PROJECTS)
+        return await self.notebooks.chats(project_id, cursor)
 
     async def stream(self, request: SendRequest):
         if request.provider_id != self.id or request.account_id != self.account_id:

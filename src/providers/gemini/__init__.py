@@ -2,4 +2,6 @@
 
 from .adapter import GeminiProvider
 
-__all__ = ["GeminiProvider"]
+__all__ = ["GeminiProvider", "Notebooks"]
+
+from .notebooks import Notebooks

@@ -20,6 +20,7 @@ from backend import BackendService
 from providers import Capability, ConversationBound, ReplaceText, SendRequest, TextDelta
 from providers.chatgpt import BrowserSession, ChatGPTClient, ChatGPTProvider, SessionPaths
 from providers.gemini import GeminiProvider
+from providers.gemini.notebooks import Notebooks
 from providers.models import FeatureState, ModelCatalog, SessionState
 
 MODEL_TIMEOUT = 30
@@ -163,7 +164,7 @@ class Accounts:
                 self._providers[key] = (
                     ChatGPTProvider(self.session(key), item["id"])
                     if item["provider"] == "chatgpt"
-                    else GeminiProvider(self.directory(key) / "cookies.json", item["id"])
+                    else GeminiProvider(self.directory(key) / "cookies.json", item["id"], notebooks=Notebooks(self.session(key).cdp_url,item["id"]))
                 )
             return self._providers[key]
 

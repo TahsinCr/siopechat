@@ -10,6 +10,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Added
 
+- Native Gemini notebook listing, details, instruction/resource metadata and notebook chat lists through the same account browser; retain notebook-specific metadata separately from ChatGPT projects.
+
 - Independent ChatGPT and Gemini web-session adapters with account-scoped model discovery, history and streaming.
 - Multiple accounts, isolated browser profiles, session verification, local logout and mixed-provider sidebar filtering.
 - Tabbed conversations, visible background reply status, project navigation and command/action search.

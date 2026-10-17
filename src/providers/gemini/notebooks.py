@@ -1,0 +1,122 @@
+"""Read-only Gemini notebook transport using the same connected account browser.
+
+RPC names and response fields were observed on Gemini's native notebook pages.
+All provider-specific mappings live here; unknown native fields remain metadata.
+The bridge reads within the signed-in Gemini origin and never exports credentials.
+"""
+
+import asyncio
+import json
+from pathlib import Path
+
+from ..errors import ProviderError
+from ..models import Conversation, Origin, Page, Project, Resource
+
+
+def field(value, index, default=None):
+    return value[index] if isinstance(value, list) and len(value) > index else default
+
+
+def project_from_native(row, account_id):
+    remote, detail = field(row, 0), field(row, 1)
+    if (
+        not isinstance(remote, str)
+        or not remote.startswith("notebooks/")
+        or not isinstance(detail, list)
+        or not isinstance(field(detail, 0), str)
+    ):
+        raise ProviderError("Gemini defter sözleşmesi değişmiş; kayıt eşlemesi güncellenmeli")
+    bundle = field(detail, 10, []) or []
+    resources = []
+    for source in field(bundle, 0, []) or []:
+        resource_id = field(source, 5)
+        name = field(source, 2)
+        if isinstance(resource_id, str) and isinstance(name, str):
+            resources.append(
+                Resource(
+                    resource_id, name, metadata={"native": source, "source_type": field(source, 1)}
+                )
+            )
+    settings = field(detail, 12, []) or []
+    return Project(
+        Origin("gemini", account_id, remote),
+        detail[0],
+        field(detail, 1) if isinstance(field(detail, 1), str) else None,
+        tuple(resources),
+        {
+            "kind": "notebook",
+            "url": "https://gemini.google.com/notebook/" + remote.removeprefix("notebooks/"),
+            "native": row,
+            "notebook_type": field(settings, 4),
+            "read_only": True,
+        },
+    )
+
+
+class Notebooks:
+    def __init__(self, cdp_url, account_id):
+        self.cdp_url, self.account_id = cdp_url, account_id
+
+    async def read(self, remote=None, mode=None, cursor=None):
+        script = Path(__file__).parent.parent / "scripts" / "notebooks.cjs"
+        process = await asyncio.create_subprocess_exec(
+            "node",
+            str(script),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, _ = await asyncio.wait_for(
+                process.communicate(
+                    json.dumps(
+                        {"cdp_url": self.cdp_url, "remote": remote, "mode": mode, "cursor": cursor}
+                    ).encode()
+                ),
+                20,
+            )
+        except BaseException:
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
+            raise
+        if process.returncode:
+            raise ProviderError(
+                "Gemini defterleri okunamadı; bu hesabın bağlı tarayıcısında Gemini oturumunu doğrulayın"
+            )
+        data = json.loads(stdout)
+        if not isinstance(data, dict) or not isinstance(data.get("parts"), list):
+            raise ProviderError("Gemini defter yanıtı değişmiş")
+        return data["parts"]
+
+    async def list(self, cursor=None):
+        if cursor:
+            raise ProviderError("Gemini defter sayfalaması bu sürümde desteklenmiyor")
+        parts = await self.read()
+        rows = [row for part in parts for row in field(part, 2, []) or []]
+        return Page(tuple(project_from_native(row, self.account_id) for row in rows))
+
+    async def chats(self, remote, cursor=None):
+        parts = await self.read(remote, mode="chats", cursor=cursor)
+        rows = [row for part in parts for row in field(part, 2, []) or []]
+        conversations = []
+        for row in rows:
+            if not isinstance(field(row, 0), str) or not isinstance(field(row, 1), str):
+                raise ProviderError("Gemini defter sohbeti eşlemesi değişmiş")
+            conversations.append(
+                Conversation(
+                    Origin("gemini", self.account_id, row[0]),
+                    row[1],
+                    project_id=remote,
+                    metadata={"native": row},
+                )
+            )
+        cursor_value = field(parts[-1], 1)
+        return Page(tuple(conversations), cursor_value if isinstance(cursor_value, str) else None)
+
+    async def get(self, remote):
+        parts = await self.read(remote)
+        rows = [row for part in parts for row in part if field(row, 0) == remote]
+        if len(rows) != 1:
+            raise ProviderError("Gemini defter ayrıntıları bulunamadı")
+        return project_from_native(rows[0], self.account_id)

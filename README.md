@@ -95,6 +95,12 @@ Account preferences live under `accounts.preferences`. Credentials are kept sepa
 
 Local logout forgets the selected application session. It does not sign out the provider website or delete saved conversation files. `data/`, login profiles, environments and local agent memory are excluded from Git.
 
+## Gemini notebooks
+
+Gemini's native notebooks appear beside ChatGPT projects, with their own `notebook` type and provider/account identity. Their names, instructions, resource metadata and chat lists use the existing Gemini account's connected browser. No separate NotebookLM login is required. This follows [Gemini's notebook workflow](https://support.google.com/gemini/answer/16972047?hl=en).
+
+Open Gemini through **Settings → Accounts → Connected browser** and keep that signed-in Gemini page available while refreshing notebooks. The notebook bridge uses read operations observed in Gemini's own frontend; it never exports browser credentials to the application. Notebook operations are currently **read-only**: creating/editing notebooks, moving chats into them and sending with notebook context are not implemented. Unsupported writes are reported explicitly.
+
 ## Adding an extension
 
 Create `extensions/<id>/plugin.py`. The directory name must match `SPEC.id`. SiopeChat discovers local extensions at startup; no marketplace or installation service is required.
