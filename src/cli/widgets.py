@@ -44,6 +44,10 @@ def on_click(callback):
 
 class SlashCommandCompleter(Completer):
     COMMANDS = (
+        ("/attach", "add a file using the path picker"),
+        ("/filter", "choose visible providers"),
+        ("/account-add", "add a provider account"),
+        ("/project-new", "create a project in the provider browser"),
         ("/split", "split beside; choose a chat from the sidebar"),
         ("/split-down", "split below; choose a chat from the sidebar"),
         ("/unsplit", "return to a single chat pane"),

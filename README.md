@@ -171,3 +171,9 @@ Use **Dosya**, `/attach` or Alt+A to choose a path (Tab completion). Gemini acce
 ### Action catalog
 
 Keyboard mappings, the command palette and Settings → Shortcuts use the same canonical action IDs and category order (chat, model, projects, layout, accounts, view, editing, navigation, application). All default bindings are listed in config.json. Model/effort pickers also have Alt+M / Alt+E bindings. While the terminal runs, its actions are contributed to the shared ActionService for extensions; closing the terminal withdraws those contributions.
+
+### Creating projects and notebooks
+
+For an account that supports project creation, use the sidebar header **+**, `/project-new` or Alt+P. Choose a name, private/shared visibility and default/project-only memory. The ChatGPT component drives the connected website’s own form and reads back the new project/memory. It does not guess a private creation endpoint or retry creation automatically. A changed or missing control fails only this operation. Shared creation fails before submission if the native form does not offer sharing; use the website’s sharing step in that case. Live creation/sharing compatibility is still unverified.
+
+[Google now documents notebooks and a Gemini Notebook connection](https://support.google.com/gemini/answer/16972047?co=GENIE.Platform%3DDesktop&hl=en). Availability and operations depend on the account. The current Gemini transport has no verified notebook project contract, so this adapter exposes chats and does not claim automatic NotebookLM synchronization.

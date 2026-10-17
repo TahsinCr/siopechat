@@ -25,7 +25,9 @@ class Backend(Provider, Protocol):
     async def list_project_chats(
         self, project_id: str, cursor: str | None = None
     ) -> Page[Conversation]: ...
-    async def create_project(self, name: str, instructions: str = "") -> Project: ...
+    async def create_project(
+        self, name: str, instructions: str = "", *, visibility="private", memory="default"
+    ) -> Project: ...
     async def update_project(self, project: Project) -> Project: ...
     async def delete_project(self, project_id: str) -> None: ...
     async def move_chat(self, conversation_id: str, project_id: str | None) -> None: ...
@@ -48,8 +50,10 @@ class OptionalFeatures:
     ) -> Page[Conversation]:
         raise FeatureUnavailable(Capability.PROJECTS, "not_implemented")
 
-    async def create_project(self, name: str, instructions: str = "") -> Project:
-        raise FeatureUnavailable(Capability.PROJECTS, "not_implemented")
+    async def create_project(
+        self, name: str, instructions: str = "", *, visibility="private", memory="default"
+    ) -> Project:
+        raise FeatureUnavailable(Capability.PROJECT_CREATE, "not_implemented")
 
     async def update_project(self, project: Project) -> Project:
         raise FeatureUnavailable(Capability.PROJECTS, "not_implemented")

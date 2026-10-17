@@ -39,11 +39,13 @@ class ChatGPTProvider(OptionalFeatures):
     capabilities = frozenset(
         {
             Capability.CHAT,
+            Capability.ATTACHMENTS,
             Capability.TEMPORARY,
             Capability.HISTORY,
             Capability.RENAME,
             Capability.AUTH,
             Capability.PROJECTS,
+            Capability.PROJECT_CREATE,
             Capability.PROJECT_MEMBERSHIP,
             Capability.MODELS,
             Capability.EFFORT,
@@ -140,6 +142,18 @@ class ChatGPTProvider(OptionalFeatures):
         async with self._gate:
             raw = await asyncio.to_thread(read)
         return Page(tuple(self._project(item) for item in raw["items"]), raw.get("cursor"))
+
+    async def create_project(
+        self, name: str, instructions: str = "", *, visibility="private", memory="default"
+    ) -> Project:
+        def create():
+            with self._factory(self.session) as client:
+                return client.create_project(
+                    name, instructions, visibility=visibility, memory=memory
+                )
+
+        async with self._gate:
+            return self._project(await asyncio.to_thread(create))
 
     async def get_project(self, project_id: str) -> Project:
         def read():

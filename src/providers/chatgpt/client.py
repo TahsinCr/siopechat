@@ -174,6 +174,63 @@ class ChatGPTClient:
         projects = [value for item in items if (value := discovery.project(item)) is not None]
         return {"items": projects, "cursor": next_cursor}
 
+    def create_project(
+        self, name: str, instructions: str = "", *, visibility="private", memory="default"
+    ) -> dict[str, Any]:
+        if not isinstance(name, str) or not name.strip() or len(name) > 80:
+            raise ValueError("project name must contain 1–80 characters")
+        if visibility not in ("private", "public") or memory not in ("default", "project_only"):
+            raise ValueError("invalid project privacy or memory option")
+        if not self.session.is_ready():
+            raise ChatGPTWebError("Proje oluşturmak için Hesaplar → Bağlı tarayıcıyı açın")
+        previous = {item["id"] for item in self.list_projects()["items"]}
+        result = subprocess.run(
+            ["node", str(script_path(Script.PROJECT))],
+            input=json.dumps(
+                {
+                    "cdp_url": self.cdp_url,
+                    "name": name.strip(),
+                    "instructions": instructions,
+                    "visibility": visibility,
+                    "memory": memory,
+                }
+            ),
+            capture_output=True,
+            text=True,
+            timeout=25,
+        )
+        if result.returncode:
+            raise ChatGPTWebError(result.stderr.strip()[:400] or "Proje oluşturma tamamlanamadı")
+        for _ in range(4):
+            matches = [
+                item
+                for item in self.list_projects()["items"]
+                if item["id"] not in previous and item["name"] == name.strip()
+            ]
+            if len(matches) == 1:
+                project = self.get_project(matches[0]["id"])
+                raw = project["metadata"]
+                for _ in range(3):
+                    if not isinstance(raw.get("gizmo"), dict):
+                        break
+                    raw = raw["gizmo"]
+                expected = "project_v2" if memory == "project_only" else "global"
+                if raw.get("memory_scope") != expected:
+                    raise ChatGPTWebError(
+                        "Proje oluşturuldu ancak bellek ayarı doğrulanamadı; tarayıcıdan kontrol edin: "
+                        + project["id"]
+                    )
+                if visibility == "public" and raw.get("visibility") != "public":
+                    raise ChatGPTWebError(
+                        "Proje oluşturuldu ancak paylaşım doğrulanamadı; tarayıcıdan kontrol edin: "
+                        + project["id"]
+                    )
+                return project
+            time.sleep(0.3)
+        raise ChatGPTWebError(
+            "Oluşturma sonucu doğrulanamadı; tekrar oluşturmadan tarayıcıyı kontrol edin"
+        )
+
     def get_project(self, project_id: str) -> dict[str, Any]:
         raw = self.request(
             "GET", urljoin(CHATGPT_ORIGIN, f"/backend-api/gizmos/{quote(project_id, safe='')}")

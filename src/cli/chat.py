@@ -30,6 +30,7 @@ from rich.text import Text
 
 from accounts import origin
 from actions import action_order, action_title
+from providers import Capability
 from providers.models import FeatureState, ModelCatalog
 from settings import DEFAULT_KEYBINDINGS
 from theme import DEFAULT_TERMINAL_STYLE
@@ -113,6 +114,7 @@ class ChatView:
         self.account_service = account_service
         self.account_key = account_service.active() if account_service else "chatgpt/default"
         self.provider_id = self.account_key.split("/")[0]
+        self.provider_features = frozenset({Capability.PROJECTS})
         self.provider_filter = None
         self._account_projects = {}
         self.attach_file_callback = None
@@ -340,6 +342,7 @@ class ChatView:
             self.projects_loaded = bool(self.project_items)
         self.account_key = key
         self.provider_id = key.split("/")[0]
+        self.provider_features = self.account_service.capabilities(key)
         for name, callback in self.account_service.callbacks(key).items():
             setattr(self, name, callback)
         self.session_state = self.account_service.status(key)
@@ -425,6 +428,64 @@ class ChatView:
                 )
             ],
             apply,
+        )
+
+    def open_project_create(self):
+        if not self.account_service or Capability.PROJECT_CREATE not in self.provider_features:
+            self.status = "Bu sağlayıcı proje oluşturmayı desteklemiyor"
+            self.app.invalidate()
+            return
+        key = self.account_key
+
+        def submit(values):
+            if self.busy or self.background_jobs:
+                raise ValueError("Devam eden işlemden sonra proje oluşturun")
+            if not values["name"].strip():
+                raise ValueError("Proje adı gerekir")
+            self.background_jobs += 1
+            self.status = "Proje oluşturuluyor…"
+
+            def success(project):
+                self.background_jobs -= 1
+                self._account_projects.setdefault(key, {})[project["id"]] = project
+                if self.account_key == key:
+                    self.project_items[project["id"]] = project
+                    self.projects_loaded = True
+                    self.filter_sidebar()
+                self.status = "Proje oluşturuldu · " + project["name"]
+                self.app.invalidate()
+
+            def failure(reason):
+                self.background_jobs -= 1
+                self.status = str(reason)
+                self.app.invalidate()
+
+            self._read_in_background(
+                lambda: self.account_service.create_project(
+                    key, values["name"], values["visibility"], values["memory"]
+                ),
+                success,
+                failure,
+            )
+
+        self.forms.open(
+            "Yeni proje",
+            [
+                ("name", "Proje adı", "", None),
+                (
+                    "visibility",
+                    "Gizlilik",
+                    "private",
+                    [("private", "Özel"), ("public", "Paylaşılan")],
+                ),
+                (
+                    "memory",
+                    "Bellek",
+                    "default",
+                    [("default", "Varsayılan"), ("project_only", "Yalnızca proje")],
+                ),
+            ],
+            submit,
         )
 
     def open_attachment(self):
@@ -600,7 +661,10 @@ class ChatView:
             ("class:metadata.effort", effort_text, lambda: self.handle_command("/effort")),
             ("class:metadata.project", project_text, self.open_project_picker),
         ):
-            if style == "class:metadata.project" and self.provider_id != "chatgpt":
+            if (
+                style == "class:metadata.project"
+                and Capability.PROJECTS not in self.provider_features
+            ):
                 continue
             label = fit_text(label, width)
             if used:
@@ -2422,6 +2486,8 @@ class ChatView:
             self.close_tab()
         elif name == "/search":
             self.open_sidebar_search()
+        elif name == "/project-new":
+            self.open_project_create()
         elif name in ("/attach", "/file"):
             self.open_attachment()
         elif name == "/filter":

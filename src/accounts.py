@@ -106,6 +106,9 @@ class Accounts:
             f"http://127.0.0.1:{item['port']}",
         )
 
+    def capabilities(self, key):
+        return self.provider(key).capabilities
+
     def provider(self, key):
         if key not in self._providers:
             item = self.item(key)
@@ -404,6 +407,12 @@ class Accounts:
             return {"id": uuid.uuid4().hex, "path": str(path), "name": path.name, "mime_type": mime}
         with ChatGPTClient(self.session(key)) as client:
             return client.upload_file(path.name, mime, path.read_bytes())
+
+    def create_project(self, key, name, visibility="private", memory="default"):
+        project = self.call(
+            self.provider(key).create_project(name, visibility=visibility, memory=memory)
+        )
+        return self.project_record(key, project)
 
     def callbacks(self, key):
         provider = self.provider(key)

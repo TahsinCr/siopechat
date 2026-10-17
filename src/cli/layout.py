@@ -8,6 +8,8 @@ from prompt_toolkit.layout.margins import ScrollbarMargin
 from prompt_toolkit.layout.menus import CompletionsMenu
 from prompt_toolkit.widgets import Frame
 
+from providers import Capability
+
 from .widgets import TranscriptGutter, on_click
 
 
@@ -29,8 +31,28 @@ def workspace_layout(view):
     sidebar = ConditionalContainer(
         HSplit(
             [
-                text_window(
-                    lambda: view.text("library", "Sohbetler ve projeler"), 1, "class:sidebar.header"
+                VSplit(
+                    [
+                        text_window(
+                            lambda: view.text("library", "Sohbetler ve projeler"),
+                            1,
+                            "class:sidebar.header",
+                        ),
+                        ConditionalContainer(
+                            text_window(
+                                lambda: [
+                                    ("class:button", " + ", on_click(view.open_project_create))
+                                ],
+                                width=3,
+                            ),
+                            filter=Condition(
+                                lambda: (
+                                    view.account_service is not None
+                                    and Capability.PROJECT_CREATE in view.provider_features
+                                )
+                            ),
+                        ),
+                    ]
                 ),
                 VSplit(
                     [

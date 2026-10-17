@@ -78,6 +78,43 @@ class DiscoveryTests(unittest.TestCase):
 
         self.client.http = httpx.Client(transport=httpx.MockTransport(respond))
 
+    def test_native_project_create_requires_readback_memory_confirmation(self):
+        import subprocess
+        from unittest.mock import Mock, patch
+
+        from providers.chatgpt.resources import Script, script_path
+
+        self.client.session.is_ready = Mock(return_value=True)
+        self.client.list_projects = Mock(
+            side_effect=[{"items": []}, {"items": [{"id": "g-p-created", "name": "Demo"}]}]
+        )
+        self.client.get_project = Mock(
+            return_value={
+                "id": "g-p-created",
+                "name": "Demo",
+                "metadata": {"gizmo": {"memory_scope": "project_v2"}},
+            }
+        )
+        with patch(
+            "providers.chatgpt.client.subprocess.run",
+            return_value=subprocess.CompletedProcess([], 0, '{"submitted":true}', ""),
+        ) as run:
+            value = self.client.create_project("Demo", memory="project_only")
+        self.assertEqual(value["id"], "g-p-created")
+        self.assertEqual(run.call_args.args[0][1], str(script_path(Script.PROJECT)))
+        self.assertFalse(run.call_args.kwargs.get("shell", False))
+        self.client.list_projects.side_effect = [
+            {"items": []},
+            {"items": [{"id": "g-p-created", "name": "Demo"}]},
+        ]
+        self.client.get_project.return_value["metadata"]["gizmo"]["memory_scope"] = "global"
+        with patch(
+            "providers.chatgpt.client.subprocess.run",
+            return_value=subprocess.CompletedProcess([], 0, "{}", ""),
+        ):
+            with self.assertRaisesRegex(ChatGPTWebError, "bellek"):
+                self.client.create_project("Demo", memory="project_only")
+
     def test_catalog_is_account_data_cached_and_roundtrips_through_ipc(self):
         backend = BackendService()
         value, stop = backend.handle_daemon_command(self.client, {"command": "models"})

@@ -100,15 +100,23 @@ class ProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(chat.metadata, self.client.raw)
 
-    async def test_discovery_is_implemented_but_project_mutations_stay_explicitly_unavailable(self):
+    async def test_discovery_and_creation_are_available_but_delete_is_not(self):
         description = await self.provider.describe()
         self.assertEqual(description.feature(Capability.PROJECTS).state, FeatureState.AVAILABLE)
         self.client.model_catalog = lambda: ModelCatalog(FeatureState.AVAILABLE)
         self.client.list_projects = lambda cursor: {"items": [], "cursor": None}
         self.assertEqual((await self.provider.models()).state, FeatureState.AVAILABLE)
         self.assertEqual((await self.provider.list_projects()).items, ())
+        self.client.create_project = lambda name, instructions, **options: {
+            "id": "g-p-created",
+            "name": name,
+            "instructions": instructions,
+            "metadata": options,
+        }
+        created = await self.provider.create_project("New project", memory="project_only")
+        self.assertEqual(created.name, "New project")
         with self.assertRaises(FeatureUnavailable):
-            await self.provider.create_project("New project")
+            await self.provider.delete_project("g-p-created")
 
     async def test_stream_produces_common_events_and_releases_transport(self):
         self.client.closed.set()

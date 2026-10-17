@@ -5,6 +5,7 @@ from pathlib import Path
 
 
 class Script(str, Enum):
+    PROJECT = "browser/project.cjs"
     AUTH = "browser/auth.cjs"
     SEND = "browser/send.cjs"
     CAPTURE = "browser/capture.cjs"

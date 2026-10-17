@@ -4,6 +4,7 @@ import asyncio
 import unittest
 from unittest.mock import Mock
 
+from providers import Capability
 from providers.models import Choice, FeatureState, Model, ModelCatalog
 from tests import test_cli_interaction as interaction
 from tests.test_ui_controls import immediate
@@ -29,6 +30,13 @@ class Accounts:
             },
         ]
         self.backend = Mock()
+
+    def capabilities(self, key):
+        return (
+            frozenset({Capability.PROJECTS, Capability.PROJECT_CREATE})
+            if key.startswith("chatgpt")
+            else frozenset()
+        )
 
     def active(self):
         return self.selected

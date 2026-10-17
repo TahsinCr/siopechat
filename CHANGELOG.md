@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Project creation
+
+- Add capability-gated project creation, sidebar button, `/project-new` and Alt+P with name, privacy and memory fields.
+- Drive the native ChatGPT form and read back the new project/memory; fail unsupported sharing before submitting rather than silently creating private.
+- Record the Notebook/Gemini Notebook research boundary: automatic notebook synchronization is not implemented or claimed. Native creation/sharing still needs live-account verification.
+
 ### Shared command catalog
 
 - Replace the duplicated built-in palette list with canonical keyboard action handlers, shared readable titles and category ordering in Settings.
