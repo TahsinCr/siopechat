@@ -24,6 +24,25 @@ class AccountTests(unittest.TestCase):
         self.accounts = self.api.get("accounts")
         self.gemini = self.accounts.add("gemini", "Personal Gemini")
 
+    def test_browser_recovery_requires_saved_session_and_serializes_launch(self):
+        session = Mock()
+        with patch.object(self.accounts, "session", return_value=session):
+            with self.assertRaisesRegex(RuntimeError, "oturumu yok"):
+                self.accounts.ensure_browser(self.gemini)
+            session.launch.assert_not_called()
+            path = self.accounts.directory(self.gemini) / "cookies.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("{}")
+            self.accounts.ensure_browser(self.gemini)
+            session.launch.assert_called_once_with("https://gemini.google.com/")
+
+    def test_verified_account_is_disconnected_when_browser_is_closed(self):
+        self.accounts._verified.add(self.gemini)
+        with patch.object(self.accounts, "browser_connected", return_value=False):
+            self.assertFalse(self.accounts.status(self.gemini)["authenticated"])
+        with patch.object(self.accounts, "browser_connected", return_value=True):
+            self.assertTrue(self.accounts.status(self.gemini)["authenticated"])
+
     def test_catalog_single_flight_cache_and_account_local_disk_snapshot(self):
         catalog = ModelCatalog(FeatureState.AVAILABLE, (Model("gemini-test", "Gemini"),))
 

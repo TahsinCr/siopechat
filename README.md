@@ -244,3 +244,7 @@ Web endpoints can change independently of this project. Gemini discovery and a t
 Copyright (C) 2026 **TahsinCr**. SiopeChat is licensed under [GNU GPL version 3](LICENSE), SPDX `GPL-3.0-only`.
 
 ChatGPT transport work originates from [tritao/chatgpt-web](https://github.com/tritao/chatgpt-web). Gemini uses its native connected browser for sending/model menus and [gemini-webapi](https://github.com/HanaokaYuzu/Gemini-API). The container and event modules are vendored from [vehicle-autonomy-core](https://github.com/TahsinCr/vehicle-autonomy-core/tree/2bac9cd5b1cbeae82b7d3beef670a37d7ee5caa2); their original notices and license remain in `src/utils/NOTICE` and `src/utils/LICENSE`. Third-party authors retain their copyrights.
+
+### Connected browser recovery
+
+SiopeChat uses a separate browser profile for each account. If that browser closes, the next send (or Gemini model/notebook read) opens the same profile automatically. A saved account session is required; local logout is respected. Submitted prompts are never automatically replayed after a connection failure. The account indicator checks the local connection periodically; a cached model list alone does not mark an account connected.

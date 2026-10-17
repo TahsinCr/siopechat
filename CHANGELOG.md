@@ -53,6 +53,9 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Fixed
 
+- Recover closed account browsers from their saved profiles before sending; Gemini model and notebook reads share the same serialized startup. Never replay a submitted prompt.
+- Account indicators check the live local browser connection instead of treating cached model lists as authentication. Clarify disconnected Gemini transport errors.
+
 - Gemini generation hanging on the legacy `StreamGenerate` endpoint after the native frontend switched this account to `processSession`; application sends now use the native browser composer with no automatic SDK resend.
 - Gemini model/thinking choices being taken from the SDK's older boolean option: IDs and labels now come from native menus, with selection checked before sending.
 - Native composer input being submitted before its send button was ready, background-page rendering, and model verification failing when the header also shows an effort label.

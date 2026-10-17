@@ -59,7 +59,7 @@ class GeminiProvider(OptionalFeatures):
         from .browser import NativeBrowser
 
         self.browser = (
-            NativeBrowser(notebooks.cdp_url)
+            NativeBrowser(notebooks.cdp_url, ensure_ready=getattr(notebooks, "ensure_ready", None))
             if isinstance(getattr(notebooks, "cdp_url", None), str)
             else None
         )

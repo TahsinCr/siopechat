@@ -13,6 +13,15 @@ from providers.gemini.browser import NativeBrowser
 
 
 class NativeBrowserTests(unittest.IsolatedAsyncioTestCase):
+    async def test_readiness_failure_happens_before_subprocess_and_is_not_retried(self):
+        ready = Mock(side_effect=RuntimeError("browser unavailable"))
+        browser = NativeBrowser("http://127.0.0.1:9231", ensure_ready=ready)
+        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as spawn:
+            with self.assertRaisesRegex(RuntimeError, "browser unavailable"):
+                await anext(browser.events("send", prompt="test"))
+            spawn.assert_not_awaited()
+        ready.assert_called_once_with()
+
     async def test_configured_browser_bypasses_legacy_sdk_generation_and_models(self):
         p = GeminiProvider(
             Path("unused"), "test", notebooks=SimpleNamespace(cdp_url="http://127.0.0.1:9231")

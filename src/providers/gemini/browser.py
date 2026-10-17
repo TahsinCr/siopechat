@@ -11,14 +11,17 @@ from ..models import Choice, FeatureState, Model, ModelCatalog
 
 
 class NativeBrowser:
-    def __init__(self, cdp_url):
+    def __init__(self, cdp_url, *, ensure_ready=None):
         self.cdp_url = cdp_url
+        self.ensure_ready = ensure_ready
         self.tab_id = None
         self.authenticated = False
         self.temporary_tabs = {}
         self.owned_tabs = set()
 
     async def events(self, mode, *, remember=True, tab_id=None, **options):
+        if mode != "close" and self.ensure_ready is not None:
+            await asyncio.to_thread(self.ensure_ready)
         script = Path(__file__).parent / "scripts" / "browser.cjs"
         process = await asyncio.create_subprocess_exec(
             "node",
@@ -47,7 +50,11 @@ class NativeBrowser:
                     else:
                         yield event
                 elif event.get("type") == "error":
-                    raise ProviderError(event.get("message") or "Gemini browser operation failed")
+                    self.authenticated = False
+                    message = event.get("message") or "Gemini browser operation failed"
+                    if message == "fetch failed":
+                        message = "Gemini bağlı tarayıcı bağlantısı kesildi; mesaj otomatik tekrar gönderilmedi"
+                    raise ProviderError(message)
                 else:
                     if event.get("type") in ("models", "status", "bound"):
                         self.authenticated = True

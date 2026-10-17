@@ -331,8 +331,17 @@ class ChatView:
         when the UI is idle. Those writes clear native terminal selections,
         making copied text lose its highlight almost immediately.
         """
+        last_account_check = 0.0
         while True:
             await asyncio.sleep(0.12)
+            now = asyncio.get_running_loop().time()
+            if self.account_service and now - last_account_check >= 5:
+                last_account_check = now
+                key = self.account_key
+                state = await asyncio.to_thread(self.account_service.status, key)
+                if key == self.account_key and state != self.session_state:
+                    self.session_state = state
+                    self.app.invalidate()
             active_tab_busy = bool(self.tabs and self.tabs[self.active_tab].get("busy"))
             self.apply_archive_updates()
             if active_tab_busy or self.loading_conversation or self.uploading_image:
@@ -1678,7 +1687,9 @@ class ChatView:
                 return
             self.catalog = catalog
             self.catalog_error = catalog.reason
-            self.session_state["authenticated"] = catalog.state == FeatureState.AVAILABLE
+            # Cached model availability is not proof of a connected account.
+            if self.account_service:
+                self.session_state = self.account_service.status(key)
             tab = self.tabs[self.active_tab]
             self.model = tab.get("model") or ""
             self.effort = tab.get("effort")

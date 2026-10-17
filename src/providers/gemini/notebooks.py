@@ -70,10 +70,13 @@ def project_from_native(row, account_id):
 
 
 class Notebooks:
-    def __init__(self, cdp_url, account_id):
+    def __init__(self, cdp_url, account_id, *, ensure_ready=None):
         self.cdp_url, self.account_id = cdp_url, account_id
+        self.ensure_ready = ensure_ready
 
     async def read(self, remote=None, mode=None, cursor=None):
+        if self.ensure_ready is not None:
+            await asyncio.to_thread(self.ensure_ready)
         if remote:
             remote = notebook_id(remote)
         script = Path(__file__).parent.parent / "scripts" / "notebooks.cjs"

@@ -61,6 +61,7 @@ class Accounts:
         self._loop = None
         self._thread = None
         self._lock = threading.Lock()
+        self._browser_lock = threading.Lock()
         cache = self.root / "data" / "gemini-cookie-cache"
         cache.mkdir(parents=True, mode=0o700, exist_ok=True)
         if os.name != "nt":
@@ -182,6 +183,19 @@ class Accounts:
             f"http://127.0.0.1:{item['port']}",
         )
 
+    def ensure_browser(self, key):
+        """Recover the account browser before an operation, never replay a prompt."""
+        with self._browser_lock:
+            session = self.session(key)
+            path = (
+                session.paths.session_file
+                if key.startswith("chatgpt/")
+                else self.directory(key) / "cookies.json"
+            )
+            if not path.is_file():
+                raise RuntimeError("Hesap oturumu yok; Hesaplar bölümünden giriş yapın")
+            return session.launch(PROVIDERS[key.split("/")[0]][2])
+
     def capabilities(self, key):
         return self.provider(key).capabilities
 
@@ -195,7 +209,11 @@ class Accounts:
                     else GeminiProvider(
                         self.directory(key) / "cookies.json",
                         item["id"],
-                        notebooks=Notebooks(self.session(key).cdp_url, item["id"]),
+                        notebooks=Notebooks(
+                            self.session(key).cdp_url,
+                            item["id"],
+                            ensure_ready=lambda: self.ensure_browser(key),
+                        ),
                     )
                 )
             return self._providers[key]
@@ -301,6 +319,18 @@ class Accounts:
             self._loop.close()
             self._loop = None
 
+    def browser_connected(self, key):
+        # A short local socket probe cannot block UI binding on an HTTP timeout.
+        import socket
+        from urllib.parse import urlsplit
+
+        endpoint = urlsplit(self.session(key).cdp_url)
+        try:
+            with socket.create_connection((endpoint.hostname, endpoint.port or 80), timeout=0.03):
+                return True
+        except OSError:
+            return False
+
     def status(self, key):
         path = (
             self.session(key).paths.session_file
@@ -309,7 +339,14 @@ class Accounts:
         )
         return {
             "saved_snapshot": path.is_file(),
-            "authenticated": key in self._verified,
+            "authenticated": (
+                key in self._verified
+                or getattr(
+                    getattr(self._providers.get(key), "browser", None), "authenticated", False
+                )
+                is True
+            )
+            and self.browser_connected(key),
             "account": self.item(key)["label"],
             "provider": key.split("/")[0],
         }
@@ -609,6 +646,8 @@ class Accounts:
 
         async def consume():
             remote_id, text, reasoning = remote, "", ""
+            if key.startswith("chatgpt/"):
+                await asyncio.to_thread(self.ensure_browser, key)
             async for event in provider.stream(request):
                 if isinstance(event, ConversationBound):
                     remote_id = event.conversation_id
