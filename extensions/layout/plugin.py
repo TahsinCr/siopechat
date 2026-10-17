@@ -49,7 +49,16 @@ def activate(context: ExtensionContext) -> None:
         def invoke(command=command, **kwargs):
             return service.execute(command, **kwargs)
 
-        context.action(Action(f"layout.{command}", f"Workspace: {command}", invoke))
+        parameters = ()
+        if command == "create":
+            parameters = ({"key": "name", "label": "Çalışma alanı adı", "required": True},)
+        elif command in ("show", "delete"):
+            parameters = (
+                {"key": "workspace_id", "label": "Çalışma alanı kimliği", "required": True},
+            )
+        context.action(
+            Action(f"layout.{command}", f"Workspace: {command}", invoke, parameters=parameters)
+        )
 
 
 SPEC = ExtensionSpec("layout", activate)

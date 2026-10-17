@@ -205,3 +205,8 @@ A live smoke check used actual Prompt Toolkit Enter processing with the real Gem
 ### Programmable themes
 
 Themes accept semantic color tokens, terminal and Markdown overrides, and bounded layout options. JSON themes and trusted Python files exporting THEME are loaded from themes/. See themes/graphite.py for a working example. Invalid optional frontend styles fall back without stopping the application.
+
+
+### Provider preferences and frontend boundaries
+
+The last model/effort choice is saved per account. Settings lists providers with enabled switches and keeps Save/Close at the bottom right. Ctrl+D asks for a repeat confirmation when drafts or replies are open. The command palette also works from Settings and collects declared extension action arguments. Shared view/settings registries live outside cli, and create_application does not import the terminal frontend. Local extensions/<id>/plugin.py modules are discovered at startup.

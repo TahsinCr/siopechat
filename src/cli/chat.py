@@ -29,13 +29,12 @@ from rich.console import Console
 from rich.text import Text
 
 from accounts import origin
-from actions import action_order, action_title
 from providers import Capability
 from providers.models import FeatureState, ModelCatalog
 from settings import DEFAULT_KEYBINDINGS
-from .styles import DEFAULT_TERMINAL_STYLE, terminal_style
 from utils import clipboard
 
+from .actions import action_order, action_title
 from .bindings import key_bindings
 from .layout import workspace_layout
 from .markdown import (
@@ -45,6 +44,7 @@ from .markdown import (
 )
 from .session import SessionDialog
 from .settings import SettingsDialog
+from .styles import DEFAULT_TERMINAL_STYLE, terminal_style
 from .widgets import (
     ComposerPlaceholderProcessor,
     SlashCommandCompleter,
@@ -316,7 +316,7 @@ class ChatView:
 
         if self.account_service:
             self.bind_account(self.account_key)
-            self.normalize_model_selection()
+            self.restore_account_preference()
             self._save_active_tab()
 
         self.action_cleanup = action_host(self) if action_host else None
@@ -336,6 +336,19 @@ class ChatView:
 
     def render_prompt(self) -> FormattedText:
         return FormattedText([("class:prompt", " › ")])
+
+    def restore_account_preference(self):
+        if self.account_service and hasattr(self.account_service, "preference"):
+            preference = self.account_service.preference(self.account_key)
+            if preference.get("model"):
+                self.model = preference["model"]
+                self.effort = preference.get("effort")
+                self.effort_preference = self.effort or ""
+        self.normalize_model_selection()
+
+    def remember_selection(self):
+        if self.account_service and hasattr(self.account_service, "remember"):
+            self.account_service.remember(self.account_key, self.model, self.effort)
 
     def bind_account(self, key):
         if self.account_service is None:
@@ -371,6 +384,14 @@ class ChatView:
 
     def select_account(self, key):
         if (
+            self.account_service
+            and hasattr(self.account_service, "enabled")
+            and not self.account_service.enabled(key.split("/")[0])
+        ):
+            self.status = "Sağlayıcı devre dışı · Ayarlar → Sağlayıcılar"
+            self.app.invalidate()
+            return
+        if (
             self.account_service is None
             or self.loading_conversation
             or self.uploading_image
@@ -382,6 +403,7 @@ class ChatView:
         self.bind_account(key)
         self.model = self.catalog.default_chat_model.id if self.catalog.default_chat_model else ""
         self.effort = self.catalog.effort(self.model, self.effort_preference)
+        self.restore_account_preference()
         self.current_project = {}
         self.project_items = {}
         self.projects_loaded = False
@@ -588,7 +610,10 @@ class ChatView:
         indices = sorted(sorted(entries, key=lambda i: (abs(i - self.active_tab), i))[:count])
         base, remainder = divmod(available, max(1, len(indices)))
         for position, i in enumerate(indices):
-            tab_width = min(getattr(self, "theme_options", {}).get("tab_width", 26), base + (position < remainder))
+            tab_width = min(
+                getattr(self, "theme_options", {}).get("tab_width", 26),
+                base + (position < remainder),
+            )
             tab = self.tabs[i]
             title = group_titles.get(i) or (
                 self.title if i == self.active_tab else tab.get("title", "Sohbet")
@@ -921,18 +946,33 @@ class ChatView:
         self.keybindings = dict(DEFAULT_KEYBINDINGS) | config.get("keybindings", {})
         self.bindings = key_bindings(self)
         self.app.key_bindings = self.bindings
-        self.effort_preference = application.get("effort", self.effort_preference)
+        remembered = (
+            self.account_service.preference(self.account_key)
+            if self.account_service and hasattr(self.account_service, "preference")
+            else {}
+        )
+        self.effort_preference = (
+            (remembered.get("effort") or "")
+            if remembered
+            else application.get("effort", self.effort_preference)
+        )
         previous = getattr(self, "application_preferences", {})
         self.application_preferences = dict(application)
         self.default_model_preference = application.get("model", "")
         requested = (
             application.get("model") if previous.get("model") != application.get("model") else None
         )
-        if requested and any(m.id == requested for m in self.catalog.chat_models):
+        if (
+            not remembered
+            and requested
+            and any(m.id == requested for m in self.catalog.chat_models)
+        ):
             self.select_model(requested)
-        if previous.get("effort") != application.get("effort") and not self.tabs[
-            self.active_tab
-        ].get("busy"):
+        if (
+            not remembered
+            and previous.get("effort") != application.get("effort")
+            and not self.tabs[self.active_tab].get("busy")
+        ):
             self.effort = self.catalog.effort(self.model, self.effort_preference)
             self._save_active_tab()
         tokens = preferences.get("tokens", {})
@@ -946,6 +986,18 @@ class ChatView:
             self.renderer.configure({})
             self.theme_options = {}
             self.status = "Tema stilleri geçersiz; varsayılan görünüm kullanılıyor"
+        if (
+            self.account_service
+            and hasattr(self.account_service, "enabled")
+            and not self.account_service.enabled(self.provider_id)
+        ):
+            if self.tab_kind == "chat":
+                self.select_account(self.account_service.active())
+            else:
+                self.bind_account(self.account_service.active())
+                self.restore_account_preference()
+                self._save_active_tab()
+            self.refresh_sidebar()
         self.settings_dialog.save_button.text = self.text("save", "Kaydet")
         self.settings_dialog.cancel_button.text = self.text("close", "Kapat")
         self.app.invalidate()
@@ -1556,6 +1608,7 @@ class ChatView:
         else:
             self.model = selected.id
             self.effort = self.catalog.effort(selected.id, self.effort_preference)
+            self.remember_selection()
             self._save_active_tab()
             self.status = f"Model: {selected.chat_title or selected.title} · efor: {self.effort or 'sağlayıcı varsayılanı'}"
         self.app.invalidate()
@@ -1573,6 +1626,7 @@ class ChatView:
         else:
             self.effort = effort
             self.effort_preference = effort or ""
+            self.remember_selection()
             self._save_active_tab()
             self.status = f"Efor: {effort or 'sağlayıcı varsayılanı'}"
         self.app.invalidate()
@@ -1809,6 +1863,35 @@ class ChatView:
             self.app.invalidate()
             return
 
+        if arguments is None:
+            description = next(
+                (item for item in self.list_actions() if item["id"] == action_id), {}
+            )
+            fields = description.get("parameters", ())
+            if fields:
+
+                def submit(values):
+                    if any(
+                        field.get("required") and not str(values.get(field["key"], "")).strip()
+                        for field in fields
+                    ):
+                        raise ValueError("Zorunlu alanları doldurun")
+                    self.run_action(action_id, values)
+
+                self.forms.open(
+                    description.get("title", action_id),
+                    [
+                        (
+                            field["key"],
+                            field.get("label", field["key"]),
+                            field.get("default", ""),
+                            field.get("choices"),
+                        )
+                        for field in fields
+                    ],
+                    submit,
+                )
+                return
         target_tab = self.active_tab
         target_messages = self.messages
         self.background_jobs += 1
@@ -2093,9 +2176,25 @@ class ChatView:
 
     def close_overlays(self) -> None:
         self.palette_visible = self.resume_visible = False
-        self.settings_dialog.visible = self.session_dialog.visible = False
-        self.app.layout.focus(self.input)
+        self.settings_dialog.visible = self.tab_kind == "settings"
+        self.session_dialog.visible = (
+            self.tab_kind == "settings" and self.settings_dialog.category == "accounts"
+        )
+        self.app.layout.focus(
+            self.settings_dialog.category_control if self.tab_kind == "settings" else self.input
+        )
         self.app.invalidate()
+
+    def request_quit(self):
+        dirty = bool(self.input.text) or any(tab.get("draft") for tab in self.tabs)
+        if (dirty or self.busy) and time.monotonic() > getattr(self, "quit_armed_until", 0):
+            self.quit_armed_until = time.monotonic() + 3
+            self.status = (
+                "Çıkmak için 3 saniye içinde Ctrl+D veya Ctrl+Q'ya tekrar basın · taslak/yanıt açık"
+            )
+            self.app.invalidate()
+            return
+        self.app.exit()
 
     def active_busy(self) -> bool:
         tabs = getattr(self, "tabs", [])
@@ -2145,6 +2244,8 @@ class ChatView:
         )
         self.active_tab = len(self.tabs) - 1
         self._restore_active_tab()
+        self.restore_account_preference()
+        self._save_active_tab()
 
     def switch_tab(self, offset: int) -> None:
         self.close_overlays()
@@ -2534,6 +2635,14 @@ class ChatView:
         self.app.invalidate()
 
     def submit_prompt(self) -> None:
+        if (
+            self.account_service
+            and hasattr(self.account_service, "enabled")
+            and not self.account_service.enabled(self.provider_id)
+        ):
+            self.status = "Sağlayıcı devre dışı · taslak korundu · Ayarlar → Sağlayıcılar"
+            self.app.invalidate()
+            return
         self.normalize_model_selection()
         if self.tab_kind == "project":
             self.status = "Bu sekme proje bilgilerini gösterir; sohbet listesinden bir sohbet açın"
@@ -2614,7 +2723,7 @@ class ChatView:
             return
         name, _, argument = command.partition(" ")
         if name in ("/exit", "/quit"):
-            self.app.exit()
+            self.request_quit()
         elif name == "/new":
             self.new_tab()
         elif name == "/tab-next":

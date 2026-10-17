@@ -71,7 +71,10 @@ class ResponsiveSettingsTests(unittest.IsolatedAsyncioTestCase):
                     "".join(screen.data_buffer[y][x].char for x in range(40)) for y in range(12)
                 )
                 self.assertIn("Kapat", text)
-                self.assertGreater(view.settings_dialog.page.vertical_scroll, 0)
+                self.assertEqual(
+                    view.app.layout.current_control, view.settings_dialog.cancel_button.control
+                )
+                self.assertIn("Kapat", text.splitlines()[-2])
             finally:
                 view.app.exit()
                 await run

@@ -167,7 +167,9 @@ def run_fullscreen(
         return None
 
     def action_host(view):
-        from actions import Action, action_title
+        from actions import Action
+
+        from .actions import action_title
 
         api.actions.unregister("terminal")
         existing = {action.id for action in api.actions.search()}
@@ -208,7 +210,12 @@ def run_fullscreen(
             else []
         ),
         list_actions=lambda: [
-            {"id": action.id, "title": action.title, "detail": action.keybinding or ""}
+            {
+                "id": action.id,
+                "title": action.title,
+                "detail": action.keybinding or "",
+                "parameters": action.parameters,
+            }
             for action in api.actions.search()
         ],
         invoke_action=lambda action_id, arguments=None: asyncio.run(

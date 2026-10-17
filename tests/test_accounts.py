@@ -107,7 +107,7 @@ class AccountTests(unittest.TestCase):
         self.accounts.select(self.gemini)
         config = self.api.settings.snapshot()
         self.assertEqual(config["accounts"]["active"], self.gemini)
-        self.assertEqual(config["providers"]["default"], "gemini")
+        self.assertNotIn("default", config["providers"])
         self.assertNotIn("cookie", json.dumps(config))
 
     def test_late_session_result_does_not_change_another_account(self):

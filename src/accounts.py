@@ -52,6 +52,7 @@ class Accounts:
         self._catalogs = {}
         self._catalog_tasks = {}
         self._catalog_versions = {}
+        self._sending = {}
         self._loop = None
         self._thread = None
         self._lock = threading.Lock()
@@ -64,13 +65,47 @@ class Accounts:
         os.environ.setdefault("GEMINI_COOKIE_PATH", str(cache))
 
     def items(self):
+        config = self.api.settings.snapshot()
         return [
-            dict(item, key=item["provider"] + "/" + item["id"], icon=PROVIDERS[item["provider"]][1])
-            for item in self.api.settings.snapshot()["accounts"]["items"]
+            dict(
+                item,
+                key=item["provider"] + "/" + item["id"],
+                icon=PROVIDERS[item["provider"]][1],
+                enabled=config["providers"].get(item["provider"], {}).get("enabled", False),
+            )
+            for item in config["accounts"]["items"]
         ]
 
+    def enabled(self, provider):
+        return self.api.settings.snapshot()["providers"].get(provider, {}).get("enabled", False)
+
+    def set_enabled(self, provider, enabled):
+        with self._lock:
+            if not enabled and any(
+                count and key.split("/")[0] == provider for key, count in self._sending.items()
+            ):
+                raise ValueError("Önce bu sağlayıcıdaki yanıtları tamamlayın veya durdurun")
+            self.api.settings.configure_provider(provider, enabled)
+
+    def preference(self, key):
+        return self.api.settings.snapshot()["accounts"].get("preferences", {}).get(key, {})
+
+    def remember(self, key, model, effort):
+        self.item(key)
+        self.api.settings.update(
+            "accounts", {"preferences": {key: {"model": model, "effort": effort}}}
+        )
+
     def active(self):
-        return self.api.settings.snapshot()["accounts"]["active"]
+        data = self.api.settings.snapshot()
+        key = data["accounts"]["active"]
+        if self.enabled(key.split("/")[0]):
+            return key
+        return next(
+            item["provider"] + "/" + item["id"]
+            for item in data["accounts"]["items"]
+            if self.enabled(item["provider"])
+        )
 
     def item(self, key):
         return next(item for item in self.items() if item["key"] == key)
@@ -96,8 +131,9 @@ class Accounts:
 
     def select(self, key):
         self.item(key)
+        if not self.enabled(key.split("/")[0]):
+            raise ValueError("Sağlayıcı devre dışı; önce Ayarlar → Sağlayıcılar bölümünden açın")
         self.api.settings.update("accounts", {"active": key})
-        self.api.settings.update("providers", {"default": key.split("/")[0]})
 
     def directory(self, key):
         self.item(key)
@@ -175,6 +211,9 @@ class Accounts:
         return self._catalogs[key][1]
 
     def models(self, key, force=False):
+        if not self.enabled(key.split("/")[0]):
+            raise ValueError("Sağlayıcı devre dışı")
+
         async def discover():
             cached = self._catalogs.get(key)
             if cached and not force and time.monotonic() - cached[0] < 300:
@@ -327,7 +366,8 @@ class Accounts:
         accounts = [
             item
             for item in self.items()
-            if (selected is None or item["provider"] in selected)
+            if self.enabled(item["provider"])
+            and (selected is None or item["provider"] in selected)
             and (cursors is None or item["key"] in cursors)
             and self.status(item["key"])["saved_snapshot"]
         ]
@@ -402,6 +442,8 @@ class Accounts:
         effort=None,
         **options,
     ):
+        if not self.enabled(key.split("/")[0]):
+            raise ValueError("Sağlayıcı devre dışı")
         context, remote = origin(selected_id, key)
         project_context, project = origin(options.get("project_id"), key)
         if context != key or project_context != key:
@@ -477,8 +519,14 @@ class Accounts:
             def close(self):
                 future.cancel()
 
-        on_connection(Cancellation())
-        return future.result()
+        with self._lock:
+            self._sending[key] = self._sending.get(key, 0) + 1
+        try:
+            on_connection(Cancellation())
+            return future.result()
+        finally:
+            with self._lock:
+                self._sending[key] -= 1
 
     def upload_image(self, key, data, name, mime, width, height):
         if not data or len(data) > 20 * 1024 * 1024:

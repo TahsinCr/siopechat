@@ -31,14 +31,13 @@ def create_application(root: Path | None = None):
     from accounts import Accounts
     from actions import Action
     from backend import BackendService
-    from cli.settings import SettingsPanel
-    from cli.views import View
     from extension import ExtensionAPI, ExtensionManager
     from extensions.layout.plugin import SPEC
     from lang import __file__ as language_file
     from providers.chatgpt import ChatGPTProvider
-    from settings import Settings
+    from settings import Settings, SettingsCatalog
     from utils.paths import project_root
+    from views import View
 
     root = Path(root) if root is not None else project_root()
     settings = Settings(root / "config.json")
@@ -67,7 +66,7 @@ def create_application(root: Path | None = None):
     custom_themes = root / "themes"
     if custom_themes.resolve() != Path(themes_file).parent.resolve():
         api.themes.load_directory(custom_themes)
-    panel = SettingsPanel(api)
+    panel = SettingsCatalog(api)
     api.views.register("application", View("settings", "Settings", lambda: panel))
     api.actions.register("application", Action("settings.show", "Show settings", panel.rows))
     manager = ExtensionManager(api)
@@ -81,6 +80,9 @@ def create_application(root: Path | None = None):
     api.actions.register("application", Action("settings.change", "Change setting", panel.change))
     manager.register(SPEC)
     manager.activate("layout")
+    manager.load_directory(checkout / "extensions")
+    if (root / "extensions").resolve() != (checkout / "extensions").resolve():
+        manager.load_directory(root / "extensions")
     (root / "data").mkdir(parents=True, exist_ok=True)
     if not settings.path.exists():
         settings.save()

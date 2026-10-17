@@ -13,101 +13,14 @@ from prompt_toolkit.layout.margins import ScrollbarMargin
 from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Button, TextArea
 
-from actions import action_order, action_title
-
+from .actions import action_order, action_title
 from .widgets import SelectionWindow, fit_text, on_click
 
 
-class SettingsPanel:
-    def __init__(self, api):
-        self.api = api
-        self.settings = api.settings
-        self.languages = api.languages
+def SettingsPanel(api):
+    from settings import SettingsCatalog
 
-    def rows(self) -> list[dict]:
-        config = self.settings.snapshot()
-        locale = config["application"]["language"]
-        rows = [
-            {
-                "section": "application",
-                "key": key,
-                "title": self.languages.translate(f"application.{key}", locale),
-                "value": value,
-            }
-            for key, value in config["application"].items()
-        ]
-        rows.extend(
-            {
-                "section": "keybindings",
-                "key": key,
-                "title": action_title(key),
-                "value": value,
-            }
-            for key, value in sorted(
-                config["keybindings"].items(), key=lambda item: action_order(item[0])
-            )
-        )
-        for row in rows:
-            if row["key"] == "language":
-                row["choices"] = self.languages.locales()
-            elif row["key"] == "theme":
-                row["choices"] = self.api.themes.available()
-        rows.extend(
-            {
-                "section": "providers",
-                "key": key,
-                "title": f"Provider · {key}",
-                "value": value,
-                "choices": self.api.providers.ids() if key == "default" else (),
-            }
-            for key, value in config["providers"].items()
-        )
-        schemas = self.settings.fields()
-        for owner in dict.fromkeys(
-            (*config["extensions"], *schemas, *self.api.get("extensions").statuses())
-        ):
-            fields = schemas.get(owner, ())
-            values = self.settings.extension(owner)
-            if not any(field.key == "enabled" for field in fields):
-                rows.append(
-                    {
-                        "section": f"extensions.{owner}",
-                        "key": "enabled",
-                        "title": owner,
-                        "value": values.get("enabled", True),
-                    }
-                )
-            rows.extend(
-                {
-                    "section": f"extensions.{owner}",
-                    "key": field.key,
-                    "title": self.languages.translate(field.title_key, locale),
-                    "value": values[field.key],
-                    "choices": field.choices,
-                }
-                for field in fields
-            )
-        return rows
-
-    async def change(self, section: str, key: str, value) -> None:
-        row = next(
-            (row for row in self.rows() if row["section"] == section and row["key"] == key), None
-        )
-        if row is None:
-            raise ValueError("unknown setting")
-        if row.get("choices") and value not in row["choices"]:
-            raise ValueError("choose one of the available setting values")
-        if section.startswith("extensions."):
-            owner = section.removeprefix("extensions.")
-            if key == "enabled":
-                if type(value) is not bool:
-                    raise ValueError("enabled must be true or false")
-                manager = self.api.get("extensions")
-                manager.enable(owner) if value else await manager.disable_async(owner)
-            else:
-                self.settings.update_extension(owner, {key: value})
-        else:
-            self.settings.update(section, {key: value})
+    return SettingsCatalog(api, title=action_title, order=action_order)
 
 
 class SettingsDialog:
@@ -155,6 +68,7 @@ class SettingsDialog:
         self.editor.control.focus_on_click = Condition(lambda: True)
         self.save_button = Button("Kaydet", handler=self.save)
         self.cancel_button = Button("Kapat", handler=self.close)
+        self.view.session_dialog.close_button = self.cancel_button
         self.keys = KeyBindings()
         self.keys.add("escape")(lambda _: self.close())
         self.keys.add("c-s")(lambda _: self.save())
@@ -210,12 +124,6 @@ class SettingsDialog:
                 Window(
                     height=1, wrap_lines=False, content=FormattedTextControl(self.render_choices)
                 ),
-                VSplit([self.save_button, self.cancel_button], padding=2, height=1),
-                Window(
-                    height=1,
-                    wrap_lines=True,
-                    content=FormattedTextControl(lambda: self.message),
-                ),
             ],
             modal=False,
             key_bindings=self.keys,
@@ -254,7 +162,23 @@ class SettingsDialog:
             ]
         )
         self.container = HSplit(
-            [DynamicContainer(lambda: narrow if self.compact() else wide)],
+            [
+                DynamicContainer(lambda: narrow if self.compact() else wide),
+                Window(height=1, char="─", style="class:separator"),
+                VSplit(
+                    [
+                        Window(
+                            content=FormattedTextControl(lambda: self.message), width=D(weight=1)
+                        ),
+                        ConditionalContainer(
+                            self.save_button, filter=Condition(lambda: self.category != "accounts")
+                        ),
+                        self.cancel_button,
+                    ],
+                    padding=2,
+                    height=1,
+                ),
+            ],
             key_bindings=self.keys,
             modal=True,
             style="class:settings",
@@ -346,8 +270,8 @@ class SettingsDialog:
             row
             for row in self.rows
             if (
-                row["section"].startswith("extensions.")
-                if self.category == "extensions"
+                row["section"].startswith(self.category + ".")
+                if self.category in ("extensions", "providers")
                 else row["section"] == self.category
             )
             and all(

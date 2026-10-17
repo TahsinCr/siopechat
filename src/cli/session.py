@@ -93,7 +93,6 @@ class SessionDialog:
                         content=FormattedTextControl(lambda: self.message),
                         wrap_lines=True,
                     ),
-                    self.close_button,
                 ],
                 modal=False,
                 key_bindings=keys,
@@ -121,7 +120,9 @@ class SessionDialog:
                 else "class:tab.active"
                 if item["key"] == self.view.account_key
                 else "class:button",
-                f" {item['icon']} {item['label']} · {item['provider']}\n",
+                f" {item['icon']} {item['label']} · {item['provider']}"
+                + (" · kapalı" if not item.get("enabled", True) else "")
+                + "\n",
                 on_click(lambda key=item["key"]: self.choose_account(key)),
             )
             for index, item in enumerate(self.view.account_service.items())

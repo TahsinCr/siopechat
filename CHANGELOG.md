@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed
+
+- Remember account model/effort choices, replace the default-provider selector with enabled switches, dock settings controls and make palette/exit shortcuts work across focus changes.
+- Separate shared view/settings services from CLI titles/styles; discover local extensions and collect action arguments.
+
 ### Added
 
 - Semantic theme tokens, JSON/Python theme loading, terminal/Markdown overrides and bounded layout options.

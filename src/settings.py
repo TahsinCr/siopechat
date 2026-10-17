@@ -78,10 +78,11 @@ DEFAULTS = {
         "show_reasoning": True,
     },
     "keybindings": DEFAULT_KEYBINDINGS,
-    "providers": {"default": "chatgpt"},
+    "providers": {"chatgpt": {"enabled": True}, "gemini": {"enabled": True}},
     "extensions": {"layout": {"enabled": True}},
     "accounts": {
         "active": "chatgpt/default",
+        "preferences": {},
         "items": [{"provider": "chatgpt", "id": "default", "label": "ChatGPT", "port": 9222}],
     },
 }
@@ -128,6 +129,8 @@ class Settings:
             value = json.loads(self.path.read_text(encoding="utf-8"))
             if not isinstance(value, dict):
                 raise ValueError("config.json must contain an object")
+            if isinstance(value.get("providers"), dict):
+                value["providers"].pop("default", None)  # Migrate the former selector.
             self._data = _merge(DEFAULTS, value)
         self._validate_document(self._data)
 
@@ -138,6 +141,21 @@ class Settings:
         for section in ("application", "keybindings", "providers", "extensions", "accounts"):
             if not isinstance(data.get(section), dict):
                 raise ValueError(f"settings section {section} must be an object")
+        providers = data["providers"]
+        if not providers or not all(
+            isinstance(v, dict) and type(v.get("enabled")) is bool for v in providers.values()
+        ):
+            raise ValueError("providers must define enabled flags")
+        if not any(v["enabled"] for v in providers.values()):
+            raise ValueError("at least one provider must remain enabled")
+        preferences = data["accounts"].get("preferences", {})
+        if not isinstance(preferences, dict) or not all(
+            isinstance(v, dict)
+            and isinstance(v.get("model", ""), str)
+            and (v.get("effort") is None or isinstance(v.get("effort"), str))
+            for v in preferences.values()
+        ):
+            raise ValueError("invalid account model preferences")
         accounts = data["accounts"]
         items = accounts.get("items")
         if not isinstance(items, list) or not items:
@@ -225,6 +243,26 @@ class Settings:
             self._commit(candidate)
         self._notify(f"extensions.{owner}", values)
 
+    def configure_provider(self, provider_id, enabled):
+        if type(enabled) is not bool:
+            raise ValueError("enabled must be a boolean")
+        with self._lock:
+            data = self.snapshot()
+            if provider_id not in data["providers"]:
+                raise ValueError("unknown provider")
+            data["providers"][provider_id]["enabled"] = enabled
+            candidates = [
+                item["provider"] + "/" + item["id"]
+                for item in data["accounts"]["items"]
+                if data["providers"].get(item["provider"], {}).get("enabled", False)
+            ]
+            if not candidates:
+                raise ValueError("En az bir sağlayıcı ve ona ait bir hesap etkin kalmalı")
+            if data["accounts"]["active"] not in candidates:
+                data["accounts"]["active"] = candidates[0]
+            self._commit(data)
+        self._notify("providers", {provider_id: {"enabled": enabled}})
+
     def update(self, section: str, values: dict) -> None:
         if section not in ("application", "keybindings", "providers", "accounts"):
             raise ValueError("use update_extension for extension settings")
@@ -265,3 +303,98 @@ class Settings:
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
+
+
+class SettingsCatalog:
+    def __init__(self, api, *, title=lambda key: key, order=lambda key: key):
+        self.title, self.order = title, order
+        self.api = api
+        self.settings = api.settings
+        self.languages = api.languages
+
+    def rows(self) -> list[dict]:
+        config = self.settings.snapshot()
+        locale = config["application"]["language"]
+        rows = [
+            {
+                "section": "application",
+                "key": key,
+                "title": self.languages.translate(f"application.{key}", locale),
+                "value": value,
+            }
+            for key, value in config["application"].items()
+            if key not in ("model", "effort")
+        ]
+        rows.extend(
+            {
+                "section": "keybindings",
+                "key": key,
+                "title": self.title(key),
+                "value": value,
+            }
+            for key, value in sorted(
+                config["keybindings"].items(), key=lambda item: self.order(item[0])
+            )
+        )
+        for row in rows:
+            if row["key"] == "language":
+                row["choices"] = self.languages.locales()
+            elif row["key"] == "theme":
+                row["choices"] = self.api.themes.available()
+        rows.extend(
+            {
+                "section": f"providers.{provider_id}",
+                "key": "enabled",
+                "title": provider_id.title() if provider_id != "chatgpt" else "ChatGPT",
+                "value": config["providers"].get(provider_id, {}).get("enabled", True),
+            }
+            for provider_id in self.api.providers.ids()
+        )
+        schemas = self.settings.fields()
+        for owner in dict.fromkeys(
+            (*config["extensions"], *schemas, *self.api.get("extensions").statuses())
+        ):
+            fields = schemas.get(owner, ())
+            values = self.settings.extension(owner)
+            if not any(field.key == "enabled" for field in fields):
+                rows.append(
+                    {
+                        "section": f"extensions.{owner}",
+                        "key": "enabled",
+                        "title": owner,
+                        "value": values.get("enabled", True),
+                    }
+                )
+            rows.extend(
+                {
+                    "section": f"extensions.{owner}",
+                    "key": field.key,
+                    "title": self.languages.translate(field.title_key, locale),
+                    "value": values[field.key],
+                    "choices": field.choices,
+                }
+                for field in fields
+            )
+        return rows
+
+    async def change(self, section: str, key: str, value) -> None:
+        row = next(
+            (row for row in self.rows() if row["section"] == section and row["key"] == key), None
+        )
+        if row is None:
+            raise ValueError("unknown setting")
+        if row.get("choices") and value not in row["choices"]:
+            raise ValueError("choose one of the available setting values")
+        if section.startswith("providers."):
+            self.api.get("accounts").set_enabled(section.split(".", 1)[1], value)
+        elif section.startswith("extensions."):
+            owner = section.removeprefix("extensions.")
+            if key == "enabled":
+                if type(value) is not bool:
+                    raise ValueError("enabled must be true or false")
+                manager = self.api.get("extensions")
+                manager.enable(owner) if value else await manager.disable_async(owner)
+            else:
+                self.settings.update_extension(owner, {key: value})
+        else:
+            self.settings.update(section, {key: value})

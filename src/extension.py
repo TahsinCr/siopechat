@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import importlib.util
 import inspect
+import sys
+import types
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
 from actions import Action, ActionService
-from cli.views import View, Views
 from language import Catalog
 from providers import ProviderRegistry
 from runtime import Runtime
 from settings import SettingField, Settings
 from tasks import TaskService
 from theme import ThemeService
+from views import View, Views
 
 
 class ExtensionAPI:
@@ -206,6 +211,31 @@ class ExtensionManager:
             raise ValueError("incompatible extension API version")
         self._specs[spec.id] = spec
         self._status(spec.id, "registered")
+
+    def load_directory(self, directory):
+        directory = Path(directory)
+        for path in sorted(directory.glob("*/plugin.py")):
+            name = path.parent.name
+            if name.startswith("_") or name in self._specs:
+                continue
+            package = (
+                "siope_extension_" + hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:16]
+            )
+            try:
+                parent = types.ModuleType(package)
+                parent.__path__ = [str(path.parent)]
+                sys.modules[package] = parent
+                spec = importlib.util.spec_from_file_location(package + ".plugin", path)
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[spec.name] = module
+                spec.loader.exec_module(module)
+                if not isinstance(module.SPEC, ExtensionSpec) or module.SPEC.id != name:
+                    raise ValueError("extension directory and SPEC.id must match")
+                self.register(module.SPEC)
+            except Exception:
+                self._status(name, "failed", "discovery_failed")
+        for name in tuple(self._specs):
+            self.activate(name)
 
     def statuses(self):
         return self._statuses.copy()

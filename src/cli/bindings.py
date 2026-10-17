@@ -32,7 +32,10 @@ def key_bindings(view) -> KeyBindings:
                     "chat.previous_tab",
                     "chat.close_tab",
                     "chat.temporary",
+                    "ui.command_palette",
                 )
+                or view.palette_visible
+                or view.resume_visible
                 or (not view.settings_dialog.visible and not view.session_dialog.visible)
             )
         )
@@ -151,12 +154,10 @@ def key_bindings(view) -> KeyBindings:
         view.app.invalidate()
 
     def quit_app(event: Any) -> None:
-        if not view.busy and not view.input.text:
-            event.app.exit()
+        view.request_quit()
 
     def quit_eof(event: Any) -> None:
-        if not view.busy and not view.input.text:
-            event.app.exit()
+        view.request_quit()
 
     def help_action(_event: Any) -> None:
         view.handle_command("/help")
@@ -337,12 +338,8 @@ def key_bindings(view) -> KeyBindings:
         quit_eof,
         Condition(
             lambda: (
-                (
-                    view.app.layout.current_control is view.input.control
-                    or not hasattr(view.app.layout.current_control, "buffer")
-                )
-                and not view.input.text
-                and not view.busy
+                view.app.layout.current_control is view.input.control
+                or not hasattr(view.app.layout.current_control, "buffer")
             )
         ),
     )
