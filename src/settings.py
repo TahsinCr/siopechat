@@ -79,9 +79,10 @@ DEFAULTS = {
     },
     "keybindings": DEFAULT_KEYBINDINGS,
     "providers": {"chatgpt": {"enabled": True}, "gemini": {"enabled": True}},
-    "extensions": {"layout": {"enabled": True}},
+    "extensions": {"layout": {"enabled": True}, "archive": {"enabled": True}},
     "accounts": {
         "active": "chatgpt/default",
+        "selected": {},
         "preferences": {},
         "items": [{"provider": "chatgpt", "id": "default", "label": "ChatGPT", "port": 9222}],
     },
@@ -179,6 +180,12 @@ class Settings:
             seen.add(key)
         if accounts.get("active") not in seen:
             raise ValueError("active account does not exist")
+        selected = accounts.get("selected", {})
+        if not isinstance(selected, dict) or any(
+            key not in seen or not key.startswith(provider + "/")
+            for provider, key in selected.items()
+        ):
+            raise ValueError("invalid per-provider account selection")
         for key in ("language", "theme", "effort"):
             if not isinstance(data["application"].get(key), str):
                 raise ValueError(f"invalid application setting {key}")
@@ -259,7 +266,10 @@ class Settings:
             if not candidates:
                 raise ValueError("En az bir sağlayıcı ve ona ait bir hesap etkin kalmalı")
             if data["accounts"]["active"] not in candidates:
-                data["accounts"]["active"] = candidates[0]
+                chosen = data["accounts"].get("selected", {})
+                data["accounts"]["active"] = next(
+                    (key for key in chosen.values() if key in candidates), candidates[0]
+                )
             self._commit(data)
         self._notify("providers", {provider_id: {"enabled": enabled}})
 

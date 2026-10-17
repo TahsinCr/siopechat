@@ -2,7 +2,7 @@
 
 A terminal workspace for AI conversations, built around reusable web-session providers.
 
-Keep conversations in tabs, switch accounts without mixing their history, and choose the models available to each account. ChatGPT and Gemini are included. A shared service and extension API keeps the provider layer independent of the terminal and leaves room for other frontends.
+Keep conversations in tabs, select one account per provider without mixing their history, and choose the models available to those accounts. ChatGPT and Gemini are included. A shared service and extension API keeps the provider layer independent of the terminal and leaves room for other frontends.
 
 ![SiopeChat terminal workspace](assets/siopechat.png)
 
@@ -42,7 +42,7 @@ This project uses unofficial web-session transports. It requires your own provid
 
 - **Tabs:** keep drafts, scroll positions and conversation state separate. Active replies and replies completed in another tab have distinct indicators.
 - **Sidebar:** search loaded chats, expand projects and load older pages when needed. ChatGPT and Gemini conversations have provider icons; a multi-select filter appears when multiple providers are configured.
-- **Models and effort:** lists come from the account, rather than a hardcoded version list. The last model and effort selection is remembered per account and reused in new chats, including an explicit provider-default effort choice. An obsolete choice falls back to an available model.
+- **Models and effort:** a new chat lists models from the selected account of each enabled provider. Choosing a model routes that draft to its provider/account; an existing chat remains tied to its original account. Lists come from the accounts, rather than a hardcoded version list. The last model and effort selection is remembered per account and reused in new chats, including an explicit provider-default effort choice. An obsolete choice falls back to an available model.
 - **Projects:** ChatGPT project chats, instructions and resource metadata are available in the sidebar. `/project` moves the current chat or assigns a new draft; **Unassigned** removes membership. `/project-new` opens the creation form.
 - **Files:** use the attachment command or button to choose a file. This client limits each file to 20 MiB; provider restrictions still apply.
 - **Temporary chats:** `/temporary` uses the provider's temporary/history-disabled request. These chats do not write local conversation snapshots; provider retention policies still apply.
@@ -91,9 +91,34 @@ Providers has independent enabled switches. At least one provider with a configu
 }
 ```
 
-Account preferences live under `accounts.preferences`. Credentials are kept separately from configuration. New accounts use isolated directories under `data/accounts/`; the original ChatGPT account retains its legacy login paths. Conversation cache fallback is restricted to that original account, so an empty Gemini workspace cannot reopen a ChatGPT record.
+One selected account per provider is stored in `accounts.selected`; selecting Gemini does not deselect the ChatGPT account. Disabled providers are excluded from new-chat model discovery and navigation. Already open tabs from another account remain readable; activate that account again before sending. Account preferences live under `accounts.preferences`. Credentials are kept separately from configuration. New accounts use isolated directories under `data/accounts/`; the original ChatGPT account retains its legacy login paths. Conversation cache fallback is restricted to that original account, so an empty Gemini workspace cannot reopen a ChatGPT record.
 
 Local logout forgets the selected application session. It does not sign out the provider website or delete saved conversation files. `data/`, login profiles, environments and local agent memory are excluded from Git.
+
+## Local archive and synchronization
+
+The bundled **archive** extension is enabled by default and can be switched off in Settings → Extensions. With it enabled, terminal conversations use `data/archive.sqlite3`; old JSON records remain readable for migration. New conversation bodies are not duplicated into the legacy JSON cache. Disabling the extension retains its database and falls back to the existing provider/cache path.
+
+A saved conversation, project page or notebook opens from local storage first. On the first access after startup, or after **F10**, background reads compare remote data with the saved record. Ordinary repeated reads share a 60-second revalidation window. Identical content only updates its check time. Concurrent reads of the same account and record share one job, and late reads cannot overwrite a newer completed reply.
+
+The bottom status bar shows synchronization and errors; sidebar rows have `↻` while updating and `!` on failure. Reply generation and synchronization have separate state. Cold history loading belongs to its tab, so another tab can be opened while it loads. Initial Markdown rendering is prepared outside the UI thread, and rendered messages are reused on reopening.
+
+The schema separates conversations, ordered messages, containers, memberships, resources, cached pages and synchronization state. Provider/account identity is present in every record. Messages preserve roles, channels, accessible thinking summaries, content parts and provider metadata. ChatGPT projects and Gemini notebooks keep distinct container kinds and their original metadata; they are not reduced to interchangeable writable projects.
+
+Large file content belongs under `data/files/`, with content hashes and paths in resource records. Locally available file attachments are copied there after a successful normal send. Remote source/image references are retained as metadata; this release does not automatically download every remote source or image. Temporary chats do not create archive records.
+
+The hot cache has an 8 MiB serialized-payload budget, with at most three synchronization workers and 32 queued/in-flight records. SQLite uses WAL and scoped transactions; disk writes do not hold the hot-cache lock. A failed background refresh retains the last good record. A local storage failure after a successful reply is reported separately and never retries the remote send.
+
+Other extensions can declare `requires=("archive",)` and use the shared service:
+
+```python
+archive = context.api.get("archive")
+conversations = archive.conversations("chatgpt/default", limit=50)
+messages = archive.messages("chatgpt/default", "remote-chat-id", limit=100)
+resources = archive.resources("chatgpt/default", "conversation", "remote-chat-id")
+```
+
+`extensions/archive/repository.py` defines the replaceable `Repository` contract and SQLite adapter. `sync.py` owns scheduling and memory limits; `adapters.py` contains provider-specific normalization. A provider mapping can be replaced through `archive.register_mapping(provider_id, mapping)` without changing the other providers. Native network parsing stays in the independent provider library.
 
 ## Gemini notebooks
 
@@ -137,6 +162,8 @@ context.action(
 
 Use relative imports for helper modules beside `plugin.py`. Keep network work out of render functions and keep event handlers short. Extensions and Python themes execute trusted local code; only load code you intend to run.
 
+The bundled `extensions/archive/` package supplies the local archive; `extensions/layout/` supplies split layouts and workspace metadata. Neither provider adapter imports these extensions or the terminal frontend.
+
 ## Creating a theme
 
 Place a JSON file in `themes/` and select its `id` in Settings → General → Theme:
@@ -176,7 +203,7 @@ Invalid optional themes are recorded as failures; invalid frontend styles fall b
 ```text
 src/
   providers/     independent provider contracts, adapters and browser helpers
-  accounts.py    account routing, provider state, preferences and discovery cache
+  accounts.py    provider/account routing, preferences and archive integration
   actions.py     interface-neutral action registry
   views.py       interface-neutral view registry
   settings.py    validated configuration and field catalog
@@ -206,7 +233,7 @@ Development currently stays under **Unreleased**. [CHANGELOG.md](CHANGELOG.md) f
 
 ### Current limits
 
-Web endpoints can change independently of this project. Gemini discovery and a temporary Flash-Lite request have been checked against a real account through controlled terminal input; that does not validate every model or desktop terminal. ChatGPT project writes, file compatibility and Windows/macOS execution still need live platform checks. Project sharing is rejected before creation when the native form does not offer it. NotebookLM synchronization, archive transfer and complete localization remain unfinished.
+Web endpoints can change independently of this project. Gemini discovery and a temporary Flash-Lite request have been checked against a real account through controlled terminal input; that does not validate every model or desktop terminal. ChatGPT project writes, file compatibility and Windows/macOS execution still need live platform checks. Project sharing is rejected before creation when the native form does not offer it. Native Gemini notebook reads have been checked against a signed-in account; notebook writes, bulk remote file downloads, archive transfer and complete localization remain unfinished.
 
 ## License and credits
 

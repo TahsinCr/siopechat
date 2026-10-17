@@ -37,7 +37,7 @@ select = ["E4", "E7", "E9", "F", "I"]
 [tool.setuptools]
 package-dir = {"" = "src", "extensions" = "extensions", "themes" = "themes"}
 py-modules = ["views", "accounts", "bootstrap", "settings", "actions", "tasks", "runtime", "extension", "backend", "language", "theme"]
-packages = ["cli", "providers", "providers.chatgpt", "providers.gemini", "utils", "utils.container", "utils.events", "lang", "extensions", "extensions.layout", "themes"]
+packages = ["cli", "providers", "providers.chatgpt", "providers.gemini", "utils", "utils.container", "utils.events", "lang", "extensions", "extensions.layout", "extensions.archive", "themes"]
 
 [tool.setuptools.package-data]
 "providers" = ["scripts/*.cjs"]

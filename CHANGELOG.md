@@ -10,6 +10,11 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Added
 
+- Optional SQLite archive extension with provider/account isolation, ordered message/content records, projects/notebooks, memberships, resource paths and synchronization state.
+- Replaceable archive repository and provider mapping interfaces, content-addressed file storage and paginated data access for other extensions.
+- Bounded hot cache, single-flight background revalidation, explicit refresh and synchronization indicators.
+- One selected account per provider and a combined model picker for new chats across enabled providers.
+
 - Native Gemini notebook listing, details, instruction/resource metadata and notebook chat lists through the same account browser; retain notebook-specific metadata separately from ChatGPT projects.
 
 - Independent ChatGPT and Gemini web-session adapters with account-scoped model discovery, history and streaming.
@@ -40,6 +45,14 @@ The project is currently unreleased; no release dates or tags have been assigned
 - Competing settings-page filler, repeated shortcut hints and SDK logs written over the terminal interface.
 
 ### Fixed
+
+- Reopening a saved chat waiting for the entire remote history before displaying it.
+- Cold history loads blocking tab creation/navigation; late load results now update their owning tab only.
+- First history Markdown rendering blocking the UI and cached renders being discarded on reopening.
+- Old account rows remaining visible after per-provider account selection changes.
+- Late background UI callbacks accessing a closed application container.
+- Manual refresh waiting on failed records without a cached value.
+- Local archive write failures making an already completed reply appear to have failed remotely.
 
 - Preserve an explicit provider-default effort choice as an absent request override after restore and refresh.
 

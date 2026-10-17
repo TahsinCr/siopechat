@@ -112,15 +112,21 @@ class SessionDialog:
     def render_accounts(self):
         if self.view.account_service is None:
             return []
+        active_keys = (
+            {item["key"] for item in self.view.account_service.active_accounts()}
+            if hasattr(self.view.account_service, "active_accounts")
+            else {self.view.account_key}
+        )
         return [
             (
                 "class:menu.selection"
                 if index == self.account_index
                 and self.view.app.layout.current_control is self.account_control
                 else "class:tab.active"
-                if item["key"] == self.view.account_key
+                if item["key"] in active_keys
                 else "class:button",
                 f" {item['icon']} {item['label']} · {item['provider']}"
+                + (" · etkin" if item["key"] in active_keys else "")
                 + (" · kapalı" if not item.get("enabled", True) else "")
                 + "\n",
                 on_click(lambda key=item["key"]: self.choose_account(key)),

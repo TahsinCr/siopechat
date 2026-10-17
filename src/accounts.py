@@ -27,7 +27,7 @@ MODEL_TIMEOUT = 30
 HISTORY_TIMEOUT = 20
 
 PROVIDERS = {
-    "chatgpt": ("ChatGPT", "◈", "https://chatgpt.com/"),
+    "chatgpt": ("ChatGPT", "❋", "https://chatgpt.com/"),
     "gemini": ("Gemini", "✦", "https://gemini.google.com/"),
 }
 
@@ -46,6 +46,9 @@ def origin(value, fallback="chatgpt/default"):
 class Accounts:
     def __init__(self, api):
         self.api = api
+        self.settings = api.settings
+        self.closed = False
+        self._chat_projects = {}
         self.root = api.get("paths")
         self._providers = {}
         self.cdp_url = None
@@ -54,6 +57,7 @@ class Accounts:
         self._catalog_tasks = {}
         self._catalog_versions = {}
         self._sending = {}
+        self._attachment_paths = {}
         self._loop = None
         self._thread = None
         self._lock = threading.Lock()
@@ -66,7 +70,7 @@ class Accounts:
         os.environ.setdefault("GEMINI_COOKIE_PATH", str(cache))
 
     def items(self):
-        config = self.api.settings.snapshot()
+        config = self.settings.snapshot()
         return [
             dict(
                 item,
@@ -78,7 +82,7 @@ class Accounts:
         ]
 
     def enabled(self, provider):
-        return self.api.settings.snapshot()["providers"].get(provider, {}).get("enabled", False)
+        return self.settings.snapshot()["providers"].get(provider, {}).get("enabled", False)
 
     def set_enabled(self, provider, enabled):
         with self._lock:
@@ -86,27 +90,49 @@ class Accounts:
                 count and key.split("/")[0] == provider for key, count in self._sending.items()
             ):
                 raise ValueError("Önce bu sağlayıcıdaki yanıtları tamamlayın veya durdurun")
-            self.api.settings.configure_provider(provider, enabled)
+            self.settings.configure_provider(provider, enabled)
 
     def preference(self, key):
-        return self.api.settings.snapshot()["accounts"].get("preferences", {}).get(key, {})
+        return self.settings.snapshot()["accounts"].get("preferences", {}).get(key, {})
 
     def remember(self, key, model, effort):
         self.item(key)
-        self.api.settings.update(
-            "accounts", {"preferences": {key: {"model": model, "effort": effort}}}
-        )
+        self.settings.update("accounts", {"preferences": {key: {"model": model, "effort": effort}}})
+
+    def active_accounts(self):
+        if self.closed:
+            return []
+        data = self.settings.snapshot()["accounts"]
+        chosen = dict(data.get("selected", {}))
+        legacy = data["active"]
+        chosen.setdefault(legacy.split("/")[0], legacy)
+        for item in self.items():
+            chosen.setdefault(item["provider"], item["key"])
+        return [self.item(key) for provider, key in chosen.items() if self.enabled(provider)]
+
+    def archive(self):
+        if self.closed:
+            return None
+        try:
+            return self.api.get("archive")
+        except LookupError:
+            return None
+
+    def read_record(self, key, kind, remote, fetch, force=False):
+        archive = self.archive()
+        if archive:
+            try:
+                return archive.read(key, kind, remote or "", fetch, force=force)
+            except OSError:
+                return fetch()
+        return fetch()
 
     def active(self):
-        data = self.api.settings.snapshot()
+        data = self.settings.snapshot()
         key = data["accounts"]["active"]
         if self.enabled(key.split("/")[0]):
             return key
-        return next(
-            item["provider"] + "/" + item["id"]
-            for item in data["accounts"]["items"]
-            if self.enabled(item["provider"])
-        )
+        return self.active_accounts()[0]["key"]
 
     def item(self, key):
         return next(item for item in self.items() if item["key"] == key)
@@ -119,7 +145,7 @@ class Accounts:
             or len(label) > 80
         ):
             raise ValueError("Sağlayıcı ve 1–80 karakterlik hesap adı gerekir")
-        data = self.api.settings.snapshot()["accounts"]
+        data = self.settings.snapshot()["accounts"]
         value = {
             "provider": provider,
             "id": uuid.uuid4().hex,
@@ -127,14 +153,16 @@ class Accounts:
             "port": 9230 + len(data["items"]),
         }
         data["items"].append(value)
-        self.api.settings.update("accounts", data)
+        self.settings.update("accounts", data)
         return provider + "/" + value["id"]
 
     def select(self, key):
         self.item(key)
         if not self.enabled(key.split("/")[0]):
             raise ValueError("Sağlayıcı devre dışı; önce Ayarlar → Sağlayıcılar bölümünden açın")
-        self.api.settings.update("accounts", {"active": key})
+        selected = {item["provider"]: item["key"] for item in self.active_accounts()}
+        selected[key.split("/")[0]] = key
+        self.settings.update("accounts", {"active": key, "selected": selected})
 
     def directory(self, key):
         self.item(key)
@@ -164,7 +192,11 @@ class Accounts:
                 self._providers[key] = (
                     ChatGPTProvider(self.session(key), item["id"])
                     if item["provider"] == "chatgpt"
-                    else GeminiProvider(self.directory(key) / "cookies.json", item["id"], notebooks=Notebooks(self.session(key).cdp_url,item["id"]))
+                    else GeminiProvider(
+                        self.directory(key) / "cookies.json",
+                        item["id"],
+                        notebooks=Notebooks(self.session(key).cdp_url, item["id"]),
+                    )
                 )
             return self._providers[key]
 
@@ -249,6 +281,7 @@ class Accounts:
         return self.call(discover())
 
     def close(self):
+        self.closed = True
         if self._loop is not None:
 
             async def cleanup():
@@ -336,13 +369,39 @@ class Accounts:
             return self.status(key)
         raise ValueError("unknown account operation")
 
-    def cached(self, key, remote):
+    def cached(self, key, remote=None):
+        archive = self.archive()
+        if archive and remote is None:
+            pointer = archive.get(key, "pointer", "active")
+            if pointer is not None:
+                remote = pointer.get("remote")
+                if remote is None:
+                    return None
+        if archive and remote:
+            value = archive.get(key, "conversation", remote)
+            if value is not None:
+                return value
         return self.cache(key).load_cached_conversation(remote)
+
+    def set_active(self, key, value):
+        _, remote = origin(value, key)
+        archive = self.archive()
+        if archive:
+            try:
+                archive.put(key, "pointer", "active", {"remote": remote})
+            except OSError:
+                pass
+        self.cache(key).set_active_conversation(remote)
 
     def cache(self, key):
         return BackendService(self.directory(key), legacy_fallback=key == "chatgpt/default")
 
     def chat_record(self, key, chat):
+        if chat.project_id:
+            self._chat_projects[key, chat.origin.remote_id] = chat.project_id
+            if len(self._chat_projects) > 2048:
+                self._chat_projects.pop(next(iter(self._chat_projects)))
+        project = chat.project_id or self._chat_projects.get((key, chat.origin.remote_id))
         return {
             "id": identity(key, chat.origin.remote_id),
             "remote_id": chat.origin.remote_id,
@@ -350,53 +409,66 @@ class Accounts:
             "provider_id": chat.origin.provider_id,
             "account_id": chat.origin.account_id,
             "title": chat.title,
-            "project_id": identity(key, chat.project_id),
+            "project_id": identity(key, project),
+            "metadata": chat.metadata,
             "messages": [
                 {
                     "id": message.id,
                     "role": message.role,
                     "channel": message.channel,
                     "text": "\n".join(content.text or "" for content in message.content),
+                    "content": [asdict(content) for content in message.content],
+                    "metadata": message.metadata,
                 }
                 for message in chat.messages
             ],
         }
 
-    def list_chats(self, selected=None, cursor=None):
+    def list_chats(self, selected=None, cursor=None, force=False):
         cursors = json.loads(cursor) if cursor else None
         accounts = [
             item
-            for item in self.items()
+            for item in self.active_accounts()
             if self.enabled(item["provider"])
             and (selected is None or item["provider"] in selected)
             and (cursors is None or item["key"] in cursors)
             and self.status(item["key"])["saved_snapshot"]
         ]
 
-        async def collect():
-            return await asyncio.gather(
-                *(
-                    asyncio.wait_for(
-                        self.provider(item["key"]).list_chats(
-                            cursor=cursors.get(item["key"]) if cursors else None, limit=50
-                        ),
-                        HISTORY_TIMEOUT,
-                    )
-                    for item in accounts
-                ),
-                return_exceptions=True,
-            )
+        def page_for(account):
+            key = account["key"]
+            page_cursor = cursors.get(key) if cursors else None
 
-        pages = self.call(collect()) if accounts else []
+            def fetch():
+                page = self.call(
+                    self.provider(key).list_chats(cursor=page_cursor, limit=50), HISTORY_TIMEOUT
+                )
+                return {
+                    "items": [self.chat_record(key, chat) for chat in page.items],
+                    "cursor": page.next_cursor,
+                }
+
+            return self.read_record(key, "chats", page_cursor, fetch, force)
+
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=max(1, len(accounts))) as pool:
+            futures = [pool.submit(page_for, account) for account in accounts]
+            pages = []
+            for future in futures:
+                try:
+                    pages.append(future.result())
+                except Exception as error:
+                    pages.append(error)
         items, errors, next_cursors, failed = [], [], {}, []
         for account, page in zip(accounts, pages):
             if isinstance(page, BaseException):
                 errors.append(account["label"])
                 failed.append(account["key"])
                 continue
-            items.extend(self.chat_record(account["key"], chat) for chat in page.items)
-            if page.next_cursor is not None:
-                next_cursors[account["key"]] = page.next_cursor
+            items.extend(page["items"])
+            if page["cursor"] is not None:
+                next_cursors[account["key"]] = page["cursor"]
         return {
             "items": items,
             "cursor": json.dumps(next_cursors) if next_cursors else None,
@@ -404,14 +476,63 @@ class Accounts:
             "failed_accounts": failed,
         }
 
-    def list_projects(self, key, cursor=None):
+    def list_projects(self, key, cursor=None, force=False):
         provider = self.provider(key)
         if Capability.PROJECTS not in provider.capabilities:
             return {"items": [], "cursor": None}
-        page = self.call(provider.list_projects(cursor))
+
+        def fetch():
+            page = self.call(provider.list_projects(cursor))
+            return {
+                "items": [self.project_record(key, p) for p in page.items],
+                "cursor": page.next_cursor,
+            }
+
+        return self.read_record(key, "containers", cursor, fetch, force)
+
+    def all_projects(self, cursor=None, force=False):
+        from concurrent.futures import ThreadPoolExecutor
+
+        cursors = json.loads(cursor) if cursor else None
+        accounts = [
+            item
+            for item in self.active_accounts()
+            if (cursors is None or item["key"] in cursors)
+            and (
+                self.status(item["key"])["saved_snapshot"]
+                or (
+                    self.archive() and self.archive().get(item["key"], "containers", "") is not None
+                )
+            )
+        ]
+        items, errors, failed, more = [], [], [], {}
+        with ThreadPoolExecutor(max_workers=max(1, len(accounts))) as pool:
+            futures = [
+                (
+                    account,
+                    pool.submit(
+                        self.list_projects,
+                        account["key"],
+                        cursors.get(account["key"]) if cursors else None,
+                        force,
+                    ),
+                )
+                for account in accounts
+            ]
+            for account, future in futures:
+                try:
+                    page = future.result()
+                    items.extend(page["items"])
+                    if page.get("cursor"):
+                        more[account["key"]] = page["cursor"]
+                except Exception:
+                    errors.append(account["label"])
+                    failed.append(account["key"])
         return {
-            "items": [self.project_record(key, project) for project in page.items],
-            "cursor": page.next_cursor,
+            "items": items,
+            "cursor": json.dumps(more) if more else None,
+            "errors": errors,
+            "failed_accounts": failed,
         }
 
     @staticmethod
@@ -419,17 +540,35 @@ class Accounts:
         return {
             "id": identity(key, project.origin.remote_id),
             "name": project.name,
+            "remote_id": project.origin.remote_id,
             "instructions": project.instructions,
             "resources": [asdict(resource) for resource in project.resources],
             "context": key,
+            "provider_id": key.split("/")[0],
+            "kind": project.metadata.get("kind", "project"),
+            "metadata": project.metadata,
         }
 
-    def load(self, value, key):
+    def load(self, value, key, force=False):
         key, remote = origin(value, key)
-        chat = self.call(self.provider(key).get_chat(remote))
-        value = self.chat_record(key, chat)
-        self.cache(key).cache_conversation(dict(value, id=remote), make_active=False)
-        return value
+        archive = self.archive()
+        if archive and archive.get(key, "conversation", remote) is None:
+            legacy = self.cache(key).load_cached_conversation(remote)
+            if legacy and not legacy.get("temporary"):
+                archive.put(
+                    key, "conversation", remote, dict(legacy, id=identity(key, remote), context=key)
+                )
+
+        def fetch():
+            chat = self.call(self.provider(key).get_chat(remote))
+            record = self.chat_record(key, chat)
+            if not record.get("project_id"):
+                record["project_id"] = (self.cached(key, remote) or {}).get("project_id")
+            if not archive:
+                self.cache(key).cache_conversation(dict(record, id=remote), make_active=False)
+            return record
+
+        return self.read_record(key, "conversation", remote, fetch, force)
 
     def send(
         self,
@@ -445,6 +584,10 @@ class Accounts:
     ):
         if not self.enabled(key.split("/")[0]):
             raise ValueError("Sağlayıcı devre dışı")
+        if key not in {item["key"] for item in self.active_accounts()}:
+            raise ValueError(
+                "Bu sağlayıcıda başka hesap etkin; Hesaplar bölümünden bu hesabı etkinleştirin"
+            )
         context, remote = origin(selected_id, key)
         project_context, project = origin(options.get("project_id"), key)
         if context != key or project_context != key:
@@ -486,8 +629,37 @@ class Accounts:
                         text = text + event.text if isinstance(event, TextDelta) else event.text
             if not remote_id:
                 raise RuntimeError("Sağlayıcı sohbet kimliği döndürmedi")
-            prior = self.cached(key, remote_id) or {}
-            messages = prior.get("messages", []) + [{"role": "user", "text": prompt}]
+            cache_warning = None
+            try:
+                prior = {} if request.temporary else (self.cached(key, remote_id) or {})
+            except OSError:
+                prior = {}
+                cache_warning = "Yanıt alındı ancak yerel geçmiş okunamadı"
+
+            resources = []
+            archive = self.archive()
+            if archive and not request.temporary:
+                for attachment in attachments:
+                    resource = dict(attachment)
+                    path = resource.get("path") or self._attachment_paths.get(
+                        (key, resource.get("id") or resource.get("file_id"))
+                    )
+                    if (
+                        path
+                        and Path(path).is_file()
+                        and Path(path).stat().st_size <= 20 * 1024 * 1024
+                    ):
+                        try:
+                            resource["path"], resource["sha256"] = archive.files.save(
+                                Path(path).read_bytes()
+                            )
+                        except OSError:
+                            cache_warning = "Yanıt alındı ancak ek dosya arşivlenemedi"
+
+                    resources.append(resource)
+            messages = prior.get("messages", []) + [
+                {"role": "user", "text": prompt, "resources": resources}
+            ]
             if reasoning:
                 messages.append({"role": "reasoning", "text": reasoning})
             messages.append({"role": "assistant", "text": text})
@@ -504,9 +676,23 @@ class Accounts:
                 "temporary": request.temporary,
             }
             if not request.temporary:
-                self.cache(key).cache_conversation(record)
+                try:
+                    archive = self.archive()
+                    if archive:
+                        archive.put(
+                            key,
+                            "conversation",
+                            remote_id,
+                            dict(record, id=identity(key, remote_id)),
+                        )
+                        self.set_active(key, remote_id)
+                    else:
+                        self.cache(key).cache_conversation(record)
+                except (OSError, ValueError):
+                    cache_warning = "Yanıt alındı ancak yerel arşive kaydedilemedi"
             return {
                 "conversation_id": identity(key, remote_id),
+                "cache_warning": cache_warning,
                 "conversation": {"title": title, "default_model_slug": model, "messages": []},
             }
 
@@ -549,7 +735,13 @@ class Accounts:
         if key.startswith("gemini/"):
             return {"id": uuid.uuid4().hex, "path": str(path), "name": path.name, "mime_type": mime}
         with ChatGPTClient(self.session(key)) as client:
-            return client.upload_file(path.name, mime, path.read_bytes())
+            result = client.upload_file(path.name, mime, path.read_bytes())
+        remote = result.get("id") or result.get("file_id")
+        if remote:
+            self._attachment_paths[key, remote] = str(path)
+            if len(self._attachment_paths) > 64:
+                self._attachment_paths.pop(next(iter(self._attachment_paths)))
+        return result
 
     def create_project(self, key, name, visibility="private", memory="default"):
         project = self.call(
@@ -562,17 +754,28 @@ class Accounts:
 
         def get_project(project):
             context, remote = origin(project, key)
-            if context != key:
-                raise ValueError("Proje başka hesaba ait")
-            return self.project_record(key, self.call(provider.get_project(remote)))
+            return self.read_record(
+                context,
+                "container",
+                remote,
+                lambda: self.project_record(
+                    context, self.call(self.provider(context).get_project(remote))
+                ),
+            )
 
         def project_chats(project, cursor=None):
-            _, remote = origin(project, key)
-            page = self.call(provider.list_project_chats(remote, cursor))
-            return {
-                "items": [self.chat_record(key, item) for item in page.items],
-                "cursor": page.next_cursor,
-            }
+            context, remote = origin(project, key)
+
+            def fetch():
+                page = self.call(self.provider(context).list_project_chats(remote, cursor))
+                return {
+                    "items": [self.chat_record(context, item) for item in page.items],
+                    "cursor": page.next_cursor,
+                }
+
+            return self.read_record(
+                context, "container_chats", remote + ":" + (cursor or ""), fetch
+            )
 
         def move(chat, project):
             chat_context, remote = origin(chat, key)

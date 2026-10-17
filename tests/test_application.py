@@ -110,6 +110,7 @@ class ApplicationTests(unittest.TestCase):
         api.settings.snapshot.return_value = DEFAULTS
         accounts = Mock()
         accounts.active.return_value = "chatgpt/default"
+        accounts.archive.return_value = None
         accounts.callbacks.return_value = {
             "load_conversation": Mock(return_value={"id": "example"}),
             "send_prompt": Mock(return_value={}),

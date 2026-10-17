@@ -136,7 +136,7 @@ def run_fullscreen(
     cached_conversation: dict[str, Any] | None = None,
     cdp_url: str = DEFAULT_CDP_URL,
 ) -> int:
-    from accounts import identity
+    from accounts import identity, origin
 
     from .chat import run_tui
     from .settings import SettingsPanel
@@ -145,8 +145,14 @@ def run_fullscreen(
     accounts.cdp_url = cdp_url
     key = accounts.active()
     if key != "chatgpt/default":
-        cached_conversation = accounts.cache(key).load_cached_conversation()
+        cached_conversation = accounts.cached(key)
         conversation_id = None
+    elif (
+        not conversation_id
+        and accounts.archive()
+        and accounts.archive().get(key, "pointer", "active") is not None
+    ):
+        cached_conversation = accounts.cached(key)
     cached = cached_conversation or {}
 
     def preferences():
@@ -193,7 +199,7 @@ def run_fullscreen(
         lambda: accounts.list_chats()["items"],
         callbacks["load_conversation"],
         callbacks["send_prompt"],
-        conversation_id=identity(key, conversation_id or cached.get("id")),
+        conversation_id=identity(key, origin(conversation_id or cached.get("id"), key)[1]),
         title=cached.get("title") or "Yeni sohbet",
         initial_messages=cached.get("messages"),
         model=cached.get("model"),

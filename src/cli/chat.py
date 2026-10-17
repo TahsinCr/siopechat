@@ -120,6 +120,9 @@ class ChatView:
         self._account_catalogs = {}
         self._catalog_requests = {}
         self._project_requests = {}
+        self._archive_revision = -1
+        self._archive_page_ids = {}
+        self._model_picker_requests = set()
         self.attach_file_callback = None
         self.settings_rows_callback = settings_rows
         self.change_setting = change_setting
@@ -331,8 +334,69 @@ class ChatView:
         while True:
             await asyncio.sleep(0.12)
             active_tab_busy = bool(self.tabs and self.tabs[self.active_tab].get("busy"))
+            self.apply_archive_updates()
             if active_tab_busy or self.loading_conversation or self.uploading_image:
                 self.app.invalidate()
+
+    def archive_service(self):
+        if self.account_service and hasattr(self.account_service, "archive"):
+            return self.account_service.archive()
+        return None
+
+    def apply_archive_updates(self):
+        archive = self.archive_service()
+        if archive is None or archive.revision == self._archive_revision:
+            return
+        self._archive_revision = archive.revision
+        accounts = self.account_service.active_accounts()
+        chats = {item["id"]: item for item in self.sidebar_items if item.get("id")}
+        for account in accounts:
+            key = account["key"]
+            page = archive.get(key, "chats", "")
+            if page:
+                new_ids = {item["id"] for item in page["items"]}
+                for removed in self._archive_page_ids.get((key, "chats"), set()) - new_ids:
+                    chats.pop(removed, None)
+                self._archive_page_ids[key, "chats"] = new_ids
+                for item in page["items"]:
+                    chats[item["id"]] = item
+            page = archive.get(key, "containers", "")
+            if page:
+                new_ids = {item["id"] for item in page["items"]}
+                for removed in self._archive_page_ids.get((key, "containers"), set()) - new_ids:
+                    self.project_items.pop(removed, None)
+                self._archive_page_ids[key, "containers"] = new_ids
+                for item in page["items"]:
+                    self.project_items[item["id"]] = item
+        self.sidebar_items = list(chats.values())
+        states = {(x["account"], x["kind"], x["remote"]): x for x in archive.states()}
+        for i, tab in enumerate(self.tabs):
+            if not tab.get("conversation_id"):
+                continue
+            key, remote = origin(tab["conversation_id"], tab.get("account_key", self.account_key))
+            state = states.get((key, "conversation", remote))
+            tab["syncing"] = bool(state and state["state"] == "syncing")
+            if tab.get("busy"):
+                continue
+            if (
+                not state
+                or state["state"] != "ready"
+                or tab.get("archive_version") == state.get("version")
+            ):
+                continue
+            tab["archive_version"] = state["version"]
+            value = archive.get(key, "conversation", remote)
+            if not value:
+                continue
+            messages = [visible_chat_message(m) for m in value.get("messages", [])]
+            messages = [m for m in messages if m is not None]
+            if tab.get("messages") != messages:
+                tab["messages"] = messages
+                tab["title"] = value.get("title") or tab.get("title")
+                if i == self.active_tab:
+                    self.messages = messages
+                    self.title = tab["title"]
+        self.app.invalidate()
 
     def render_prompt(self) -> FormattedText:
         return FormattedText([("class:prompt", " › ")])
@@ -355,7 +419,7 @@ class ChatView:
             return
         if key != self.account_key:
             self._account_projects[self.account_key] = self.project_items
-            self.project_items = self._account_projects.get(key, {})
+            self.project_items = dict(self.project_items) | self._account_projects.get(key, {})
             self.projects_loaded = bool(self.project_items)
         self.account_key = key
         self.provider_id = key.split("/")[0]
@@ -372,9 +436,12 @@ class ChatView:
         for name, callback in self.account_service.callbacks(key).items():
             setattr(self, name, callback)
         self.session_state = self.account_service.status(key)
-        self.set_active_conversation = lambda value: self.account_service.cache(
-            key
-        ).set_active_conversation(origin(value, key)[1])
+        if hasattr(self.account_service, "set_active"):
+            self.set_active_conversation = lambda value: self.account_service.set_active(key, value)
+        else:
+            self.set_active_conversation = lambda value: self.account_service.cache(
+                key
+            ).set_active_conversation(origin(value, key)[1])
         self.list_conversations = lambda: self.account_service.list_chats(self.provider_filter)[
             "items"
         ]
@@ -405,7 +472,6 @@ class ChatView:
         self.effort = self.catalog.effort(self.model, self.effort_preference)
         self.restore_account_preference()
         self.current_project = {}
-        self.project_items = {}
         self.projects_loaded = False
         self.account_service.select(key)
         self._save_active_tab()
@@ -580,6 +646,8 @@ class ChatView:
             else 0,
             "busy": self.active_busy(),
             "completed_pending": False,
+            "loading": self.loading_conversation,
+            "loading_started": self.loading_started,
         }
 
     def text(self, key, fallback):
@@ -623,6 +691,8 @@ class ChatView:
                 if tab.get("busy")
                 else "✓ "
                 if tab.get("completed_pending")
+                else "↻ "
+                if tab.get("loading") or tab.get("syncing")
                 else "◌ "
                 if tab.get("temporary")
                 else ""
@@ -638,7 +708,9 @@ class ChatView:
                 else "class:tab"
             )
             fragments.append(("class:tab.divider", "│"))
-            fragments.append((style, label, on_click(lambda i=i: self.select_tab(i))))
+            fragments.append(
+                (style + " class:tab.open", label, on_click(lambda i=i: self.select_tab(i)))
+            )
             fragments.append(
                 (style + " class:tab.close", " × ", on_click(lambda i=i: self.close_clicked_tab(i)))
             )
@@ -780,6 +852,14 @@ class ChatView:
             self.app.invalidate()
             return
         project = dict(self.project_items[project_id]) if project_id else {}
+        if project_id and origin(project_id, self.account_key)[0] != self.account_key:
+            self.status = "Proje başka bir sağlayıcı hesabına ait; önce o hesapta sohbet açın"
+            self.app.invalidate()
+            return
+        if project.get("metadata", {}).get("read_only"):
+            self.status = "Gemini defteri şu anda salt okunur · F9 ile ayrıntıları açın"
+            self.app.invalidate()
+            return
         if not self.conversation_id:
             self.current_project = project
             self._save_active_tab()
@@ -1087,60 +1167,76 @@ class ChatView:
 
     def render_sidebar(self) -> FormattedText:
         self._build_sidebar_rows()
-        if not self.sidebar_rows:
-            message = (
-                "  Sohbetler yükleniyor…\n" if self.sidebar_loading else "  Sohbet bulunamadı\n"
-            )
-            return FormattedText([("class:sidebar.muted", message)])
-        rendered: list[tuple[str, str]] = []
-        for index, row in enumerate(self.sidebar_rows):
+        fragments = []
+        open_ids = {tab.get("conversation_id") for tab in self.tabs}
+        archive = self.archive_service()
+        states = (
+            {(x["account"], x["kind"], x["remote"]): x["state"] for x in archive.states()}
+            if archive
+            else {}
+        )
+        for i, row in enumerate(self.sidebar_rows):
             kind = row["kind"]
-            selected = index == self.sidebar_index
-            if kind in ("section", "project"):
-                marker = "▸" if row["collapsed"] else "▾"
-                style = "class:sidebar.selected" if selected else "class:sidebar.header"
-                count = str(row.get("count", ""))
-                title = fit_text(row["title"], self.sidebar_width() - len(count) - 6)
-                rendered.append((style, f" {marker} {title}  {count}\n"))
-            elif kind == "message":
-                rendered.append(
+            selected = i == self.sidebar_index
+            click = on_click(lambda i=i: self.click_sidebar(i))
+            style = "class:sidebar.selected" if selected else "class:sidebar.item"
+            if row.get("id") in open_ids:
+                style += " class:sidebar.open"
+            if kind == "message":
+                fragments.append(
                     (
                         "class:sidebar.muted",
-                        f"   {fit_text(row['title'], self.sidebar_width() - 3)}\n",
+                        "   " + fit_text(row["title"], self.sidebar_width() - 3) + "\n",
                     )
                 )
-            else:
-                marker = "›" if selected else " "
-                indent = "   " if row.get("nested") else "  "
-                title = fit_text(row["title"], self.sidebar_width() - len(indent) - 2)
-                rendered.append(
-                    (
-                        "class:sidebar.selected" if selected else "class:sidebar.item",
-                        f"{indent}{marker} {title}\n",
-                    )
+                continue
+            marker = (
+                ("▸" if row["collapsed"] else "▾")
+                if kind in ("section", "project")
+                else ("›" if selected else " ")
+            )
+            indent = "   " if row.get("nested") else " "
+            fragments.append((style, indent + marker + " ", click))
+            if kind in ("chat", "project"):
+                provider = row.get("provider_id", "chatgpt")
+                fragments.append(
+                    ("class:provider." + provider, "✦ " if provider == "gemini" else "❋ ", click)
                 )
-        fragments = []
-        for i, (style, text) in enumerate(rendered):
-            row = self.sidebar_rows[i]
-            if row["kind"] == "project":
+            suffix = " " + str(row.get("count", "")) if kind in ("section", "project") else ""
+            if kind == "project":
+                suffix += " ⓘ"
+            key, remote = origin(row.get("id"), self.account_key)
+            state = states.get((key, "conversation" if kind == "chat" else "container", remote))
+            if state == "syncing":
+                suffix += " ↻"
+            elif state == "error":
+                suffix += " !"
+            width = (
+                self.sidebar_width()
+                - len(indent)
+                - 3
+                - (2 if kind in ("chat", "project") else 0)
+                - get_cwidth(suffix)
+            )
+            fragments.append(
+                (
+                    style + (" bold" if kind == "section" else ""),
+                    fit_text(row["title"], max(1, width)),
+                    click,
+                )
+            )
+            if kind == "project":
                 fragments.append(
                     (
-                        style,
-                        fit_text(text.rstrip(), self.sidebar_width() - 5),
-                        on_click(lambda i=i: self.click_sidebar(i)),
-                    )
-                )
-                fragments.append(
-                    (
-                        "class:button",
-                        " ⓘ\n",
+                        "class:sidebar.muted",
+                        suffix + "\n",
                         on_click(
                             lambda project_id=row["id"]: self.show_project_details(project_id)
                         ),
                     )
                 )
             else:
-                fragments.append((style, text, on_click(lambda i=i: self.click_sidebar(i))))
+                fragments.append((style, suffix + "\n", click))
         return FormattedText(fragments)
 
     def click_sidebar(self, index):
@@ -1153,21 +1249,28 @@ class ChatView:
 
     def _build_sidebar_rows(self) -> None:
         query = self.sidebar_search.text.strip().casefold()
+        active_keys = (
+            {item["key"] for item in self.account_service.active_accounts()}
+            if self.account_service and hasattr(self.account_service, "active_accounts")
+            else None
+        )
         conversations = [
             item
             for item in self.sidebar_items
             if item.get("kind") != "workspace"
+            and (active_keys is None or origin(item.get("id"), self.account_key)[0] in active_keys)
             and (
                 self.provider_filter is None
                 or item.get("provider_id", "chatgpt") in self.provider_filter
             )
         ]
         workspaces = [item for item in self.sidebar_items if item.get("kind") == "workspace"]
-        projects: dict[str, list[dict[str, Any]]] = (
-            {key: [] for key in self.project_items}
-            if self.provider_filter is None or "chatgpt" in self.provider_filter
-            else {}
-        )
+        projects: dict[str, list[dict[str, Any]]] = {
+            key: []
+            for key, project in self.project_items.items()
+            if self.provider_filter is None
+            or project.get("provider_id", origin(key)[0].split("/")[0]) in self.provider_filter
+        }
         unassigned: list[dict[str, Any]] = []
         for item in conversations:
             project = item.get("project")
@@ -1207,7 +1310,7 @@ class ChatView:
                     remote.get("name")
                     or (items[0].get("project_name") if items else None)
                     or project_meta.get("name")
-                    or project_id
+                    or "Proje"
                 )
                 visible_items = [item for item in items if matches(item)]
                 if query and query in project_name.casefold():
@@ -1220,6 +1323,8 @@ class ChatView:
                         "kind": "project",
                         "id": project_id,
                         "title": project_name,
+                        "provider_id": remote.get("provider_id")
+                        or origin(project_id)[0].split("/")[0],
                         "count": len(items),
                         "collapsed": collapsed,
                     }
@@ -1326,8 +1431,8 @@ class ChatView:
             "kind": "chat",
             "id": item.get("id"),
             "project_id": item.get("project_id"),
-            "title": ({"chatgpt": "◈ ", "gemini": "✦ "}.get(item.get("provider_id"), ""))
-            + str(item.get("title") or "Adsız sohbet"),
+            "title": str(item.get("title") or "Adsız sohbet"),
+            "provider_id": item.get("provider_id") or origin(item.get("id"))[0].split("/")[0],
             "nested": nested,
         }
 
@@ -1639,9 +1744,10 @@ class ChatView:
         self.app.invalidate()
 
     def refresh_projects(self, more: bool = False) -> None:
-        if Capability.PROJECTS not in self.provider_features:
+        if Capability.PROJECTS not in self.provider_features and not (
+            self.account_service and hasattr(self.account_service, "all_projects")
+        ):
             self.projects_loading = False
-            self.project_items = {}
             self.projects_loaded = True
             return
         account_key = self.account_key
@@ -1652,6 +1758,11 @@ class ChatView:
         self._project_requests[account_key] = token
         self.projects_loading = True
         callback = self.list_projects_callback
+        if self.account_service and hasattr(self.account_service, "all_projects"):
+
+            def callback(cursor):
+                return self.account_service.all_projects(cursor)
+
         epoch = self.session_epoch
 
         def finish():
@@ -1670,14 +1781,23 @@ class ChatView:
             if cursor and next_cursor == cursor:
                 failure("Sağlayıcı aynı proje sayfasını döndürdü")
                 return
-            projects = dict(self.project_items) if more else {}
+            failed = set(result.get("failed_accounts", []))
+            projects = (
+                dict(self.project_items)
+                if more
+                else {
+                    key: item
+                    for key, item in self.project_items.items()
+                    if origin(key, self.account_key)[0] in failed
+                }
+            )
             for item in result["items"]:
                 if not isinstance(item, dict) or not item.get("id"):
                     failure("Proje kimliği eksik")
                     return
                 if item["id"] not in self.project_items:
                     self.sidebar_collapsed.add(f"project:{item['id']}")
-                projects[item["id"]] = dict(item, name=item.get("name") or item["id"])
+                projects[item["id"]] = dict(item, name=item.get("name") or "Proje")
             self.project_items = projects
             self._save_active_tab()
             for tab in self.tabs:
@@ -1689,7 +1809,11 @@ class ChatView:
             self.project_cursor = next_cursor
             self.projects_loaded = True
             self.projects_loading = False
-            self.project_error = None
+            self.project_error = (
+                ("Yenilenemeyen hesaplar: " + ", ".join(result["errors"]))
+                if result.get("errors")
+                else None
+            )
             self.filter_sidebar()
             if self.palette_visible and self.palette_mode == "projects":
                 self.open_project_picker()
@@ -1782,7 +1906,7 @@ class ChatView:
             self.new_tab()
         self.tab_kind = "project"
         self.current_project = dict(self.project_items.get(project_id, {"id": project_id}))
-        self.title = self.current_project.get("name") or project_id
+        self.title = self.current_project.get("name") or "Proje"
         self.messages = [{"role": "system", "text": "Proje bilgileri yükleniyor…"}]
         self._save_active_tab()
         self.scroll_bottom()
@@ -1790,7 +1914,7 @@ class ChatView:
         def success(project):
             self.project_items[project_id] = project
             resources = project.get("resources") or []
-            text = f"# {project.get('name') or project_id}\n\n{project.get('description') or ''}\n\n**Proje kimliği:** `{project_id}`\n\n## Talimatlar\n\n{project.get('instructions') or 'Talimat yok.'}\n\n## Kaynaklar\n\n"
+            text = f"# {project.get('name') or 'Proje'}\n\n{project.get('description') or ''}\n\n## Talimatlar\n\n{project.get('instructions') or 'Talimat yok.'}\n\n## Kaynaklar\n\n"
             text += (
                 "\n".join(
                     f"- {item.get('name') or item.get('file_id') or item.get('id')} ({item.get('type') or 'dosya'})"
@@ -1806,7 +1930,7 @@ class ChatView:
                     tab.update(
                         messages=[{"role": "system", "text": text}],
                         project=project,
-                        title=project.get("name") or project_id,
+                        title=project.get("name") or "Proje",
                     )
                     if index == self.active_tab:
                         self._restore_active_tab(focus=False)
@@ -1823,6 +1947,8 @@ class ChatView:
         )
 
     def _dispatch_ui(self, callback: Callable[[], None]) -> None:
+        if self.account_service and getattr(self.account_service, "closed", False) is True:
+            return
         loop = self.event_loop or getattr(self.app, "loop", None)
         if loop is not None:
             if loop.is_running():
@@ -2015,15 +2141,56 @@ class ChatView:
         if mode != "actions":
             self.palette_items = []
         if mode != "effort":
-            self.palette_items.extend(
-                {
-                    "id": f"model.select:{model.id}",
-                    "title": f"Model · {model.chat_title or model.title}"
-                    + (" ✓" if model.id == self.model else ""),
-                    "detail": model.id,
-                }
-                for model in self.catalog.chat_models
-            )
+            catalogs = [(self.account_key, self.catalog)]
+            if (
+                self.account_service
+                and hasattr(self.account_service, "active_accounts")
+                and not self.conversation_id
+                and not self.messages
+            ):
+                catalogs = []
+                for account in self.account_service.active_accounts():
+                    key = account["key"]
+                    catalog = self._account_catalogs.get(key) or self.account_service.cached_models(
+                        key
+                    )
+                    if catalog:
+                        catalogs.append((key, catalog))
+                    if key not in self._model_picker_requests and (
+                        catalog is None or key not in self._account_catalogs
+                    ):
+                        self._model_picker_requests.add(key)
+
+                        def loaded(value, key=key):
+                            self._model_picker_requests.discard(key)
+                            self._account_catalogs[key] = value
+                            if self.palette_visible and self.palette_mode in ("models", "actions"):
+                                query = self.palette_search.text
+                                self.open_palette(self.palette_mode)
+                                self.palette_search.text = query
+
+                        def failed(reason, key=key):
+                            self._model_picker_requests.discard(key)
+                            self.status = "Model kataloğu alınamadı: " + key
+
+                        self._read_in_background(
+                            lambda key=key: self.account_service.models(key),
+                            loaded,
+                            failed,
+                            session_bound=False,
+                        )
+            for key, catalog in catalogs:
+                for model in catalog.chat_models:
+                    self.palette_items.append(
+                        {
+                            "id": f"model.select:{model.id}"
+                            if key == self.account_key
+                            else f"model.account:{key}:{model.id}",
+                            "title": f"Model · {model.chat_title or model.title}"
+                            + (" ✓" if key == self.account_key and model.id == self.model else ""),
+                            "detail": key.split("/")[0] + " · " + model.id,
+                        }
+                    )
         selected = next((m for m in self.catalog.chat_models if m.id == self.model), None)
         if mode != "models" and selected:
             self.palette_items.extend(
@@ -2130,6 +2297,17 @@ class ChatView:
         if action_id == "command.temporary":
             self.new_temporary_chat()
             return
+        if action_id.startswith("model.account:"):
+            key, model_id = action_id[len("model.account:") :].split(":", 1)
+            if self.conversation_id or self.messages:
+                self.status = "Mevcut sohbetin sağlayıcısı değiştirilemez; yeni sohbet açın"
+                return
+            self.account_service.select(key)
+            self.bind_account(key)
+            self.restore_account_preference()
+            self.current_project = {}
+            self.select_model(model_id)
+            return
         if action_id.startswith("model.select:"):
             selected_model = action_id.partition(":")[2]
             self.select_model(selected_model)
@@ -2228,7 +2406,7 @@ class ChatView:
 
     def new_tab(self) -> None:
         self.close_overlays()
-        if self.loading_conversation or self.uploading_image:
+        if (self.loading_conversation and not self.account_service) or self.uploading_image:
             self.status = "Wait for the current load or upload before creating a tab"
             self.app.invalidate()
             return
@@ -2251,12 +2429,30 @@ class ChatView:
         )
         self.active_tab = len(self.tabs) - 1
         self._restore_active_tab()
+        if self.account_service and hasattr(self.account_service, "active_accounts"):
+            selected = self.account_service.active_accounts()
+            if self.account_key not in {item["key"] for item in selected}:
+                key = next(
+                    (item["key"] for item in selected if item["provider"] == self.provider_id),
+                    self.account_service.active(),
+                )
+                self.bind_account(key)
+                self.model = (
+                    self.catalog.default_chat_model.id if self.catalog.default_chat_model else ""
+                )
+                self.effort = None
+                if self.catalog.state == FeatureState.UNKNOWN:
+                    self.refresh_provider_catalog()
         self.restore_account_preference()
         self._save_active_tab()
 
     def switch_tab(self, offset: int) -> None:
         self.close_overlays()
-        if self.loading_conversation or self.uploading_image or len(self.tabs) < 2:
+        if (
+            (self.loading_conversation and not self.account_service)
+            or self.uploading_image
+            or len(self.tabs) < 2
+        ):
             if self.loading_conversation or self.uploading_image:
                 self.status = "Wait for the current load or upload before switching tabs"
                 self.app.invalidate()
@@ -2277,6 +2473,8 @@ class ChatView:
             )
             self.catalog_loading = self.account_key in self._catalog_requests
         self.temporary = bool(tab.get("temporary"))
+        self.loading_conversation = bool(tab.get("loading"))
+        self.loading_started = tab.get("loading_started")
         self.message_selection = False
         self.selected_message_ref = None
         self.tab_kind = tab.get("kind", "chat")
@@ -2301,7 +2499,9 @@ class ChatView:
         tab["completed_pending"] = False
         if self.set_active_conversation is not None:
             self.set_active_conversation(None if self.temporary else self.conversation_id)
-        if tab.get("busy"):
+        if tab.get("loading"):
+            self.status = "Loading conversation…"
+        elif tab.get("busy"):
             self.status = "Streaming response…"
         elif self.busy and self.busy_tab_index is not None:
             self.status = f"Yanıt {self.busy_tab_index + 1}. sekmede sürüyor"
@@ -2323,7 +2523,12 @@ class ChatView:
 
     def close_tab(self) -> None:
         self.close_overlays()
-        if self.busy or self.loading_conversation or self.uploading_image or self.background_jobs:
+        if (
+            self.busy
+            or (self.loading_conversation and not self.account_service)
+            or self.uploading_image
+            or self.background_jobs
+        ):
             self.status = "Wait for active work to finish before closing a tab"
             self.app.invalidate()
             return
@@ -2393,6 +2598,29 @@ class ChatView:
                 else "Dosya yükleniyor"
             )
             return FormattedText([("", f" {frame} {phase} · {elapsed} · {self.status} ")])
+        archive = self.archive_service()
+        if archive:
+            states = archive.states()
+            pending_sync = [x for x in states if x["state"] == "syncing"]
+            failures = [x for x in states if x["state"] == "error"]
+            if pending_sync:
+                return FormattedText(
+                    [
+                        (
+                            "class:sync",
+                            f" ↻ Senkronizasyon · {len(pending_sync)} kayıt · {self.status} ",
+                        )
+                    ]
+                )
+            if failures:
+                return FormattedText(
+                    [
+                        (
+                            "class:sync.error",
+                            f" ! {len(failures)} kayıt senkronize edilemedi · önbellek korunuyor ",
+                        )
+                    ]
+                )
         pending = [
             label
             for label, active in (
@@ -2677,6 +2905,24 @@ class ChatView:
             self.status = "Bu sohbetin yanıtını bekleyin · aynı anda en fazla 4 bekleyen istek"
             self.app.invalidate()
             return
+        if (
+            self.account_service
+            and hasattr(self.account_service, "active_accounts")
+            and not self.input.text.lstrip().startswith("/")
+            and self.account_key
+            not in {item["key"] for item in self.account_service.active_accounts()}
+        ):
+            self.status = (
+                "Bu sağlayıcıda başka hesap etkin · Hesaplar’dan bu hesabı seçin · taslak korundu"
+            )
+            self.app.invalidate()
+            return
+        if self.current_project.get("metadata", {}).get(
+            "read_only"
+        ) and not self.input.text.lstrip().startswith("/"):
+            self.status = "Bu Gemini defteri salt okunur · defter bağlamında gönderim henüz desteklenmiyor · taslak korundu"
+            self.app.invalidate()
+            return
         prompt = self.input.text.strip()
         attachments = list(self.pending_attachments)
         if not prompt and not attachments:
@@ -2782,8 +3028,11 @@ class ChatView:
         elif name in ("/temporary", "/private"):
             self.new_temporary_chat()
         elif name == "/refresh":
+            archive = self.archive_service()
+            if archive:
+                archive.refresh()
             self.refresh_sidebar()
-            self.refresh_provider_catalog()
+            self.refresh_provider_catalog(force=True)
         elif name == "/action":
             action_id, _, raw_arguments = argument.strip().partition(" ")
             if action_id:
@@ -3046,7 +3295,7 @@ class ChatView:
     def open_resume(self) -> None:
         if self.palette_visible:
             self.close_overlays()
-        if self.active_busy() or self.background_jobs or (self.busy and not self.account_service):
+        if self.active_busy() or (self.busy and not self.account_service):
             self.status = "Bu sohbetin işlemi tamamlanınca başka bir sohbet yükleyin"
             self.app.invalidate()
             return
@@ -3132,7 +3381,7 @@ class ChatView:
             self.status = "Yükleme tamamlanınca başka bir sohbet açabilirsiniz"
             self.app.invalidate()
             return
-        if self.active_busy() or self.background_jobs or (self.busy and not self.account_service):
+        if self.active_busy() or (self.busy and not self.account_service):
             self.status = "Bu sohbetin işlemi tamamlanınca başka bir sohbet yükleyin"
             self.app.invalidate()
             return
@@ -3143,14 +3392,20 @@ class ChatView:
                 self.catalog = ModelCatalog(FeatureState.UNKNOWN)
                 self.model, self.effort = "", None
                 self.refresh_provider_catalog()
-        target_tab = self.active_tab
+        target_tab = self.tabs[self.active_tab]
+        token = uuid.uuid4().hex
         self.loading_conversation = True
         self.loading_started = time.monotonic()
         self.status = "Loading conversation…"
+        target_tab.update(loading=True, loading_started=self.loading_started, load_token=token)
         self.app.layout.focus(self.input)
         self.app.invalidate()
 
         load_callback = self.load_conversation
+        render_width = self.transcript_width()
+        render_tokens = dict(self.renderer.tokens)
+        render_cache = self.renderer.cache.copy()
+        render_cache_characters = self.renderer.cache_characters
 
         def load_selected() -> None:
             try:
@@ -3161,50 +3416,73 @@ class ChatView:
                     if visible is not None:
                         messages.append(visible)
 
+                prepared_renderer = MessageRenderer()
+                prepared_renderer.configure(render_tokens)
+                prepared_renderer.cache = render_cache
+                prepared_renderer.cache_characters = render_cache_characters
+                for index, message in enumerate(messages):
+                    prepared_renderer.render(
+                        message["role"],
+                        render_chatgpt_annotations(message["text"]),
+                        render_width,
+                        index > 0,
+                        False,
+                    )
+
                 def apply_conversation() -> None:
-                    if target_tab != self.active_tab:
+                    if (
+                        not any(tab is target_tab for tab in self.tabs)
+                        or target_tab.get("load_token") != token
+                    ):
                         return
-                    with self.lock:
-                        self.messages = messages
-                    self.conversation_id = conversation_id
-                    if self.set_active_conversation is not None:
-                        self.set_active_conversation(conversation_id)
-                    self.title = conversation.get("title") or "Untitled"
-                    model = conversation.get("model") or conversation.get("default_model_slug")
-                    if isinstance(model, str) and model:
-                        self.model = model
-                        if self.catalog.state == FeatureState.AVAILABLE:
-                            selected = next(
-                                (m for m in self.catalog.chat_models if m.id == model), None
-                            )
-                            if selected is None and self.catalog.default_chat_model is not None:
-                                self.last_response_model = model
-                                self.model = self.catalog.default_chat_model.id
-                        self.effort = self.catalog.effort(self.model, self.effort_preference)
                     project = conversation.get("project")
                     project = dict(project) if isinstance(project, dict) else {}
                     project_id = conversation.get("project_id") or project.get("id")
-                    project_name = conversation.get("project_name") or project.get("name")
-                    if isinstance(project_id, str) and project_id:
-                        project["id"] = project_id
-                    if isinstance(project_name, str) and project_name:
-                        project["name"] = project_name
                     project = dict(self.project_items.get(project_id, {})) | project
-                    self.current_project = project
-                    self.loading_conversation = False
-                    self.loading_started = None
-                    self.status = "Ready"
-                    self._save_active_tab()
-                    self.scroll_bottom()
+                    if project_id:
+                        project["id"] = project_id
+                    if conversation.get("project_name"):
+                        project["name"] = conversation["project_name"]
+                    target_tab.update(
+                        messages=messages,
+                        conversation_id=conversation_id,
+                        title=conversation.get("title") or "Untitled",
+                        project=project,
+                        loading=False,
+                        loading_started=None,
+                        load_error=None,
+                    )
+                    model = conversation.get("model") or conversation.get("default_model_slug")
+                    if isinstance(model, str) and model:
+                        target_tab["model"] = model
+                    if target_tab is self.tabs[self.active_tab]:
+                        if (
+                            self.transcript_width() == render_width
+                            and self.renderer.tokens == render_tokens
+                        ):
+                            self.renderer.cache = prepared_renderer.cache
+                            self.renderer.cache_characters = prepared_renderer.cache_characters
+                        self._restore_active_tab(focus=False)
+                        self.status = "Ready"
+                        self.scroll_bottom()
+                    else:
+                        self.app.invalidate()
 
                 self._dispatch_ui(apply_conversation)
             except Exception as error:
                 message = str(error)
 
                 def show_error() -> None:
-                    self.loading_conversation = False
-                    self.loading_started = None
-                    self.status = f"Load failed: {message}"
+                    if (
+                        not any(tab is target_tab for tab in self.tabs)
+                        or target_tab.get("load_token") != token
+                    ):
+                        return
+                    target_tab.update(loading=False, loading_started=None, load_error=message)
+                    if target_tab is self.tabs[self.active_tab]:
+                        self.loading_conversation = False
+                        self.loading_started = None
+                        self.status = f"Load failed: {message}"
                     self.app.invalidate()
 
                 self._dispatch_ui(show_error)
@@ -3295,6 +3573,8 @@ class ChatView:
                 **({"project_id": project_id} if project_id else {}),
                 **({"temporary": True} if temporary else {}),
             )
+            if result.get("cache_warning"):
+                final_status = result["cache_warning"]
             result_id = result.get("conversation_id")
             if isinstance(result_id, str) and result_id:
                 resolved_id = result_id

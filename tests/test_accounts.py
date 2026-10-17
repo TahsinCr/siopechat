@@ -190,9 +190,12 @@ class AccountTests(unittest.TestCase):
         cached = self.accounts.cached(self.gemini, "same")
         self.assertEqual(cached["provider_id"], "gemini")
         self.assertIsNone(self.accounts.cached("chatgpt/default", "same"))
-        self.accounts.cache(self.gemini).conversation_cache_path("same").unlink()
+        self.accounts.cache(self.gemini).conversation_cache_path("same").unlink(missing_ok=True)
         self.accounts.send(self.gemini, None, "Private", [], Mock(), Mock(), temporary=True)
-        self.assertIsNone(self.accounts.cached(self.gemini, "same"))
+        # Removing the legacy JSON snapshot must not delete the durable archive.
+        archived = self.accounts.cached(self.gemini, "same")
+        self.assertEqual(archived["messages"][0]["text"], "Q")
+        self.assertNotIn("Private", str(archived))
 
     def test_cross_account_project_move_fails_before_provider_call(self):
         provider = Mock()
