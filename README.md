@@ -167,3 +167,7 @@ Settings → Accounts lists accounts and offers Add account (ChatGPT or Gemini),
 Conversation identity is `(provider, account, remote ID)`. Tabs preserve their account, model and draft when switching. The sidebar shows ◈ ChatGPT / ✦ Gemini; its search-adjacent filter appears only with multiple configured providers and supports multiple selections. Account lists retain pagination and isolate failures. The terminal now calls account-scoped providers through one persistent background event loop; legacy management commands keep their compatibility daemon path.
 
 Use **Dosya**, `/attach` or Alt+A to choose a path (Tab completion). Gemini accepts web-supported files; ChatGPT uses native upload slots and attachment metadata, with PNG image dimensions retained. Attachments are limited to 20 MiB in this client. File uploads, multi-account browser login and provider sends require live verification beyond the offline tests.
+
+### Action catalog
+
+Keyboard mappings, the command palette and Settings → Shortcuts use the same canonical action IDs and category order (chat, model, projects, layout, accounts, view, editing, navigation, application). All default bindings are listed in config.json. Model/effort pickers also have Alt+M / Alt+E bindings. While the terminal runs, its actions are contributed to the shared ActionService for extensions; closing the terminal withdraws those contributions.

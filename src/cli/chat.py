@@ -11,6 +11,7 @@ import time
 import uuid
 from datetime import datetime
 from io import StringIO
+from types import SimpleNamespace
 from typing import Any, Callable
 
 from prompt_toolkit.application import Application
@@ -28,6 +29,7 @@ from rich.console import Console
 from rich.text import Text
 
 from accounts import origin
+from actions import action_order, action_title
 from providers.models import FeatureState, ModelCatalog
 from settings import DEFAULT_KEYBINDINGS
 from theme import DEFAULT_TERMINAL_STYLE
@@ -103,6 +105,7 @@ class ChatView:
         move_conversation=None,
         layout_factory=None,
         account_service=None,
+        action_host=None,
     ) -> None:
         from .widgets import register_modified_enter
 
@@ -309,6 +312,8 @@ class ChatView:
         if self.account_service:
             self.bind_account(self.account_key)
             self._save_active_tab()
+
+        self.action_cleanup = action_host(self) if action_host else None
 
     async def animate_activity(self) -> None:
         """Refresh animated status only while an operation is active.
@@ -1644,7 +1649,16 @@ class ChatView:
         self.status = "Projeler"
         self.app.invalidate()
 
+    def dispatch_action(self, action_id):
+        handler = self.action_handlers.get(action_id)
+        if handler is None:
+            raise ValueError("Bilinmeyen arayüz aksiyonu")
+        handler(SimpleNamespace(app=self.app))
+
     def run_action(self, action_id: str, arguments: dict[str, Any] | None = None) -> None:
+        if action_id in self.action_handlers:
+            self.dispatch_action(action_id)
+            return
         if self.invoke_action is None:
             self.status = f"Action {action_id} is unavailable"
             self.app.invalidate()
@@ -1760,76 +1774,9 @@ class ChatView:
         self.close_overlays()
         self.palette_mode = mode
         self.palette_items = [
-            {"id": "command.new", "title": "New conversation", "detail": "/new"},
-            {"id": "command.next_tab", "title": "Next tab", "detail": "/tab-next"},
-            {"id": "command.previous_tab", "title": "Previous tab", "detail": "/tab-prev"},
-            {"id": "command.close_tab", "title": "Close tab", "detail": "/tab-close"},
-            {"id": "command.resume", "title": "Search conversations", "detail": "/resume"},
-            {"id": "command.search", "title": "Search chats", "detail": "/search"},
-            {"id": "command.model", "title": "Set model ID", "detail": "/model MODEL_ID"},
-            {"id": "command.effort", "title": "Show provider effort", "detail": "/effort"},
-            {"id": "command.projects", "title": "Show projects", "detail": "/projects"},
-            {
-                "id": "command.project",
-                "title": "Show current project details",
-                "detail": "/project",
-            },
-            {
-                "id": "ui.focus_sidebar",
-                "title": "Focus chat and project list",
-                "detail": self.shortcut("navigation.focus_sidebar"),
-            },
-            {
-                "id": "ui.toggle_sidebar",
-                "title": "Show or hide the sidebar",
-                "detail": self.shortcut("ui.toggle_sidebar"),
-            },
-            {"id": "command.actions", "title": "Search actions and commands", "detail": "/actions"},
-            {"id": "command.help", "title": "Show commands and shortcuts", "detail": "/help"},
-            {"id": "command.reload", "title": "Reload current conversation", "detail": "/history"},
-            {"id": "command.rename", "title": "Rename current conversation", "detail": "/rename"},
-            {"id": "command.copy", "title": "Copy latest answer", "detail": "/copy"},
-            {"id": "command.remove", "title": "Remove pending attachment", "detail": "/remove"},
-            {"id": "command.clear", "title": "Clear transcript", "detail": "/clear"},
-            {"id": "command.settings", "title": "Show settings", "detail": "/settings"},
-            {
-                "id": "command.action",
-                "title": "Invoke action by ID and JSON",
-                "detail": "/action ID {}",
-            },
-            {"id": "command.quit", "title": "Quit SiopeChat", "detail": "/exit"},
-            {"id": "command.quit_alias", "title": "Quit SiopeChat", "detail": "/quit"},
+            {"id": key, "title": action_title(key), "detail": self.shortcut(key)}
+            for key in sorted(self.action_handlers, key=action_order)
         ]
-        if self.layout_enabled:
-            self.palette_items.extend(
-                [
-                    {
-                        "id": "layout.split",
-                        "title": "Düzen · Yan yana böl",
-                        "detail": "/split · Alt+V",
-                    },
-                    {
-                        "id": "layout.split_down",
-                        "title": "Düzen · Alt alta böl",
-                        "detail": "/split-down · Alt+H",
-                    },
-                    {
-                        "id": "layout.unsplit",
-                        "title": "Düzen · Bölmeyi kaldır",
-                        "detail": "/unsplit · Alt+U",
-                    },
-                ]
-            )
-        self.palette_items.append(
-            {"id": "command.session", "title": "Hesap, giriş ve çıkış", "detail": "/session · F12"}
-        )
-        self.palette_items.append(
-            {
-                "id": "command.refresh",
-                "title": "Sağlayıcı verilerini yenile",
-                "detail": "F10 · /refresh",
-            }
-        )
         if mode != "actions":
             self.palette_items = []
         if mode != "effort":
@@ -1864,6 +1811,10 @@ class ChatView:
                 self.palette_items.extend(self.list_actions())
         except Exception:
             pass
+        unique = {}
+        for item in self.palette_items:
+            unique.setdefault(item["id"], item)
+        self.palette_items = list(unique.values())
         self.palette_visible = True
         self.palette_search.text = ""
         self.filter_palette()
@@ -1922,6 +1873,9 @@ class ChatView:
         self.palette_visible = False
         self.app.layout.focus(self.input)
         action_id = item["id"]
+        if action_id in self.action_handlers:
+            self.dispatch_action(action_id)
+            return
         if action_id in ("layout.split", "layout.split_down", "layout.unsplit"):
             self.handle_command(
                 {
@@ -3131,6 +3085,8 @@ class ChatView:
                             self.forget_temporary(tab["conversation_id"])
                         except Exception:
                             pass
+            if self.action_cleanup:
+                self.action_cleanup()
 
 
 def run_tui(

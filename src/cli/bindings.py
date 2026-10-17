@@ -11,8 +11,10 @@ from .editing import bind_editing, copy_selection
 def key_bindings(view) -> KeyBindings:
     bindings = KeyBindings()
     configured = view.keybindings
+    view.action_handlers = {}
 
     def bind(action_id: str, callback: Callable[[Any], None], condition=None) -> None:
+        view.action_handlers.setdefault(action_id, callback)
         keys = configured.get(action_id)
         if not keys:
             return
@@ -304,6 +306,8 @@ def key_bindings(view) -> KeyBindings:
     composer_focused = Condition(lambda: view.app.layout.current_control is view.input.control)
     bind("chat.newline_shift", newline, composer_focused)
     bind("chat.newline_lf", newline, composer_focused)
+    bind("command.model", lambda _: view.handle_command("/model"))
+    bind("command.effort", lambda _: view.handle_command("/effort"))
     bind("chat.attach", lambda _: view.open_attachment())
     bind("ui.filter", lambda _: view.open_filters())
     bind("accounts.add", lambda _: view.add_account())

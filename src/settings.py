@@ -44,6 +44,8 @@ DEFAULT_KEYBINDINGS = {
     "command.help": "f1",
     "command.rename": "f4",
     "command.projects": "f6",
+    "command.model": "escape m",
+    "command.effort": "escape e",
     "command.project": "f9",
     "command.refresh": "f10",
     "command.settings": "f5",

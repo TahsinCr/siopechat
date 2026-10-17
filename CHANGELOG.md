@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Shared command catalog
+
+- Replace the duplicated built-in palette list with canonical keyboard action handlers, shared readable titles and category ordering in Settings.
+- Expose running terminal actions through the extension ActionService and withdraw them on close; deduplicate palette entries.
+- Add configurable Alt+M/Alt+E model/thinking pickers.
+
 ### Account-aware terminal
 
 - Wire the terminal to account-scoped ChatGPT/Gemini providers, with account creation/selection, separate profiles/session files/cache identities and local logout.

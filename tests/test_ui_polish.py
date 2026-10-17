@@ -25,6 +25,18 @@ from tests.test_ui_controls import click, immediate
 
 
 class PolishTests(unittest.TestCase):
+    def test_palette_and_keyboard_share_canonical_actions(self):
+        from settings import DEFAULT_KEYBINDINGS
+
+        with terminal() as (v, _):
+            self.assertEqual(set(DEFAULT_KEYBINDINGS), set(v.action_handlers))
+            v.open_palette()
+            ids = [item["id"] for item in v.palette_items]
+            self.assertEqual(len(ids), len(set(ids)))
+            self.assertEqual(ids[0], "chat.new")
+            v.dispatch_action("chat.new")
+            self.assertEqual(len(v.tabs), 2)
+
     def test_multiple_tabs_are_capped_and_controls_stay_at_right(self):
         from prompt_toolkit.utils import get_cwidth
 

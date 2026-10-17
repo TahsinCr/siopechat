@@ -299,7 +299,7 @@ class CliComponentTests(unittest.TestCase):
                 )
                 view.open_palette()
                 ids = {item["id"] for item in view.palette_filtered}
-                self.assertIn("command.search", ids)
+                self.assertIn("ui.search", ids)
                 self.assertIn("command.projects", ids)
                 self.assertNotIn("model.select:gpt-history", ids)
                 self.assertIn("model.select:gpt-account-model", ids)

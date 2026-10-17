@@ -165,6 +165,26 @@ def run_fullscreen(
             return api.get("workspaces").create_layout(view)
         return None
 
+    def action_host(view):
+        from actions import Action, action_title
+
+        api.actions.unregister("terminal")
+        existing = {action.id for action in api.actions.search()}
+        for action_id in view.action_handlers:
+            if action_id not in existing:
+                api.actions.register(
+                    "terminal",
+                    Action(
+                        action_id,
+                        action_title(action_id),
+                        lambda action_id=action_id: view._dispatch_ui(
+                            lambda: view.dispatch_action(action_id)
+                        ),
+                        view.keybindings.get(action_id),
+                    ),
+                )
+        return lambda: api.actions.unregister("terminal")
+
     callbacks = accounts.callbacks(key)
     run_tui(
         lambda: accounts.list_chats()["items"],
@@ -175,6 +195,7 @@ def run_fullscreen(
         initial_messages=cached.get("messages"),
         model=cached.get("model"),
         account_service=accounts,
+        action_host=action_host,
         layout_factory=layout_factory,
         keybindings=api.settings.snapshot()["keybindings"],
         settings_rows=SettingsPanel(api).rows,

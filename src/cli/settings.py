@@ -13,6 +13,8 @@ from prompt_toolkit.layout.margins import ScrollbarMargin
 from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Button, TextArea
 
+from actions import action_order, action_title
+
 from .widgets import SelectionWindow, fit_text, on_click
 
 
@@ -38,10 +40,12 @@ class SettingsPanel:
             {
                 "section": "keybindings",
                 "key": key,
-                "title": f"Shortcut · {key}",
+                "title": action_title(key),
                 "value": value,
             }
-            for key, value in sorted(config["keybindings"].items())
+            for key, value in sorted(
+                config["keybindings"].items(), key=lambda item: action_order(item[0])
+            )
         )
         for row in rows:
             if row["key"] == "language":

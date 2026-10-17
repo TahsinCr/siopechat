@@ -93,6 +93,7 @@ def bind_editing(bindings, view):
         ("edit.select_all", lambda: select_all(view)),
         ("edit.cut", lambda: copy_selection(view, cut=True)),
     ]:
+        view.action_handlers[action] = lambda event, callback=callback: callback()
         keys = view.keybindings.get(action)
         if keys:
             bindings.add(
