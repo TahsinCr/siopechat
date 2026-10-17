@@ -53,6 +53,9 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Fixed
 
+- Keep verified account links across browser closure and application restart; display browser connectivity separately and revoke verification only on local logout or an explicit authentication rejection.
+- Preserve archived notebook/project association when continuing a chat without repeating its project option, and accept reselecting the current project without attempting an unsupported move.
+
 - Recover closed account browsers from their saved profiles before sending; Gemini model and notebook reads share the same serialized startup. Never replay a submitted prompt.
 - Account indicators check the live local browser connection instead of treating cached model lists as authentication. Clarify disconnected Gemini transport errors.
 

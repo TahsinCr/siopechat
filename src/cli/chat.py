@@ -890,6 +890,10 @@ class ChatView:
             self.status = "Yeni sohbet · " + (project.get("name") or "Projesiz")
             self.app.invalidate()
             return
+        if project_id == (self.current_project or {}).get("id"):
+            self.status = "Sohbet zaten bu projede" if project_id else "Sohbet zaten projesiz"
+            self.app.invalidate()
+            return
         if self.move_conversation is None:
             self.status = "Sağlayıcı bu sohbeti taşımayı desteklemiyor"
             self.app.invalidate()

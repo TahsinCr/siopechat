@@ -197,7 +197,8 @@ class AccountNativeTests(unittest.TestCase):
                 provider._connect = AsyncMock(side_effect=AssertionError("SDK must not send"))
 
                 async def stream(request):
-                    self.assertEqual(request.project_id, "notebooks/abcdef")
+                    if not request.conversation_id:
+                        self.assertEqual(request.project_id, "notebooks/abcdef")
                     yield ConversationBound("c_abcdef")
                     yield ReplaceText("Reasoning summary", "analysis")
                     yield ReplaceText("Answer", "final")
@@ -225,6 +226,19 @@ class AccountNativeTests(unittest.TestCase):
                 )
                 self.assertEqual(record["project_id"], identity(key, "notebooks/abcdef"))
                 self.assertEqual(delivered[-1]["text"], "Answer")
+                accounts.send(
+                    key,
+                    result["conversation_id"],
+                    "Follow-up",
+                    [],
+                    delivered.append,
+                    lambda _: None,
+                    model="gemini-flash",
+                    effort="native:4",
+                )
+                continued = accounts.cached(key, "c_abcdef")
+                self.assertEqual(continued["project_id"], identity(key, "notebooks/abcdef"))
+                self.assertEqual(len(continued["messages"]), 6)
                 provider._connect.assert_not_awaited()
                 accounts.callbacks(key)["forget_temporary"](identity(key, "temporary_fixture"))
                 provider.browser.close_temporary.assert_awaited_once_with("temporary_fixture")

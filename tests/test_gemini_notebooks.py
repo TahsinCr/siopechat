@@ -3,6 +3,7 @@
 import unittest
 from unittest.mock import AsyncMock
 
+from accounts import Accounts
 from providers.errors import ProviderError
 from providers.gemini.notebooks import Notebooks, project_from_native
 
@@ -34,6 +35,13 @@ class NotebookTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(project.metadata["kind"], "notebook")
         self.assertEqual(project.metadata["notebook_type"], 3)
         self.assertTrue(project.metadata["url"].startswith("https://gemini.google.com/"))
+        common = Accounts.project_record("gemini/account", project)
+        self.assertEqual(common["kind"], "notebook")
+        self.assertEqual(common["name"], project.name)
+        self.assertEqual(common["instructions"], project.instructions)
+        self.assertEqual(common["resources"][0]["name"], "Research notes")
+        self.assertEqual(common["provider_id"], "gemini")
+        self.assertTrue(common["metadata"]["supports_chat"])
         service.read.return_value = [[notebook()]]
         self.assertEqual(await service.get("notebooks/abcdef"), project)
 

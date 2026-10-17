@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from accounts import Accounts, identity, origin
 from bootstrap import create_application
 from providers import ConversationBound, ReplaceText
+from providers.errors import AccountPaused
 from providers.models import Conversation, FeatureState, Model, ModelCatalog, Origin, Page
 
 
@@ -36,12 +37,45 @@ class AccountTests(unittest.TestCase):
             self.accounts.ensure_browser(self.gemini)
             session.launch.assert_called_once_with("https://gemini.google.com/")
 
-    def test_verified_account_is_disconnected_when_browser_is_closed(self):
-        self.accounts._verified.add(self.gemini)
-        with patch.object(self.accounts, "browser_connected", return_value=False):
-            self.assertFalse(self.accounts.status(self.gemini)["authenticated"])
+    def test_verification_survives_closed_browser_and_account_service_restart(self):
+        path = self.accounts.directory(self.gemini) / "cookies.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}")
+        self.accounts._remember_verification(self.gemini)
+        restarted = Accounts(self.api)
+        with patch.object(restarted, "browser_connected", return_value=False):
+            state = restarted.status(self.gemini)
+            self.assertTrue(state["authenticated"])
+            self.assertFalse(state["browser_connected"])
+        path.unlink()
+        self.assertFalse(restarted.status(self.gemini)["authenticated"])
+
+    def test_transport_failure_preserves_verification_but_auth_rejection_invalidates_it(self):
+        path = self.accounts.directory(self.gemini) / "cookies.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}")
+        self.accounts._remember_verification(self.gemini)
+        provider = Mock()
+        provider.models = AsyncMock(side_effect=RuntimeError("connection refused"))
+        provider.close = AsyncMock()
+        self.accounts._providers[self.gemini] = provider
+        with self.assertRaisesRegex(RuntimeError, "connection refused"):
+            self.accounts.models(self.gemini, force=True)
+        self.assertTrue(self.accounts.status(self.gemini)["authenticated"])
+        provider.models.side_effect = AccountPaused("Sign in required")
+        with self.assertRaises(AccountPaused):
+            self.accounts.models(self.gemini, force=True)
+        self.assertFalse(self.accounts.status(self.gemini)["authenticated"])
+        self.assertFalse(self.accounts._verification_path(self.gemini).exists())
+
+    def test_saved_model_catalog_cannot_verify_an_account(self):
+        path = self.accounts.directory(self.gemini) / "cookies.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}")
         with patch.object(self.accounts, "browser_connected", return_value=True):
-            self.assertTrue(self.accounts.status(self.gemini)["authenticated"])
+            state = self.accounts.status(self.gemini)
+            self.assertFalse(state["authenticated"])
+            self.assertTrue(state["browser_connected"])
 
     def test_catalog_single_flight_cache_and_account_local_disk_snapshot(self):
         catalog = ModelCatalog(FeatureState.AVAILABLE, (Model("gemini-test", "Gemini"),))

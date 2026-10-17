@@ -19,6 +19,7 @@ from urllib.parse import quote, unquote
 from backend import BackendService
 from providers import Capability, ConversationBound, ReplaceText, SendRequest, TextDelta
 from providers.chatgpt import BrowserSession, ChatGPTClient, ChatGPTProvider, SessionPaths
+from providers.errors import AccountPaused
 from providers.gemini import GeminiProvider
 from providers.gemini.notebooks import Notebooks
 from providers.models import FeatureState, ModelCatalog, SessionState
@@ -274,12 +275,23 @@ class Accounts:
                 version = self._catalog_versions.get(key, 0)
 
                 async def fetch():
-                    value = await asyncio.wait_for(self.provider(key).models(), MODEL_TIMEOUT)
+                    try:
+                        value = await asyncio.wait_for(self.provider(key).models(), MODEL_TIMEOUT)
+                    except AccountPaused:
+                        self._forget_verification(key)
+                        raise
                     if not isinstance(value, ModelCatalog):
                         raise ValueError("Sağlayıcı model kataloğu geçersiz")
                     if value.state != FeatureState.AVAILABLE:
                         raise RuntimeError(value.reason or "Model kataloğu şu anda kullanılamıyor")
                     if version == self._catalog_versions.get(key, 0):
+                        if (
+                            getattr(
+                                getattr(self.provider(key), "browser", None), "authenticated", False
+                            )
+                            is True
+                        ):
+                            self._remember_verification(key)
                         self._catalogs[key] = (time.monotonic(), value)
                         if value.state == FeatureState.AVAILABLE:
                             try:
@@ -331,22 +343,49 @@ class Accounts:
         except OSError:
             return False
 
+    def _verification_path(self, key):
+        return self.directory(key) / "verification.json"
+
+    def _remember_verification(self, key):
+        self._verified.add(key)
+        try:
+            self.api.get("backend").atomic_json_write(
+                self._verification_path(key), {"account_key": key, "verified_at": time.time()}
+            )
+        except OSError:
+            # Persistence failure cannot invalidate an authenticated provider reply.
+            pass
+
+    def _forget_verification(self, key):
+        self._verified.discard(key)
+        self._verification_path(key).unlink(missing_ok=True)
+        browser = getattr(self._providers.get(key), "browser", None)
+        if browser is not None:
+            browser.authenticated = False
+
     def status(self, key):
         path = (
             self.session(key).paths.session_file
             if key.startswith("chatgpt/")
             else self.directory(key) / "cookies.json"
         )
+        saved = path.is_file()
+        verified = (
+            key in self._verified
+            or getattr(getattr(self._providers.get(key), "browser", None), "authenticated", False)
+            is True
+        )
+        if not verified:
+            try:
+                marker = self._verification_path(key)
+                if marker.stat().st_size <= 4096:
+                    verified = json.loads(marker.read_text()).get("account_key") == key
+            except (OSError, ValueError, AttributeError):
+                pass
         return {
-            "saved_snapshot": path.is_file(),
-            "authenticated": (
-                key in self._verified
-                or getattr(
-                    getattr(self._providers.get(key), "browser", None), "authenticated", False
-                )
-                is True
-            )
-            and self.browser_connected(key),
+            "saved_snapshot": saved,
+            "authenticated": saved and verified,
+            "browser_connected": self.browser_connected(key),
             "account": self.item(key)["label"],
             "provider": key.split("/")[0],
         }
@@ -375,7 +414,7 @@ class Accounts:
                 await provider.forget_session()
 
             self.call(forget())
-            self._verified.discard(key)
+            self._forget_verification(key)
             return dict(self.status(key), logged_out=True)
         if action == "verify":
             if item["provider"] == "gemini":
@@ -399,10 +438,14 @@ class Accounts:
                 directory.mkdir(mode=0o700, parents=True, exist_ok=True)
                 self.api.get("backend").atomic_json_write(directory / "cookies.json", cookies)
                 self.call(provider.close())
-            status = self.call(provider.authenticate())
+            try:
+                status = self.call(provider.authenticate())
+            except AccountPaused:
+                self._forget_verification(key)
+                raise
             if status.state != SessionState.AUTHENTICATED:
                 raise RuntimeError("Oturum doğrulanamadı")
-            self._verified.add(key)
+            self._remember_verification(key)
             return self.status(key)
         raise ValueError("unknown account operation")
 
@@ -666,6 +709,11 @@ class Accounts:
                         )
                     else:
                         text = text + event.text if isinstance(event, TextDelta) else event.text
+            if (
+                key.startswith("gemini/")
+                and getattr(getattr(provider, "browser", None), "authenticated", False) is True
+            ):
+                self._remember_verification(key)
             if not remote_id:
                 raise RuntimeError("Sağlayıcı sohbet kimliği döndürmedi")
             cache_warning = None
@@ -707,7 +755,9 @@ class Accounts:
                 "id": remote_id,
                 "title": title,
                 "messages": messages,
-                "project_id": options.get("project_id"),
+                "project_id": options["project_id"]
+                if "project_id" in options
+                else prior.get("project_id"),
                 "context": key,
                 "provider_id": request.provider_id,
                 "account_id": request.account_id,
@@ -750,6 +800,9 @@ class Accounts:
         try:
             on_connection(Cancellation())
             return future.result()
+        except AccountPaused:
+            self._forget_verification(key)
+            raise
         finally:
             with self._lock:
                 self._sending[key] -= 1
