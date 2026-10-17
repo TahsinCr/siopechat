@@ -10,6 +10,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Added
 
+- Isolated Gemini native-browser sending component with owned-tab lifecycle, attachment upload, incremental Markdown extraction and bounded cancellation.
+
 - Gemini notebook-context chat requests, including compatibility with earlier saved Gemini notebook URL identities.
 
 - Optional SQLite archive extension with provider/account isolation, ordered message/content records, projects/notebooks, memberships, resource paths and synchronization state.
@@ -50,6 +52,11 @@ The project is currently unreleased; no release dates or tags have been assigned
 - Competing settings-page filler, repeated shortcut hints and SDK logs written over the terminal interface.
 
 ### Fixed
+
+- Gemini generation hanging on the legacy `StreamGenerate` endpoint after the native frontend switched this account to `processSession`; application sends now use the native browser composer with no automatic SDK resend.
+- Gemini model/thinking choices being taken from the SDK's older boolean option: IDs and labels now come from native menus, with selection checked before sending.
+- Native composer input being submitted before its send button was ready, background-page rendering, and model verification failing when the header also shows an effort label.
+- Temporary Gemini context now remains in its own managed browser tab, supports follow-ups, and closes that tab when the application forgets the conversation.
 
 - Sidebar projects disappearing when switching model accounts: the sidebar lists providers together; only the conversation project picker is scoped to the model account.
 

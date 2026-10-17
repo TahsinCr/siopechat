@@ -56,6 +56,13 @@ class GeminiProvider(OptionalFeatures):
         self._gate = asyncio.Lock()
         self._temporary = {}
         self.notebooks = notebooks
+        from .browser import NativeBrowser
+
+        self.browser = (
+            NativeBrowser(notebooks.cdp_url)
+            if isinstance(getattr(notebooks, "cdp_url", None), str)
+            else None
+        )
         if notebooks is not None:
             self.capabilities = self.capabilities | {Capability.PROJECTS}
 
@@ -106,14 +113,20 @@ class GeminiProvider(OptionalFeatures):
         return client
 
     async def close(self):
+        if self.browser:
+            await self.browser.close()
         client, self._client = self._client, None
         if client is not None:
             await client.close()
 
+    def _require_native_session(self):
+        if not self.cookie_file.is_file() and not self.browser.authenticated:
+            raise AccountPaused("Gemini hesabını Hesaplar bölümünden doğrulayın")
+
     async def session_status(self):
         return SessionStatus(
             SessionState.AUTHENTICATED
-            if self._client
+            if self._client or (self.browser and self.browser.authenticated)
             else SessionState.UNKNOWN
             if self.cookie_file.is_file()
             else SessionState.LOGIN_REQUIRED,
@@ -122,7 +135,10 @@ class GeminiProvider(OptionalFeatures):
 
     async def authenticate(self):
         async with self._gate:
-            await self._connect()
+            if self.browser:
+                await self.browser.models()
+            else:
+                await self._connect()
         return SessionStatus(SessionState.AUTHENTICATED, True)
 
     async def forget_session(self):
@@ -148,6 +164,9 @@ class GeminiProvider(OptionalFeatures):
 
     async def models(self):
         async with self._gate:
+            if self.browser:
+                self._require_native_session()
+                return await self.browser.models()
             client = await self._connect()
             # The transport exposes a boolean extended_thinking option, not
             # OpenAI-style low/medium/high levels. Never invent those levels.
@@ -277,6 +296,14 @@ class GeminiProvider(OptionalFeatures):
         from .notebooks import notebook_id
 
         project = notebook_id(request.project_id) if request.project_id else None
+        if self.browser:
+            self._require_native_session()
+            async with self._gate:
+                from dataclasses import replace
+
+                async for event in self.browser.stream(replace(request, project_id=project)):
+                    yield event
+            return
         if request.effort not in (None, "", "standard", "extended"):
             raise ValueError("unsupported Gemini thinking option")
         from contextlib import nullcontext
@@ -330,5 +357,7 @@ class GeminiProvider(OptionalFeatures):
                     self._temporary.pop(next(iter(self._temporary)))
             yield ConversationBound(chat.cid)
 
-    def forget_temporary(self, remote_id):
+    async def forget_temporary(self, remote_id):
         self._temporary.pop(remote_id, None)
+        if self.browser:
+            await self.browser.close_temporary(remote_id)

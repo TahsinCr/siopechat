@@ -791,7 +791,9 @@ class Accounts:
         def forget(chat):
             _, remote = origin(chat, key)
             if hasattr(provider, "forget_temporary"):
-                provider.forget_temporary(remote)
+                result = provider.forget_temporary(remote)
+                if asyncio.iscoroutine(result):
+                    self.call(result)
             elif hasattr(provider, "_temporary_conversations"):
                 provider._temporary_conversations.pop(remote, None)
 
