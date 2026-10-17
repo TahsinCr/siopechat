@@ -105,7 +105,18 @@ class ApplicationTests(unittest.TestCase):
             "conversation": {"id": "example", "messages": []}
         }
         api = Mock()
-        api.get.side_effect = lambda key: backend if key == "backend" else Mock()
+        from settings import DEFAULTS
+
+        api.settings.snapshot.return_value = DEFAULTS
+        accounts = Mock()
+        accounts.active.return_value = "chatgpt/default"
+        accounts.callbacks.return_value = {
+            "load_conversation": Mock(return_value={"id": "example"}),
+            "send_prompt": Mock(return_value={}),
+        }
+        api.get.side_effect = lambda key: (
+            accounts if key == "accounts" else backend if key == "backend" else Mock()
+        )
         with patch.object(chat, "run_tui") as run_tui:
             with patch.object(self.app, "cache_conversation") as cache:
                 commands.run_fullscreen(api, Path("unused.sock"))

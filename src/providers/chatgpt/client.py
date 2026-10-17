@@ -688,6 +688,18 @@ class ChatGPTClient:
                 if not isinstance(file_id, str) or not file_id.startswith(("file-", "file_")):
                     raise ChatGPTWebError("invalid uploaded image ID")
                 size = attachment.get("size_bytes")
+                if attachment.get("mime_type") != "image/png" and "width" not in attachment:
+                    if type(size) is not int or size <= 0:
+                        raise ChatGPTWebError("invalid file size")
+                    attachment_metadata.append(
+                        {
+                            "id": file_id,
+                            "name": attachment.get("name"),
+                            "mime_type": attachment.get("mime_type"),
+                            "size": size,
+                        }
+                    )
+                    continue
                 width = attachment.get("width")
                 height = attachment.get("height")
                 if not all(isinstance(value, int) and value > 0 for value in (size, width, height)):
@@ -720,7 +732,9 @@ class ChatGPTClient:
                     "author": {"role": "user"},
                     "create_time": time.time(),
                     "content": {
-                        "content_type": "multimodal_text" if attachments else "text",
+                        "content_type": "multimodal_text"
+                        if any(isinstance(part, dict) for part in content_parts)
+                        else "text",
                         "parts": content_parts,
                     },
                     "metadata": {
@@ -754,6 +768,43 @@ class ChatGPTClient:
             if isinstance(conversation_id, str) and conversation_id:
                 body["conversation_id"] = conversation_id
         return body
+
+    def upload_file(self, file_name: str, mime_type: str, data: bytes) -> dict[str, Any]:
+        if mime_type == "image/png":
+            if not data.startswith(b"\x89PNG\r\n\x1a\n") or len(data) < 24:
+                raise ChatGPTWebError("invalid PNG file")
+            return self.upload_image(
+                file_name,
+                mime_type,
+                data,
+                int.from_bytes(data[16:20], "big"),
+                int.from_bytes(data[20:24], "big"),
+            )
+        if not 0 < len(data) <= 20 * 1024 * 1024:
+            raise ChatGPTWebError("file must be smaller than 20 MiB")
+        slot = self.request(
+            "POST",
+            urljoin(CHATGPT_ORIGIN, "/backend-api/files"),
+            json={"file_name": file_name, "file_size": len(data), "use_case": "ace_upload"},
+        ).json()
+        file_id, upload_url = slot.get("file_id"), slot.get("upload_url")
+        if not isinstance(file_id, str) or not isinstance(upload_url, str):
+            raise ChatGPTWebError("invalid file upload slot")
+        response = self.http.put(
+            upload_url,
+            content=data,
+            headers={"content-type": mime_type, "x-ms-blob-type": "BlockBlob"},
+            timeout=60,
+        )
+        response.raise_for_status()
+        result = self.request(
+            "POST",
+            urljoin(CHATGPT_ORIGIN, f"/backend-api/files/{quote(file_id, safe='')}/uploaded"),
+            json={},
+        ).json()
+        if result.get("status") != "success":
+            raise ChatGPTWebError("provider did not finalize the file upload")
+        return {"id": file_id, "name": file_name, "mime_type": mime_type, "size_bytes": len(data)}
 
     def upload_image(
         self,

@@ -8,13 +8,17 @@ from prompt_toolkit.layout.margins import ScrollbarMargin
 from prompt_toolkit.layout.menus import CompletionsMenu
 from prompt_toolkit.widgets import Frame
 
-from .widgets import TranscriptGutter
+from .widgets import TranscriptGutter, on_click
 
 
 def workspace_layout(view):
-    def text_window(text, height=1, style=""):
+    def text_window(text, height=1, style="", width=None):
         return Window(
-            content=FormattedTextControl(text), height=height, style=style, wrap_lines=False
+            content=FormattedTextControl(text),
+            height=height,
+            style=style,
+            wrap_lines=False,
+            width=width,
         )
 
     view.transcript_window.right_margins = [ScrollbarMargin(display_arrows=True)]
@@ -28,7 +32,32 @@ def workspace_layout(view):
                 text_window(
                     lambda: view.text("library", "Sohbetler ve projeler"), 1, "class:sidebar.header"
                 ),
-                view.sidebar_search,
+                VSplit(
+                    [
+                        view.sidebar_search,
+                        ConditionalContainer(
+                            text_window(
+                                lambda: [
+                                    (
+                                        "class:button",
+                                        " ☷ ",
+                                        on_click(view.open_filters),
+                                    )
+                                ],
+                                width=3,
+                            ),
+                            filter=Condition(
+                                lambda: (
+                                    view.account_service is not None
+                                    and len(
+                                        {item["provider"] for item in view.account_service.items()}
+                                    )
+                                    > 1
+                                )
+                            ),
+                        ),
+                    ]
+                ),
                 view.sidebar_window,
             ],
             width=view.sidebar_width,
@@ -126,6 +155,15 @@ def workspace_layout(view):
                 attach_to_window=view.input.window,
                 allow_cover_cursor=True,
                 content=CompletionsMenu(max_height=8, scroll_offset=1),
+            ),
+            Float(
+                content=ConditionalContainer(
+                    DynamicContainer(lambda: view.forms.container),
+                    filter=Condition(lambda: view.forms.visible),
+                ),
+                left=4,
+                right=4,
+                top=3,
             ),
             Float(
                 content=ConditionalContainer(resume, filter=view.resume_filter),

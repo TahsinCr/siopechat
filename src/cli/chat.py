@@ -27,6 +27,7 @@ from prompt_toolkit.widgets import TextArea
 from rich.console import Console
 from rich.text import Text
 
+from accounts import origin
 from providers.models import FeatureState, ModelCatalog
 from settings import DEFAULT_KEYBINDINGS
 from theme import DEFAULT_TERMINAL_STYLE
@@ -101,10 +102,17 @@ class ChatView:
         forget_temporary=None,
         move_conversation=None,
         layout_factory=None,
+        account_service=None,
     ) -> None:
         from .widgets import register_modified_enter
 
         register_modified_enter()
+        self.account_service = account_service
+        self.account_key = account_service.active() if account_service else "chatgpt/default"
+        self.provider_id = self.account_key.split("/")[0]
+        self.provider_filter = None
+        self._account_projects = {}
+        self.attach_file_callback = None
         self.settings_rows_callback = settings_rows
         self.change_setting = change_setting
         self.load_preferences = load_preferences
@@ -249,7 +257,7 @@ class ChatView:
             prompt="Search: ",
         )
         self.resume_search.buffer.on_text_changed += lambda _buffer: self.filter_resume()
-        self.sidebar_search = TextArea(height=1, prompt="⌕ ", style="class:sidebar.search")
+        self.sidebar_search = TextArea(height=1, prompt=" Ara ", style="class:sidebar.search")
         self.sidebar_search.buffer.on_text_changed += lambda _buffer: self.filter_sidebar()
         self.sidebar_control = FormattedTextControl(
             text=self.render_sidebar,
@@ -279,6 +287,9 @@ class ChatView:
             wrap_lines=False,
             always_hide_cursor=True,
         )
+        from .forms import Forms
+
+        self.forms = Forms(self)
         self.session_dialog = SessionDialog(self)
         self.settings_dialog = SettingsDialog(self)
         self.layout_enabled = True
@@ -294,6 +305,10 @@ class ChatView:
             max_render_postpone_time=0.1,
             style=Style.from_dict(DEFAULT_TERMINAL_STYLE),
         )
+
+        if self.account_service:
+            self.bind_account(self.account_key)
+            self._save_active_tab()
 
     async def animate_activity(self) -> None:
         """Refresh animated status only while an operation is active.
@@ -311,8 +326,141 @@ class ChatView:
     def render_prompt(self) -> FormattedText:
         return FormattedText([("class:prompt", " › ")])
 
+    def bind_account(self, key):
+        if self.account_service is None:
+            return
+        if key != self.account_key:
+            self._account_projects[self.account_key] = self.project_items
+            self.project_items = self._account_projects.get(key, {})
+            self.projects_loaded = bool(self.project_items)
+        self.account_key = key
+        self.provider_id = key.split("/")[0]
+        for name, callback in self.account_service.callbacks(key).items():
+            setattr(self, name, callback)
+        self.session_state = self.account_service.status(key)
+        self.set_active_conversation = lambda value: self.account_service.cache(
+            key
+        ).set_active_conversation(origin(value, key)[1])
+        self.list_conversations = lambda: self.account_service.list_chats(self.provider_filter)[
+            "items"
+        ]
+        self.list_history_page = lambda cursor: self.account_service.list_chats(
+            self.provider_filter, cursor
+        )
+
+    def select_account(self, key):
+        if (
+            self.account_service is None
+            or self.loading_conversation
+            or self.uploading_image
+            or self.session_dialog.loading
+        ):
+            return
+        if self.tab_kind == "chat" and (self.messages or self.conversation_id or self.input.text):
+            self.new_tab()
+        self.bind_account(key)
+        self.catalog = ModelCatalog(FeatureState.UNKNOWN)
+        self.model, self.effort = "", None
+        self.current_project = {}
+        self.project_items = {}
+        self.projects_loaded = False
+        self.account_service.select(key)
+        self._save_active_tab()
+        self.refresh_sidebar()
+        self.refresh_provider_catalog()
+        self.app.invalidate()
+
+    def add_account(self):
+        if not self.account_service:
+            return
+
+        def submit(values):
+            key = self.account_service.add(values["provider"], values["label"])
+            self.select_account(key)
+            self.settings_dialog.open("accounts")
+
+        self.forms.open(
+            "Hesap ekle",
+            [
+                (
+                    "provider",
+                    "Sağlayıcı",
+                    "chatgpt",
+                    [("chatgpt", "ChatGPT"), ("gemini", "Gemini")],
+                ),
+                ("label", "Hesap adı", "", None),
+            ],
+            submit,
+        )
+
+    def open_filters(self):
+        if not self.account_service:
+            return
+        providers = sorted({account["provider"] for account in self.account_service.items()})
+        if len(providers) < 2:
+            return
+
+        def apply(values):
+            if not values["providers"]:
+                raise ValueError("En az bir sağlayıcı seçin")
+            self.provider_filter = set(values["providers"])
+            self.refresh_sidebar()
+
+        self.forms.open(
+            "Sohbet filtresi",
+            [
+                (
+                    "providers",
+                    "Gösterilecek sağlayıcılar",
+                    (
+                        [(key, key.title()) for key in providers],
+                        list(self.provider_filter or providers),
+                    ),
+                    None,
+                )
+            ],
+            apply,
+        )
+
+    def open_attachment(self):
+        if self.attach_file_callback is None:
+            self.status = "Bu sağlayıcıda dosya ekleme kullanılamıyor"
+            self.app.invalidate()
+            return
+        callback = self.attach_file_callback
+
+        def submit(values):
+            if self.uploading_image or self.loading_conversation or self.busy:
+                raise ValueError("Devam eden işlem tamamlanınca dosya ekleyin")
+            self.uploading_image = True
+            self.background_jobs += 1
+            self.status = "Dosya hazırlanıyor…"
+
+            def success(attachment):
+                self.uploading_image = False
+                self.background_jobs -= 1
+                self.pending_attachments.append(attachment)
+                self.status = "Dosya eklendi · " + attachment.get("name", "")
+                self.app.invalidate()
+
+            def failure(reason):
+                self.uploading_image = False
+                self.background_jobs -= 1
+                self.status = str(reason)
+                self.app.invalidate()
+
+            self._read_in_background(lambda: callback(values["path"]), success, failure)
+
+        self.forms.open(
+            "Dosya ekle",
+            [("path", "Dosya yolu · Tab ile tamamla · en fazla 20 MiB", "", None)],
+            submit,
+        )
+
     def _new_tab_state(self) -> dict[str, Any]:
         return {
+            "account_key": self.account_key,
+            "catalog": self.catalog,
             "conversation_id": self.conversation_id,
             "kind": self.tab_kind,
             "title": self.title,
@@ -447,6 +595,8 @@ class ChatView:
             ("class:metadata.effort", effort_text, lambda: self.handle_command("/effort")),
             ("class:metadata.project", project_text, self.open_project_picker),
         ):
+            if style == "class:metadata.project" and self.provider_id != "chatgpt":
+                continue
             label = fit_text(label, width)
             if used:
                 separator = " · " if used + 3 + get_cwidth(label) <= width else "\n"
@@ -591,6 +741,16 @@ class ChatView:
     def render_composer_actions(self):
         left = " ◌ Geçici sohbet " if self.temporary else ""
         controls = []
+        if self.attach_file_callback:
+            controls.append(("class:button", " ＋ Dosya ", on_click(self.open_attachment)))
+        if self.pending_attachments:
+            controls.append(
+                (
+                    "class:chat.context",
+                    f" {len(self.pending_attachments)} ek × ",
+                    on_click(lambda: self.handle_command("/remove")),
+                )
+            )
         if self.layout_enabled:
             controls.append(("class:button", " ◫ Böl ", on_click(self.begin_split)))
         if not self.follow_output:
@@ -695,6 +855,15 @@ class ChatView:
         self.app.invalidate()
 
     def after_logout(self):
+        retained_tabs = (
+            [
+                tab
+                for tab in self.tabs
+                if tab.get("account_key", self.account_key) != self.account_key
+            ]
+            if self.account_service
+            else []
+        )
         self.session_epoch += 1
         self.sidebar_refresh_generation += 1
         self.sidebar_items.clear()
@@ -731,8 +900,8 @@ class ChatView:
         settings_open = self.settings_dialog.visible
         self.tab_kind = "settings" if settings_open else "chat"
         self.title = "Ayarlar" if settings_open else "New conversation"
-        self.tabs = [self._new_tab_state()]
-        self.active_tab = 0
+        self.tabs = retained_tabs + [dict(self._new_tab_state(), tab_id=uuid.uuid4().hex)]
+        self.active_tab = len(self.tabs) - 1
         self.session_state = {"authenticated": False, "saved_snapshot": False}
         self.status = "Oturum kapatıldı · F12 ile giriş yapın"
         self.app.invalidate()
@@ -833,9 +1002,21 @@ class ChatView:
 
     def _build_sidebar_rows(self) -> None:
         query = self.sidebar_search.text.strip().casefold()
-        conversations = [item for item in self.sidebar_items if item.get("kind") != "workspace"]
+        conversations = [
+            item
+            for item in self.sidebar_items
+            if item.get("kind") != "workspace"
+            and (
+                self.provider_filter is None
+                or item.get("provider_id", "chatgpt") in self.provider_filter
+            )
+        ]
         workspaces = [item for item in self.sidebar_items if item.get("kind") == "workspace"]
-        projects: dict[str, list[dict[str, Any]]] = {key: [] for key in self.project_items}
+        projects: dict[str, list[dict[str, Any]]] = (
+            {key: [] for key in self.project_items}
+            if self.provider_filter is None or "chatgpt" in self.provider_filter
+            else {}
+        )
         unassigned: list[dict[str, Any]] = []
         for item in conversations:
             project = item.get("project")
@@ -979,6 +1160,12 @@ class ChatView:
                 rows.append({"kind": "message", "title": "Henüz düzen yok"})
         if not getattr(self, "layout_enabled", True):
             rows = rows[:layout_start]
+        if self.account_service and not projects and self.provider_id == "gemini":
+            rows = [
+                row
+                for row in rows
+                if not (row["kind"] == "section" and row.get("id") == "projects")
+            ]
         self.sidebar_rows = rows
         self.sidebar_index = min(self.sidebar_index, max(0, len(rows) - 1))
 
@@ -988,7 +1175,8 @@ class ChatView:
             "kind": "chat",
             "id": item.get("id"),
             "project_id": item.get("project_id"),
-            "title": str(item.get("title") or "Adsız sohbet"),
+            "title": ({"chatgpt": "◈ ", "gemini": "✦ "}.get(item.get("provider_id"), ""))
+            + str(item.get("title") or "Adsız sohbet"),
             "nested": nested,
         }
 
@@ -1061,6 +1249,7 @@ class ChatView:
     def refresh_sidebar(self) -> None:
         self.refresh_projects()
         if self.sidebar_loading:
+            self.sidebar_refresh_pending = True
             return
         self.sidebar_refresh_generation += 1
         generation = self.sidebar_refresh_generation
@@ -1119,6 +1308,9 @@ class ChatView:
                 if sidebar_error or workspace_error:
                     self.status = "Sol panel yenilenemedi; son kayıtlar korunuyor"
                 self.filter_sidebar()
+                if getattr(self, "sidebar_refresh_pending", False):
+                    self.sidebar_refresh_pending = False
+                    self.refresh_sidebar()
 
             self._dispatch_ui(apply_results)
 
@@ -1160,8 +1352,13 @@ class ChatView:
         if self.load_catalog is None or self.catalog_loading:
             return
         self.catalog_loading = True
+        account_key = self.account_key
 
         def success(catalog):
+            if self.account_key != account_key:
+                self.catalog_loading = False
+                self.refresh_provider_catalog()
+                return
             if not isinstance(catalog, ModelCatalog):
                 failure("Sağlayıcı model kataloğu geçersiz")
                 return
@@ -1174,8 +1371,9 @@ class ChatView:
                 self.model = preference
             self._save_active_tab()
             for tab in self.tabs:
-                if tab.get("busy"):
+                if tab.get("busy") or tab.get("account_key", account_key) != account_key:
                     continue
+                tab["catalog"] = catalog
                 selected = next((m for m in catalog.chat_models if m.id == tab.get("model")), None)
                 if selected is None and catalog.default_chat_model is not None:
                     tab["response_model"] = tab.get("response_model") or tab.get("model")
@@ -1202,6 +1400,9 @@ class ChatView:
 
         def failure(reason):
             self.catalog_loading = False
+            if self.account_key != account_key:
+                self.refresh_provider_catalog()
+                return
             self.catalog_error = reason
             self.status = f"Model kataloğu alınamadı: {reason} · F10 yeniden dene"
             self.app.invalidate()
@@ -1245,8 +1446,14 @@ class ChatView:
             return
         cursor = self.project_cursor if more else None
         self.projects_loading = True
+        account_key = self.account_key
+        callback = self.list_projects_callback
 
         def success(result):
+            if self.account_key != account_key:
+                self.projects_loading = False
+                self.refresh_projects()
+                return
             if not isinstance(result, dict) or not isinstance(result.get("items"), list):
                 failure("Proje listesi geçersiz")
                 return
@@ -1284,7 +1491,7 @@ class ChatView:
             self.status = f"Proje listesi alınamadı: {reason}"
             self.filter_sidebar()
 
-        self._read_in_background(lambda: self.list_projects_callback(cursor), success, failure)
+        self._read_in_background(lambda: callback(cursor), success, failure)
 
     def load_project_chats(self, project_id: str, more: bool = False) -> None:
         if self.list_project_chats_callback is None or project_id in self.project_chats_loading:
@@ -1531,6 +1738,12 @@ class ChatView:
                     self.conversation_id or self.messages
                 ):
                     self.new_tab()
+                if self.account_service:
+                    context, _ = origin(conversation_id, self.account_key)
+                    if context != self.account_key:
+                        self.bind_account(context)
+                        self.catalog = ModelCatalog(FeatureState.UNKNOWN)
+                        self.refresh_provider_catalog()
                 self.resume_conversation(conversation_id)
                 if self.layout_controller:
                     self.layout_controller.attach()
@@ -1828,6 +2041,9 @@ class ChatView:
     def _restore_active_tab(self, *, focus: bool = True) -> None:
         tab = self.tabs[self.active_tab]
         tab.setdefault("tab_id", uuid.uuid4().hex)
+        if self.account_service:
+            self.bind_account(tab.get("account_key", self.account_key))
+            self.catalog = tab.get("catalog") or ModelCatalog(FeatureState.UNKNOWN)
         self.temporary = bool(tab.get("temporary"))
         self.message_selection = False
         self.selected_message_ref = None
@@ -2218,6 +2434,7 @@ class ChatView:
         self.scroll_bottom()
         threading.Thread(
             target=self.run_send,
+            kwargs={"send_callback": self.send_prompt},
             args=(
                 prompt,
                 attachments,
@@ -2251,6 +2468,12 @@ class ChatView:
             self.close_tab()
         elif name == "/search":
             self.open_sidebar_search()
+        elif name in ("/attach", "/file"):
+            self.open_attachment()
+        elif name == "/filter":
+            self.open_filters()
+        elif name == "/account-add":
+            self.add_account()
         elif name in ("/split", "/split-down"):
             self.begin_split("rows" if name == "/split-down" else "columns")
         elif name == "/unsplit":
@@ -2625,6 +2848,13 @@ class ChatView:
         self.resume_conversation(conversation_id)
 
     def resume_conversation(self, conversation_id: str) -> None:
+        if self.account_service:
+            context, _ = origin(conversation_id, self.account_key)
+            if context != self.account_key:
+                self.bind_account(context)
+                self.catalog = ModelCatalog(FeatureState.UNKNOWN)
+                self.model, self.effort = "", None
+                self.refresh_provider_catalog()
         if self.temporary:
             count = len(self.tabs)
             self.new_tab()
@@ -2715,6 +2945,7 @@ class ChatView:
         effort: str | None,
         project_id: str | None = None,
         temporary: bool = False,
+        send_callback=None,
     ) -> None:
         rendered = ""
         final_message_id = None
@@ -2772,7 +3003,7 @@ class ChatView:
             self._dispatch_ui(update_active_view)
 
         try:
-            result = self.send_prompt(
+            result = (send_callback or self.send_prompt)(
                 conversation_id,
                 prompt,
                 attachments,

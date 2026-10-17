@@ -37,7 +37,9 @@ def key_bindings(view) -> KeyBindings:
         bindings.add(
             *keys.lower().split(),
             is_global=True,
-            filter=available & condition if condition is not None else available,
+            filter=(available & Condition(lambda: not view.forms.visible)) & condition
+            if condition is not None
+            else available & Condition(lambda: not view.forms.visible),
         )(callback)
 
     completion_visible = Condition(
@@ -302,6 +304,9 @@ def key_bindings(view) -> KeyBindings:
     composer_focused = Condition(lambda: view.app.layout.current_control is view.input.control)
     bind("chat.newline_shift", newline, composer_focused)
     bind("chat.newline_lf", newline, composer_focused)
+    bind("chat.attach", lambda _: view.open_attachment())
+    bind("ui.filter", lambda _: view.open_filters())
+    bind("accounts.add", lambda _: view.add_account())
     bind("layout.split", lambda _: view.begin_split())
     bind("layout.split_down", lambda _: view.begin_split("rows"))
     bind(

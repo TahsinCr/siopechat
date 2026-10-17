@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Account-aware terminal
+
+- Wire the terminal to account-scoped ChatGPT/Gemini providers, with account creation/selection, separate profiles/session files/cache identities and local logout.
+- Add mixed-provider conversation icons and a multi-select sidebar filter that stays hidden for a single configured provider; retain per-account pagination.
+- Add shared keyboard/mouse forms and a file attachment button/path picker; carry actual uploaded document/image metadata or Gemini file paths into sends.
+- Guard model catalog updates by account and snapshot send callbacks before a tab switch. Live browser/account/file compatibility remains a separate verification step.
+
 ### Gemini provider
 
 - Add the independent Gemini web-session adapter with dynamic account models, history, streamed thought/answer separation, temporary contexts and file inputs.

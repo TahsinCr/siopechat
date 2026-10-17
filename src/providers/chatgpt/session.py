@@ -165,7 +165,9 @@ class BrowserSession:
         except httpx.HTTPError:
             return False
 
-    def launch(self) -> dict[str, Any]:
+    def launch(self, url: str = "https://chatgpt.com/") -> dict[str, Any]:
+        if url not in ("https://chatgpt.com/", "https://gemini.google.com/"):
+            raise ValueError("unsupported login origin")
         if self.is_ready():
             return {"browser": "already_running", "cdp_url": self.cdp_url}
         parsed = urlsplit(self.cdp_url)
@@ -187,7 +189,7 @@ class BrowserSession:
                 "--no-first-run",
                 "--no-default-browser-check",
                 "--new-window",
-                "https://chatgpt.com/",
+                url,
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,

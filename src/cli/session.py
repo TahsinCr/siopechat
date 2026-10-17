@@ -1,10 +1,16 @@
 """Explicit session controls; authentication never asks the terminal for a password."""
 
+from prompt_toolkit.data_structures import Point
+from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import HSplit, VSplit, Window
+from prompt_toolkit.layout.containers import ConditionalContainer
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import D
+from prompt_toolkit.layout.margins import ScrollbarMargin
 from prompt_toolkit.widgets import Button, Frame
+
+from .widgets import on_click
 
 
 class SessionDialog:
@@ -14,6 +20,12 @@ class SessionDialog:
         self.loading = False
         self.confirm_logout = False
         self.message = ""
+        self.account_index = 0
+        self.account_control = FormattedTextControl(
+            self.render_accounts,
+            focusable=True,
+            get_cursor_position=lambda: Point(0, self.account_index),
+        )
         self.buttons = {
             "verify": Button("Doğrula", width=24, handler=lambda: self.perform("verify")),
             "default_browser": Button(
@@ -26,12 +38,40 @@ class SessionDialog:
         }
         self.close_button = Button("Kapat", handler=self.close)
         keys = KeyBindings()
+        account_focus = Condition(
+            lambda: self.view.app.layout.current_control is self.account_control
+        )
+        keys.add("up", filter=account_focus)(lambda _: self.move_account(-1))
+        keys.add("down", filter=account_focus)(lambda _: self.move_account(1))
+        keys.add("enter", filter=account_focus)(
+            lambda _: self.choose_account(
+                self.view.account_service.items()[self.account_index]["key"]
+            )
+        )
         keys.add("escape")(lambda _: self.close())
         keys.add("tab")(lambda event: event.app.layout.focus_next())
         keys.add("s-tab")(lambda event: event.app.layout.focus_previous())
         self.container = Frame(
             HSplit(
                 [
+                    ConditionalContainer(
+                        HSplit(
+                            [
+                                Window(
+                                    content=self.account_control,
+                                    right_margins=[ScrollbarMargin(display_arrows=True)],
+                                    height=lambda: (
+                                        min(6, len(self.view.account_service.items()) + 1)
+                                        if self.view.account_service
+                                        else 1
+                                    ),
+                                ),
+                                Button("＋ Hesap ekle", handler=self.view.add_account),
+                                Window(height=1, char="─", style="class:separator"),
+                            ]
+                        ),
+                        filter=Condition(lambda: self.view.account_service is not None),
+                    ),
                     Window(
                         height=2, content=FormattedTextControl(self.render_state), wrap_lines=True
                     ),
@@ -63,6 +103,32 @@ class SessionDialog:
             ),
             title=lambda: self.view.text("session", "Hesap ve oturum"),
         )
+
+    def render_accounts(self):
+        if self.view.account_service is None:
+            return []
+        return [
+            (
+                "class:tab.active" if item["key"] == self.view.account_key else "class:button",
+                f" {item['icon']} {item['label']} · {item['provider']}\n",
+                on_click(lambda key=item["key"]: self.choose_account(key)),
+            )
+            for item in self.view.account_service.items()
+        ]
+
+    def move_account(self, delta):
+        if self.view.account_service:
+            self.account_index = max(
+                0, min(len(self.view.account_service.items()) - 1, self.account_index + delta)
+            )
+            self.view.app.invalidate()
+
+    def choose_account(self, key):
+        if self.loading or self.view.busy or self.view.background_jobs:
+            return
+        self.view.select_account(key)
+        self.confirm_logout = False
+        self.activate()
 
     def open(self):
         self.view.settings_dialog.open("accounts")
@@ -101,7 +167,7 @@ class SessionDialog:
             if state.get("saved_snapshot")
             else self.view.text("no", "yok")
         )
-        return f"ChatGPT · {verified}\n{self.view.text('saved_session', 'Kayıtlı oturum')}: {saved}"
+        return f"{self.view.session_state.get('account', 'ChatGPT')} · {verified}\n{self.view.text('saved_session', 'Kayıtlı oturum')}: {saved}"
 
     def render_help(self):
         return self.view.text(

@@ -3,6 +3,7 @@
 import copy
 import json
 import os
+import re
 import tempfile
 import threading
 from dataclasses import dataclass
@@ -22,6 +23,9 @@ DEFAULT_KEYBINDINGS = {
     "layout.split": "escape v",
     "layout.split_down": "escape h",
     "layout.unsplit": "escape u",
+    "chat.attach": "escape a",
+    "ui.filter": "escape f",
+    "accounts.add": "escape n",
     "chat.new": "c-t",
     "chat.close_tab": "c-w",
     "chat.next_tab": "escape right",
@@ -73,6 +77,10 @@ DEFAULTS = {
     "keybindings": DEFAULT_KEYBINDINGS,
     "providers": {"default": "chatgpt"},
     "extensions": {"layout": {"enabled": True}},
+    "accounts": {
+        "active": "chatgpt/default",
+        "items": [{"provider": "chatgpt", "id": "default", "label": "ChatGPT", "port": 9222}],
+    },
 }
 
 
@@ -124,9 +132,32 @@ class Settings:
     def _validate_document(data: dict) -> None:
         if type(data.get("version")) is not int or data["version"] != 1:
             raise ValueError("unsupported settings version")
-        for section in ("application", "keybindings", "providers", "extensions"):
+        for section in ("application", "keybindings", "providers", "extensions", "accounts"):
             if not isinstance(data.get(section), dict):
                 raise ValueError(f"settings section {section} must be an object")
+        accounts = data["accounts"]
+        items = accounts.get("items")
+        if not isinstance(items, list) or not items:
+            raise ValueError("accounts must contain at least one account")
+        seen = set()
+        for item in items:
+            if (
+                not isinstance(item, dict)
+                or item.get("provider") not in ("chatgpt", "gemini")
+                or not isinstance(item.get("id"), str)
+                or not re.fullmatch("[A-Za-z0-9_-]+", item["id"])
+                or not isinstance(item.get("label"), str)
+                or not item["label"].strip()
+                or type(item.get("port")) is not int
+                or not 1024 <= item["port"] <= 65535
+            ):
+                raise ValueError("invalid account metadata")
+            key = item["provider"] + "/" + item["id"]
+            if key in seen:
+                raise ValueError("duplicate account")
+            seen.add(key)
+        if accounts.get("active") not in seen:
+            raise ValueError("active account does not exist")
         for key in ("language", "theme", "effort"):
             if not isinstance(data["application"].get(key), str):
                 raise ValueError(f"invalid application setting {key}")
@@ -192,7 +223,7 @@ class Settings:
         self._notify(f"extensions.{owner}", values)
 
     def update(self, section: str, values: dict) -> None:
-        if section not in ("application", "keybindings", "providers"):
+        if section not in ("application", "keybindings", "providers", "accounts"):
             raise ValueError("use update_extension for extension settings")
         with self._lock:
             candidate = self.snapshot()

@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -62,7 +63,7 @@ class BackendService:
 
     def atomic_json_write(self, path: Path, value: dict[str, Any]) -> None:
         path.parent.mkdir(mode=448, parents=True, exist_ok=True)
-        temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        temporary = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
         try:
             descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 384)
             with os.fdopen(descriptor, "w", encoding="utf-8") as stream:

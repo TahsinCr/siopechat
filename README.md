@@ -159,3 +159,11 @@ With the layout extension enabled, click **Böl** beside Send or run `/split` (A
 ### Gemini transport
 
 `providers.gemini.GeminiProvider` uses [gemini-webapi](https://github.com/HanaokaYuzu/Gemini-API), an unofficial web-session transport, on Python 3.11+. It discovers account models, reads history, streams answers/thoughts and accepts files. Thinking options map to the transport’s standard/extended boolean, not invented low/medium/high levels. Credentials are injected from a private cookie file. Offline transport tests do not prove live account compatibility.
+
+### Accounts, provider filtering and files
+
+Settings → Accounts lists accounts and offers Add account (ChatGPT or Gemini), selection, browser login, verification and local logout. Each account has its own browser profile, provider instance and local cache. First login uses the connected debugging browser; default-browser login does not silently import another profile. Gemini cookie capture reads only the selected local Gemini tab. Cookie files/cache live in private directories under ignored data; credentials never enter config.json.
+
+Conversation identity is `(provider, account, remote ID)`. Tabs preserve their account, model and draft when switching. The sidebar shows ◈ ChatGPT / ✦ Gemini; its search-adjacent filter appears only with multiple configured providers and supports multiple selections. Account lists retain pagination and isolate failures. The terminal now calls account-scoped providers through one persistent background event loop; legacy management commands keep their compatibility daemon path.
+
+Use **Dosya**, `/attach` or Alt+A to choose a path (Tab completion). Gemini accepts web-supported files; ChatGPT uses native upload slots and attachment metadata, with PNG image dimensions retained. Attachments are limited to 20 MiB in this client. File uploads, multi-account browser login and provider sends require live verification beyond the offline tests.

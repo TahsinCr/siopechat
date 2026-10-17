@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import base64
 import json
 import os
 import sys
-import threading
 from pathlib import Path
 from typing import Any
 
@@ -138,28 +136,17 @@ def run_fullscreen(
     cached_conversation: dict[str, Any] | None = None,
     cdp_url: str = DEFAULT_CDP_URL,
 ) -> int:
-    try:
-        from .chat import run_tui
-    except ImportError as error:
-        raise ChatGPTWebError(
-            "fullscreen UI dependencies are missing; install the SiopeChat project dependencies"
-        ) from error
+    from accounts import identity
 
-    session_enabled = True
-    session_lock = threading.RLock()
+    from .chat import run_tui
+    from .settings import SettingsPanel
 
-    def ensure_service() -> None:
-        with session_lock:
-            if not session_enabled:
-                raise ChatGPTWebError("Oturum kapalı · F12 ile giriş yapın")
-            backend = api.get("backend")
-            if (
-                not backend.auth_store_path().is_file()
-                and not backend.daemon_is_ready(socket_path)
-                and not backend.create_session(cdp_url).is_ready()
-            ):
-                raise ChatGPTWebError("Kayıtlı oturum yok · F12 → Bağlı tarayıcı ile giriş yapın")
-            backend.ensure_daemon(socket_path, cdp_url)
+    accounts = api.get("accounts")
+    key = accounts.active()
+    if key != "chatgpt/default":
+        cached_conversation = accounts.cache(key).load_cached_conversation()
+        conversation_id = None
+    cached = cached_conversation or {}
 
     def preferences():
         config = api.settings.snapshot()
@@ -169,221 +156,41 @@ def run_fullscreen(
             "tokens": api.themes.resolve(config["application"]["theme"]),
         }
 
-    def change_setting(section, key, value):
-        asyncio.run(api.actions.invoke("settings.change", section=section, key=key, value=value))
+    def change_setting(section, name, value):
+        asyncio.run(api.actions.invoke("settings.change", section=section, key=name, value=value))
         return preferences()
 
-    def session_action(action):
-        nonlocal session_enabled
-        backend = api.get("backend")
-        session = backend.create_session(cdp_url)
-        if action == "status":
-            return {"saved_snapshot": backend.auth_store_path().is_file()}
-        if action == "default_browser":
-            return session.open_login()
-        if action == "connect_browser":
-            session_enabled = True
-            return session.launch()
-        if action == "verify":
-            session_enabled = True
-            ensure_service()
-            return dict(
-                backend.daemon_request(socket_path, {"command": "auth"}),
-                saved_snapshot=backend.auth_store_path().is_file(),
-            )
-        if action == "logout":
-            with session_lock:
-                session_enabled = False
-                try:
-                    return backend.forget_session(socket_path)
-                except BaseException:
-                    session_enabled = True
-                    raise
-        raise ValueError("Unknown session action")
+    def layout_factory(view):
+        if api.settings.extension("layout").get("enabled", True):
+            return api.get("workspaces").create_layout(view)
+        return None
 
-    def list_recent() -> list[dict[str, Any]]:
-        ensure_service()
-        items = (
-            api.get("backend")
-            .daemon_request(socket_path, {"command": "list", "maximum": 50})
-            .get("items", [])
-        )
-        return items if isinstance(items, list) else []
-
-    def provider_request(command: str, **arguments) -> dict[str, Any]:
-        ensure_service()
-        return api.get("backend").daemon_request(socket_path, {"command": command, **arguments})
-
-    def load_catalog():
-        from providers.models import ModelCatalog
-
-        return ModelCatalog.from_dict(provider_request("models", refresh=True)["catalog"])
-
-    def list_projects(cursor=None):
-        return provider_request("projects", cursor=cursor)
-
-    def get_project(project_id):
-        return provider_request("project", project_id=project_id)["project"]
-
-    def list_project_chats(project_id, cursor=None):
-        return provider_request("project_chats", project_id=project_id, cursor=cursor)
-
-    def move_conversation(conversation_id, project_id):
-        return provider_request("move_chat", conversation_id=conversation_id, project_id=project_id)
-
-    def load(selected_id: str) -> dict[str, Any]:
-        ensure_service()
-        raw = (
-            api.get("backend")
-            .daemon_request(
-                socket_path, {"command": "show_normalized", "conversation_id": selected_id}
-            )
-            .get("conversation", {})
-        )
-        if isinstance(raw, dict):
-            return raw
-        return {}
-
-    def send(
-        selected_id: str | None,
-        prompt: str,
-        attachments: list[dict[str, Any]],
-        on_event: Any,
-        on_connection: Any,
-        model: str | None = None,
-        effort: str | None = None,
-        **options,
-    ) -> dict[str, Any]:
-        ensure_service()
-        result = api.get("backend").daemon_stream_request(
-            socket_path,
-            {
-                "command": "send_stream",
-                "conversation_id": selected_id,
-                "prompt": prompt,
-                "attachments": attachments,
-                **({"model": model} if model is not None else {}),
-                **({"effort": effort} if effort is not None else {}),
-                **options,
-            },
-            on_event,
-            on_connection,
-        )
-        return result
-
-    def upload_image(
-        data: bytes, file_name: str, mime_type: str, width: int, height: int
-    ) -> dict[str, Any]:
-        ensure_service()
-        return (
-            api.get("backend")
-            .daemon_request(
-                socket_path,
-                {
-                    "command": "upload_image",
-                    "data": base64.b64encode(data).decode("ascii"),
-                    "file_name": file_name,
-                    "mime_type": mime_type,
-                    "width": width,
-                    "height": height,
-                },
-            )
-            .get("attachment", {})
-        )
-
-    def rename(selected_id: str, new_title: str) -> None:
-        ensure_service()
-        api.get("backend").daemon_request(
-            socket_path, {"command": "rename", "conversation_id": selected_id, "title": new_title}
-        )
-
-    try:
-        application_settings = api.settings.snapshot()
-    except (AttributeError, TypeError):
-        application_settings = {}
-    if not isinstance(application_settings, dict):
-        application_settings = {}
-
-    def list_workspaces() -> list[dict[str, str]]:
-        if not any(action.id == "layout.list" for action in api.actions.search()):
-            return []
-        return asyncio.run(api.actions.invoke("layout.list"))
-
-    def list_actions() -> list[dict[str, str]]:
-        overrides = api.settings.snapshot().get("keybindings", {})
-        return [
-            {
-                "id": action.id,
-                "title": action.title,
-                "detail": overrides.get(action.id) or action.keybinding or action.id,
-            }
-            for action in api.actions.search()
-        ]
-
-    def invoke_action(action_id: str, arguments: dict[str, Any] | None = None) -> Any:
-        return asyncio.run(api.actions.invoke(action_id, **(arguments or {})))
-
-    def forget_temporary(remote_id):
-        backend = api.get("backend")
-        if backend.daemon_is_ready(socket_path):
-            return backend.daemon_request(
-                socket_path, {"command": "forget_temporary", "conversation_id": remote_id}
-            )
-        return {"forgotten": False}
-
-    cached_id = cached_conversation.get("id") if cached_conversation else None
-    cached_messages = cached_conversation.get("messages") if cached_conversation else None
-    initial_project = {}
-    if cached_conversation:
-        project = cached_conversation.get("project")
-        if isinstance(project, dict):
-            initial_project.update(project)
-        project_id = cached_conversation.get("project_id")
-        if isinstance(project_id, str) and project_id:
-            initial_project["id"] = project_id
-        if cached_conversation.get("project_name"):
-            initial_project["name"] = cached_conversation["project_name"]
-    if isinstance(cached_id, str) and cached_id:
-        api.get("backend").set_active_conversation(cached_id)
+    callbacks = accounts.callbacks(key)
     run_tui(
-        list_recent,
-        load,
-        send,
-        conversation_id=conversation_id or (cached_id if isinstance(cached_id, str) else None),
-        title=cached_conversation.get("title") or "Untitled"
-        if cached_conversation
-        else "Loading conversation"
-        if conversation_id
-        else "New conversation",
-        initial_messages=cached_messages if isinstance(cached_messages, list) else None,
-        model=cached_conversation.get("model") if cached_conversation else None,
-        upload_image=upload_image,
-        rename_conversation=rename,
-        set_active_conversation=api.get("backend").set_active_conversation,
-        keybindings=application_settings.get("keybindings", {}),
-        list_workspaces=list_workspaces,
-        list_actions=list_actions,
-        invoke_action=invoke_action,
-        effort_preference=application_settings.get("application", {}).get("effort", "medium"),
-        load_catalog=load_catalog,
-        list_projects=list_projects,
-        get_project=get_project,
-        list_project_chats=list_project_chats,
-        initial_project=initial_project,
-        refresh_on_start=bool(cached_conversation and "project_id" not in cached_conversation),
-        forget_temporary=forget_temporary,
-        move_conversation=move_conversation,
-        layout_factory=lambda view: (
-            api.get("workspaces").create_layout(view)
-            if api.settings.extension("layout").get("enabled", True)
-            else None
-        ),
-        settings_rows=lambda: asyncio.run(api.actions.invoke("settings.show")),
+        lambda: accounts.list_chats()["items"],
+        callbacks["load_conversation"],
+        callbacks["send_prompt"],
+        conversation_id=identity(key, conversation_id or cached.get("id")),
+        title=cached.get("title") or "Yeni sohbet",
+        initial_messages=cached.get("messages"),
+        model=cached.get("model"),
+        account_service=accounts,
+        layout_factory=layout_factory,
+        keybindings=api.settings.snapshot()["keybindings"],
+        settings_rows=SettingsPanel(api).rows,
         change_setting=change_setting,
         load_preferences=preferences,
-        session_action=session_action,
-        list_history_page=lambda cursor: provider_request(
-            "history_page", offset=int(cursor or 0), limit=50
+        list_workspaces=lambda: (
+            asyncio.run(api.actions.invoke("layout.list"))
+            if api.settings.extension("layout").get("enabled", True)
+            else []
+        ),
+        list_actions=lambda: [
+            {"id": action.id, "title": action.title, "detail": action.keybinding or ""}
+            for action in api.actions.search()
+        ],
+        invoke_action=lambda action_id, arguments=None: asyncio.run(
+            api.actions.invoke(action_id, **(arguments or {}))
         ),
     )
     return 0
