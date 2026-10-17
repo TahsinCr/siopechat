@@ -155,3 +155,7 @@ Shift+Enter inserts a newline with CSI-u and xterm modified-Enter sequences. Alt
 ### Split conversations
 
 With the layout extension enabled, click **Böl** beside Send or run `/split` (Alt+V) / `/split-down` (Alt+H), then select another conversation from the sidebar. Up to four panes form one tab group. Click a pane header to type into it; other panes keep their own scroll positions. `/unsplit` (Alt+U) returns to one pane. Disabling the extension removes its presentation without deleting conversations. The compatibility ChatGPT daemon still serializes remote operations.
+
+### Gemini transport
+
+`providers.gemini.GeminiProvider` uses [gemini-webapi](https://github.com/HanaokaYuzu/Gemini-API), an unofficial web-session transport, on Python 3.11+. It discovers account models, reads history, streams answers/thoughts and accepts files. Thinking options map to the transport’s standard/extended boolean, not invented low/medium/high levels. Credentials are injected from a private cookie file. Offline transport tests do not prove live account compatibility.

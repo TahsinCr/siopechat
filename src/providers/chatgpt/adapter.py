@@ -281,6 +281,11 @@ class ChatGPTProvider(OptionalFeatures):
                         request.conversation_id,
                         request.prompt,
                         on_event=event,
+                        **(
+                            {"attachments": list(request.attachments)}
+                            if request.attachments
+                            else {}
+                        ),
                         **({"model": request.model} if request.model is not None else {}),
                         **({"effort": request.effort} if request.effort is not None else {}),
                         **({"project_id": request.project_id} if request.project_id else {}),

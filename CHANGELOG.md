@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Gemini provider
+
+- Add the independent Gemini web-session adapter with dynamic account models, history, streamed thought/answer separation, temporary contexts and file inputs.
+- Map standard/extended thinking to the transport flag and validate provider/account origin on every send.
+- Add gemini-webapi for Python 3.11+; keep ChatGPT usable on Python 3.10. Google live account flows are not exercised by offline tests.
+
 ### Split conversation views
 
 - Add the layout extension’s real side-by-side/stacked pane renderer, up to four panes, pane focus and grouped tab labels.

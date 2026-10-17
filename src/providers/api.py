@@ -34,6 +34,7 @@ class SendRequest:
     effort: str | None = None
     project_id: str | None = None
     temporary: bool = False
+    attachments: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True)

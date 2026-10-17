@@ -33,7 +33,7 @@ class ArchitectureTests(unittest.TestCase):
     def test_providers_have_no_application_imports(self):
         files = list((ROOT / "src/providers").rglob("*.py"))
         self.assertGreater(len(files), 5)
-        allowed = set(sys.stdlib_module_names) | {"httpx", "providers", "__future__"}
+        allowed = set(sys.stdlib_module_names) | {"httpx", "providers", "__future__", "gemini_webapi"}
         for path in files:
             for node in ast.walk(ast.parse(path.read_text())):
                 if isinstance(node, ast.Import):
