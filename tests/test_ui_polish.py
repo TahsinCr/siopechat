@@ -25,6 +25,18 @@ from tests.test_ui_controls import click, immediate
 
 
 class PolishTests(unittest.TestCase):
+    def test_multiple_tabs_are_capped_and_controls_stay_at_right(self):
+        from prompt_toolkit.utils import get_cwidth
+
+        with terminal() as (v, _):
+            v.new_tab()
+            fragments = v.render_tabs()
+            self.assertEqual(sum(get_cwidth(f[1]) for f in fragments), v.terminal_width())
+            self.assertTrue(
+                all(get_cwidth(f[1]) <= 22 for f in fragments if f[0] == "class:tab.active")
+            )
+            self.assertEqual("".join(f[1] for f in fragments[-3:]), " ‹  ›  + ")
+
     def test_project_move_detach_failure_and_draft_preserve_context(self):
         move = Mock()
         with terminal(move_conversation=move) as (v, _):
@@ -185,6 +197,21 @@ class PolishTests(unittest.TestCase):
 
 class FocusTests(unittest.IsolatedAsyncioTestCase):
     settle = interaction.InputTests.settle
+
+    async def test_modified_enter_inserts_newline_without_sending(self):
+        for sequence in (b"\x1b[13;2u", b"\x1b[27;2;13~", b"\x1b[13;2~", b"\n"):
+            with terminal() as (v, pipe):
+                run = asyncio.create_task(v.app.run_async())
+                try:
+                    await self.settle(lambda: v.app.is_running)
+                    pipe.send_text("first")
+                    pipe.send_bytes(sequence)
+                    pipe.send_text("second")
+                    await self.settle(lambda: v.input.text == "first\nsecond")
+                    self.assertFalse(v.busy)
+                finally:
+                    v.app.exit()
+                    await run
 
     async def test_mouse_returns_focus_to_composer_then_ctrl_d_works_on_message(self):
         with terminal(initial_messages=[{"role": "assistant", "text": "Answer"}]) as (v, pipe):

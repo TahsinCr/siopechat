@@ -31,7 +31,7 @@ class WorkspaceTests(unittest.TestCase):
         with terminal() as (v, _):
             v.title = "Demo"
             fragments = v.render_tabs()
-            self.assertLess(sum(get_cwidth(f[1]) for f in fragments), v.terminal_width())
+            self.assertEqual(sum(get_cwidth(f[1]) for f in fragments), v.terminal_width())
             self.assertEqual(fragments[0][1], " ☰ SiopeChat ")
             self.assertEqual(fragments[1][1], "│")
             label = fragments[2][1]

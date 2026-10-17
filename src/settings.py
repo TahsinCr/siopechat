@@ -26,6 +26,8 @@ DEFAULT_KEYBINDINGS = {
     "chat.resume": "c-r",
     "chat.send": "enter",
     "chat.newline": "escape enter",
+    "chat.newline_shift": "escape c-j",
+    "chat.newline_lf": "c-j",
     "chat.paste_image": "c-v",
     "chat.interrupt": "c-c",
     "chat.clear_transcript": "c-l",

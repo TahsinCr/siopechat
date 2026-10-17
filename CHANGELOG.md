@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Terminal input and settings
+
+- Distinguish Shift+Enter sequences from ordinary Enter, with Alt+Enter/Ctrl+J fallbacks and configurable bindings.
+- Give settings a full-height scrollable list, aligned values and an integrated editor; support wheel and page navigation.
+- Cap all tab widths and pin previous/next/new controls at the right edge.
+
 ### Clean development baseline
 
 - Start SiopeChat history from the current modular Python application. No numbered releases or tags yet; subsequent features receive separate commits.

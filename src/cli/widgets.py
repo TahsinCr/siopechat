@@ -151,3 +151,26 @@ class TranscriptGutter(Margin):
                 )
             )
         return rows
+
+
+def register_modified_enter():
+    """Keep modified Enter distinct from plain CR in xterm/CSI-u terminals."""
+    from prompt_toolkit.input.ansi_escape_sequences import ANSI_SEQUENCES
+    from prompt_toolkit.keys import Keys
+
+    for sequence in ("\x1b[13;2u", "\x1b[27;2;13~", "\x1b[13;2~"):
+        ANSI_SEQUENCES[sequence] = (Keys.Escape, Keys.ControlJ)
+
+
+class SelectionWindow(Window):
+    """Wheel scrolling moves the selection and its editor as one list."""
+
+    def __init__(self, *args, move, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.move = move
+
+    def _scroll_up(self):
+        self.move(-3)
+
+    def _scroll_down(self):
+        self.move(3)

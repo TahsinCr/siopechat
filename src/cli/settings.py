@@ -9,10 +9,11 @@ from prompt_toolkit.layout import HSplit, VSplit, Window
 from prompt_toolkit.layout.containers import ConditionalContainer
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import D
+from prompt_toolkit.layout.margins import ScrollbarMargin
 from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Button, TextArea
 
-from .widgets import fit_text, on_click
+from .widgets import SelectionWindow, fit_text, on_click
 
 
 class SettingsPanel:
@@ -130,19 +131,24 @@ class SettingsDialog:
             focusable=True,
             get_cursor_position=lambda: Point(0, self.category_index * 2),
         )
-        self.search = TextArea(height=1, prompt="⌕ ", multiline=False)
+        self.search = TextArea(
+            height=1, prompt=" Ara  ", multiline=False, style="class:settings.search"
+        )
+        self.search.control.focus_on_click = Condition(lambda: True)
         self.search.buffer.on_text_changed += lambda _: self.filter()
         self.control = FormattedTextControl(
             self.render_rows, focusable=True, get_cursor_position=lambda: Point(0, self.index)
         )
-        self.window = Window(
+        self.window = SelectionWindow(
+            move=self.move,
             content=self.control,
             wrap_lines=False,
             always_hide_cursor=True,
-            height=lambda: D(min=3, preferred=min(10, max(3, len(self.filtered))), max=10),
-            dont_extend_height=True,
+            height=D(min=3),
+            right_margins=[ScrollbarMargin(display_arrows=True)],
         )
-        self.editor = TextArea(height=1, multiline=False)
+        self.editor = TextArea(height=1, multiline=False, style="class:settings.editor")
+        self.editor.control.focus_on_click = Condition(lambda: True)
         self.save_button = Button("Kaydet", handler=self.save)
         self.cancel_button = Button("Kapat", handler=self.close)
         self.keys = KeyBindings()
@@ -157,6 +163,18 @@ class SettingsDialog:
         self.keys.add("down", filter=list_focus)(lambda _: self.move(1))
         self.keys.add("left", filter=list_focus)(lambda _: self.cycle_choice(-1))
         self.keys.add("right", filter=list_focus)(lambda _: self.cycle_choice(1))
+        self.keys.add("pageup", filter=list_focus)(
+            lambda _: self.move(
+                -max(3, self.window.render_info.window_height - 1)
+                if self.window.render_info
+                else -6
+            )
+        )
+        self.keys.add("pagedown", filter=list_focus)(
+            lambda _: self.move(
+                max(3, self.window.render_info.window_height - 1) if self.window.render_info else 6
+            )
+        )
         self.keys.add("enter", filter=list_focus)(lambda _: self.focus_editor())
         self.keys.add(
             "space",
@@ -175,7 +193,9 @@ class SettingsDialog:
         form = HSplit(
             [
                 self.search,
+                Window(height=1, char="─", style="class:separator"),
                 self.window,
+                Window(height=1, char="─", style="class:separator"),
                 Window(height=2, content=FormattedTextControl(self.render_detail)),
                 ConditionalContainer(
                     self.editor,
@@ -192,7 +212,6 @@ class SettingsDialog:
                     wrap_lines=True,
                     content=FormattedTextControl(lambda: self.message),
                 ),
-                Window(style="class:settings", char=" "),
             ],
             modal=False,
             key_bindings=self.keys,
@@ -366,9 +385,19 @@ class SettingsDialog:
                     ]
                 )
             else:
-                label = f"{'›' if i == self.index else ' '} {title}  · {row['value']}"
-                rows.append(
-                    (style, fit_text(label, width) + "\n", on_click(lambda i=i: self.select(i)))
+                label_width = max(8, width * 3 // 5)
+                label = fit_text(" " + title, label_width)
+                label += " " * max(1, label_width - get_cwidth(label))
+                value = fit_text(str(row["value"]), max(1, width - label_width - 2))
+                rows.extend(
+                    [
+                        (style, label, on_click(lambda i=i: self.select(i))),
+                        (
+                            style + " class:settings.value",
+                            "  " + value + "\n",
+                            on_click(lambda i=i: self.select(i)),
+                        ),
+                    ]
                 )
         return rows or [("class:sidebar.muted", self.view.text("no_results", "Sonuç yok"))]
 

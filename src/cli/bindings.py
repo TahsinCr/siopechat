@@ -297,6 +297,9 @@ def key_bindings(view) -> KeyBindings:
         ("command.refresh", refresh_action),
     ):
         bind(action_id, callback)
+    composer_focused = Condition(lambda: view.app.layout.current_control is view.input.control)
+    bind("chat.newline_shift", newline, composer_focused)
+    bind("chat.newline_lf", newline, composer_focused)
     bind("chat.temporary", lambda _: view.new_temporary_chat())
     bind("command.session", lambda _: view.session_dialog.open())
     bind("chat.scroll_top", lambda _: view.scroll_top())

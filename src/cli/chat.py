@@ -100,6 +100,9 @@ class ChatView:
         forget_temporary=None,
         move_conversation=None,
     ) -> None:
+        from .widgets import register_modified_enter
+
+        register_modified_enter()
         self.settings_rows_callback = settings_rows
         self.change_setting = change_setting
         self.load_preferences = load_preferences
@@ -335,7 +338,7 @@ class ChatView:
         )
         base, remainder = divmod(available, max(1, len(indices)))
         for position, i in enumerate(indices):
-            tab_width = min(26, base) if len(indices) == 1 else base + (position < remainder)
+            tab_width = min(26, base + (position < remainder))
             tab = self.tabs[i]
             title = self.title if i == self.active_tab else tab.get("title", "Sohbet")
             marker = (
@@ -362,6 +365,8 @@ class ChatView:
             fragments.append(
                 (style + " class:tab.close", " × ", on_click(lambda i=i: self.close_clicked_tab(i)))
             )
+        used = sum(get_cwidth(fragment[1]) for fragment in fragments)
+        fragments.append(("class:tabs", " " * max(0, width - used - 9)))
         fragments.extend(
             [
                 ("class:button", " ‹ ", on_click(lambda: self.switch_tab(-1))),
