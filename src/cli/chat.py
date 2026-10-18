@@ -1513,7 +1513,12 @@ class ChatView:
     def _build_sidebar_rows(self) -> None:
         query = self.sidebar_search.text.strip().casefold()
         active_keys = (
-            self.account_filter or {item["key"] for item in self.account_service.items()}
+            {
+                item["key"]
+                for item in self.account_service.items()
+                if item.get("enabled", True)
+                and (self.account_filter is None or item["key"] in self.account_filter)
+            }
             if self.account_service and hasattr(self.account_service, "items")
             else None
         )

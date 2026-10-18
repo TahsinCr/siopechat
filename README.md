@@ -14,7 +14,7 @@ Requirements:
 
 - Python **3.10+** for ChatGPT/Claude, **3.11+** for the optional standalone Gemini SDK transport.
 - Node.js **22+** for browser-session helpers.
-- Chrome or Chromium for connecting a login session.
+- Chrome or Chromium for login and the current native web transports. Browser-free generation is not implemented.
 - A terminal with Unicode support; true color and mouse reporting improve the experience.
 
 Install from the checkout using your Python environment:
@@ -267,19 +267,31 @@ Sends from one account are queued through the local save to preserve message ord
 
 The hot cache stores immutable JSON snapshots within its byte budget; returned records remain independent mutable copies. These limits bound local work and do not change provider quotas or guarantee remote response times.
 
-### Connected browser recovery
+### Browser transport requirement
 
-SiopeChat uses a separate browser profile for each account. If that browser closes, the next send (or Gemini model/notebook read) opens the same profile automatically. A saved account session is required; local logout is respected. Submitted prompts are never automatically replayed after a connection failure. Verified accounts stay linked across browser closure and application restart. Verification is stored separately from the browser connection; Accounts shows both states. A transport outage does not revoke verification. Local logout or an explicit provider authentication rejection clears it; a cached model list cannot create it. The native web transport still needs a browser process and starts the saved profile when needed.
+Account verification and a live browser connection are separate states. Closing
+Chrome preserves saved verification and cached conversations. Sending, model
+refreshes and synchronization do **not** launch Chrome implicitly; an unavailable
+native connection produces an explicit error. Opening the login browser is an
+explicit Accounts → Connected browser action.
+
+The current native Gemini, Claude and ChatGPT web paths still depend on a live
+browser engine. This is not a browser-free transport, and closing its process can
+interrupt an in-flight reply. Supporting login once followed by generation with
+no browser process requires a different session transport; that requirement
+remains open. Prompts are never automatically replayed after a connection failure.
+A network outage does not revoke verification; local logout or an explicit
+provider authentication rejection does.
 
 ### Synchronization controls
 
-**F10**, `/refresh` and `/sync` use one synchronization operation. The sidebar `↻` refreshes the library (projects, notebooks and chats); `↻ Eşitle` above the transcript refreshes that conversation. `/sync library` and `/sync conversation` select the same scopes. These commands recover the saved account browser when necessary; restarting is not required. Startup restores cached models and records without opening a closed browser. Sending or explicit synchronization can reopen the saved profile. Verification and the browser connection remain separate states.
+**F10**, `/refresh` and `/sync` use one synchronization operation. The sidebar `↻` refreshes the library (projects, notebooks and chats); `↻ Eşitle` above the transcript refreshes that conversation. `/sync library` and `/sync conversation` select the same scopes. Startup restores cached models and records without opening a browser. These commands revalidate through an available native connection; a closed browser is not automatically reopened. Verification and the browser connection remain separate states.
 
 Configured Gemini accounts read both conversation lists and histories through the same signed-in browser session used for generation. They no longer depend on the SDK's exported cookie snapshot for those reads. Published thinking summaries and raw provider media metadata remain in the archive. `!` means the last background revalidation failed; the last saved content remains visible. A successful synchronization clears that state.
 
 ### Claude
 
-Add **Claude** in Settings → Accounts and select a separate browser profile, or explicitly reuse a connected profile that already has your Claude login. Click **Connected browser**, sign in if needed, and **Verify**. Verification is stored as an account marker; Claude cookies are not copied into configuration. Closing the browser keeps this verification record, and sending/explicit synchronization can reopen the same profile.
+Add **Claude** in Settings → Accounts and select a separate browser profile, or explicitly reuse a connected profile that already has your Claude login. Click **Connected browser**, sign in if needed, and **Verify**. Verification is stored as an account marker; Claude cookies are not copied into configuration. Closing the browser keeps this verification record. Native sending and synchronization still require a live connection, but do not reopen the browser automatically.
 
 Claude library requests use the workspace selected on the Claude website (`lastActiveOrg`). An inaccessible selected workspace or an ambiguous account produces an explicit error rather than silently selecting another workspace.
 

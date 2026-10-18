@@ -60,7 +60,6 @@ class Accounts:
         self._loop = None
         self._thread = None
         self._lock = threading.Lock()
-        self._browser_locks = {}
         self._send_locks = {}
         self._active_pending = {}
         self._active_values = {}
@@ -126,7 +125,7 @@ class Accounts:
     def read_record(self, key, kind, remote, fetch, force=False):
         archive = self.archive()
         # Passive reads restore local state without opening a browser window.
-        # Explicit synchronization and sends may recover the saved profile.
+        # Explicit operations also check availability without launching a browser.
         if self.status(key)["saved_snapshot"] and not self.browser_connected(key):
             if force:
                 self.ensure_browser(key)
@@ -136,7 +135,7 @@ class Accounts:
                     return cached
                 if kind in ("chats", "containers", "container_chats"):
                     return {"items": [], "cursor": None, "offline": True}
-                raise RuntimeError("Bağlı tarayıcı kapalı; Eşitle ile yeniden bağlanın")
+                raise RuntimeError("Bağlı tarayıcı kapalı; kayıtlı geçmiş korunuyor")
         if archive:
             try:
                 return archive.read(key, kind, remote or "", fetch, force=force)
@@ -214,16 +213,16 @@ class Accounts:
         )
 
     def ensure_browser(self, key):
-        """Recover the account browser before an operation, never replay a prompt."""
-        browser_key = self.item(key).get("browser_account") or key
-        with self._lock:
-            lock = self._browser_locks.setdefault(browser_key, threading.Lock())
-        with lock:
-            session = self.session(key)
-            path = self.credential_path(key)
-            if not path.is_file() and not (key.startswith("claude/") and session.is_ready()):
-                raise RuntimeError("Hesap oturumu yok; Hesaplar bölümünden giriş yapın")
-            return session.launch(PROVIDERS[key.split("/")[0]][2])
+        """Check native transport availability without launching a browser implicitly."""
+        session = self.session(key)
+        path = self.credential_path(key)
+        if not path.is_file() and not (key.startswith("claude/") and session.is_ready()):
+            raise RuntimeError("Hesap oturumu yok; Hesaplar bölümünden giriş yapın")
+        if not session.is_ready():
+            raise RuntimeError(
+                "Bu web taşıyıcısı canlı tarayıcı gerektiriyor; tarayıcısız gönderim henüz desteklenmiyor. "
+                "Tarayıcı otomatik açılmadı; hesap doğrulamanız korunur."
+            )
 
     def capabilities(self, key):
         return self.provider(key).capabilities
@@ -376,6 +375,9 @@ class Accounts:
                 self._catalog_tasks[key] = task
 
                 def forget_task(done):
+                    # A cancelled tab may stop awaiting this shared discovery.
+                    if not done.cancelled():
+                        done.exception()
                     if self._catalog_tasks.get(key) is done:
                         self._catalog_tasks.pop(key, None)
 
@@ -1047,7 +1049,7 @@ class Accounts:
                 if scope == "all":
                     self.models(account, force=True)
                 if scope in ("all", "library"):
-                    self.list_chats(selected=[item["provider"]], force=True)
+                    self.list_chats(selected=[item["provider"]], force=True, account_keys={account})
                     self.list_projects(account, force=True)
                     archive = self.archive()
                     if archive:

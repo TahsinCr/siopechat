@@ -249,10 +249,13 @@ class ClaudeAccountsTests(unittest.TestCase):
                 gpt_file = accounts.credential_path("chatgpt/default")
                 gpt_file.parent.mkdir(parents=True, exist_ok=True)
                 gpt_file.write_text("{}")
-                with patch("providers.chatgpt.session.BrowserSession.launch"):
+                with (
+                    patch("providers.chatgpt.session.BrowserSession.launch") as launch,
+                    patch("providers.chatgpt.session.BrowserSession.is_ready", return_value=True),
+                ):
                     accounts.ensure_browser("chatgpt/default")
                     accounts.ensure_browser(key)
-                self.assertEqual(set(accounts._browser_locks), {"chatgpt/default"})
+                    launch.assert_not_called()
                 with self.assertRaises(ValueError):
                     accounts.add("claude", "Wrong", browser_account=key)
             finally:

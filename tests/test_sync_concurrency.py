@@ -330,7 +330,7 @@ class AccountConcurrencyTests(unittest.TestCase):
                 release.set()
             self.assertEqual(discovering.result(2).models[0].id, "fixture")
 
-    def test_browser_startup_for_one_account_does_not_block_another(self):
+    def test_browser_availability_for_one_account_does_not_block_another(self):
         release = threading.Event()
         sessions = {}
         for key in self.entered:
@@ -338,13 +338,15 @@ class AccountConcurrencyTests(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("{}")
 
-            def launch(_url, key=key):
+            def ready(key=key):
                 self.entered[key].set()
                 if not release.wait(3):
                     raise TimeoutError("test barrier")
-                return {"browser": "started"}
+                return True
 
-            sessions[key] = SimpleNamespace(paths=SimpleNamespace(session_file=path), launch=launch)
+            sessions[key] = SimpleNamespace(
+                paths=SimpleNamespace(session_file=path), is_ready=ready
+            )
         with patch.object(
             self.accounts,
             "ensure_browser",

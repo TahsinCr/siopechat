@@ -78,7 +78,11 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Fixed
 
+- Exclude disabled providers from both cached sidebar project and conversation rows, and limit each synchronization request to its target account.
+
 - Honor Claude’s selected native workspace for chat and project requests; reject ambiguous or inaccessible workspace selection instead of silently reading the first organization.
+- Stop implicit browser launches from sends, catalog discovery and synchronization. Preserve saved verification and report the current native transport’s live-browser requirement explicitly; browser-free generation remains unimplemented.
+- Observe shared model-discovery task failures after a tab cancels its waiter, preventing unhandled background task errors.
 
 - Keep message selection attached to its original message when older history is inserted, remove the obsolete full-fragment painter, and retain a single oversized prepared transcript instead of repeatedly displaying its loading placeholder.
 

@@ -25,17 +25,20 @@ class AccountTests(unittest.TestCase):
         self.accounts = self.api.get("accounts")
         self.gemini = self.accounts.add("gemini", "Personal Gemini")
 
-    def test_browser_recovery_requires_saved_session_and_serializes_launch(self):
+    def test_native_operations_never_launch_a_browser_implicitly(self):
         session = Mock()
+        session.is_ready.return_value = False
         with patch.object(self.accounts, "session", return_value=session):
             with self.assertRaisesRegex(RuntimeError, "oturumu yok"):
                 self.accounts.ensure_browser(self.gemini)
-            session.launch.assert_not_called()
             path = self.accounts.directory(self.gemini) / "cookies.json"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("{}")
+            with self.assertRaisesRegex(RuntimeError, "tarayıcısız gönderim"):
+                self.accounts.ensure_browser(self.gemini)
+            session.is_ready.return_value = True
             self.accounts.ensure_browser(self.gemini)
-            session.launch.assert_called_once_with("https://gemini.google.com/")
+            session.launch.assert_not_called()
 
     def test_verification_survives_closed_browser_and_account_service_restart(self):
         path = self.accounts.directory(self.gemini) / "cookies.json"

@@ -10,6 +10,8 @@ from cli.library import sort_records
 from providers.gemini.history import conversations
 from providers.gemini.notebooks import project_from_native
 from providers.models import Conversation, Origin, Page
+from tests.test_account_ui import Accounts
+from tests.test_cli_interaction import terminal
 from tests.test_gemini_notebooks import notebook
 
 
@@ -42,6 +44,37 @@ class LibraryTests(unittest.TestCase):
         row = notebook()
         row[1][14] = [None, [200, 250000000]]
         self.assertEqual(project_from_native(row, "a").metadata["updated_at"], 200.25)
+
+    def test_sidebar_filters_projects_and_chats_by_account_and_excludes_disabled_providers(self):
+        service = Accounts()
+        with terminal(account_service=service) as (view, _):
+            view.sidebar_collapsed = set()
+            view.sidebar_items = [
+                {"id": "@chatgpt/default/c", "title": "GPT", "provider_id": "chatgpt"},
+                {"id": "@gemini/personal/c", "title": "Gemini", "provider_id": "gemini"},
+            ]
+            view.project_items = {
+                "@chatgpt/default/p": {"name": "GPT project", "provider_id": "chatgpt"},
+                "@gemini/personal/p": {"name": "Gemini project", "provider_id": "gemini"},
+            }
+            view.account_filter = {"gemini/personal"}
+            view._build_sidebar_rows()
+            self.assertEqual(
+                [x["title"] for x in view.sidebar_rows if x["kind"] == "project"],
+                ["Gemini project"],
+            )
+            self.assertEqual(
+                [x["title"] for x in view.sidebar_rows if x["kind"] == "chat"], ["Gemini"]
+            )
+            view.account_filter = None
+            service.entries[1]["enabled"] = False
+            view._build_sidebar_rows()
+            self.assertEqual(
+                [x["title"] for x in view.sidebar_rows if x["kind"] == "project"], ["GPT project"]
+            )
+            self.assertEqual(
+                [x["title"] for x in view.sidebar_rows if x["kind"] == "chat"], ["GPT"]
+            )
 
     def test_library_can_browse_inactive_account_without_changing_sender(self):
         with tempfile.TemporaryDirectory() as directory:
