@@ -29,6 +29,7 @@ from rich.text import Text
 
 from accounts import origin
 from providers import Capability
+from providers.history import merge_conversation
 from providers.models import FeatureState, ModelCatalog
 from providers.registry import PROVIDERS
 from settings import DEFAULT_KEYBINDINGS
@@ -475,6 +476,9 @@ class ChatView:
                 continue
             messages = [visible_chat_message(m) for m in value.get("messages", [])]
             messages = [m for m in messages if m is not None]
+            messages = merge_conversation(
+                {"messages": messages}, {"messages": tab.get("messages", [])}
+            )["messages"]
             if tab.get("messages") != messages:
                 tab["messages"] = messages
                 tab["title"] = value.get("title") or tab.get("title")
@@ -3143,8 +3147,8 @@ class ChatView:
             labels = " ".join(f"[📎 {item['name']}]" for item in attachments)
             display_prompt = f"{display_prompt}\n\n{labels}"
         with self.lock:
-            self.messages.append({"role": "user", "text": display_prompt})
-            self.messages.append({"role": "assistant", "text": ""})
+            self.messages.append({"role": "user", "text": display_prompt, "local_pending": True})
+            self.messages.append({"role": "assistant", "text": "", "local_pending": True})
         self._save_active_tab()
         self.busy = True
         self.busy_tab_index = self.active_tab
@@ -3728,6 +3732,9 @@ class ChatView:
                             for x in latest.get("messages", [])
                             if (m := visible_chat_message(x)) is not None
                         ]
+                    visible_messages = merge_conversation(
+                        {"messages": visible_messages}, {"messages": target_tab.get("messages", [])}
+                    )["messages"]
                     project = conversation.get("project")
                     project = dict(project) if isinstance(project, dict) else {}
                     project_id = conversation.get("project_id") or project.get("id")
@@ -3829,7 +3836,12 @@ class ChatView:
                         (item for item in messages if item.get("stream_id") == identity), None
                     )
                     if item is None:
-                        item = {"role": "reasoning", "text": "", "stream_id": identity}
+                        item = {
+                            "role": "reasoning",
+                            "text": "",
+                            "stream_id": identity,
+                            "local_pending": True,
+                        }
                         messages.insert(max(0, len(messages) - 1), item)
                     item["text"] = item["text"] + text if event_type == "delta" else text
                 self._dispatch_ui(

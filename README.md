@@ -303,3 +303,13 @@ creates a fresh synchronization service. Local archive failures after an accepte
 remote response or project edit are reported separately from the remote result.
 
 ChatGPT authentication keeps a successfully captured session when Chrome reports a late socket error during intentional debugger shutdown. This does not hide failures before authentication succeeds.
+
+
+### Synchronization while replying
+
+A refreshed history is reconciled with locally accepted turns before updating the
+transcript. Message identities and pending markers survive display conversion;
+late snapshots cannot discard a new response or its published thinking summary.
+Accepted turns are saved atomically with any history loaded in the meantime.
+Disabling the archive uses the same display reconciliation without importing the
+extension into the UI.

@@ -144,6 +144,13 @@ class Archive:
                 if changed:
                     self.revision += 1
 
+    def save_turn(self, account, remote, value):
+        """Atomically retain history hydrated while an accepted turn was saved."""
+        with self._write_lock:
+            current = self.get(account, "conversation", remote)
+            merged = merge_conversation(current or {}, value)
+            self.put(account, "conversation", remote, dict(value, messages=merged["messages"]))
+
     def _state(self, key, state, error=None):
         self._states[key] = {
             "account": key[0],

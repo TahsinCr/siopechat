@@ -27,6 +27,28 @@ class SyncConcurrencyTests(unittest.TestCase):
         self.archive = Archive(self.repo, Files(root / "files"))
         self.addCleanup(self.archive.close)
 
+    def test_save_turn_preserves_history_hydrated_after_the_sender_read(self):
+        self.archive.put(
+            "gemini/a",
+            "conversation",
+            "one",
+            {"messages": [{"id": "old", "role": "user", "text": "Hydrated older turn"}]},
+        )
+        self.archive.save_turn(
+            "gemini/a",
+            "one",
+            {
+                "messages": [
+                    {"role": "user", "text": "New question", "local_pending": True},
+                    {"role": "assistant", "text": "Accepted answer", "local_pending": True},
+                ]
+            },
+        )
+        self.assertEqual(
+            [m["text"] for m in self.archive.get("gemini/a", "conversation", "one")["messages"]],
+            ["Hydrated older turn", "New question", "Accepted answer"],
+        )
+
     def test_cold_waiter_receives_new_local_value_instead_of_stale_remote_result(self):
         entered, release = threading.Event(), threading.Event()
 

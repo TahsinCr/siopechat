@@ -904,11 +904,8 @@ class Accounts:
                     try:
                         archive = self.archive()
                         if archive:
-                            archive.put(
-                                key,
-                                "conversation",
-                                remote_id,
-                                dict(record, id=identity(key, remote_id)),
+                            archive.save_turn(
+                                key, remote_id, dict(record, id=identity(key, remote_id))
                             )
                             self.set_active(key, remote_id)
                         else:

@@ -168,7 +168,11 @@ def visible_chat_message(message: dict[str, Any]) -> dict[str, str] | None:
         visible = False
     if not visible or not isinstance(text, str) or not text:
         return None
-    return {"role": "reasoning" if reasoning else role, "text": text}
+    return {"role": "reasoning" if reasoning else role, "text": text} | {
+        key: message[key]
+        for key in ("id", "local_pending")
+        if key in message and message[key] is not None
+    }
 
 
 class MessageRenderer:

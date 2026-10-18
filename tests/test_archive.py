@@ -203,6 +203,32 @@ class ArchiveIntegrationTests(unittest.TestCase):
             view.open_palette("models")
             self.assertEqual([x["detail"].split(" · ")[0] for x in view.palette_items], ["chatgpt"])
 
+    def test_stale_sync_cannot_erase_a_completed_visible_reply(self):
+        archive = self.api.get("archive")
+        with terminal(account_service=self.accounts) as (view, _):
+            view.conversation_id = "@chatgpt/default/one"
+            view.messages = [
+                {"id": "old", "role": "assistant", "text": "Earlier"},
+                {"role": "user", "text": "New question", "local_pending": True},
+                {"role": "reasoning", "text": "Published summary", "local_pending": True},
+                {"role": "assistant", "text": "New completed reply", "local_pending": True},
+            ]
+            view._save_active_tab()
+            view.input.text = "Next draft"
+            archive.put(
+                "chatgpt/default",
+                "conversation",
+                "one",
+                {"messages": [{"id": "old", "role": "assistant", "text": "Earlier"}]},
+            )
+            archive._state(("chatgpt/default", "conversation", "one"), "ready")
+            view.apply_archive_updates()
+            self.assertEqual(
+                [m["text"] for m in view.messages],
+                ["Earlier", "New question", "Published summary", "New completed reply"],
+            )
+            self.assertEqual(view.input.text, "Next draft")
+
     def test_sync_updates_keep_draft_and_do_not_restore_deleted_first_page_rows(self):
         archive = self.api.get("archive")
         with terminal(account_service=self.accounts) as (view, _):

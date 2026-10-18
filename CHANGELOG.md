@@ -74,6 +74,9 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Fixed
 
+- Reconcile late history snapshots with accepted visible turns instead of replacing the transcript; retain message identity, pending replies and published thinking during synchronization.
+- Atomically save accepted turns alongside history hydrated during persistence; share provider-neutral history reconciliation between UI and optional archive.
+
 - Activate the hit-tested ChatGPT project deletion control directly, avoiding confirmation focus races during native dialog mounting.
 
 - Do not reject a successful ChatGPT authentication capture when the debugger reports an error during intentional socket shutdown; create projects in an owned tab rather than a potentially busy user tab.
