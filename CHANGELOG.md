@@ -10,7 +10,7 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Added
 
-- Add a clickable temporary-chat control beside the project selector for providers that support temporary chats.
+- Add a temporary-chat toggle beside the project selector, with explicit on/off and unsupported states. Toggle a draft in place before its first message, preserving typed text and clearing incompatible project membership.
 
 - Independent Claude web-session provider with native model/effort discovery, chat history and generation, published thinking summaries, chat rename/deletion, projects, instruction/source metadata, private project creation/deletion and verified project membership changes.
 - Explicit cross-provider browser-profile sharing with independent account/verification/archive records and a shared launch lock.

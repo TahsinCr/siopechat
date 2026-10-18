@@ -943,7 +943,16 @@ class ChatView:
         project_text = (
             " Proje: " + fit_text(self.current_project.get("name") or "Projesiz", 22) + " ▾ "
         )
-        temporary_text = " ◌ Geçici sohbet "
+        temporary_supported = Capability.TEMPORARY in self.provider_features
+        temporary_text = (
+            " Geçici: "
+            + (
+                ("Açık ●" if self.temporary else "Kapalı ○")
+                if temporary_supported
+                else "Desteklenmiyor"
+            )
+            + " "
+        )
         fragments = []
         used = 0
         width = self.terminal_width()
@@ -951,16 +960,11 @@ class ChatView:
             ("class:metadata.model", model_text, lambda: self.handle_command("/model")),
             ("class:metadata.effort", effort_text, lambda: self.handle_command("/effort")),
             ("class:metadata.project", project_text, self.open_project_picker),
-            ("class:metadata.temporary", temporary_text, self.new_temporary_chat),
+            ("class:metadata.temporary", temporary_text, self.toggle_temporary_chat),
         ):
             if (
                 style == "class:metadata.project"
                 and Capability.PROJECTS not in self.provider_features
-            ):
-                continue
-            if (
-                style == "class:metadata.temporary"
-                and Capability.TEMPORARY not in self.provider_features
             ):
                 continue
             label = fit_text(label, width)
@@ -971,6 +975,22 @@ class ChatView:
             fragments.append((style, label, on_click(callback)))
             used += get_cwidth(label)
         return FormattedText(fragments)
+
+    def toggle_temporary_chat(self):
+        if Capability.TEMPORARY not in self.provider_features:
+            self.status = "Bu sağlayıcı geçici sohbeti desteklemiyor"
+        elif self.busy or self.loading_conversation or self.background_jobs:
+            self.status = "Devam eden işlem tamamlandıktan sonra geçici modu değiştirin"
+        elif self.conversation_id or self.messages:
+            self.status = "Geçici mod yalnız ilk mesajdan önce değiştirilebilir · yeni sohbet açın"
+        else:
+            self.temporary = not self.temporary
+            if self.temporary:
+                self.current_project = {}
+            self.title = "Geçici sohbet" if self.temporary else "Yeni sohbet"
+            self.status = "Geçici sohbet · yerel kayıt kapalı" if self.temporary else "Normal sohbet"
+            self._save_active_tab()
+        self.app.invalidate()
 
     def new_temporary_chat(self):
         count = len(self.tabs)
@@ -1122,7 +1142,6 @@ class ChatView:
 
     def render_composer_actions(self):
         compact = self.main_width() < 42
-        left = (" ◌ " if compact else " ◌ Geçici sohbet ") if self.temporary else ""
         controls = []
         if self.attach_file_callback:
             controls.append(
@@ -1149,12 +1168,9 @@ class ChatView:
         controls.append(
             ("class:button", " ↑ " if compact else " Gönder ↑ ", on_click(self.submit_prompt))
         )
-        used = get_cwidth(left) + sum(get_cwidth(f[1]) for f in controls)
+        used = sum(get_cwidth(f[1]) for f in controls)
         return FormattedText(
-            [
-                ("class:chat.context", left),
-                ("", " " * max(0, self.main_width() - used)),
-            ]
+            [("", " " * max(0, self.main_width() - used))]
             + controls
         )
 

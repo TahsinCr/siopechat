@@ -109,12 +109,29 @@ class PolishTests(unittest.TestCase):
                 i for i, f in enumerate(fragments) if f[0] == "class:metadata.temporary"
             )
             self.assertGreater(temporary_index, project_index)
-            self.assertIn("Geçici sohbet", fragments[temporary_index][1])
+            self.assertIn("Geçici: Kapalı", fragments[temporary_index][1])
+            count = len(v.tabs)
+            v.input.text = "Draft stays here"
+            v.current_project = {"id": "project", "name": "Work"}
             click(fragments[temporary_index])
             self.assertTrue(v.temporary)
+            self.assertEqual(len(v.tabs), count)
+            self.assertEqual(v.input.text, "Draft stays here")
+            self.assertEqual(v.current_project, {})
+            self.assertIn("Geçici: Açık", str(v.render_chat_header()))
+            v.toggle_temporary_chat()
+            self.assertFalse(v.temporary)
+
+            v.conversation_id = "saved-chat"
+            v.toggle_temporary_chat()
+            self.assertFalse(v.temporary)
+            self.assertIn("ilk mesajdan önce", v.status)
 
             v.provider_features = frozenset({Capability.PROJECTS})
-            self.assertNotIn("class:metadata.temporary", [f[0] for f in v.render_chat_header()])
+            self.assertIn("Geçici: Desteklenmiyor", str(v.render_chat_header()))
+            v.toggle_temporary_chat()
+            self.assertFalse(v.temporary)
+            self.assertIn("desteklemiyor", v.status)
 
     def test_role_markers_first_line_only_and_reasoning_before_answer(self):
         with terminal(
