@@ -70,6 +70,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Fixed
 
+- Preserve successful ChatGPT authentication when an intentional debugger shutdown emits a late socket error.
+
 - Preserve the conversation's provider/account when restoring cached or cold histories; use that account's remembered model and effort rather than overwriting selection with the last response model.
 - Keep message sending independent of unrelated background jobs, block only a pending membership change in the same tab, and reject unsupported temporary drafts before clearing their text.
 - Hydrate cached histories even with the archive disabled; publish the completed synchronization state after applying the history and recognize replacement archive instances after re-enabling the extension.

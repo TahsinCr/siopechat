@@ -97,7 +97,9 @@ async function main() {
       }
     }
   });
-  socket.addEventListener("error", () => fail("lost the Chrome debugger connection"));
+  socket.addEventListener("error", () => {
+    if (!finished) fail("lost the Chrome debugger connection");
+  });
 }
 
 main().catch((error) => fail(error.message));

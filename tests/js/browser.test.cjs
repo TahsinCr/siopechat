@@ -102,3 +102,27 @@ for (const selection of [{ model: 'account-thinking', effort: 'standard' }, { mo
     assert.deepEqual(sent.messages, body.messages);
   });
 }
+
+test('successful auth capture survives a debugger error during intentional close', async () => {
+  let output='';
+  class Socket {
+    constructor(){this.listeners={};queueMicrotask(()=>this.listeners.open());}
+    addEventListener(name,fn){this.listeners[name]=fn;}
+    send(){
+      if(this.sent)return;this.sent=true;
+      for(const [method,params] of [
+        ['Network.requestWillBeSent',{requestId:'own',request:{method:'GET',url:'https://chatgpt.com/backend-api/me',headers:{}}}],
+        ['Network.requestWillBeSentExtraInfo',{requestId:'own',headers:{}}],
+        ['Network.responseReceived',{requestId:'own',response:{status:200}}],
+      ])queueMicrotask(()=>this.listeners.message({data:JSON.stringify({method,params})}));
+    }
+    close(){this.listeners.error();}
+  }
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../src/providers/chatgpt/scripts/browser/auth.cjs'),'utf8'),{
+    require: name=>name==='url'?{URL}:{findPage:async()=>({webSocketDebuggerUrl:'ws://fake'})},
+    WebSocket:Socket,URL,setTimeout:()=>0,clearTimeout:()=>{},
+    process:{env:{},stdout:{write(v){output+=v;}},stderr:{write(){}},exit(code){throw Error('unexpected exit '+code);}},
+  });
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(JSON.parse(output).url,'https://chatgpt.com/backend-api/me');
+});
