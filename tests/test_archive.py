@@ -347,7 +347,7 @@ class ArchiveIntegrationTests(unittest.TestCase):
             )
             self.assertTrue(
                 any(
-                    style == "class:provider.chatgpt" and text == "❋ "
+                    style == "class:provider.chatgpt" and text == "◎ "
                     for style, text, *_ in fragments
                 )
             )

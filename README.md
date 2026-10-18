@@ -268,3 +268,9 @@ The hot cache stores immutable JSON snapshots within its byte budget; returned r
 ### Connected browser recovery
 
 SiopeChat uses a separate browser profile for each account. If that browser closes, the next send (or Gemini model/notebook read) opens the same profile automatically. A saved account session is required; local logout is respected. Submitted prompts are never automatically replayed after a connection failure. Verified accounts stay linked across browser closure and application restart. Verification is stored separately from the browser connection; Accounts shows both states. A transport outage does not revoke verification. Local logout or an explicit provider authentication rejection clears it; a cached model list cannot create it. The native web transport still needs a browser process and starts the saved profile when needed.
+
+### Synchronization controls
+
+**F10**, `/refresh` and `/sync` use one synchronization operation. The sidebar `↻` refreshes the library (projects, notebooks and chats); `↻ Eşitle` above the transcript refreshes that conversation. `/sync library` and `/sync conversation` select the same scopes. These commands recover the saved account browser when necessary; restarting is not required. Startup restores cached models and records without opening a closed browser. Sending or explicit synchronization can reopen the saved profile. Verification and the browser connection remain separate states.
+
+Configured Gemini accounts read both conversation lists and histories through the same signed-in browser session used for generation. They no longer depend on the SDK's exported cookie snapshot for those reads. Published thinking summaries and raw provider media metadata remain in the archive. `!` means the last background revalidation failed; the last saved content remains visible. A successful synchronization clears that state.

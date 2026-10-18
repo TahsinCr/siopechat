@@ -28,7 +28,7 @@ MODEL_TIMEOUT = 30
 HISTORY_TIMEOUT = 20
 
 PROVIDERS = {
-    "chatgpt": ("ChatGPT", "❋", "https://chatgpt.com/"),
+    "chatgpt": ("ChatGPT", "◎", "https://chatgpt.com/"),
     "gemini": ("Gemini", "✦", "https://gemini.google.com/"),
 }
 
@@ -124,6 +124,18 @@ class Accounts:
 
     def read_record(self, key, kind, remote, fetch, force=False):
         archive = self.archive()
+        # Passive reads restore local state without opening a browser window.
+        # Explicit synchronization and sends may recover the saved profile.
+        if self.status(key)["saved_snapshot"] and not self.browser_connected(key):
+            if force:
+                self.ensure_browser(key)
+            else:
+                cached = archive.get(key, kind, remote or "") if archive else None
+                if cached is not None:
+                    return cached
+                if kind in ("chats", "containers", "container_chats"):
+                    return {"items": [], "cursor": None, "offline": True}
+                raise RuntimeError("Bağlı tarayıcı kapalı; Eşitle ile yeniden bağlanın")
         if archive:
             try:
                 return archive.read(key, kind, remote or "", fetch, force=force)
@@ -275,6 +287,14 @@ class Accounts:
     def models(self, key, force=False):
         if not self.enabled(key.split("/")[0]):
             raise ValueError("Sağlayıcı devre dışı")
+
+        if self.status(key)["saved_snapshot"] and not self.browser_connected(key):
+            if force:
+                self.ensure_browser(key)
+            else:
+                return self.cached_models(key) or ModelCatalog(
+                    FeatureState.UNKNOWN, reason="Modeller için Eşitle'yi kullanın"
+                )
 
         async def discover():
             cached = self._catalogs.get(key)
@@ -685,6 +705,8 @@ class Accounts:
                     archive.delete(key, "conversation", remote)
                 raise
             record = self.chat_record(key, chat)
+            if chat.metadata.get("title_unavailable"):
+                record["title"] = (self.cached(key, remote) or {}).get("title") or record["title"]
             if not record.get("project_id"):
                 record["project_id"] = (self.cached(key, remote) or {}).get("project_id")
             if not archive:
@@ -924,6 +946,39 @@ class Accounts:
             if len(self._attachment_paths) > 64:
                 self._attachment_paths.pop(next(iter(self._attachment_paths)))
         return result
+
+    def synchronize(self, scope="all", key=None, conversation_id=None):
+        """One explicit revalidation entry point for every frontend."""
+        if scope not in ("all", "library", "conversation"):
+            raise ValueError("Unknown synchronization scope")
+        targets = [self.item(key)] if key else self.active_accounts()
+        errors = []
+        for item in targets:
+            account = item["key"]
+            if not self.status(account)["saved_snapshot"]:
+                continue
+            try:
+                self.ensure_browser(account)
+                if scope == "all":
+                    self.models(account, force=True)
+                if scope in ("all", "library"):
+                    self.list_chats(selected=[item["provider"]], force=True)
+                    self.list_projects(account, force=True)
+                    archive = self.archive()
+                    if archive:
+                        archive.refresh(
+                            account=account,
+                            kinds={"chats", "containers", "container", "container_chats"},
+                        )
+                if scope in ("all", "conversation") and conversation_id:
+                    context, _ = origin(conversation_id, account)
+                    if context == account:
+                        self.load(conversation_id, account, force=True)
+            except Exception as error:
+                errors.append(item["label"] + ": " + str(error))
+        if errors:
+            raise RuntimeError(" · ".join(errors))
+        return {"scope": scope, "queued": True}
 
     def create_project(self, key, name, visibility="private", memory="default"):
         project = self.call(

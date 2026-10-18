@@ -34,6 +34,16 @@ def workspace_layout(view):
                 VSplit(
                     [
                         text_window(
+                            lambda: [
+                                (
+                                    "class:button",
+                                    " ↻ ",
+                                    on_click(lambda: view.synchronize("library")),
+                                )
+                            ],
+                            width=3,
+                        ),
+                        text_window(
                             lambda: view.text("library", "Sohbetler ve projeler"),
                             1,
                             "class:sidebar.header",
@@ -89,6 +99,22 @@ def workspace_layout(view):
     )
     conversation = HSplit(
         [
+            VSplit(
+                [
+                    text_window(
+                        lambda: [
+                            (
+                                "class:button",
+                                " ↻ Eşitle",
+                                on_click(lambda: view.synchronize("conversation")),
+                            )
+                        ],
+                        width=10,
+                    ),
+                    Window(height=1),
+                ],
+                height=1,
+            ),
             view.transcript_window,
             Window(height=1, char="─", style="class:separator"),
             view.input,

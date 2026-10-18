@@ -10,6 +10,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Added
 
+- One synchronization operation with conversation/library scopes, clickable controls, F10 and `/sync` (alias of `/refresh`).
+
 - Confirmed chat/project deletion through provider APIs and the command palette, `/delete` / `/delete-project`, and configurable shortcuts.
 - Persistent archive tombstones with transactional list-reference and project-member cleanup, including protection against late sync resurrection.
 
@@ -59,6 +61,9 @@ The project is currently unreleased; no release dates or tags have been assigned
 - Competing settings-page filler, repeated shortcut hints and SDK logs written over the terminal interface.
 
 ### Fixed
+
+- Gemini history/list synchronization falsely requiring login because reads used a stale SDK cookie session while sends used the authenticated browser.
+- Passive startup opening account browsers to refresh cached catalogs and histories; closed profiles now remain closed until sending or explicit synchronization.
 
 - Display cached conversation bodies immediately and hydrate cold histories without blocking drafts or replacing a running response.
 - Merge missing remote history with locally accepted turns, preserving attachment paths and published thinking summaries without duplicating confirmed messages.

@@ -264,17 +264,17 @@ class AccountConcurrencyTests(unittest.TestCase):
         self.assertEqual(len(stored["messages"]), 2)
 
     def test_refresh_command_schedules_archive_work_outside_the_ui_thread(self):
-        archive = self.accounts.archive()
         with terminal(account_service=self.accounts) as (view, _):
             with (
-                patch.object(archive, "refresh") as refresh,
+                patch.object(self.accounts, "synchronize") as refresh,
                 patch.object(view, "_read_in_background") as background,
                 patch.object(view, "refresh_sidebar"),
                 patch.object(view, "refresh_provider_catalog"),
             ):
                 view.handle_command("/refresh")
                 refresh.assert_not_called()
-                self.assertIs(background.call_args.args[0], refresh)
+                background.call_args.args[0]()
+                refresh.assert_called_once()
                 self.assertFalse(background.call_args.kwargs["session_bound"])
 
     def test_catalog_disk_write_does_not_block_the_provider_loop(self):

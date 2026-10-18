@@ -74,6 +74,13 @@ class NativeBrowser:
                     process.kill()
                     await process.wait()
 
+    async def read(self, mode, **options):
+        async for event in self.events(mode, **options):
+            if event.get("type") == mode:
+                self.authenticated = True
+                return event["data"]
+        raise ProviderError("Gemini veri okuma işlemi tamamlanmadı")
+
     async def delete_chat(self, conversation_id):
         confirmed = False
         async for event in self.events("delete_chat", conversation_id=conversation_id):

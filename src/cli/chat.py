@@ -352,6 +352,35 @@ class ChatView:
             return self.account_service.archive()
         return None
 
+    def synchronize(self, scope="all"):
+        if getattr(self, "_synchronize_pending", False):
+            self.status = "Eşitleme zaten sürüyor"
+            return
+        if not self.account_service or not hasattr(self.account_service, "synchronize"):
+            self.refresh_sidebar()
+            self.refresh_provider_catalog(force=True)
+            return
+        self._synchronize_pending = True
+        key, cid = self.account_key, self.conversation_id
+        self.status = "Eşitleniyor…"
+
+        def finish(error=None):
+            self._synchronize_pending = False
+            self.status = "Eşitleme başlatıldı" if error is None else "Eşitleme: " + error
+            self.refresh_sidebar()
+            if scope == "all":
+                self.refresh_provider_catalog()
+            self.app.invalidate()
+
+        self._read_in_background(
+            lambda: self.account_service.synchronize(
+                scope, key if scope == "conversation" else None, cid
+            ),
+            lambda _: finish(),
+            lambda reason: finish(reason),
+            session_bound=False,
+        )
+
     def refresh_open_conversation(self):
         if not self.account_service or not self.conversation_id or not self.archive_service():
             return
@@ -1337,7 +1366,11 @@ class ChatView:
             if kind in ("chat", "project"):
                 provider = row.get("provider_id", "chatgpt")
                 fragments.append(
-                    ("class:provider." + provider, "✦ " if provider == "gemini" else "❋ ", click)
+                    (
+                        "class:provider." + provider,
+                        {"gemini": "✦ ", "chatgpt": "◎ ", "claude": "✳ "}.get(provider, "◈ "),
+                        click,
+                    )
                 )
             suffix = " " + str(row.get("count", "")) if kind in ("section", "project") else ""
             if kind == "project":
@@ -3176,19 +3209,8 @@ class ChatView:
                 self.open_project_picker()
         elif name in ("/temporary", "/private"):
             self.new_temporary_chat()
-        elif name == "/refresh":
-            archive = self.archive_service()
-            if archive:
-                self._read_in_background(
-                    archive.refresh,
-                    lambda _: None,
-                    lambda reason: setattr(
-                        self, "status", "Senkronizasyon başlatılamadı: " + reason
-                    ),
-                    session_bound=False,
-                )
-            self.refresh_sidebar()
-            self.refresh_provider_catalog(force=True)
+        elif name in ("/refresh", "/sync"):
+            self.synchronize(argument.strip() or "all")
         elif name == "/action":
             action_id, _, raw_arguments = argument.strip().partition(" ")
             if action_id:

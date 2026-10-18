@@ -206,6 +206,19 @@ class GeminiProvider(OptionalFeatures):
         if offset < 0 or offset > 5000 or not 1 <= limit <= 100:
             raise ValueError("invalid Gemini conversation page")
         async with self._gate:
+            if self.browser:
+                self._require_native_session()
+                from .history import conversations
+
+                offset = int(cursor or 0)
+                if not 0 <= offset <= 5000 or not 1 <= limit <= 100:
+                    raise ValueError("Invalid Gemini conversation page")
+                data = await self.browser.read("chats", limit=offset + limit + 1)
+                chats = conversations(data, self._origin)
+                return Page(
+                    chats[offset : offset + limit],
+                    str(offset + limit) if len(chats) > offset + limit else None,
+                )
             client = await self._connect()
             if hasattr(client, "_fetch_recent_chats"):
                 await client._fetch_recent_chats(recent=offset + limit + 1)
@@ -226,6 +239,12 @@ class GeminiProvider(OptionalFeatures):
 
     async def get_chat(self, conversation_id):
         async with self._gate:
+            if self.browser:
+                self._require_native_session()
+                from .history import history
+
+                data = await self.browser.read("history", conversation_id=conversation_id)
+                return history(data, self._origin, conversation_id)
             client = await self._connect()
             history = await client.read_chat(conversation_id, limit=1000)
             if history is None:

@@ -22,6 +22,7 @@ DEFAULT_MARKDOWN_STYLE = {
 DEFAULT_TERMINAL_STYLE = {
     "provider.chatgpt": "#ffffff",
     "provider.gemini": "#8ecfff",
+    "provider.claude": "#d99977",
     "sidebar.open": "bold #ffffff",
     "tab.open": "bold #ffffff",
     "sync": "#8ecfff",

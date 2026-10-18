@@ -59,6 +59,7 @@ def create_application(root: Path | None = None):
     )
     api.actions.register("application", Action("accounts.add", "Hesap ekle", accounts.add))
     api.actions.register("application", Action("accounts.select", "Hesap seç", accounts.select))
+    api.actions.register("application", Action("accounts.synchronize", "Verileri eşitle", accounts.synchronize))
     for locale in ("en", "tr"):
         api.languages.load("application", locale, Path(language_file).parent / f"{locale}.json")
     from themes import __file__ as themes_file

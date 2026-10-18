@@ -173,8 +173,7 @@ def key_bindings(view) -> KeyBindings:
         view.show_project_details()
 
     def refresh_action(_event: Any) -> None:
-        view.refresh_sidebar()
-        view.refresh_provider_catalog(force=True)
+        view.synchronize()
 
     def settings_action(_event: Any) -> None:
         view.settings_dialog.open()
