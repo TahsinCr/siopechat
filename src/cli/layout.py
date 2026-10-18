@@ -8,8 +8,6 @@ from prompt_toolkit.layout.margins import ScrollbarMargin
 from prompt_toolkit.layout.menus import CompletionsMenu
 from prompt_toolkit.widgets import Frame
 
-from providers import Capability
-
 from .widgets import TranscriptGutter, on_click
 
 
@@ -55,12 +53,7 @@ def workspace_layout(view):
                                 ],
                                 width=3,
                             ),
-                            filter=Condition(
-                                lambda: (
-                                    view.account_service is not None
-                                    and Capability.PROJECT_CREATE in view.provider_features
-                                )
-                            ),
+                            filter=Condition(view.project_panel.can_create),
                         ),
                     ]
                 ),

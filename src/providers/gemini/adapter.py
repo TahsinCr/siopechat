@@ -23,9 +23,10 @@ from ..models import (
     SessionState,
     SessionStatus,
 )
+from ..projects import ProjectEditing, ProjectEditor
 
 
-class GeminiProvider(OptionalFeatures):
+class GeminiProvider(ProjectEditing, OptionalFeatures):
     id = "gemini"
     capabilities = frozenset(
         {
@@ -66,6 +67,13 @@ class GeminiProvider(OptionalFeatures):
         )
         if notebooks is not None:
             self.capabilities = self.capabilities | {Capability.PROJECTS, Capability.PROJECT_DELETE}
+            if self.browser:
+                self.capabilities = self.capabilities | {Capability.PROJECT_CREATE, Capability.PROJECT_UPDATE, Capability.RESOURCES}
+                self.editor = ProjectEditor(
+                    Path(__file__).parent / "scripts" / "projects.cjs",
+                    notebooks.cdp_url,
+                    getattr(notebooks, "ensure_ready", None),
+                )
 
     async def _connect(self):
         if self._client is not None:
@@ -114,6 +122,8 @@ class GeminiProvider(OptionalFeatures):
         return client
 
     async def close(self):
+        if hasattr(self, "editor"):
+            await self.editor.close()
         if self.browser:
             await self.browser.close()
         client, self._client = self._client, None
@@ -331,6 +341,22 @@ class GeminiProvider(OptionalFeatures):
         if self.notebooks is None:
             raise FeatureUnavailable(Capability.PROJECTS)
         return await self.notebooks.list(cursor)
+
+    async def project_options(self, project_id=None):
+        if not hasattr(self, "editor"):
+            return await OptionalFeatures.project_options(self, project_id)
+        return await ProjectEditing.project_options(self, project_id)
+
+    async def create_project(
+        self, name, instructions="", *, visibility="private", memory="default"
+    ):
+        if not hasattr(self, "editor") or visibility != "private" or memory != "default":
+            raise FeatureUnavailable(Capability.PROJECT_CREATE)
+        if not name.strip() or instructions:
+            raise ValueError("Defter oluştururken yalnız ad girin; talimatları sonra düzenleyin")
+        async with self._gate:
+            remote = await self.editor.write("create", name=name.strip())
+        return await self.get_project(remote)
 
     async def get_project(self, project_id):
         if self.notebooks is None:

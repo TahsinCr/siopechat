@@ -14,11 +14,11 @@ def notebook():
     detail = [None] * 15
     detail[0], detail[1], detail[10], detail[12] = (
         "My notebook",
-        "Use citations",
+        "Notebook description",
         [[source], []],
         [2, None, None, None, 3],
     )
-    return ["notebooks/abcdef", detail, []]
+    return ["notebooks/abcdef", detail, ["Use citations"]]
 
 
 class NotebookTests(unittest.IsolatedAsyncioTestCase):
@@ -31,6 +31,7 @@ class NotebookTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(project.origin.account_id, "account")
         self.assertEqual(project.name, "My notebook")
         self.assertEqual(project.instructions, "Use citations")
+        self.assertEqual(project.metadata["description"], "Notebook description")
         self.assertEqual(project.resources[0].name, "Research notes")
         self.assertEqual(project.metadata["kind"], "notebook")
         self.assertEqual(project.metadata["notebook_type"], 3)

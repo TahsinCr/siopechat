@@ -19,10 +19,11 @@ from ..models import (
     SessionState,
     SessionStatus,
 )
+from ..projects import ProjectEditing, ProjectEditor
 from .records import conversation, project
 
 
-class ClaudeProvider(OptionalFeatures):
+class ClaudeProvider(ProjectEditing, OptionalFeatures):
     id = "claude"
     capabilities = frozenset(
         {
@@ -33,6 +34,8 @@ class ClaudeProvider(OptionalFeatures):
             Capability.EFFORT,
             Capability.PROJECTS,
             Capability.PROJECT_CREATE,
+            Capability.PROJECT_UPDATE,
+            Capability.RESOURCES,
             Capability.PROJECT_DELETE,
             Capability.PROJECT_MEMBERSHIP,
             Capability.DELETE,
@@ -54,8 +57,12 @@ class ClaudeProvider(OptionalFeatures):
             Path(__file__).parent / "scripts" / "browser.cjs", cdp_url, ensure_ready
         )
         self._gate = asyncio.Lock()
+        self.editor = ProjectEditor(
+            Path(__file__).parent / "scripts" / "projects.cjs", cdp_url, ensure_ready
+        )
 
     async def close(self):
+        await self.editor.close()
         await self.browser.close()
 
     def _origin(self, remote):

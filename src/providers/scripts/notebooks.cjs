@@ -74,13 +74,13 @@ function connect(address) {
     let sequence = 0;
     socket.addEventListener("open", () =>
       resolve({
-        send(method, params = {}) {
+        send(method, params = {}, timeoutMs = 5000) {
           return new Promise((done, fail) => {
             const id = ++sequence;
             const timer = setTimeout(() => {
               pending.delete(id);
               fail(Error("debugger timeout"));
-            }, 5000);
+            }, timeoutMs);
             pending.set(id, { done, fail, timer });
             socket.send(JSON.stringify({ id, method, params }));
           });
@@ -161,11 +161,15 @@ async function read(input) {
       await new Promise((resolve) => setTimeout(resolve, 150));
     }
     const expression = `(${nativeRequest.toString()})(${JSON.stringify(rpcid)},${JSON.stringify(input.remote || null)},${JSON.stringify(input.mode || "list")},${JSON.stringify(input.cursor || null)})`;
-    const result = await connection.send("Runtime.evaluate", {
-      expression,
-      returnByValue: true,
-      awaitPromise: true,
-    });
+    const result = await connection.send(
+      "Runtime.evaluate",
+      {
+        expression,
+        returnByValue: true,
+        awaitPromise: true,
+      },
+      35000,
+    );
     if (result.exceptionDetails || typeof result.result?.value !== "string")
       throw Error(
         "Gemini notebook read unavailable: " +

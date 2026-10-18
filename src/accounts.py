@@ -12,7 +12,7 @@ import time
 import uuid
 import webbrowser
 from concurrent.futures import TimeoutError as FutureTimeout
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from urllib.parse import quote, unquote
 
@@ -115,7 +115,8 @@ class Accounts:
         if self.closed:
             return None
         try:
-            return self.api.get("archive")
+            archive = self.api.get("archive")
+            return None if getattr(archive, "closed", False) is True else archive
         except LookupError:
             return None
 
@@ -1018,10 +1019,82 @@ class Accounts:
         return {"scope": scope, "queued": True}
 
     def create_project(self, key, name, visibility="private", memory="default"):
+        self.ensure_browser(key)
         project = self.call(
             self.provider(key).create_project(name, visibility=visibility, memory=memory)
         )
-        return self.project_record(key, project)
+        return self.store_project(key, project)
+
+    def project_options(self, key, value=None):
+        context, remote = origin(value, key)
+        if context != key:
+            raise ValueError("Proje seçili hesaba ait olmalı")
+        self.ensure_browser(key)
+        return self.call(self.provider(key).project_options(remote), timeout=90)
+
+    def project_details(self, key, value):
+        context, remote = origin(value, key)
+        if context != key or not remote:
+            raise ValueError("Proje seçili hesaba ait olmalı")
+        self.ensure_browser(key)
+        return self.store_project(key, self.call(self.provider(key).get_project(remote)))
+
+    def store_project(self, key, project, local_file=None, previous_resources=()):
+        record = self.project_record(key, project)
+        archive = self.archive()
+        if archive:
+            try:
+                if local_file:
+                    fresh = [r for r in record["resources"] if r["id"] not in previous_resources]
+                    if len(fresh) == 1:
+                        fresh[0]["path"], fresh[0]["sha256"] = archive.files.save(
+                            Path(local_file).expanduser().read_bytes()
+                        )
+                archive.put(key, "container", project.origin.remote_id, record)
+                for state in archive.states():
+                    if state["account"] != key or state["kind"] != "containers":
+                        continue
+                    page = archive.get(key, "containers", state["remote"])
+                    if page is not None:
+                        items = [
+                            record if x.get("id") == record["id"] else x
+                            for x in page.get("items", [])
+                        ]
+                        if not state["remote"] and not any(
+                            x.get("id") == record["id"] for x in items
+                        ):
+                            items.insert(0, record)
+                        archive.put(key, "containers", state["remote"], dict(page, items=items))
+            except OSError:
+                record["cache_warning"] = "Proje güncellendi ancak yerel arşiv kaydı tamamlanamadı"
+        return record
+
+    def change_project(self, key, value, operation="update", **values):
+        context, remote = origin(value, key)
+        if context != key or not remote:
+            raise ValueError("Proje seçili hesaba ait olmalı")
+        self.ensure_browser(key)
+        provider = self.provider(key)
+        if operation == "update":
+            current = self.call(provider.get_project(remote))
+            result = self.call(provider.update_project(replace(current, **values)), timeout=90)
+        elif operation == "add_source":
+            before = self.call(provider.get_project(remote))
+            result = self.call(provider.add_project_resource(remote, **values), timeout=90)
+        elif operation == "remove_source":
+            result = self.call(provider.remove_project_resource(remote, **values), timeout=90)
+        else:
+            raise ValueError("Bilinmeyen proje işlemi")
+        return self.store_project(
+            key,
+            result,
+            local_file=values.get("path")
+            if operation == "add_source" and values.get("kind") == "file"
+            else None,
+            previous_resources={r.id for r in before.resources}
+            if operation == "add_source"
+            else (),
+        )
 
     def delete(self, value, key, kind="conversation"):
         context, remote = origin(value, key)

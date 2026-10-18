@@ -269,8 +269,10 @@ class DialogInputTests(unittest.IsolatedAsyncioTestCase):
                     def line(y):
                         return "".join(screen.data_buffer[y][x].char for x in range(columns))
 
-                    self.assertIn("Example", line(22))
-                    self.assertIn("Orta", line(22))
+                    metadata = "\n".join(line(y) for y in range(20, 23))
+                    self.assertIn("Example", metadata)
+                    self.assertIn("Orta", metadata)
+                    self.assertIn("Geçici:", metadata)
                     rendered = "\n".join(line(y) for y in range(24))
                     self.assertIn("Question", rendered)
                     self.assertIn("Answer", rendered)

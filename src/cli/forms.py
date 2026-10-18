@@ -4,8 +4,9 @@ from prompt_toolkit.application.current import get_app
 from prompt_toolkit.completion import PathCompleter
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.layout import HSplit, Window
+from prompt_toolkit.layout import HSplit, ScrollablePane, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.layout.dimension import D
 from prompt_toolkit.widgets import Button, CheckboxList, Dialog, RadioList, TextArea
 
 
@@ -19,6 +20,7 @@ class Forms:
 
     def open(self, title, fields, submit):
         self.fields, body, self.error = {}, [], ""
+        single_line_controls = []
         for key, label, value, choices in fields:
             body.append(
                 Window(height=1, content=FormattedTextControl(label), style="class:settings.title")
@@ -30,12 +32,15 @@ class Forms:
             else:
                 widget = TextArea(
                     text=str(value),
-                    multiline=False,
-                    height=1,
+                    multiline=key in ("instructions", "text"),
+                    height=5 if key in ("instructions", "text") else 1,
+                    scrollbar=key in ("instructions", "text"),
                     completer=PathCompleter(expanduser=True) if key == "path" else None,
                     style="class:settings.editor",
                 )
                 widget.control.focus_on_click = Condition(lambda: True)
+                if key not in ("instructions", "text"):
+                    single_line_controls.append(widget.control)
             self.fields[key] = widget
             body.append(widget)
             body.append(Window(height=1))
@@ -53,12 +58,14 @@ class Forms:
                 for key, widget in self.fields.items()
             }
             try:
-                submit(values)
+                next_step = submit(values)
             except Exception as error:
                 self.error = str(error)
                 self.view.app.invalidate()
                 return
             self.close()
+            if callable(next_step):
+                next_step()
 
         keys = KeyBindings()
         keys.add("escape", is_global=True)(lambda _: self.close())
@@ -66,11 +73,14 @@ class Forms:
         keys.add(
             "enter",
             is_global=True,
-            filter=Condition(lambda: hasattr(get_app().layout.current_control, "buffer")),
+            filter=Condition(lambda: get_app().layout.current_control in single_line_controls),
         )(lambda _: save())
         self.container = Dialog(
             title=title,
-            body=HSplit(body, padding=0, key_bindings=keys),
+            body=ScrollablePane(
+                HSplit(body, padding=0, key_bindings=keys),
+                height=lambda: D(max=max(4, self.view.app.output.get_size().rows - 8)),
+            ),
             buttons=[Button("Uygula", handler=save), Button("İptal", handler=self.close)],
             width=64,
             with_background=False,

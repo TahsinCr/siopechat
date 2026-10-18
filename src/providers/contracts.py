@@ -5,6 +5,7 @@ from typing import Protocol
 from .api import Capability, Provider
 from .errors import FeatureUnavailable
 from .models import Conversation, ModelCatalog, Page, Project, ProviderDescription, SessionStatus
+from .projects import ProjectOptions
 
 
 class Backend(Provider, Protocol):
@@ -29,6 +30,9 @@ class Backend(Provider, Protocol):
         self, name: str, instructions: str = "", *, visibility="private", memory="default"
     ) -> Project: ...
     async def update_project(self, project: Project) -> Project: ...
+    async def project_options(self, project_id: str | None = None) -> ProjectOptions: ...
+    async def add_project_resource(self, project_id: str, kind: str, **values) -> Project: ...
+    async def remove_project_resource(self, project_id: str, resource_id: str) -> Project: ...
     async def delete_project(self, project_id: str) -> None: ...
     async def move_chat(self, conversation_id: str, project_id: str | None) -> None: ...
 
@@ -57,6 +61,15 @@ class OptionalFeatures:
 
     async def update_project(self, project: Project) -> Project:
         raise FeatureUnavailable(Capability.PROJECTS, "not_implemented")
+
+    async def project_options(self, project_id=None):
+        return ProjectOptions()
+
+    async def add_project_resource(self, project_id, kind, **values):
+        raise FeatureUnavailable(Capability.RESOURCES, "not_implemented")
+
+    async def remove_project_resource(self, project_id, resource_id):
+        raise FeatureUnavailable(Capability.RESOURCES, "not_implemented")
 
     async def delete_project(self, project_id: str) -> None:
         raise FeatureUnavailable(Capability.PROJECT_DELETE, "not_implemented")

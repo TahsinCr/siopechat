@@ -53,16 +53,18 @@ def project_from_native(row, account_id):
                 )
             )
     settings = field(detail, 12, []) or []
+    instructions = field(field(row, 2, []), 0)
     return Project(
         Origin("gemini", account_id, remote),
         detail[0],
-        field(detail, 1) if isinstance(field(detail, 1), str) else None,
+        instructions if isinstance(instructions, str) else None,
         tuple(resources),
         {
             "kind": "notebook",
             "url": "https://gemini.google.com/notebook/" + remote.removeprefix("notebooks/"),
             "native": row,
             "notebook_type": field(settings, 4),
+            "description": field(detail, 1),
             "read_only": True,
             "supports_chat": True,
         },
@@ -94,7 +96,7 @@ class Notebooks:
                         {"cdp_url": self.cdp_url, "remote": remote, "mode": mode, "cursor": cursor}
                     ).encode()
                 ),
-                20,
+                45,
             )
         except BaseException:
             if process.returncode is None:

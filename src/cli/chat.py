@@ -42,6 +42,7 @@ from .markdown import (
     render_chatgpt_annotations,
     visible_chat_message,
 )
+from .projects import ProjectPanel
 from .session import SessionDialog
 from .settings import SettingsDialog
 from .styles import DEFAULT_TERMINAL_STYLE, terminal_style
@@ -302,6 +303,7 @@ class ChatView:
         from .forms import Forms
 
         self.forms = Forms(self)
+        self.project_panel = ProjectPanel(self)
         self.session_dialog = SessionDialog(self)
         self.settings_dialog = SettingsDialog(self)
         self.layout_enabled = True
@@ -352,6 +354,13 @@ class ChatView:
         if self.account_service and hasattr(self.account_service, "archive"):
             return self.account_service.archive()
         return None
+
+    def sync_states(self, archive):
+        signature = (id(archive), archive.revision)
+        if signature != getattr(self, "_sync_state_signature", None):
+            self._sync_state_rows = archive.states()
+            self._sync_state_signature = signature
+        return self._sync_state_rows
 
     def synchronize(self, scope="all"):
         if getattr(self, "_synchronize_pending", False):
@@ -439,7 +448,7 @@ class ChatView:
             if archive.deleted(key, "container", remote):
                 self.project_items.pop(pid, None)
         self.sidebar_items = list(chats.values())
-        states = {(x["account"], x["kind"], x["remote"]): x for x in archive.states()}
+        states = {(x["account"], x["kind"], x["remote"]): x for x in self.sync_states(archive)}
         for i, tab in enumerate(self.tabs):
             if not tab.get("conversation_id"):
                 continue
@@ -705,62 +714,7 @@ class ChatView:
         )
 
     def open_project_create(self):
-        if not self.account_service or Capability.PROJECT_CREATE not in self.provider_features:
-            self.status = "Bu sağlayıcı proje oluşturmayı desteklemiyor"
-            self.app.invalidate()
-            return
-        key = self.account_key
-
-        def submit(values):
-            if self.busy or self.background_jobs:
-                raise ValueError("Devam eden işlemden sonra proje oluşturun")
-            if not values["name"].strip():
-                raise ValueError("Proje adı gerekir")
-            self.background_jobs += 1
-            self.status = "Proje oluşturuluyor…"
-
-            def success(project):
-                self.background_jobs -= 1
-                self._account_projects.setdefault(key, {})[project["id"]] = project
-                if self.account_key == key:
-                    self.project_items[project["id"]] = project
-                    self.projects_loaded = True
-                    self.filter_sidebar()
-                self.status = "Proje oluşturuldu · " + project["name"]
-                self.app.invalidate()
-
-            def failure(reason):
-                self.background_jobs -= 1
-                self.status = str(reason)
-                self.app.invalidate()
-
-            self._read_in_background(
-                lambda: self.account_service.create_project(
-                    key, values["name"], values["visibility"], values["memory"]
-                ),
-                success,
-                failure,
-            )
-
-        self.forms.open(
-            "Yeni proje",
-            [
-                ("name", "Proje adı", "", None),
-                (
-                    "visibility",
-                    "Gizlilik",
-                    "private",
-                    [("private", "Özel"), ("public", "Paylaşılan")],
-                ),
-                (
-                    "memory",
-                    "Bellek",
-                    "default",
-                    [("default", "Varsayılan"), ("project_only", "Yalnızca proje")],
-                ),
-            ],
-            submit,
-        )
+        self.project_panel.create()
 
     def open_attachment(self):
         if self.attach_file_callback is None:
@@ -912,9 +866,12 @@ class ChatView:
         if self.tab_kind == "project":
             return FormattedText(
                 [
+                    ("class:button", " ✎ Düzenle ", on_click(self.project_panel.edit)),
+                    ("class:button", " ＋ Kaynak ", on_click(self.project_panel.add_source)),
+                    ("class:button", " − Kaynak ", on_click(self.project_panel.remove_source)),
                     (
                         "class:button",
-                        " Proje bilgileri · Yenile ↻ ",
+                        " ↻ Eşitle ",
                         on_click(self.show_project_details),
                     ),
                 ]
@@ -989,7 +946,9 @@ class ChatView:
             if self.temporary:
                 self.current_project = {}
             self.title = "Geçici sohbet" if self.temporary else "Yeni sohbet"
-            self.status = "Geçici sohbet · yerel kayıt kapalı" if self.temporary else "Normal sohbet"
+            self.status = (
+                "Geçici sohbet · yerel kayıt kapalı" if self.temporary else "Normal sohbet"
+            )
             self._save_active_tab()
         self.app.invalidate()
 
@@ -1179,10 +1138,7 @@ class ChatView:
             ("class:button", " ↑ " if compact else " Gönder ↑ ", on_click(self.submit_prompt))
         )
         used = sum(get_cwidth(f[1]) for f in controls)
-        return FormattedText(
-            [("", " " * max(0, self.main_width() - used))]
-            + controls
-        )
+        return FormattedText([("", " " * max(0, self.main_width() - used))] + controls)
 
     def render_footer(self):
         controls = [
@@ -1388,7 +1344,7 @@ class ChatView:
         open_ids = {tab.get("conversation_id") for tab in self.tabs}
         archive = self.archive_service()
         states = (
-            {(x["account"], x["kind"], x["remote"]): x["state"] for x in archive.states()}
+            {(x["account"], x["kind"], x["remote"]): x["state"] for x in self.sync_states(archive)}
             if archive
             else {}
         )
@@ -2092,6 +2048,19 @@ class ChatView:
             lambda: self.list_project_chats_callback(project_id, cursor), success, failure
         )
 
+    @staticmethod
+    def project_messages(project):
+        resources = project.get("resources") or []
+        text = f"# {project.get('name') or 'Proje'}\n\n{project.get('description') or ''}\n\n## Talimatlar\n\n{project.get('instructions') or 'Talimat yok.'}\n\n## Kaynaklar\n\n"
+        text += (
+            "\n".join(
+                f"- {r.get('name') or r.get('id')} ({r.get('media_type') or r.get('type') or 'kaynak'})"
+                for r in resources
+            )
+            or "Kaynak yok."
+        )
+        return [{"role": "system", "text": text}]
+
     def show_project_details(self, project_id: str | None = None) -> None:
         if (
             not project_id
@@ -2128,6 +2097,10 @@ class ChatView:
             self._restore_active_tab()
         else:
             self.new_tab()
+        if self.account_service:
+            key, _ = origin(project_id, self.account_key)
+            self.bind_account(key)
+            self.restore_account_preference()
         self.tab_kind = "project"
         self.current_project = dict(self.project_items.get(project_id, {"id": project_id}))
         self.title = self.current_project.get("name") or "Proje"
@@ -2137,16 +2110,7 @@ class ChatView:
 
         def success(project):
             self.project_items[project_id] = project
-            resources = project.get("resources") or []
-            text = f"# {project.get('name') or 'Proje'}\n\n{project.get('description') or ''}\n\n## Talimatlar\n\n{project.get('instructions') or 'Talimat yok.'}\n\n## Kaynaklar\n\n"
-            text += (
-                "\n".join(
-                    f"- {item.get('name') or item.get('file_id') or item.get('id')} ({item.get('type') or 'dosya'})"
-                    for item in resources
-                )
-                or "Kaynak yok."
-            )
-            update(text, project)
+            update(self.project_messages(project)[0]["text"], project)
 
         def update(text, project):
             for index, tab in enumerate(self.tabs):
@@ -2162,8 +2126,9 @@ class ChatView:
             self.filter_sidebar()
 
         project_snapshot = dict(self.current_project)
+        read_project = self.get_project_callback
         self._read_in_background(
-            lambda: self.get_project_callback(project_id),
+            lambda: read_project(project_id),
             success,
             lambda reason: update(
                 f"Proje bilgileri alınamadı: {reason}\n\nF9 ile yeniden deneyin.", project_snapshot
@@ -2826,7 +2791,7 @@ class ChatView:
             return FormattedText([("", f" {frame} {phase} · {elapsed} · {self.status} ")])
         archive = self.archive_service()
         if archive:
-            states = archive.states()
+            states = self.sync_states(archive)
             pending_sync = [x for x in states if x["state"] == "syncing"]
             failures = [x for x in states if x["state"] == "error"]
             if pending_sync:
@@ -3229,6 +3194,12 @@ class ChatView:
             self.open_sidebar_search()
         elif name == "/project-new":
             self.open_project_create()
+        elif name == "/project-edit":
+            self.project_panel.edit()
+        elif name == "/project-source-add":
+            self.project_panel.add_source()
+        elif name == "/project-source-remove":
+            self.project_panel.remove_source()
         elif name in ("/attach", "/file"):
             self.open_attachment()
         elif name == "/filter":
@@ -3648,9 +3619,8 @@ class ChatView:
                 project = dict(self.project_items.get(project_id, {}))
                 if project_id:
                     project["id"] = project_id
-                target_tab["response_model"] = (
-                    cached.get("model")
-                    or cached.get("default_model_slug")
+                target_tab["response_model"] = cached.get("model") or cached.get(
+                    "default_model_slug"
                 )
                 target_tab.update(
                     messages=[
@@ -3669,6 +3639,14 @@ class ChatView:
                 self.status = "Kayıtlı geçmiş · arka planda senkronize ediliyor"
                 self.app.layout.focus(self.input)
                 self.app.invalidate()
+                if self.archive_service():
+                    self._read_in_background(
+                        lambda: self.account_service.load(conversation_id, key),
+                        lambda _: self.apply_archive_updates(),
+                        lambda reason: setattr(self, "status", "Senkronizasyon: " + reason),
+                        session_bound=False,
+                    )
+                    return
         load_callback = self.load_conversation
         token = uuid.uuid4().hex
         self.loading_conversation = True

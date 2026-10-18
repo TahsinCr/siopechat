@@ -18,7 +18,7 @@ test("native deletion requires an acknowledged signed-in same-origin RPC", async
     assert.equal(await deleteChatInPage("c_abc"), true);
     assert.equal(calls, 1);
     global.fetch = async () => ({ ok: true, text: async () => '[["wrb.fr","GzXR5e",null,null,null,[3]]]' });
-    await assert.rejects(deleteChatInPage("c_abc"), /not confirmed/);
+    await assert.rejects(deleteChatInPage("c_abc"), /rejected/);
     await assert.rejects(deleteChatInPage("../../private"), /Invalid/);
   } finally {
     Object.assign(global, previous);
@@ -104,4 +104,18 @@ test("native responses preserve Markdown, source links and code instead of flatt
     "safe",
   );
   assert.equal(renderMarkdown(element("BUTTON", [text("Copy")])), "");
+});
+
+test('void source acknowledgements require explicit opt-in and still reject RPC errors',async()=>{
+  const {nativeBatch}=require('../../src/providers/gemini/scripts/browser.cjs');
+  const previous={location:global.location,window:global.window,fetch:global.fetch};
+  global.location={origin:'https://gemini.google.com'};
+  global.window={WIZ_global_data:{SNlM0e:'fixture'}};
+  global.fetch=async()=>({ok:true,text:async()=>'[["wrb.fr","AptDmf",null]]'});
+  try {
+    await assert.rejects(nativeBatch('AptDmf',[['owned']]),/not confirmed/);
+    assert.deepEqual(await nativeBatch('AptDmf',[['owned']],true),[null]);
+    global.fetch=async()=>({ok:true,text:async()=>'[["wrb.fr","AptDmf",null,null,null,[3]]]'});
+    await assert.rejects(nativeBatch('AptDmf',[['owned']],true),/rejected/);
+  }finally{Object.assign(global,previous);}
 });

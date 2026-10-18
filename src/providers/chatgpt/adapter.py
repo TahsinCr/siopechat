@@ -4,6 +4,7 @@ import asyncio
 import concurrent.futures
 import threading
 from collections import OrderedDict
+from pathlib import Path
 from typing import Callable
 
 from ..api import Capability, ConversationBound, ReplaceText, SendRequest, TextDelta
@@ -24,6 +25,7 @@ from ..models import (
     SessionState,
     SessionStatus,
 )
+from ..projects import ProjectEditing, ProjectEditor
 from .client import ChatGPTClient
 from .discovery import project_id
 from .errors import SentinelCompatibilityError
@@ -34,7 +36,7 @@ class _Stopped(Exception):
     pass
 
 
-class ChatGPTProvider(OptionalFeatures):
+class ChatGPTProvider(ProjectEditing, OptionalFeatures):
     id = "chatgpt"
     capabilities = frozenset(
         {
@@ -48,6 +50,8 @@ class ChatGPTProvider(OptionalFeatures):
             Capability.AUTH,
             Capability.PROJECTS,
             Capability.PROJECT_CREATE,
+            Capability.PROJECT_UPDATE,
+            Capability.RESOURCES,
             Capability.PROJECT_MEMBERSHIP,
             Capability.MODELS,
             Capability.EFFORT,
@@ -65,6 +69,12 @@ class ChatGPTProvider(OptionalFeatures):
         self._factory = client_factory
         self._temporary_conversations = OrderedDict()
         self._gate = asyncio.Lock()
+        self.editor = ProjectEditor(
+            Path(__file__).parent / "scripts" / "browser" / "projects.cjs", session.cdp_url
+        )
+
+    async def close(self):
+        await self.editor.close()
 
     async def session_status(self) -> SessionStatus:
         saved = self.session.paths.session_file.is_file()

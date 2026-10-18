@@ -123,7 +123,7 @@ function menuEfforts(model) {
         ];
   });
 }
-async function nativeBatch(rpcid, payloads) {
+async function nativeBatch(rpcid, payloads, allowEmpty = false) {
   if (location.origin !== "https://gemini.google.com")
     throw Error("Invalid Gemini origin");
   const settings = window.WIZ_global_data;
@@ -158,8 +158,11 @@ async function nativeBatch(rpcid, payloads) {
     if (!line.startsWith('[["wrb.fr"')) continue;
     for (const part of JSON.parse(line)) {
       if (part[0] !== "wrb.fr" || part[1] !== rpcid) continue;
-      if (part[2] == null) throw Error("Gemini operation was not confirmed");
-      values.push(JSON.parse(part[2]));
+      if (Array.isArray(part[5]) && part[5].length)
+        throw Error("Gemini operation was rejected");
+      if (part[2] == null && !allowEmpty)
+        throw Error("Gemini operation was not confirmed");
+      values.push(part[2] == null ? null : JSON.parse(part[2]));
     }
   }
   if (values.length !== payloads.length)

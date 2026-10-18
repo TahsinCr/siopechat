@@ -10,6 +10,10 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Added
 
+- Provider-scoped project creation and editing forms, multiline instructions and dynamically discovered native source types for ChatGPT, Claude and Gemini notebooks.
+- Project edit/source actions in details, commands, configurable shortcuts and the command palette; long shared forms scroll with accessible save/cancel controls.
+- Frontend-independent project editing API with exact resource ownership, file size validation and server readback after each native write.
+
 - Add a temporary-chat toggle beside the project selector, with explicit on/off and unsupported states. Toggle a draft in place before its first message, preserving typed text and clearing incompatible project membership.
 
 - Independent Claude web-session provider with native model/effort discovery, chat history and generation, published thinking summaries, chat rename/deletion, projects, instruction/source metadata, private project creation/deletion and verified project membership changes.
@@ -70,7 +74,12 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Fixed
 
-- Preserve successful ChatGPT authentication when an intentional debugger shutdown emits a late socket error.
+- Do not reject a successful ChatGPT authentication capture when the debugger reports an error during intentional socket shutdown; create projects in an owned tab rather than a potentially busy user tab.
+- Allow native Gemini notebook reads to finish within their network timeout, and confirm void source-deletion replies by reading the exact source identity back from the server.
+
+- Keep accepted project edits successful when only local archiving fails; preserve uploaded source paths across revalidation without resurrecting removed resources.
+- Read Gemini custom instructions from their native instruction field rather than the notebook description; remove Gemini sources by exact native identity instead of truncated display names.
+- Apply background history reads with the archive disabled and refresh cached synchronization state when the extension is replaced.
 
 - Preserve the conversation's provider/account when restoring cached or cold histories; use that account's remembered model and effort rather than overwriting selection with the last response model.
 - Keep message sending independent of unrelated background jobs, block only a pending membership change in the same tab, and reject unsupported temporary drafts before clearing their text.

@@ -99,8 +99,11 @@ class Archive:
         if value.get("temporary"):
             return
         key = (account, kind, remote)
-        value = self.mappings.get(account.split("/")[0], Mapping()).normalize(kind, value)
+        mapping = self.mappings.get(account.split("/")[0], Mapping())
+        value = mapping.normalize(kind, value)
         with self._write_lock:
+            if kind == "container":
+                value = mapping.merge_container(value, self.get(*key))
             with self._lock:
                 if self.closed:
                     raise OSError("Archive is closed")
