@@ -59,7 +59,7 @@ class OptionalFeatures:
         raise FeatureUnavailable(Capability.PROJECTS, "not_implemented")
 
     async def delete_project(self, project_id: str) -> None:
-        raise FeatureUnavailable(Capability.PROJECTS, "not_implemented")
+        raise FeatureUnavailable(Capability.PROJECT_DELETE, "not_implemented")
 
     async def move_chat(self, conversation_id: str, project_id: str | None) -> None:
         raise FeatureUnavailable(Capability.PROJECT_MEMBERSHIP, "not_implemented")

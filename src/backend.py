@@ -132,10 +132,23 @@ class BackendService:
             if not isinstance(candidate, str) or not candidate:
                 return None
             conversation_id = candidate
+        if self.conversation_cache_path(conversation_id).with_suffix(".deleted").is_file():
+            return None
         paths = [self.conversation_cache_path(conversation_id)]
         if self.legacy_fallback:
             paths.append(legacy_data_dir() / "conversations" / f"{conversation_id}.json")
         return read(paths)
+
+    def mark_conversation_deleted(self, conversation_id):
+        path = self.conversation_cache_path(conversation_id)
+        self.atomic_json_write(path.with_suffix(".deleted"), {"deleted": True})
+        path.unlink(missing_ok=True)
+        try:
+            active = json.loads(self.active_conversation_path().read_text())
+            if active.get("conversation_id") == conversation_id:
+                self.set_active_conversation(None)
+        except (OSError, ValueError, AttributeError):
+            pass
 
     def rename_cached_conversation(self, conversation_id: str, title: str) -> None:
         cached = self.load_cached_conversation(conversation_id)

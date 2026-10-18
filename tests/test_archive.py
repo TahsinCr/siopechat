@@ -247,14 +247,16 @@ class ArchiveIntegrationTests(unittest.TestCase):
             view.load_conversation = load
             view.resume_conversation("@chatgpt/default/one")
             self.assertTrue(entered.wait(1))
-            self.assertTrue(view.loading_conversation)
+            self.assertFalse(view.loading_conversation)
+            self.assertTrue(owner["syncing"])
+            self.assertEqual(view.conversation_id, "@chatgpt/default/one")
             view.new_tab()
             self.assertEqual(view.active_tab, 1)
             self.assertFalse(view.loading_conversation)
             view.input.text = "new draft"
             release.set()
             until = time.monotonic() + 3
-            while owner.get("loading") and time.monotonic() < until:
+            while owner.get("syncing") and time.monotonic() < until:
                 time.sleep(0.01)
             self.assertFalse(owner["loading"])
             self.assertEqual(owner["title"], "Loaded")

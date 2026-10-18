@@ -375,7 +375,16 @@ class ChatView:
             page = archive.get(key, "chats", "")
             if page:
                 new_ids = {item["id"] for item in page["items"]}
-                for removed in self._archive_page_ids.get((key, "chats"), set()) - new_ids:
+                prior_ids = self._archive_page_ids.get((key, "chats"), set())
+                if page.get("complete"):
+                    prior_ids = prior_ids | {
+                        cid
+                        for cid, item in chats.items()
+                        if item.get("context") == key
+                        and not item.get("project_id")
+                        and item.get("kind") != "workspace"
+                    }
+                for removed in prior_ids - new_ids:
                     chats.pop(removed, None)
                 self._archive_page_ids[key, "chats"] = new_ids
                 for item in page["items"]:
@@ -385,15 +394,31 @@ class ChatView:
                 new_ids = {item["id"] for item in page["items"]}
                 for removed in self._archive_page_ids.get((key, "containers"), set()) - new_ids:
                     self.project_items.pop(removed, None)
+                    for projects in self._account_projects.values():
+                        projects.pop(removed, None)
                 self._archive_page_ids[key, "containers"] = new_ids
                 for item in page["items"]:
                     self.project_items[item["id"]] = item
+        for cid in list(chats):
+            key, remote = origin(cid, self.account_key)
+            if archive.deleted(key, "conversation", remote):
+                chats.pop(cid, None)
+        for pid in list(self.project_items):
+            key, remote = origin(pid, self.account_key)
+            if archive.deleted(key, "container", remote):
+                self.project_items.pop(pid, None)
         self.sidebar_items = list(chats.values())
         states = {(x["account"], x["kind"], x["remote"]): x for x in archive.states()}
         for i, tab in enumerate(self.tabs):
             if not tab.get("conversation_id"):
                 continue
             key, remote = origin(tab["conversation_id"], tab.get("account_key", self.account_key))
+            if archive.deleted(key, "conversation", remote):
+                tab["syncing"] = False
+                tab["load_error"] = "Sağlayıcıdan silinmiş sohbet"
+                if i == self.active_tab:
+                    self.status = "Bu sohbet sağlayıcıdan silinmiş · yeni sohbet açın"
+                continue
             state = states.get((key, "conversation", remote))
             tab["syncing"] = bool(state and state["state"] == "syncing")
             if tab.get("busy"):
@@ -549,6 +574,90 @@ class ChatView:
                 )
             ],
             apply,
+        )
+
+    def delete_record(self, kind="conversation", value=None):
+        if not self.account_service:
+            self.status = "Silme için sağlayıcı hesabı gerekli"
+            return
+        if value is None and self.app.layout.current_control is self.sidebar_control:
+            self._build_sidebar_rows()
+            if self.sidebar_rows:
+                row = self.sidebar_rows[self.sidebar_index]
+                if (kind == "container" and row.get("kind") == "project") or (
+                    kind == "conversation" and row.get("kind") == "chat"
+                ):
+                    value = row.get("id")
+        if value is None:
+            value = (
+                (self.current_project or {}).get("id")
+                if kind == "container"
+                else self.conversation_id
+            )
+        if not value:
+            self.status = "Önce silinecek sohbeti veya projeyi seçin"
+            return
+        key, _ = origin(value, self.account_key)
+        capability = Capability.DELETE if kind == "conversation" else Capability.PROJECT_DELETE
+        if capability not in self.account_service.capabilities(key):
+            self.status = "Sağlayıcı bu silme işlemini desteklemiyor"
+            return
+        title = "Projeyi ve içindeki sohbetleri sil" if kind == "container" else "Sohbeti sil"
+
+        def submit(values):
+            if values["confirm"] != "delete":
+                return
+            self.status = "Sağlayıcıdan siliniyor…"
+
+            def success(result):
+                removed = set(result["removed"])
+                self.sidebar_items = [
+                    x
+                    for x in self.sidebar_items
+                    if x.get("id") not in removed and x.get("project_id") not in removed
+                ]
+                for item in removed:
+                    self.project_items.pop(item, None)
+                    self.project_chats_loaded.discard(item)
+                    for projects in self._account_projects.values():
+                        projects.pop(item, None)
+                # Keep tabs and drafts, but never allow a deleted remote ID to be reused.
+                for tab in self.tabs:
+                    if (
+                        tab.get("conversation_id") in removed
+                        or tab.get("project", {}).get("id") in removed
+                    ):
+                        tab.update(
+                            kind="chat",
+                            conversation_id=None,
+                            messages=[],
+                            project={},
+                            title="Yeni sohbet",
+                            syncing=False,
+                        )
+                self._restore_active_tab(focus=False)
+                self.filter_sidebar()
+                self.status = "Sağlayıcıdan silindi"
+                self.app.invalidate()
+
+            self._read_in_background(
+                lambda: self.account_service.delete(value, key, kind),
+                success,
+                lambda reason: setattr(self, "status", "Silme işlemi: " + reason),
+                session_bound=False,
+            )
+
+        self.forms.open(
+            title,
+            [
+                (
+                    "confirm",
+                    "Bu işlem sağlayıcıdaki kaydı da siler ve geri alınamaz.",
+                    "cancel",
+                    [("cancel", "İptal"), ("delete", "Kalıcı olarak sil")],
+                )
+            ],
+            submit,
         )
 
     def open_project_create(self):
@@ -3036,6 +3145,10 @@ class ChatView:
         elif name == "/unsplit":
             if self.layout_controller:
                 self.layout_controller.unsplit()
+        elif name == "/delete":
+            self.delete_record("conversation", argument.strip() or None)
+        elif name == "/delete-project":
+            self.delete_record("container", argument.strip() or None)
         elif name == "/projects":
             self.show_projects()
         elif name == "/actions":
@@ -3195,6 +3308,7 @@ class ChatView:
                 "- `/resume ID` open a conversation directly\n"
                 "- `/history` reload this conversation\n"
                 "- `/rename TITLE` rename this conversation\n"
+                "- `/delete [ID]` delete a chat; `/delete-project [ID]` delete a project and its contents (confirmation required)\n"
                 "- `/copy` copy the latest assistant response\n"
                 "- `/remove` remove the latest pending image\n"
                 "- `/clear` clear the displayed transcript\n"
@@ -3436,15 +3550,72 @@ class ChatView:
                 self.model, self.effort = "", None
                 self.refresh_provider_catalog()
         target_tab = self.tabs[self.active_tab]
+        if self.account_service:
+            key, remote = origin(conversation_id, self.account_key)
+            cached = self.account_service.cached(key, remote)
+            if cached is not None:
+                project_id = cached.get("project_id")
+                project = dict(self.project_items.get(project_id, {}))
+                if project_id:
+                    project["id"] = project_id
+                target_tab["model"] = (
+                    cached.get("model")
+                    or cached.get("default_model_slug")
+                    or target_tab.get("model")
+                )
+                target_tab.update(
+                    messages=[
+                        m
+                        for x in cached.get("messages", [])
+                        if (m := visible_chat_message(x)) is not None
+                    ],
+                    conversation_id=conversation_id,
+                    title=cached.get("title") or "Sohbet",
+                    project=project,
+                    loading=False,
+                    syncing=True,
+                    load_token=None,
+                )
+                self._restore_active_tab(focus=False)
+                self.status = "Kayıtlı geçmiş · arka planda senkronize ediliyor"
+                self.app.layout.focus(self.input)
+                self.app.invalidate()
+                self._read_in_background(
+                    lambda: self.account_service.load(conversation_id, key),
+                    lambda _: self.apply_archive_updates(),
+                    lambda reason: setattr(
+                        self, "status", "Senkronizasyon başarısız · kayıt korunuyor: " + reason
+                    ),
+                    session_bound=False,
+                )
+                return
+        load_callback = self.load_conversation
         token = uuid.uuid4().hex
         self.loading_conversation = True
         self.loading_started = time.monotonic()
         self.status = "Loading conversation…"
         target_tab.update(loading=True, loading_started=self.loading_started, load_token=token)
+        if self.account_service:
+            # The provider resolves its remote parent/context itself. UI history
+            # hydration does not have to block typing or a send to a known ID.
+            row = next((x for x in self.sidebar_items if x.get("id") == conversation_id), {})
+            project_id = row.get("project_id")
+            project = dict(self.project_items.get(project_id, {}))
+            if project_id:
+                project["id"] = project_id
+            target_tab.update(
+                conversation_id=conversation_id,
+                messages=[],
+                title=row.get("title") or "Sohbet",
+                project=project,
+                loading=False,
+                syncing=True,
+            )
+            self._restore_active_tab(focus=False)
+            self.status = "Geçmiş arka planda yükleniyor · mesaj yazabilirsiniz"
         self.app.layout.focus(self.input)
         self.app.invalidate()
 
-        load_callback = self.load_conversation
         render_width = self.transcript_width()
         render_tokens = dict(self.renderer.tokens)
         render_cache = self.renderer.cache.copy()
@@ -3478,6 +3649,27 @@ class ChatView:
                         or target_tab.get("load_token") != token
                     ):
                         return
+                    if target_tab is self.tabs[self.active_tab]:
+                        self._save_active_tab()
+                    target_tab["syncing"] = False
+                    if target_tab.get("busy"):
+                        # Account persistence will append to the hydrated archive.
+                        # Never replace the composer/stream while it is running.
+                        self.app.invalidate()
+                        return
+                    latest = None
+                    if self.account_service:
+                        key, remote = origin(
+                            conversation_id, target_tab.get("account_key", self.account_key)
+                        )
+                        latest = self.account_service.cached(key, remote)
+                    visible_messages = messages
+                    if latest is not None:
+                        visible_messages = [
+                            m
+                            for x in latest.get("messages", [])
+                            if (m := visible_chat_message(x)) is not None
+                        ]
                     project = conversation.get("project")
                     project = dict(project) if isinstance(project, dict) else {}
                     project_id = conversation.get("project_id") or project.get("id")
@@ -3487,7 +3679,7 @@ class ChatView:
                     if conversation.get("project_name"):
                         project["name"] = conversation["project_name"]
                     target_tab.update(
-                        messages=messages,
+                        messages=visible_messages,
                         conversation_id=conversation_id,
                         title=conversation.get("title") or "Untitled",
                         project=project,
@@ -3521,7 +3713,9 @@ class ChatView:
                         or target_tab.get("load_token") != token
                     ):
                         return
-                    target_tab.update(loading=False, loading_started=None, load_error=message)
+                    target_tab.update(
+                        loading=False, syncing=False, loading_started=None, load_error=message
+                    )
                     if target_tab is self.tabs[self.active_tab]:
                         self.loading_conversation = False
                         self.loading_started = None

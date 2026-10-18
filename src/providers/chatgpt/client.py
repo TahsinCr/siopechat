@@ -122,6 +122,10 @@ class ChatGPTClient:
             except ValueError:
                 delay = None
             raise RateLimited(delay)
+        if response.status_code == 404:
+            from ..errors import RemoteNotFound
+
+            raise RemoteNotFound("ChatGPT kaydı artık mevcut değil")
         if response.status_code >= 400:
             raise ChatGPTWebError(
                 f"ChatGPT returned HTTP {response.status_code} for {method} {response.url.path}"
@@ -320,6 +324,17 @@ class ChatGPTClient:
             urljoin(CHATGPT_ORIGIN, f"/backend-api/conversation/{conversation_id}"),
             json={"title": title},
         )
+
+    def delete_conversation(self, conversation_id: str) -> None:
+        if not isinstance(conversation_id, str) or not conversation_id:
+            raise ValueError("conversation ID is required")
+        response = self.request(
+            "PATCH",
+            urljoin(CHATGPT_ORIGIN, f"/backend-api/conversation/{quote(conversation_id, safe='')}"),
+            json={"is_visible": False},
+        )
+        if response.json().get("success") is False:
+            raise ChatGPTWebError("ChatGPT sohbeti silmeyi reddetti")
 
     def move_conversation(self, conversation_id: str, project_id: str | None) -> dict[str, Any]:
         """Change native membership, then require the server to confirm it."""

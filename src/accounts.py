@@ -19,7 +19,7 @@ from urllib.parse import quote, unquote
 from backend import BackendService
 from providers import Capability, ConversationBound, ReplaceText, SendRequest, TextDelta
 from providers.chatgpt import BrowserSession, ChatGPTClient, ChatGPTProvider, SessionPaths
-from providers.errors import AccountPaused
+from providers.errors import AccountPaused, RemoteNotFound
 from providers.gemini import GeminiProvider
 from providers.gemini.notebooks import Notebooks
 from providers.models import FeatureState, ModelCatalog, SessionState
@@ -488,6 +488,8 @@ class Accounts:
                 if remote is None:
                     return None
         if archive and remote:
+            if archive.deleted(key, "conversation", remote):
+                return None
             value = archive.get(key, "conversation", remote)
             if value is not None:
                 return value
@@ -521,6 +523,7 @@ class Accounts:
             "title": chat.title,
             "project_id": identity(key, project),
             "metadata": chat.metadata,
+            "history_complete": not chat.metadata.get("history_partial", False),
             "messages": [
                 {
                     "id": message.id,
@@ -556,6 +559,9 @@ class Accounts:
                 return {
                     "items": [self.chat_record(key, chat) for chat in page.items],
                     "cursor": page.next_cursor,
+                    "complete": not page_cursor
+                    and page.next_cursor is None
+                    and len(page.items) < 50,
                 }
 
             return self.read_record(key, "chats", page_cursor, fetch, force)
@@ -662,6 +668,8 @@ class Accounts:
     def load(self, value, key, force=False):
         key, remote = origin(value, key)
         archive = self.archive()
+        if archive and archive.deleted(key, "conversation", remote):
+            raise RemoteNotFound("Bu sohbet sağlayıcıdan silindi")
         if archive and archive.get(key, "conversation", remote) is None:
             legacy = self.cache(key).load_cached_conversation(remote)
             if legacy and not legacy.get("temporary"):
@@ -670,7 +678,12 @@ class Accounts:
                 )
 
         def fetch():
-            chat = self.call(self.provider(key).get_chat(remote))
+            try:
+                chat = self.call(self.provider(key).get_chat(remote))
+            except RemoteNotFound:
+                if archive:
+                    archive.delete(key, "conversation", remote)
+                raise
             record = self.chat_record(key, chat)
             if not record.get("project_id"):
                 record["project_id"] = (self.cached(key, remote) or {}).get("project_id")
@@ -702,6 +715,9 @@ class Accounts:
         project_context, project = origin(options.get("project_id"), key)
         if context != key or project_context != key:
             raise ValueError("Sohbet ve proje seçili hesaba ait olmalı")
+        archive = self.archive()
+        if remote and archive and archive.deleted(key, "conversation", remote):
+            raise RemoteNotFound("Silinmiş bir sohbete mesaj gönderilemez")
         request = SendRequest(
             key.split("/")[0],
             key.split("/")[1],
@@ -722,6 +738,12 @@ class Accounts:
             # the same remote chat cannot lose a turn in a read/append/write race.
             gate = self._send_locks.setdefault(key, asyncio.Lock())
             async with gate:
+                current_archive = self.archive()
+                if current_archive and (
+                    (remote and current_archive.deleted(key, "conversation", remote))
+                    or (project and current_archive.deleted(key, "container", project))
+                ):
+                    raise RemoteNotFound("Sohbet veya proje bu sırada silindi")
                 return await consume_one()
 
         async def consume_one():
@@ -784,11 +806,31 @@ class Accounts:
 
                         resources.append(resource)
                 messages = prior.get("messages", []) + [
-                    {"role": "user", "text": prompt, "resources": resources}
+                    {
+                        "id": stream_id + ":user",
+                        "local_pending": True,
+                        "role": "user",
+                        "text": prompt,
+                        "resources": resources,
+                    }
                 ]
                 if reasoning:
-                    messages.append({"role": "reasoning", "text": reasoning})
-                messages.append({"role": "assistant", "text": text})
+                    messages.append(
+                        {
+                            "id": stream_id + ":analysis",
+                            "local_pending": True,
+                            "role": "reasoning",
+                            "text": reasoning,
+                        }
+                    )
+                messages.append(
+                    {
+                        "id": stream_id + ":final",
+                        "local_pending": True,
+                        "role": "assistant",
+                        "text": text,
+                    }
+                )
                 title = prior.get("title") or prompt[:60]
                 record = {
                     "id": remote_id,
@@ -888,6 +930,47 @@ class Accounts:
             self.provider(key).create_project(name, visibility=visibility, memory=memory)
         )
         return self.project_record(key, project)
+
+    def delete(self, value, key, kind="conversation"):
+        context, remote = origin(value, key)
+        if context != key or kind not in ("conversation", "container") or not remote:
+            raise ValueError("Silinecek kayıt seçili hesaba ait olmalı")
+        with self._lock:
+            if self._sending.get(key, 0):
+                raise RuntimeError("Hesabın gönderimleri tamamlandıktan sonra silin")
+        provider = self.provider(key)
+        capability = Capability.DELETE if kind == "conversation" else Capability.PROJECT_DELETE
+        if capability not in provider.capabilities:
+            raise ValueError("Sağlayıcı bu silme işlemini desteklemiyor")
+
+        def cleanup():
+            archive = self.archive()
+            try:
+                removed = archive.delete(key, kind, remote) if archive else [(key, kind, remote)]
+                for _, target_kind, target in removed:
+                    if target_kind == "conversation":
+                        self.cache(key).mark_conversation_deleted(target)
+                        self._chat_projects.pop((key, target), None)
+            except OSError as error:
+                raise RuntimeError(
+                    "Sağlayıcıdan silindi; yerel kayıt temizlenemedi. Yenileyin."
+                ) from error
+            return {"removed": [identity(a, r) for a, _, r in removed], "kind": kind}
+
+        async def remove():
+            gate = self._send_locks.setdefault(key, asyncio.Lock())
+            async with gate:
+                try:
+                    await (
+                        provider.delete_chat(remote)
+                        if kind == "conversation"
+                        else provider.delete_project(remote)
+                    )
+                except RemoteNotFound:
+                    pass  # Already deleted upstream; finish local reconciliation.
+                return await asyncio.to_thread(cleanup)
+
+        return self.call(remove(), timeout=60)
 
     def callbacks(self, key):
         provider = self.provider(key)

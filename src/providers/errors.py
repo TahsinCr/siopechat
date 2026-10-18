@@ -38,3 +38,7 @@ class CompatibilityError(ProviderError):
     def __init__(self, capability: Capability):
         super().__init__("provider capability changed")
         self.capability = capability
+
+
+class RemoteNotFound(ProviderError):
+    """The provider confirmed that this remote record no longer exists."""

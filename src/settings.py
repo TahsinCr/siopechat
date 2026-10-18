@@ -45,6 +45,8 @@ DEFAULT_KEYBINDINGS = {
     "command.rename": "f4",
     "command.projects": "f6",
     "projects.create": "escape p",
+    "chat.delete": "escape d",
+    "projects.delete": "escape delete",
     "command.model": "escape m",
     "command.effort": "escape e",
     "command.project": "f9",

@@ -88,6 +88,8 @@ class SlashCommandCompleter(Completer):
         ("/resume", "search recent conversations"),
         ("/history", "reload this conversation"),
         ("/rename", "rename this conversation"),
+        ("/delete", "delete a conversation after confirmation"),
+        ("/delete-project", "delete a project and its chats after confirmation"),
         ("/copy", "copy the latest response"),
         ("/remove", "remove the latest image"),
         ("/clear", "clear the displayed transcript"),

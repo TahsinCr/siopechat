@@ -11,11 +11,11 @@ async function createInPage(config) {
     for (let i = 0; i < 50; i++) { const value = callback(); if (value) return value; await pause(); }
     throw Error("Proje oluşturma ekranı bulunamadı; bağlı tarayıcıyı kontrol edin");
   };
-  let start = find(document, /^(new project|yeni proje)$/i);
+  let start = find(document, /^(new project|add new project|yeni proje|yeni proje ekle)$/i);
   if (!start) {
     const sidebar = find(document, /^(open sidebar|kenar çubuğunu aç|kenar çubuğunu genişlet)$/i);
     if (sidebar) sidebar.click();
-    start = await wait(() => find(document, /^(new project|yeni proje)$/i));
+    start = await wait(() => find(document, /^(new project|add new project|yeni proje|yeni proje ekle)$/i));
   }
   start.click();
   const dialog = await wait(() => [...document.querySelectorAll('[role="dialog"]')].find(node => node.querySelector('input')));

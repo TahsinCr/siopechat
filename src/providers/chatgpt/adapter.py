@@ -8,7 +8,7 @@ from typing import Callable
 
 from ..api import Capability, ConversationBound, ReplaceText, SendRequest, TextDelta
 from ..contracts import OptionalFeatures
-from ..errors import AccountPaused, CompatibilityError, RateLimited
+from ..errors import AccountPaused, CompatibilityError, ProviderError, RateLimited, RemoteNotFound
 from ..models import (
     Content,
     Conversation,
@@ -39,6 +39,8 @@ class ChatGPTProvider(OptionalFeatures):
     capabilities = frozenset(
         {
             Capability.CHAT,
+            Capability.DELETE,
+            Capability.PROJECT_DELETE,
             Capability.ATTACHMENTS,
             Capability.TEMPORARY,
             Capability.HISTORY,
@@ -133,6 +135,44 @@ class ChatGPTProvider(OptionalFeatures):
             ),
             dict(raw.get("metadata") or {}),
         )
+
+    async def delete_chat(self, conversation_id):
+        async with self._gate:
+
+            def remove():
+                with self._factory(self.session) as client:
+                    client.delete_conversation(conversation_id)
+
+            await asyncio.to_thread(remove)
+
+    async def delete_project(self, project_id):
+        from ..management import delete_project
+
+        async with self._gate:
+            await asyncio.to_thread(self.session.launch)
+
+            def read():
+                with self._factory(self.session) as client:
+                    return client.get_project(project_id)
+
+            project = await asyncio.to_thread(read)
+            failure = None
+            try:
+                await delete_project(
+                    self.session.cdp_url, self.id, project_id, name=project["name"]
+                )
+            except ProviderError as error:
+                failure = error
+            for attempt in range(5):
+                try:
+                    await asyncio.to_thread(read)
+                except RemoteNotFound:
+                    return
+                if attempt < 4:
+                    await asyncio.sleep(0.25 * 2**attempt)
+            if failure:
+                raise failure
+            raise ProviderError("Proje silme sunucuda doğrulanamadı; yeniden silmeden kontrol edin")
 
     async def list_projects(self, cursor: str | None = None) -> Page[Project]:
         def read():

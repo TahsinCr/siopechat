@@ -18,6 +18,7 @@ class Capability(str, Enum):
     RESOURCES = "resources"
     PROJECTS = "projects"
     PROJECT_CREATE = "project_create"
+    PROJECT_DELETE = "project_delete"
     PROJECT_MEMBERSHIP = "project_membership"
     MODELS = "models"
     EFFORT = "effort"

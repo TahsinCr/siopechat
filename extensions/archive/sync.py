@@ -7,8 +7,10 @@ import time
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from urllib.parse import unquote
 
 from .adapters import MAPPINGS, Mapping
+from .history import merge_conversation
 from .repository import encode
 
 
@@ -36,6 +38,7 @@ class Archive:
         self.revision = 0
         self.closed = False
         self._repository_closed = False
+        self._deleted = repository.tombstones() if hasattr(repository, "tombstones") else set()
 
     def conversations(self, account, **page):
         return self.repository.conversations(account, **page)
@@ -68,7 +71,7 @@ class Archive:
     def get(self, account, kind, remote):
         key = (account, kind, remote)
         with self._lock:
-            if self._repository_closed:
+            if self._repository_closed or key in self._deleted:
                 return None
             if key in self._hot:
                 self._hot.move_to_end(key)
@@ -101,6 +104,24 @@ class Archive:
             with self._lock:
                 if self.closed:
                     raise OSError("Archive is closed")
+                if key in self._deleted:
+                    return
+                if kind in ("chats", "container_chats", "containers"):
+                    item_kind = "container" if kind == "containers" else "conversation"
+                    value["items"] = [
+                        x
+                        for x in value.get("items", [])
+                        if (
+                            account,
+                            item_kind,
+                            unquote(
+                                (x.get("remote_id") or x.get("id") or "").removeprefix(
+                                    "@" + account + "/"
+                                )
+                            ),
+                        )
+                        not in self._deleted
+                    ]
             try:
                 changed = self.repository.put(*key, value)
             except OSError as error:
@@ -145,7 +166,7 @@ class Archive:
         value = self.get(*key)
         started = False
         with self._lock:
-            if self.closed:
+            if self.closed or key in self._deleted:
                 return value
             self._fetchers[key] = fetch
             self._fetchers.move_to_end(key)
@@ -169,6 +190,30 @@ class Archive:
                                 accept = (
                                     not self.closed and self._versions.get(key, 0) == generation
                                 )
+                            if key in self._deleted:
+                                return None
+                            current = self.get(*key) if kind == "conversation" else None
+                            if (
+                                not self.closed
+                                and kind == "conversation"
+                                and "messages" in result
+                                and current
+                                and "messages" in current
+                            ):
+                                merged = merge_conversation(result, current)
+                                result = (
+                                    dict(
+                                        current,
+                                        messages=merged["messages"],
+                                        history_complete=merged.get(
+                                            "history_complete",
+                                            current.get("history_complete", True),
+                                        ),
+                                    )
+                                    if not accept
+                                    else merged
+                                )
+                                accept = True
                             if accept:
                                 self.put(*key, result)
                                 with self._lock:
@@ -178,9 +223,11 @@ class Archive:
                         self.repository.state(*key, "ready")
                         # A local send may have won while this remote read was
                         # in flight. Cold waiters must also see that newer value.
-                        return result if accept else self.get(*key)
+                        return self.get(*key)
                     except Exception as error:
                         with self._lock:
+                            if key in self._deleted:
+                                raise
                             self._checked[key] = time.monotonic()
                             if len(self._checked) > 2048:
                                 self._checked.pop(next(iter(self._checked)))
@@ -194,7 +241,7 @@ class Archive:
                 def done(completed):
                     with self._lock:
                         self._pending.pop(key, None)
-                        if not self.closed:
+                        if not self.closed and key not in self._deleted:
                             error = (
                                 completed.exception()
                                 if not completed.cancelled()
@@ -232,6 +279,25 @@ class Archive:
     def states(self):
         with self._lock:
             return copy.deepcopy(list(self._states.values()))
+
+    def deleted(self, account, kind, remote):
+        with self._lock:
+            return (account, kind, remote) in self._deleted
+
+    def delete(self, account, kind, remote):
+        with self._write_lock:
+            removed = self.repository.delete(account, kind, remote)
+            with self._lock:
+                self._deleted.update(removed)
+                for key in removed:
+                    self._versions[key] = self._versions.get(key, 0) + 1
+                    self._fetchers.pop(key, None)
+                    self._states.pop(key, None)
+                for key in list(self._hot):
+                    if key[0] == account:
+                        self._size -= self._hot.pop(key)[1]
+                self.revision += 1
+        return removed
 
     def _maybe_close_repository(self):
         with self._write_lock:

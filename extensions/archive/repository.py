@@ -24,6 +24,8 @@ class Repository(Protocol):
     def containers(self, account, limit=50, offset=0): ...
     def messages(self, account, remote, limit=100, offset=0): ...
     def resources(self, account, owner_kind, owner): ...
+    def tombstones(self): ...
+    def delete(self, account, kind, remote): ...
     def close(self): ...
 
 
@@ -36,6 +38,9 @@ class SQLiteRepository:
                 PRAGMA journal_mode=WAL;
                 CREATE TABLE IF NOT EXISTS schema_version(version INTEGER PRIMARY KEY);
                 INSERT OR IGNORE INTO schema_version VALUES(1);
+                CREATE TABLE IF NOT EXISTS tombstones(
+                    account TEXT NOT NULL, kind TEXT NOT NULL, remote TEXT NOT NULL,
+                    deleted REAL NOT NULL, PRIMARY KEY(account,kind,remote));
                 CREATE TABLE IF NOT EXISTS records(
                     account TEXT NOT NULL, kind TEXT NOT NULL, remote TEXT NOT NULL,
                     provider TEXT NOT NULL, payload TEXT NOT NULL, digest TEXT NOT NULL,
@@ -202,6 +207,97 @@ class SQLiteRepository:
             if kind in ("conversation", "container"):
                 self._write_resources(db, account, kind, remote, value)
         return True
+
+    def tombstones(self):
+        with self._connect() as db:
+            return set(db.execute("SELECT account,kind,remote FROM tombstones"))
+
+    def delete(self, account, kind, remote):
+        """Remove normalized rows and every saved page reference in one transaction."""
+        removed = [(account, kind, remote)]
+        with self._connect() as db:
+            if kind == "container":
+                members = db.execute(
+                    "SELECT conversation FROM memberships WHERE account=? AND container=?",
+                    (account, remote),
+                ).fetchall()
+                removed.extend((account, "conversation", row[0]) for row in members)
+                known = {x[2] for x in removed}
+                for chat_remote, container in db.execute(
+                    "SELECT remote,container FROM conversations WHERE account=?", (account,)
+                ).fetchall():
+                    if (
+                        container
+                        and self._remote(account, container) == remote
+                        and chat_remote not in known
+                    ):
+                        removed.append((account, "conversation", chat_remote))
+                        known.add(chat_remote)
+                db.execute("DELETE FROM containers WHERE account=? AND remote=?", (account, remote))
+                db.execute(
+                    "DELETE FROM memberships WHERE account=? AND container=?", (account, remote)
+                )
+                db.execute(
+                    "DELETE FROM records WHERE account=? AND kind='container_chats' AND remote LIKE ?",
+                    (account, remote + ":%"),
+                )
+            for _, target_kind, target in removed:
+                db.execute(
+                    "INSERT OR REPLACE INTO tombstones VALUES(?,?,?,?)",
+                    (account, target_kind, target, time.time()),
+                )
+                db.execute(
+                    "DELETE FROM records WHERE account=? AND kind=? AND remote=?",
+                    (account, target_kind, target),
+                )
+                db.execute(
+                    "DELETE FROM resources WHERE account=? AND owner_kind=? AND owner=?",
+                    (account, target_kind, target),
+                )
+                if target_kind == "conversation":
+                    db.execute(
+                        "DELETE FROM conversations WHERE account=? AND remote=?", (account, target)
+                    )
+                    db.execute(
+                        "DELETE FROM messages WHERE account=? AND conversation=?", (account, target)
+                    )
+                    db.execute(
+                        "DELETE FROM memberships WHERE account=? AND conversation=?",
+                        (account, target),
+                    )
+                db.execute(
+                    "DELETE FROM synchronization WHERE account=? AND kind=? AND remote=?",
+                    (account, target_kind, target),
+                )
+            deleted = {(k, r) for _, k, r in removed}
+            for page_kind, page_remote, payload in db.execute(
+                "SELECT kind,remote,payload FROM records WHERE account=? AND kind IN ('chats','container_chats','containers','pointer')",
+                (account,),
+            ).fetchall():
+                value = json.loads(payload)
+                if page_kind == "pointer":
+                    if ("conversation", value.get("remote")) in deleted:
+                        value["remote"] = None
+                else:
+                    target_kind = "container" if page_kind == "containers" else "conversation"
+                    value["items"] = [
+                        x
+                        for x in value.get("items", [])
+                        if (target_kind, self._remote(account, x.get("remote_id") or x.get("id")))
+                        not in deleted
+                    ]
+                encoded = encode(value)
+                db.execute(
+                    "UPDATE records SET payload=?,digest=? WHERE account=? AND kind=? AND remote=?",
+                    (
+                        encoded,
+                        hashlib.sha256(encoded.encode()).hexdigest(),
+                        account,
+                        page_kind,
+                        page_remote,
+                    ),
+                )
+        return removed
 
     def _write_resources(self, db, account, kind, remote, value):
         db.execute(

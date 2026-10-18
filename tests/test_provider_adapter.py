@@ -3,10 +3,11 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 from providers import Capability, ProviderRegistry, SendRequest, TextDelta
 from providers.chatgpt import BrowserSession, ChatGPTProvider, SessionPaths
-from providers.errors import FeatureUnavailable, RateLimited
+from providers.errors import RateLimited, RemoteNotFound
 from providers.models import Choice, FeatureState, Model, ModelCatalog, SessionState
 from tasks import JobState, TaskService
 
@@ -100,7 +101,7 @@ class ProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(chat.metadata, self.client.raw)
 
-    async def test_discovery_and_creation_are_available_but_delete_is_not(self):
+    async def test_discovery_creation_and_deletion_are_available(self):
         description = await self.provider.describe()
         self.assertEqual(description.feature(Capability.PROJECTS).state, FeatureState.AVAILABLE)
         self.client.model_catalog = lambda: ModelCatalog(FeatureState.AVAILABLE)
@@ -115,8 +116,23 @@ class ProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
         }
         created = await self.provider.create_project("New project", memory="project_only")
         self.assertEqual(created.name, "New project")
-        with self.assertRaises(FeatureUnavailable):
+        project_reads = iter([{"name": "Fixture"}, RemoteNotFound("deleted")])
+
+        def get_project(value):
+            result = next(project_reads)
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        self.client.get_project = get_project
+        with (
+            patch("providers.management.delete_project", new_callable=AsyncMock) as delete,
+            patch.object(self.provider.session, "launch"),
+        ):
             await self.provider.delete_project("g-p-created")
+            delete.assert_awaited_once_with(
+                self.provider.session.cdp_url, "chatgpt", "g-p-created", name="Fixture"
+            )
 
     async def test_stream_produces_common_events_and_releases_transport(self):
         self.client.closed.set()

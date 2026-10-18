@@ -308,6 +308,8 @@ def key_bindings(view) -> KeyBindings:
     bind("chat.newline_shift", newline, composer_focused)
     bind("chat.newline_lf", newline, composer_focused)
     bind("projects.create", lambda _: view.open_project_create())
+    bind("chat.delete", lambda _: view.delete_record())
+    bind("projects.delete", lambda _: view.delete_record("container"))
     bind("command.model", lambda _: view.handle_command("/model"))
     bind("command.effort", lambda _: view.handle_command("/effort"))
     bind("chat.attach", lambda _: view.open_attachment())

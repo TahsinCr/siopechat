@@ -10,6 +10,9 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Added
 
+- Confirmed chat/project deletion through provider APIs and the command palette, `/delete` / `/delete-project`, and configurable shortcuts.
+- Persistent archive tombstones with transactional list-reference and project-member cleanup, including protection against late sync resurrection.
+
 - Deterministic synchronization/concurrency regressions covering slow storage, stale reads, bounded work queues, independent accounts and shutdown during accepted-response persistence.
 
 - Isolated Gemini native-browser sending component with owned-tab lifecycle, attachment upload, incremental Markdown extraction and bounded cancellation.
@@ -56,6 +59,12 @@ The project is currently unreleased; no release dates or tags have been assigned
 - Competing settings-page filler, repeated shortcut hints and SDK logs written over the terminal interface.
 
 ### Fixed
+
+- Display cached conversation bodies immediately and hydrate cold histories without blocking drafts or replacing a running response.
+- Merge missing remote history with locally accepted turns, preserving attachment paths and published thinking summaries without duplicating confirmed messages.
+- Refresh Gemini conversation metadata from the server instead of reusing the SDK's initial in-memory list; paginate recent conversations.
+- Use the connected Gemini browser session for chat deletion and allow for notebook-list propagation after native deletion without repeating the destructive request.
+- Reconcile complete sidebar snapshots and distinguish confirmed missing records from transport failures.
 
 - Prevent stale cold reads from replacing newer local records or returning an obsolete remote result after a completed send.
 - Move transcript/attachment persistence, model snapshot writes and manual archive refresh away from provider/UI event loops.

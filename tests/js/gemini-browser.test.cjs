@@ -1,5 +1,29 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+test("native deletion requires an acknowledged signed-in same-origin RPC", async () => {
+  const { deleteChatInPage } = require("../../src/providers/gemini/scripts/browser.cjs");
+  const previous = { location: global.location, window: global.window, fetch: global.fetch };
+  global.location = { origin: "https://gemini.google.com" };
+  global.window = { WIZ_global_data: { SNlM0e: "fixture-token" } };
+  let calls = 0;
+  global.fetch = async (url, options) => {
+    calls++;
+    assert.equal(url.origin, "https://gemini.google.com");
+    assert.equal(options.credentials, "same-origin");
+    assert.equal(options.body.get("at"), "fixture-token");
+    assert.equal(JSON.parse(JSON.parse(options.body.get("f.req"))[0][0][1])[0], "c_abc");
+    return { ok: true, text: async () => '[["wrb.fr","GzXR5e","null"]]' };
+  };
+  try {
+    assert.equal(await deleteChatInPage("c_abc"), true);
+    assert.equal(calls, 1);
+    global.fetch = async () => ({ ok: true, text: async () => '[["wrb.fr","GzXR5e",null,null,null,[3]]]' });
+    await assert.rejects(deleteChatInPage("c_abc"), /not confirmed/);
+    await assert.rejects(deleteChatInPage("../../private"), /Invalid/);
+  } finally {
+    Object.assign(global, previous);
+  }
+});
 const {
   validate,
   canonicalModel,

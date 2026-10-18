@@ -74,6 +74,15 @@ class NativeBrowser:
                     process.kill()
                     await process.wait()
 
+    async def delete_chat(self, conversation_id):
+        confirmed = False
+        async for event in self.events("delete_chat", conversation_id=conversation_id):
+            if event.get("type") == "deleted" and event.get("id") == conversation_id:
+                confirmed = True
+                self.authenticated = True
+        if not confirmed:
+            raise ProviderError("Gemini sohbet silme işlemi doğrulanamadı; listeyi yenileyin")
+
     async def models(self):
         async for event in self.events("models"):
             if event["type"] != "models":

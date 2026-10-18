@@ -31,6 +31,7 @@ class GeminiProvider(OptionalFeatures):
         {
             Capability.CHAT,
             Capability.HISTORY,
+            Capability.DELETE,
             Capability.AUTH,
             Capability.MODELS,
             Capability.EFFORT,
@@ -64,7 +65,7 @@ class GeminiProvider(OptionalFeatures):
             else None
         )
         if notebooks is not None:
-            self.capabilities = self.capabilities | {Capability.PROJECTS}
+            self.capabilities = self.capabilities | {Capability.PROJECTS, Capability.PROJECT_DELETE}
 
     async def _connect(self):
         if self._client is not None:
@@ -198,11 +199,19 @@ class GeminiProvider(OptionalFeatures):
         return Origin(self.id, self.account_id, remote_id)
 
     async def list_chats(self, cursor=None, limit=50):
-        if cursor:
-            return Page(())
+        try:
+            offset = int(cursor or 0)
+        except (ValueError, TypeError):
+            raise ValueError("invalid Gemini conversation cursor") from None
+        if offset < 0 or offset > 5000 or not 1 <= limit <= 100:
+            raise ValueError("invalid Gemini conversation page")
         async with self._gate:
             client = await self._connect()
-            chats = client.list_chats() or []
+            if hasattr(client, "_fetch_recent_chats"):
+                await client._fetch_recent_chats(recent=offset + limit + 1)
+            chats = client.list_chats()
+            if chats is None:
+                raise ProviderError("Gemini sohbet listesi sunucudan alınamadı")
             return Page(
                 tuple(
                     Conversation(
@@ -210,8 +219,9 @@ class GeminiProvider(OptionalFeatures):
                         item.title or "Gemini sohbeti",
                         metadata={"timestamp": item.timestamp},
                     )
-                    for item in chats[:limit]
-                )
+                    for item in chats[offset : offset + limit]
+                ),
+                str(offset + limit) if len(chats) > offset + limit else None,
             )
 
     async def get_chat(self, conversation_id):
@@ -221,12 +231,21 @@ class GeminiProvider(OptionalFeatures):
             if history is None:
                 raise ProviderError("Gemini sohbet geçmişi alınamadı")
             messages = []
-            for i, turn in enumerate(reversed(history.turns)):
+            turns = list(reversed(history.turns))
+            for i, turn in enumerate(turns):
                 output = turn.model_output
+                paired = output or (turns[i + 1].model_output if i + 1 < len(turns) else None)
+                metadata = getattr(paired, "metadata", None)
+                rid = metadata[1] if isinstance(metadata, list) and len(metadata) > 1 else None
+                if not isinstance(rid, str) or not rid:
+                    import hashlib
+
+                    rid = hashlib.sha256((turn.role + "\0" + turn.text).encode()).hexdigest()
+                stable_id = rid + ":" + turn.role
                 if output and output.thoughts:
                     messages.append(
                         Message(
-                            f"{i}:thoughts",
+                            stable_id + ":thoughts",
                             "assistant",
                             (Content("text", output.thoughts),),
                             channel="analysis",
@@ -234,7 +253,7 @@ class GeminiProvider(OptionalFeatures):
                     )
                 messages.append(
                     Message(
-                        str(i),
+                        stable_id,
                         "user" if turn.role == "user" else "assistant",
                         (Content("text", turn.text),),
                     )
@@ -243,7 +262,51 @@ class GeminiProvider(OptionalFeatures):
                 (item.title for item in client.list_chats() or [] if item.cid == conversation_id),
                 "Gemini sohbeti",
             )
-            return Conversation(self._origin(conversation_id), title, tuple(messages))
+            return Conversation(
+                self._origin(conversation_id),
+                title,
+                tuple(messages),
+                metadata={"history_partial": len(history.turns) >= 1000},
+            )
+
+    async def delete_chat(self, conversation_id):
+        async with self._gate:
+            if self.browser:
+                self._require_native_session()
+                await self.browser.delete_chat(conversation_id)
+            else:
+                client = await self._connect()
+                await client.delete_chat(conversation_id)
+
+    async def delete_project(self, project_id):
+        from ..management import delete_project
+        from .notebooks import notebook_id
+
+        project_id = notebook_id(project_id)
+        if not self.browser:
+            return await super().delete_project(project_id)
+        self._require_native_session()
+        async with self._gate:
+            if self.browser.ensure_ready:
+                await asyncio.to_thread(self.browser.ensure_ready)
+            project = await self.notebooks.get(project_id)
+            failure = None
+            try:
+                await delete_project(self.browser.cdp_url, self.id, project_id, name=project.name)
+            except ProviderError as error:
+                failure = error
+            for attempt in range(5):
+                if not any(
+                    x.origin.remote_id == project_id for x in (await self.notebooks.list()).items
+                ):
+                    return
+                if attempt < 4:
+                    await asyncio.sleep(0.25 * 2**attempt)
+            if failure:
+                raise failure
+            raise ProviderError(
+                "Defter silme sunucuda doğrulanamadı; yeniden silmeden kontrol edin"
+            )
 
     async def list_projects(self, cursor=None):
         if self.notebooks is None:

@@ -1,5 +1,6 @@
 "use strict";
 const fs = require("node:fs");
+const { connect } = require("../../scripts/connection.cjs");
 const { renderMarkdown } = require("./markdown.cjs");
 
 function validate(input) {
@@ -11,7 +12,7 @@ function validate(input) {
     url.password
   )
     throw Error("Only a local debugging browser is supported");
-  if (!["models", "send", "close"].includes(input.mode))
+  if (!["models", "send", "delete_chat", "close"].includes(input.mode))
     throw Error("Unknown browser operation");
   if (
     input.project_id &&
@@ -20,6 +21,8 @@ function validate(input) {
     throw Error("Invalid notebook identity");
   if (input.conversation_id && !/^c_[a-f0-9]+$/.test(input.conversation_id))
     throw Error("Invalid conversation identity");
+  if (input.mode === "delete_chat" && !input.conversation_id)
+    throw Error("Conversation identity required");
   return url;
 }
 function canonicalModel(title) {
@@ -37,52 +40,6 @@ function emit(value) {
   process.stdout.write(JSON.stringify(value) + "\n");
 }
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-async function connect(address, base) {
-  const url = new URL(address);
-  if (
-    !["ws:", "wss:"].includes(url.protocol) ||
-    url.hostname !== base.hostname ||
-    url.port !== base.port
-  )
-    throw Error("Non-local debugger socket rejected");
-  const ws = new WebSocket(address),
-    pending = new Map();
-  let seq = 0;
-  await new Promise((resolve, reject) => {
-    ws.addEventListener("open", resolve, { once: true });
-    ws.addEventListener("error", reject, { once: true });
-  });
-  ws.addEventListener("message", (event) => {
-    const m = JSON.parse(event.data),
-      p = pending.get(m.id);
-    if (p) {
-      pending.delete(m.id);
-      clearTimeout(p.timer);
-      m.error ? p.reject(Error(m.error.message)) : p.resolve(m.result);
-    }
-  });
-  return {
-    async call(method, params = {}) {
-      return new Promise((resolve, reject) => {
-        const id = ++seq;
-        const timer = setTimeout(() => {
-          pending.delete(id);
-          reject(Error("Debugger operation timed out"));
-        }, 10000);
-        pending.set(id, { resolve, reject, timer });
-        ws.send(JSON.stringify({ id, method, params }));
-      });
-    },
-    close() {
-      for (const p of pending.values()) {
-        clearTimeout(p.timer);
-        p.reject(Error("Debugger closed"));
-      }
-      pending.clear();
-      ws.close();
-    },
-  };
-}
 // Executed only inside our own background tab, never in the user's open chat.
 function pageState() {
   const visible = (e) => !!e.getClientRects().length;
@@ -162,6 +119,35 @@ function menuEfforts(model) {
         ];
   });
 }
+async function deleteChatInPage(cid) {
+  if (location.origin !== "https://gemini.google.com" || !/^c_[a-f0-9]+$/.test(cid))
+    throw Error("Invalid Gemini deletion context");
+  const token = window.WIZ_global_data?.SNlM0e;
+  if (!token) throw Error("Gemini sign-in required");
+  const rpcid = "GzXR5e";
+  const url = new URL("/_/BardChatUi/data/batchexecute", location.origin);
+  url.searchParams.set("rpcids", rpcid);
+  url.searchParams.set("source-path", "/app");
+  const response = await fetch(url, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "content-type": "application/x-www-form-urlencoded;charset=UTF-8", "x-same-domain": "1" },
+    body: new URLSearchParams({ at: token, "f.req": JSON.stringify([[[rpcid, JSON.stringify([cid]), null, "generic"]]]) }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) throw Error("Gemini conversation deletion failed");
+  const body = await response.text();
+  for (const line of body.split("\n")) {
+    if (!line.startsWith('[["wrb.fr"')) continue;
+    for (const part of JSON.parse(line)) {
+      if (part[0] !== "wrb.fr" || part[1] !== rpcid) continue;
+      if (part[2] == null) throw Error("Gemini deletion was not confirmed");
+      JSON.parse(part[2]);
+      return true;
+    }
+  }
+  throw Error("Gemini deletion response changed; refresh before retrying");
+}
 async function run(input) {
   const base = validate(input);
   const json = async (path, options) => {
@@ -179,7 +165,7 @@ async function run(input) {
     if (tab) await fetch(new URL("/json/close/" + tab.id, base));
     return;
   }
-  const route = input.conversation_id
+  const route = input.mode === "delete_chat" ? "/app" : input.conversation_id
     ? "/app/" + input.conversation_id.slice(2)
     : input.project_id
       ? "/notebook/" + input.project_id.slice(10)
@@ -272,6 +258,11 @@ async function run(input) {
           (input.mode !== "send" || input.resume_temporary || s.path === route),
       ),
     );
+    if (input.mode === "delete_chat") {
+      await invoke(deleteChatInPage, input.conversation_id);
+      emit({ type: "deleted", id: input.conversation_id });
+      return;
+    }
     const openModels = async () => {
       if ((await invoke(menuModels)).length) return;
       await wait(
@@ -279,7 +270,7 @@ async function run(input) {
           evaluate(
             '!!document.querySelector("[data-test-id=bard-mode-menu-button]")?.getClientRects().length',
           ),
-        15,
+        30,
         "model selector",
       );
       await evaluate(
@@ -564,7 +555,7 @@ async function run(input) {
     cdp.close();
   }
 }
-module.exports = { validate, canonicalModel };
+module.exports = { validate, canonicalModel, deleteChatInPage };
 if (require.main === module) {
   const raw = fs.readFileSync(0, "utf8");
   if (raw.length > 2 * 1024 * 1024) throw Error("Input too large");

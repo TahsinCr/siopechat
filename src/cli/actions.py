@@ -24,6 +24,8 @@ _ACTION_NAMES = {
     "command.project": "Proje bilgileri",
     "command.projects": "Projeleri listele",
     "projects.create": "Proje oluştur",
+    "chat.delete": "Sohbeti sağlayıcıdan sil",
+    "projects.delete": "Projeyi sağlayıcıdan sil",
     "layout.split": "Yan yana böl",
     "layout.split_down": "Alt alta böl",
     "layout.unsplit": "Bölmeyi kaldır",
