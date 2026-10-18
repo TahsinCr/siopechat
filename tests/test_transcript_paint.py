@@ -19,6 +19,23 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rows[1][0], (("t", "c"),))
         self.assertEqual([row[1] for row in rows], [0, 1])
 
+    def test_oversized_transcript_is_retained_instead_of_repeating_placeholder(self):
+        with terminal() as (view, _):
+            tab = view.tabs[view.active_tab]
+            text = "x" * 4_000_001
+            messages = [{"role": "user", "text": "large"}]
+            view.remember_transcript(tab, messages, 80, {}, True, text, [(0, 1, 0)], [("", text)])
+            self.assertEqual(view._prepared_transcripts[tab["tab_id"]]["text"], text)
+
+    def test_selection_tracks_the_same_message_after_older_history_is_inserted(self):
+        with terminal(
+            initial_messages=[{"role": "user", "text": "Q"}, {"role": "assistant", "text": "A"}]
+        ) as (view, _):
+            view.select_message(1)
+            view.messages.insert(0, {"role": "user", "text": "Earlier"})
+            view.transcript_rows()
+            self.assertEqual(view.selected_message, 2)
+
     async def test_four_large_chats_paint_without_rendering_markdown_on_ui_thread(self):
         with tempfile.TemporaryDirectory() as directory:
             app = create_application(Path(directory))
@@ -67,12 +84,15 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
                                 view.new_tab()
                             view.resume_conversation(f"@chatgpt/default/c{number}")
                             await asyncio.sleep(0.1)
-                        async with asyncio.timeout(8):
+
+                        async def loaded():
                             while (
                                 not all(tab["messages"] for tab in view.tabs)
                                 or view.transcript_line_count < 100
                             ):
                                 await asyncio.sleep(0.02)
+
+                        await asyncio.wait_for(loaded(), 8)
                         self.assertFalse(
                             violations, "Rich Markdown preparation ran on the terminal loop"
                         )

@@ -3130,6 +3130,12 @@ class ChatView:
 
     def transcript_rows(self):
         rendered = self.render_transcript()
+        reference = getattr(self, "selected_message_ref", None)
+        if reference is not None:
+            self.selected_message = next(
+                (i for i, item in enumerate(self.messages) if item is reference),
+                self.selected_message,
+            )
         if rendered != getattr(self, "_line_render_key", None):
             if rendered != getattr(self, "_ansi_render_key", None):
                 self._ansi_render_key, self._ansi_fragments = (
@@ -3139,46 +3145,6 @@ class ChatView:
             self._transcript_lines = index_transcript(self._ansi_fragments, self.message_ranges)
             self._line_render_key = rendered
         return self._transcript_lines
-
-    def render_formatted_transcript(self):
-        rendered = self.render_transcript()
-        reference = getattr(self, "selected_message_ref", None)
-        if reference is not None:
-            self.selected_message = next(
-                (i for i, item in enumerate(self.messages) if item is reference),
-                self.selected_message,
-            )
-        key = (rendered, self.selected_message, self.message_selection)
-        if key != getattr(self, "_selection_render_key", None):
-            fragments, line, range_position = [], 0, 0
-            if rendered != getattr(self, "_ansi_render_key", None):
-                self._ansi_render_key = rendered
-                self._ansi_fragments = ANSI(rendered).__pt_formatted_text__()
-            for style, text in self._ansi_fragments:
-                for part in text.splitlines(keepends=True):
-                    while (
-                        range_position < len(self.message_ranges)
-                        and line >= self.message_ranges[range_position][1]
-                    ):
-                        range_position += 1
-                    index = (
-                        self.message_ranges[range_position][2]
-                        if range_position < len(self.message_ranges)
-                        else None
-                    )
-                    selected = self.message_selection and index == self.selected_message
-                    fragments.append(
-                        (
-                            style + (" class:message.selected" if selected else ""),
-                            part,
-                            on_click(lambda index=index: self.select_message(index)),
-                        )
-                    )
-                    line += part.count("\n")
-            self.formatted_transcript = FormattedText(fragments)
-            self.formatted_transcript_source = rendered
-            self._selection_render_key = key
-        return self.formatted_transcript
 
     def select_message(self, index):
         if index is None:

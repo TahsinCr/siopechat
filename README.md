@@ -349,7 +349,8 @@ terminal paints visible rows and handles clicks without rebuilding the complete
 history. Preparations for inactive tabs are skipped while their loaded messages
 remain available. Prepared views use an LRU character budget; a single oversized
 active view is retained so long histories remain readable. Switching tabs,
-scrolling and background archive updates keep their existing state.
+scrolling and background archive updates keep their existing state. Message
+selection follows the same message when older history is inserted.
 
 ### Library filters and ordering
 

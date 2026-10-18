@@ -322,7 +322,11 @@ class EditingTests(unittest.IsolatedAsyncioTestCase):
                 await self.settle(lambda: copied.called)
                 copied.assert_called_with("Answer")
                 self.assertTrue(
-                    any("class:message.selected" in f[0] for f in v.render_formatted_transcript())
+                    any(
+                        "class:message.selected" in f[0]
+                        for number in range(v.transcript_control.create_content(80, 24).line_count)
+                        for f in v.transcript_control.create_content(80, 24).get_line(number)
+                    )
                 )
             finally:
                 if v.app.is_running:
