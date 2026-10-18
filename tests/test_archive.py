@@ -9,7 +9,7 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 from bootstrap import create_application
 from extensions.archive.repository import Files, SQLiteRepository
@@ -219,6 +219,46 @@ class ArchiveIntegrationTests(unittest.TestCase):
             view.apply_archive_updates()
             self.assertEqual(view.sidebar_items, [])
             self.assertEqual(view.input.text, "keep my draft")
+
+    def test_opening_other_provider_chat_uses_its_preference_for_cached_and_cold_history(self):
+        self.accounts.select(self.gemini)
+        key = "chatgpt/default"
+        self.accounts.remember(key, "preferred-gpt", "high")
+        self.accounts._catalogs[key] = (
+            time.monotonic(),
+            ModelCatalog(FeatureState.AVAILABLE, (
+                Model("old-gpt", "Old"),
+                Model("preferred-gpt", "Preferred", (Choice("high", "High"),)),
+            )),
+        )
+        body = {"id": "@chatgpt/default/chat", "model": "old-gpt", "messages": []}
+        for cached in (body, None):
+            with self.subTest(cached=cached is not None), terminal(account_service=self.accounts) as (view, _):
+                view._read_in_background = immediate
+                with patch.object(self.accounts, "cached", return_value=cached), patch.object(
+                    self.accounts, "load", return_value=body
+                ), patch("cli.chat.threading.Thread", side_effect=lambda target, daemon: Mock(start=target)):
+                    view.resume_conversation(body["id"])
+                self.assertEqual(view.account_key, key)
+                self.assertEqual(view.tabs[view.active_tab]["account_key"], key)
+                self.assertEqual((view.model, view.effort), ("preferred-gpt", "high"))
+                view.open_palette("models")
+                self.assertEqual({i["id"] for i in view.palette_items}, {
+                    "model.select:old-gpt", "model.select:preferred-gpt"
+                })
+
+    def test_unrelated_background_operation_does_not_block_sending(self):
+        with terminal() as (view, _):
+            view.background_jobs = 1
+            view.input.text = "Hello"
+            sent = Mock(return_value={"conversation_id": "new"})
+            view.send_prompt = sent
+            with patch("cli.chat.threading.Thread", side_effect=lambda **kw: Mock(
+                start=lambda: kw["target"](*kw.get("args", ()), **kw.get("kwargs", {}))
+            )):
+                view.submit_prompt()
+            sent.assert_called_once()
+            self.assertEqual(view.input.text, "")
 
     def test_extension_disable_preserves_archive_and_other_services(self):
         archive = self.api.get("archive")

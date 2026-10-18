@@ -51,6 +51,8 @@ With the layout extension enabled, choose **Split**, `/split` or `/split-down`, 
 
 Up to four tabs can have pending requests. Operations within one account are queued; separate account instances can progress independently. Model catalogs use a five-minute memory cache and an account-local disk snapshot. Refresh failures retain the last usable catalog instead of clearing the picker.
 
+Opening a saved conversation restores its own account's remembered model and effort. Its model picker stays within that account; the model recorded on an older answer does not override your selection. Library synchronization and unrelated background jobs do not block sending. The archive can be disabled in Settings → Extensions; direct provider history and generation remain available.
+
 ### Keyboard and command palette
 
 | Key | Action |

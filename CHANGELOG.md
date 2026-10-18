@@ -70,6 +70,10 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Fixed
 
+- Preserve the conversation's provider/account when restoring cached or cold histories; use that account's remembered model and effort rather than overwriting selection with the last response model.
+- Keep message sending independent of unrelated background jobs, block only a pending membership change in the same tab, and reject unsupported temporary drafts before clearing their text.
+- Hydrate cached histories even with the archive disabled; publish the completed synchronization state after applying the history and recognize replacement archive instances after re-enabling the extension.
+
 - Preserve legacy Claude binary thinking controls alongside current effort-level menus, with failures isolated to the affected model feature.
 - Open the requested provider login page when reusing an already running connected browser.
 - Wait for the new Claude document and fully closed menus before reading model/effort controls; ignore fading choices and use native submenu keyboard navigation.

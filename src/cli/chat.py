@@ -395,9 +395,10 @@ class ChatView:
 
     def apply_archive_updates(self):
         archive = self.archive_service()
-        if archive is None or archive.revision == self._archive_revision:
+        revision = (id(archive), archive.revision) if archive is not None else None
+        if archive is None or revision == self._archive_revision:
             return
-        self._archive_revision = archive.revision
+        self._archive_revision = revision
         accounts = self.account_service.active_accounts()
         chats = {item["id"]: item for item in self.sidebar_items if item.get("id")}
         for account in accounts:
@@ -977,7 +978,7 @@ class ChatView:
         return FormattedText(fragments)
 
     def toggle_temporary_chat(self):
-        if Capability.TEMPORARY not in self.provider_features:
+        if not self.temporary and Capability.TEMPORARY not in self.provider_features:
             self.status = "Bu sağlayıcı geçici sohbeti desteklemiyor"
         elif self.busy or self.loading_conversation or self.background_jobs:
             self.status = "Devam eden işlem tamamlandıktan sonra geçici modu değiştirin"
@@ -993,6 +994,10 @@ class ChatView:
         self.app.invalidate()
 
     def new_temporary_chat(self):
+        if self.account_service and Capability.TEMPORARY not in self.provider_features:
+            self.status = "Bu sağlayıcı geçici sohbeti desteklemiyor"
+            self.app.invalidate()
+            return
         count = len(self.tabs)
         self.new_tab()
         if len(self.tabs) == count:
@@ -1082,12 +1087,16 @@ class ChatView:
             self.app.invalidate()
             return
         remote_id = self.conversation_id
+        target_tab = self.tabs[self.active_tab]
+        target_tab["project_changing"] = True
+        move = self.move_conversation
         self.background_jobs += 1
         self.status = "Proje değiştiriliyor…"
         self.app.invalidate()
 
         def completed(_result):
             self.background_jobs -= 1
+            target_tab["project_changing"] = False
             for tab in self.tabs:
                 if tab.get("conversation_id") == remote_id:
                     tab["project"] = dict(project)
@@ -1107,11 +1116,12 @@ class ChatView:
 
         def failed(reason):
             self.background_jobs -= 1
+            target_tab["project_changing"] = False
             self.status = "Proje değiştirilemedi: " + str(reason)
             self.app.invalidate()
 
         self._read_in_background(
-            lambda: self.move_conversation(remote_id, project_id or None), completed, failed
+            lambda: move(remote_id, project_id or None), completed, failed, session_bound=False
         )
 
     def scroll_transcript(self, direction):
@@ -2519,6 +2529,8 @@ class ChatView:
             self.account_service.select(key)
             self.bind_account(key)
             self.restore_account_preference()
+            if Capability.TEMPORARY not in self.provider_features:
+                self.temporary = False
             self.current_project = {}
             self.select_model(model_id)
             return
@@ -3084,6 +3096,11 @@ class ChatView:
         self.app.invalidate()
 
     def submit_prompt(self) -> None:
+        prompt = self.input.text.strip()
+        if prompt.startswith("/"):
+            self.input.text = ""
+            self.handle_command(prompt)
+            return
         if (
             self.account_service
             and hasattr(self.account_service, "enabled")
@@ -3111,8 +3128,12 @@ class ChatView:
             self.status = "Conversation or image still loading · draft kept"
             self.app.invalidate()
             return
-        if self.background_jobs:
-            self.status = "A background operation is active · draft kept"
+        if self.tabs[self.active_tab].get("project_changing"):
+            self.status = "Proje değiştiriliyor · taslak korundu"
+            self.app.invalidate()
+            return
+        if self.temporary and Capability.TEMPORARY not in self.provider_features:
+            self.status = "Bu sağlayıcı geçici sohbeti desteklemiyor · yeni normal sohbet açın"
             self.app.invalidate()
             return
         if self.active_busy() or sum(bool(tab.get("busy")) for tab in self.tabs) >= 4:
@@ -3605,26 +3626,31 @@ class ChatView:
             self.status = "Bu sohbetin işlemi tamamlanınca başka bir sohbet yükleyin"
             self.app.invalidate()
             return
-        if self.account_service:
-            context, _ = origin(conversation_id, self.account_key)
-            if context != self.account_key:
-                self.bind_account(context)
-                self.catalog = ModelCatalog(FeatureState.UNKNOWN)
-                self.model, self.effort = "", None
-                self.refresh_provider_catalog()
         target_tab = self.tabs[self.active_tab]
         if self.account_service:
             key, remote = origin(conversation_id, self.account_key)
+            if key != self.account_key:
+                self.bind_account(key)
+            self.model, self.effort = "", None
+            self.restore_account_preference()
+            target_tab.update(
+                account_key=key,
+                catalog=self.catalog,
+                model=self.model,
+                effort=self.effort,
+                effort_preference=self.effort_preference,
+                temporary=False,
+                kind="chat",
+            )
             cached = self.account_service.cached(key, remote)
             if cached is not None:
                 project_id = cached.get("project_id")
                 project = dict(self.project_items.get(project_id, {}))
                 if project_id:
                     project["id"] = project_id
-                target_tab["model"] = (
+                target_tab["response_model"] = (
                     cached.get("model")
                     or cached.get("default_model_slug")
-                    or target_tab.get("model")
                 )
                 target_tab.update(
                     messages=[
@@ -3643,15 +3669,6 @@ class ChatView:
                 self.status = "Kayıtlı geçmiş · arka planda senkronize ediliyor"
                 self.app.layout.focus(self.input)
                 self.app.invalidate()
-                self._read_in_background(
-                    lambda: self.account_service.load(conversation_id, key),
-                    lambda _: self.apply_archive_updates(),
-                    lambda reason: setattr(
-                        self, "status", "Senkronizasyon başarısız · kayıt korunuyor: " + reason
-                    ),
-                    session_bound=False,
-                )
-                return
         load_callback = self.load_conversation
         token = uuid.uuid4().hex
         self.loading_conversation = True
@@ -3668,9 +3685,9 @@ class ChatView:
                 project["id"] = project_id
             target_tab.update(
                 conversation_id=conversation_id,
-                messages=[],
-                title=row.get("title") or "Sohbet",
-                project=project,
+                messages=target_tab["messages"] if cached is not None else [],
+                title=target_tab["title"] if cached is not None else row.get("title") or "Sohbet",
+                project=target_tab.get("project", {}) if cached is not None else project,
                 loading=False,
                 syncing=True,
             )
@@ -3714,10 +3731,10 @@ class ChatView:
                         return
                     if target_tab is self.tabs[self.active_tab]:
                         self._save_active_tab()
-                    target_tab["syncing"] = False
                     if target_tab.get("busy"):
                         # Account persistence will append to the hydrated archive.
                         # Never replace the composer/stream while it is running.
+                        target_tab["syncing"] = False
                         self.app.invalidate()
                         return
                     latest = None
@@ -3749,10 +3766,14 @@ class ChatView:
                         loading=False,
                         loading_started=None,
                         load_error=None,
+                        syncing=False,
                     )
                     model = conversation.get("model") or conversation.get("default_model_slug")
                     if isinstance(model, str) and model:
-                        target_tab["model"] = model
+                        if self.account_service:
+                            target_tab["response_model"] = model
+                        else:
+                            target_tab["model"] = model
                     if target_tab is self.tabs[self.active_tab]:
                         if (
                             self.transcript_width() == render_width
