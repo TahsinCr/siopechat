@@ -37,6 +37,7 @@ from utils import clipboard
 
 from .actions import action_order, action_title
 from .bindings import key_bindings
+from .history import prepare_archive_snapshot
 from .layout import workspace_layout
 from .markdown import (
     MessageRenderer,
@@ -403,10 +404,61 @@ class ChatView:
             session_bound=False,
         )
 
-    def apply_archive_updates(self):
-        archive = self.archive_service()
-        revision = (id(archive), archive.revision) if archive is not None else None
+    def apply_archive_updates(self, snapshot=None):
+        source = self.archive_service()
+        archive = snapshot or source
+        revision = (id(source), archive.revision) if archive is not None else None
         if archive is None or revision == self._archive_revision:
+            return
+        if snapshot is None and self.app.is_running:
+            if getattr(self, "_archive_read_pending", False):
+                return
+            self._archive_read_pending = True
+            accounts = self.account_service.active_accounts()
+            tabs = [
+                (tab, dict(tab), [dict(m) for m in tab.get("messages", [])]) for tab in self.tabs
+            ]
+            known_chats, known_projects = list(self.sidebar_items), list(self.project_items)
+            width, tokens, reasoning = (
+                self.transcript_width(),
+                dict(self.renderer.tokens),
+                self.show_reasoning,
+            )
+
+            default_account = self.account_key
+
+            def read():
+                return prepare_archive_snapshot(
+                    source,
+                    accounts,
+                    tabs,
+                    known_chats,
+                    known_projects,
+                    width,
+                    tokens,
+                    reasoning,
+                    default_account,
+                    revision[1],
+                )
+
+            def completed(result):
+                self._archive_read_pending = False
+                if self.archive_service() is not source:
+                    return
+                value, prepared = result
+                for args in prepared:
+                    if any(args[0] is tab for tab in self.tabs) and value.tab_conversations.get(
+                        id(args[0])
+                    ) == args[0].get("conversation_id"):
+                        self.remember_transcript(*args)
+                self.apply_archive_updates(value)
+
+            def failed(reason):
+                self._archive_read_pending = False
+                self.status = "Arşiv okunamadı: " + str(reason)
+                self.app.invalidate()
+
+            self._read_in_background(read, completed, failed, session_bound=False)
             return
         self._archive_revision = revision
         accounts = self.account_service.active_accounts()
@@ -470,10 +522,10 @@ class ChatView:
                 or tab.get("archive_version") == state.get("version")
             ):
                 continue
-            tab["archive_version"] = state["version"]
             value = archive.get(key, "conversation", remote)
             if not value:
                 continue
+            tab["archive_version"] = state["version"]
             messages = [visible_chat_message(m) for m in value.get("messages", [])]
             messages = [m for m in messages if m is not None]
             messages = merge_conversation(
@@ -526,7 +578,11 @@ class ChatView:
             setattr(self, name, callback)
         self.session_state = self.account_service.status(key)
         if hasattr(self.account_service, "set_active"):
-            self.set_active_conversation = lambda value: self.account_service.set_active(key, value)
+            self.set_active_conversation = lambda value: (
+                self.account_service.queue_active(key, value)
+                if hasattr(self.account_service, "queue_active")
+                else self.account_service.set_active(key, value)
+            )
         else:
             self.set_active_conversation = lambda value: self.account_service.cache(
                 key
@@ -2851,6 +2907,29 @@ class ChatView:
             )
         return FormattedText([("", " Hazır")])
 
+    def remember_transcript(self, tab, messages, width, tokens, reasoning, text, ranges, ansi):
+        cache = getattr(self, "_prepared_transcripts", {})
+        self._prepared_transcripts = cache
+        key = tab["tab_id"]
+        cache.pop(key, None)
+        cost = (
+            len(text) + sum(len(part[1]) for part in ansi) + sum(len(m["text"]) for m in messages)
+        )
+        if cost > 4_000_000:
+            return
+        cache[key] = dict(
+            width=width,
+            tokens=tokens,
+            reasoning=reasoning,
+            messages=tuple((m["role"], m["text"]) for m in messages),
+            text=text,
+            ranges=ranges,
+            ansi=ansi,
+            cost=cost,
+        )
+        while sum(item["cost"] for item in cache.values()) > 4_000_000:
+            cache.pop(next(iter(cache)))
+
     def render_transcript(self) -> str:
         width = self.transcript_width()
         with self.lock:
@@ -2865,6 +2944,24 @@ class ChatView:
             if signature == getattr(self, "_transcript_signature", None):
                 return self._transcript_cache
             messages = [dict(message) for message in self.messages]
+        snapshots = getattr(self, "_prepared_transcripts", {})
+        tab_id = self.tabs[self.active_tab].get("tab_id")
+        snapshot = snapshots.get(tab_id)
+        if (
+            snapshot
+            and not self.active_busy()
+            and snapshot["width"] == width
+            and snapshot["tokens"] == self.renderer.tokens
+            and snapshot["reasoning"] == self.show_reasoning
+            and snapshot["messages"] == signature[-1]
+        ):
+            snapshots.pop(tab_id)
+            snapshots[tab_id] = snapshot
+            self.message_ranges = snapshot["ranges"]
+            self.transcript_line_count = snapshot["text"].count("\n") + 1
+            self._ansi_render_key, self._ansi_fragments = snapshot["text"], snapshot["ansi"]
+            self._transcript_signature, self._transcript_cache = signature, snapshot["text"]
+            return snapshot["text"]
         if not messages:
             self.message_ranges = []
             buffer = StringIO()
@@ -2969,7 +3066,10 @@ class ChatView:
         key = (rendered, self.selected_message, self.message_selection)
         if key != getattr(self, "_selection_render_key", None):
             fragments, line, range_position = [], 0, 0
-            for style, text in ANSI(rendered).__pt_formatted_text__():
+            if rendered != getattr(self, "_ansi_render_key", None):
+                self._ansi_render_key = rendered
+                self._ansi_fragments = ANSI(rendered).__pt_formatted_text__()
+            for style, text in self._ansi_fragments:
                 for part in text.splitlines(keepends=True):
                     while (
                         range_position < len(self.message_ranges)
@@ -3627,40 +3727,7 @@ class ChatView:
                 temporary=False,
                 kind="chat",
             )
-            cached = self.account_service.cached(key, remote)
-            if cached is not None:
-                project_id = cached.get("project_id")
-                project = dict(self.project_items.get(project_id, {}))
-                if project_id:
-                    project["id"] = project_id
-                target_tab["response_model"] = cached.get("model") or cached.get(
-                    "default_model_slug"
-                )
-                target_tab.update(
-                    messages=[
-                        m
-                        for x in cached.get("messages", [])
-                        if (m := visible_chat_message(x)) is not None
-                    ],
-                    conversation_id=conversation_id,
-                    title=cached.get("title") or "Sohbet",
-                    project=project,
-                    loading=False,
-                    syncing=True,
-                    load_token=None,
-                )
-                self._restore_active_tab(focus=False)
-                self.status = "Kayıtlı geçmiş · arka planda senkronize ediliyor"
-                self.app.layout.focus(self.input)
-                self.app.invalidate()
-                if self.archive_service():
-                    self._read_in_background(
-                        lambda: self.account_service.load(conversation_id, key),
-                        lambda _: self.apply_archive_updates(),
-                        lambda reason: setattr(self, "status", "Senkronizasyon: " + reason),
-                        session_bound=False,
-                    )
-                    return
+            cached = None
         load_callback = self.load_conversation
         token = uuid.uuid4().hex
         self.loading_conversation = True
@@ -3689,13 +3756,23 @@ class ChatView:
         self.app.invalidate()
 
         render_width = self.transcript_width()
+        render_reasoning = self.show_reasoning
         render_tokens = dict(self.renderer.tokens)
         render_cache = self.renderer.cache.copy()
         render_cache_characters = self.renderer.cache_characters
 
-        def load_selected() -> None:
+        def load_selected(use_cache=True) -> None:
             try:
-                conversation = load_callback(conversation_id)
+                cached = (
+                    self.account_service.cached(key, remote)
+                    if self.account_service and use_cache
+                    else None
+                )
+                conversation = cached if cached is not None else load_callback(conversation_id)
+                if target_tab.get("load_token") != token or not any(
+                    tab is target_tab for tab in self.tabs
+                ):
+                    return
                 messages = []
                 for message in conversation.get("messages", []):
                     visible = visible_chat_message(message)
@@ -3706,14 +3783,16 @@ class ChatView:
                 prepared_renderer.configure(render_tokens)
                 prepared_renderer.cache = render_cache
                 prepared_renderer.cache_characters = render_cache_characters
-                for index, message in enumerate(messages):
-                    prepared_renderer.render(
-                        message["role"],
-                        render_chatgpt_annotations(message["text"]),
-                        render_width,
-                        index > 0,
-                        False,
-                    )
+                prepared_text, prepared_ranges = prepared_renderer.transcript(
+                    messages,
+                    render_width,
+                    render_reasoning,
+                    cancelled=lambda: (
+                        target_tab.get("load_token") != token
+                        or not any(tab is target_tab for tab in self.tabs)
+                    ),
+                )
+                prepared_ansi = ANSI(prepared_text).__pt_formatted_text__()
 
                 def apply_conversation() -> None:
                     if (
@@ -3729,19 +3808,7 @@ class ChatView:
                         target_tab["syncing"] = False
                         self.app.invalidate()
                         return
-                    latest = None
-                    if self.account_service:
-                        key, remote = origin(
-                            conversation_id, target_tab.get("account_key", self.account_key)
-                        )
-                        latest = self.account_service.cached(key, remote)
                     visible_messages = messages
-                    if latest is not None:
-                        visible_messages = [
-                            m
-                            for x in latest.get("messages", [])
-                            if (m := visible_chat_message(x)) is not None
-                        ]
                     visible_messages = merge_conversation(
                         {"messages": visible_messages}, {"messages": target_tab.get("messages", [])}
                     )["messages"]
@@ -3761,7 +3828,7 @@ class ChatView:
                         loading=False,
                         loading_started=None,
                         load_error=None,
-                        syncing=False,
+                        syncing=cached is not None and self.archive_service() is not None,
                     )
                     model = conversation.get("model") or conversation.get("default_model_slug")
                     if isinstance(model, str) and model:
@@ -3769,6 +3836,16 @@ class ChatView:
                             target_tab["response_model"] = model
                         else:
                             target_tab["model"] = model
+                    self.remember_transcript(
+                        target_tab,
+                        messages,
+                        render_width,
+                        render_tokens,
+                        render_reasoning,
+                        prepared_text,
+                        prepared_ranges,
+                        prepared_ansi,
+                    )
                     if target_tab is self.tabs[self.active_tab]:
                         if (
                             self.transcript_width() == render_width
@@ -3777,12 +3854,45 @@ class ChatView:
                             self.renderer.cache = prepared_renderer.cache
                             self.renderer.cache_characters = prepared_renderer.cache_characters
                         self._restore_active_tab(focus=False)
-                        self.status = "Ready"
+                        if (
+                            self.messages == messages
+                            and self.transcript_width() == render_width
+                            and self.show_reasoning == render_reasoning
+                        ):
+                            self._transcript_signature = (
+                                render_width,
+                                self.busy,
+                                self.busy_tab_index,
+                                self.active_tab,
+                                self.show_reasoning,
+                                tuple((m.get("role"), m.get("text")) for m in self.messages),
+                            )
+                            self._transcript_cache = prepared_text
+                            self.message_ranges = prepared_ranges
+                            self.transcript_line_count = prepared_text.count("\n") + 1
+                            self._ansi_render_key, self._ansi_fragments = (
+                                prepared_text,
+                                prepared_ansi,
+                            )
+                        self.status = (
+                            "Kayıtlı geçmiş · arka planda eşitleniyor"
+                            if cached is not None
+                            else "Ready"
+                        )
                         self.scroll_bottom()
                     else:
                         self.app.invalidate()
 
                 self._dispatch_ui(apply_conversation)
+                if cached is not None and self.archive_service():
+                    self._read_in_background(
+                        lambda: load_callback(conversation_id),
+                        lambda _: self.apply_archive_updates(),
+                        lambda reason: setattr(self, "status", "Senkronizasyon: " + reason),
+                        session_bound=False,
+                    )
+                elif cached is not None:
+                    load_selected(False)
             except Exception as error:
                 message = str(error)
 

@@ -329,3 +329,14 @@ supply summaries that may be absent from stream deltas; Gemini keeps the last
 nonempty summary across temporary DOM updates; Claude can show published thinking
 blocks while streaming and reconcile them with its completed response. Models
 that do not publish a summary will have no thinking block.
+
+
+### Opening saved conversations
+
+Saved histories are read and formatted on a worker, including Markdown and ANSI
+conversion. The composer remains usable while a known conversation loads. The
+initial prepared transcript is reused for painting and recent tab switches, with
+a bounded character budget; superseded loads stop preparing their old transcript.
+Live archive polling also gathers its storage snapshot on a worker, so a slow
+SQLite read cannot stall keyboard input. Navigation pointer writes are coalesced
+in an ordered background queue and drained on shutdown.

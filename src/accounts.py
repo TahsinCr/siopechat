@@ -62,6 +62,9 @@ class Accounts:
         self._lock = threading.Lock()
         self._browser_locks = {}
         self._send_locks = {}
+        self._active_pending = {}
+        self._active_values = {}
+        self._active_writer_running = False
         cache = self.root / "data" / "gemini-cookie-cache"
         cache.mkdir(parents=True, mode=0o700, exist_ok=True)
         if os.name != "nt":
@@ -262,7 +265,12 @@ class Accounts:
                 self._thread = threading.Thread(
                     target=self._loop.run_forever, name="siope-providers", daemon=True
                 )
-                self._thread.start()
+                try:
+                    self._thread.start()
+                except Exception:
+                    self._loop.close()
+                    self._loop = self._thread = None
+                    raise
 
     def call(self, coroutine, timeout=45, *, _closing=False):
         try:
@@ -547,6 +555,45 @@ class Accounts:
             if value is not None:
                 return value
         return self.cache(key).load_cached_conversation(remote)
+
+    def queue_active(self, key, value):
+        """Coalesce UI pointer writes; never perform SQLite/fsync in navigation."""
+        if self.closed:
+            return
+        self._start()
+        with self._lock:
+            if key in self._active_values and self._active_values[key] == value:
+                return
+            self._active_values[key] = value
+            self._active_pending[key] = value
+            if self._active_writer_running:
+                return
+            self._active_writer_running = True
+
+        async def write():
+            while True:
+                with self._lock:
+                    if not self._active_pending:
+                        self._active_writer_running = False
+                        return
+                    account = next(iter(self._active_pending))
+                    target = self._active_pending.pop(account)
+                try:
+                    await asyncio.to_thread(self.set_active, account, target)
+                    with self._lock:
+                        if (
+                            account not in self._active_pending
+                            and self._active_values.get(account) == target
+                        ):
+                            self._active_values.pop(account, None)
+                except (OSError, ValueError):
+                    with self._lock:
+                        self._active_values.pop(account, None)
+
+        def start():
+            asyncio.create_task(write(), name="siope-persist:active")
+
+        self._loop.call_soon_threadsafe(start)
 
     def set_active(self, key, value):
         _, remote = origin(value, key)

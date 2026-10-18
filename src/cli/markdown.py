@@ -201,6 +201,36 @@ class MessageRenderer:
         self.cache.clear()
         self.cache_characters = 0
 
+    def transcript(self, messages, width, show_reasoning=True, cancelled=None):
+        """Prepare immutable transcript text and line ranges off the UI thread."""
+        pieces, ranges, ordered, pending = [], [], [], []
+        line = 0
+        for entry in enumerate(messages):
+            if entry[1]["role"] in ("user", "system"):
+                ordered.extend(sorted(pending, key=lambda item: item[1]["role"] != "reasoning"))
+                pending = []
+                ordered.append(entry)
+            else:
+                pending.append(entry)
+        ordered.extend(sorted(pending, key=lambda item: item[1]["role"] != "reasoning"))
+        for index, message in ordered:
+            if cancelled and cancelled():
+                raise InterruptedError("Sohbet yüklemesi daha yeni bir seçimle değiştirildi")
+            if message["role"] == "reasoning" and not show_reasoning:
+                continue
+            value = self.render(
+                message["role"],
+                render_chatgpt_annotations(message["text"]),
+                width,
+                index > 0,
+                False,
+            )
+            count = value.count("\n")
+            ranges.append((line, line + count, index))
+            line += count
+            pieces.append(value)
+        return "".join(pieces), ranges
+
     def render(
         self,
         role: str,

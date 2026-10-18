@@ -76,6 +76,11 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Fixed
 
+- Move saved-history reads, Markdown/ANSI preparation and live archive snapshot reads off the UI thread; avoid synchronous cache reads on conversation selection and hydration callbacks.
+- Reuse complete prepared transcripts across initial paint and recent tab switches, with bounded storage; cancel preparation for superseded selections.
+- Coalesce navigation pointer writes in a background persistence queue and drain them on shutdown instead of blocking tab changes on disk writes.
+- Add blocking-storage, worker-rendering, tab-return and shutdown regressions for conversation opening.
+
 - Exclude hidden/tool-directed ChatGPT completion blocks and scan prior message identities once, keeping summary reconciliation linear for large histories.
 
 - Separate Gemini composer and history/notebook reader tabs and locks; drain read/catalog helpers, recover disconnected reads once, and keep transient transport errors separate from authentication loss.

@@ -257,6 +257,9 @@ class DeleteAndCacheTests(unittest.TestCase):
             ):
                 view.resume_conversation(chat["id"])
                 self.assertFalse(view.loading_conversation)
+                deadline = time.monotonic() + 2
+                while (not view.messages or not background.called) and time.monotonic() < deadline:
+                    time.sleep(0.01)
                 self.assertEqual(view.messages[0]["text"], "saved")
                 self.assertEqual(view.conversation_id, chat["id"])
                 background.assert_called_once()

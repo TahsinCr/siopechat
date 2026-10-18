@@ -247,6 +247,9 @@ class ArchiveIntegrationTests(unittest.TestCase):
             self.assertEqual(view.input.text, "keep my draft")
 
     def test_opening_other_provider_chat_uses_its_preference_for_cached_and_cold_history(self):
+        self.accounts.call(
+            asyncio.to_thread(lambda: None)
+        )  # Start real provider/executor threads before the UI-thread mock.
         self.accounts.select(self.gemini)
         key = "chatgpt/default"
         self.accounts.remember(key, "preferred-gpt", "high")
