@@ -46,6 +46,7 @@ DEFAULT_TERMINAL_STYLE = {
     "brand": "bg:#252525 bold #c3a6ff",
     "transcript": "bg:#202020 #dedede",
     "metadata.project": "bg:#242424 bold #679bd4",
+    "metadata.temporary": "bg:#242424 bold #c3a6ff",
     "tab.divider": "bg:#202020 #454545",
     "role.user": "bg:#202020 bold #86d49b",
     "role.reasoning": "bg:#202020 #75b5ef",

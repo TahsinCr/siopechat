@@ -98,6 +98,24 @@ class PolishTests(unittest.TestCase):
                 style.get_attrs_for_style_str("class:tab").bgcolor,
             )
 
+    def test_temporary_chat_control_sits_after_project_and_respects_provider_capability(self):
+        with terminal() as (v, _):
+            v.provider_features = frozenset({Capability.PROJECTS, Capability.TEMPORARY})
+            fragments = v.render_chat_header()
+            project_index = next(
+                i for i, f in enumerate(fragments) if f[0] == "class:metadata.project"
+            )
+            temporary_index = next(
+                i for i, f in enumerate(fragments) if f[0] == "class:metadata.temporary"
+            )
+            self.assertGreater(temporary_index, project_index)
+            self.assertIn("Geçici sohbet", fragments[temporary_index][1])
+            click(fragments[temporary_index])
+            self.assertTrue(v.temporary)
+
+            v.provider_features = frozenset({Capability.PROJECTS})
+            self.assertNotIn("class:metadata.temporary", [f[0] for f in v.render_chat_header()])
+
     def test_role_markers_first_line_only_and_reasoning_before_answer(self):
         with terminal(
             initial_messages=[

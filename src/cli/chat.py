@@ -943,6 +943,7 @@ class ChatView:
         project_text = (
             " Proje: " + fit_text(self.current_project.get("name") or "Projesiz", 22) + " ▾ "
         )
+        temporary_text = " ◌ Geçici sohbet "
         fragments = []
         used = 0
         width = self.terminal_width()
@@ -950,10 +951,16 @@ class ChatView:
             ("class:metadata.model", model_text, lambda: self.handle_command("/model")),
             ("class:metadata.effort", effort_text, lambda: self.handle_command("/effort")),
             ("class:metadata.project", project_text, self.open_project_picker),
+            ("class:metadata.temporary", temporary_text, self.new_temporary_chat),
         ):
             if (
                 style == "class:metadata.project"
                 and Capability.PROJECTS not in self.provider_features
+            ):
+                continue
+            if (
+                style == "class:metadata.temporary"
+                and Capability.TEMPORARY not in self.provider_features
             ):
                 continue
             label = fit_text(label, width)
