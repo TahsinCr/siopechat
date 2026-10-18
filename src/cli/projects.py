@@ -104,9 +104,9 @@ class ProjectPanel:
                 return value
         return v.current_project.get("id")
 
-    def context(self, callback):
+    def context(self, callback, value=None):
         v = self.view
-        value = self.selected()
+        value = value or self.selected()
         if not v.account_service or not value:
             v.status = "Önce bir proje seçin"
             v.app.invalidate()
@@ -119,8 +119,16 @@ class ProjectPanel:
 
         self.work("Proje seçenekleri okunuyor…", read, lambda result: callback(key, value, *result))
 
-    def edit(self):
+    def edit(self, value=None):
+        if value is None:
+            self.view.open_project_picker(purpose="edit")
+            return
+        self.view.show_project_details(value)
+
         def show(key, value, project, options):
+            if self.view.tab_kind != "project" or self.view.current_project.get("id") != value:
+                self.view.status = "Proje bilgileri hazır · düzenlemek için proje sekmesini açın"
+                return
             fields = [
                 (name, title, project.get(name) or "", None)
                 for name, title in (("name", "Proje adı"), ("instructions", "Talimatlar"))
@@ -139,9 +147,11 @@ class ProjectPanel:
                     self.updated,
                 )
 
-            self.view.forms.open("Projeyi düzenle · " + self.label(key), fields, submit)
+            self.view.forms.open(
+                "Projeyi düzenle · " + self.label(key), fields, submit, inline_project=value
+            )
 
-        self.context(show)
+        self.context(show, value)
 
     def add_source(self):
         def show(key, value, project, options):

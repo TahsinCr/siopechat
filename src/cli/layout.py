@@ -108,10 +108,27 @@ def workspace_layout(view):
                 ],
                 height=1,
             ),
-            view.transcript_window,
-            Window(height=1, char="─", style="class:separator"),
-            view.input,
-            text_window(view.render_composer_actions, 1, "class:composer"),
+            DynamicContainer(
+                lambda: (
+                    view.forms.container
+                    if (
+                        view.tab_kind == "project"
+                        and view.forms.visible
+                        and view.forms.inline_project == view.current_project.get("id")
+                    )
+                    else view.transcript_window
+                )
+            ),
+            ConditionalContainer(
+                HSplit(
+                    [
+                        Window(height=1, char="─", style="class:separator"),
+                        view.input,
+                        text_window(view.render_composer_actions, 1, "class:composer"),
+                    ]
+                ),
+                filter=Condition(lambda: view.tab_kind != "project"),
+            ),
         ],
         style="class:transcript",
     )
@@ -197,7 +214,7 @@ def workspace_layout(view):
             Float(
                 content=ConditionalContainer(
                     DynamicContainer(lambda: view.forms.container),
-                    filter=Condition(lambda: view.forms.visible),
+                    filter=Condition(lambda: view.forms.visible and not view.forms.inline_project),
                 ),
                 width=lambda: min(64, max(20, view.terminal_width() - 8)),
                 top=3,

@@ -52,6 +52,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Changed
 
+- Open project name/instruction editing inline on the existing project tab; use the shared project picker for `/project-edit`, retain the creation popup, and avoid focusing editors after switching to another tab.
+
 - Distinct provider icons: white ChatGPT ring, light-blue Gemini star and terracotta Claude asterisk. F8 and the chat synchronization button use the same scoped synchronization operation as F10.
 
 - Store hot-cache records as immutable JSON snapshots to reduce copy cost and keep cache memory accounting tied to stored bytes.

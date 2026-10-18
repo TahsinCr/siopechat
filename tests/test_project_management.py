@@ -37,6 +37,31 @@ class ProjectWriteTests(unittest.IsolatedAsyncioTestCase):
 class ProjectFormTests(unittest.IsolatedAsyncioTestCase):
     settle = interaction.InputTests.settle
 
+    async def test_edit_uses_the_shared_picker_and_opens_inline_on_the_project_tab(self):
+        service = Accounts()
+        with terminal(account_service=service) as (v, _):
+            value = "@chatgpt/default/project-one"
+            v.project_items = {value: {"id": value, "name": "Example"}}
+            v.projects_loaded = True
+            v.project_panel.edit()
+            self.assertEqual(v.palette_items[0]["id"], "project.edit:" + value)
+            project = {"id": value, "name": "Example", "instructions": "Instructions"}
+
+            def details(_):
+                v.tab_kind = "project"
+                v.current_project = project
+
+            v.show_project_details = Mock(side_effect=details)
+            v.project_panel.context = lambda callback, target: callback(
+                "chatgpt/default", target, project, ProjectOptions(fields=("name", "instructions"))
+            )
+            v.palette_filtered = v.palette_items
+            v.palette_index = 0
+            v.execute_palette_item()
+            v.show_project_details.assert_called_once_with(value)
+            self.assertEqual(v.forms.inline_project, value)
+            self.assertEqual(set(v.forms.fields), {"name", "instructions"})
+
     async def test_creation_names_the_account_and_hides_unsupported_settings(self):
         service = Accounts()
         service.active_accounts = lambda: service.items()

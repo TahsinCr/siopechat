@@ -4,7 +4,7 @@ from prompt_toolkit.application.current import get_app
 from prompt_toolkit.completion import PathCompleter
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.layout import HSplit, ScrollablePane, Window
+from prompt_toolkit.layout import HSplit, ScrollablePane, VSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import D
 from prompt_toolkit.widgets import Button, CheckboxList, Dialog, RadioList, TextArea
@@ -14,11 +14,13 @@ class Forms:
     def __init__(self, view):
         self.view = view
         self.visible = False
+        self.inline_project = None
         self.container = Window(height=0)
         self.fields = {}
         self.error = ""
 
-    def open(self, title, fields, submit):
+    def open(self, title, fields, submit, *, inline_project=None):
+        self.inline_project = inline_project
         self.fields, body, self.error = {}, [], ""
         single_line_controls = []
         for key, label, value, choices in fields:
@@ -75,15 +77,27 @@ class Forms:
             is_global=True,
             filter=Condition(lambda: get_app().layout.current_control in single_line_controls),
         )(lambda _: save())
-        self.container = Dialog(
-            title=title,
-            body=ScrollablePane(
-                HSplit(body, padding=0, key_bindings=keys),
-                height=lambda: D(max=max(4, self.view.app.output.get_size().rows - 8)),
-            ),
-            buttons=[Button("Uygula", handler=save), Button("İptal", handler=self.close)],
-            width=64,
-            with_background=False,
+        pane = ScrollablePane(
+            HSplit(body, padding=0, key_bindings=keys),
+            height=lambda: D(max=max(4, self.view.app.output.get_size().rows - 8)),
+        )
+        buttons = [
+            Button("Kaydet" if inline_project else "Uygula", handler=save),
+            Button("Vazgeç" if inline_project else "İptal", handler=self.close),
+        ]
+        self.container = (
+            HSplit(
+                [
+                    Window(
+                        height=1, content=FormattedTextControl(title), style="class:settings.title"
+                    ),
+                    pane,
+                    VSplit(buttons, padding=2, height=1),
+                ],
+                padding=1,
+            )
+            if inline_project
+            else Dialog(title=title, body=pane, buttons=buttons, width=64, with_background=False)
         )
         self.visible = True
         self.view.app.layout.update_parents_relations()
@@ -95,6 +109,8 @@ class Forms:
         self.view.app.layout.focus(
             self.view.settings_dialog.category_control
             if self.view.tab_kind == "settings"
+            else self.view.transcript_control
+            if self.view.tab_kind == "project"
             else self.view.input
         )
         self.view.app.invalidate()

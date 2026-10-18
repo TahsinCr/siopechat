@@ -870,7 +870,11 @@ class ChatView:
         if self.tab_kind == "project":
             return FormattedText(
                 [
-                    ("class:button", " ✎ Düzenle ", on_click(self.project_panel.edit)),
+                    (
+                        "class:button",
+                        " ✎ Düzenle ",
+                        on_click(lambda: self.project_panel.edit(self.current_project.get("id"))),
+                    ),
                     ("class:button", " ＋ Kaynak ", on_click(self.project_panel.add_source)),
                     ("class:button", " − Kaynak ", on_click(self.project_panel.remove_source)),
                     (
@@ -972,7 +976,8 @@ class ChatView:
         self._save_active_tab()
         self.app.invalidate()
 
-    def open_project_picker(self):
+    def open_project_picker(self, purpose="select"):
+        self.project_picker_purpose = purpose
         query = (
             self.palette_search.text
             if self.palette_visible and self.palette_mode == "projects"
@@ -987,12 +992,14 @@ class ChatView:
             }
         ] + [
             {
-                "id": "project.select:" + project_id,
+                "id": ("project.edit:" if purpose == "edit" else "project.select:") + project_id,
                 "title": item.get("name") or project_id,
-                "detail": "Sohbeti taşı / yeni sohbete bağla",
+                "detail": origin(project_id, self.account_key)[0]
+                if purpose == "edit"
+                else "Sohbeti taşı / yeni sohbete bağla",
             }
             for project_id, item in self.project_items.items()
-            if origin(project_id, self.account_key)[0] == self.account_key
+            if purpose == "edit" or origin(project_id, self.account_key)[0] == self.account_key
         ]
         self.palette_items.append(
             {"id": "command.temporary", "title": "Yeni geçici sohbet", "detail": "Yerel kayıt yok"}
@@ -1001,6 +1008,10 @@ class ChatView:
             self.palette_items.append(
                 {"id": "project.more", "title": "Daha fazla proje…", "detail": ""}
             )
+        if purpose == "edit":
+            self.palette_items = [
+                i for i in self.palette_items if i["id"].startswith("project.edit:")
+            ]
         self.palette_search.text = query
         self.filter_palette()
         if not self.projects_loaded and not self.projects_loading:
@@ -2000,7 +2011,7 @@ class ChatView:
             )
             self.filter_sidebar()
             if self.palette_visible and self.palette_mode == "projects":
-                self.open_project_picker()
+                self.open_project_picker(getattr(self, "project_picker_purpose", "select"))
 
         def failure(reason):
             finish()
@@ -2081,10 +2092,6 @@ class ChatView:
             return
         if self.get_project_callback is None:
             self.status = "Sağlayıcının proje ayrıntısı bağlantısı kurulmamış"
-            self.app.invalidate()
-            return
-        if self.busy or self.loading_conversation or self.background_jobs or self.uploading_image:
-            self.status = "Etkin işlem bitince proje ayrıntılarını açabilirsiniz"
             self.app.invalidate()
             return
         existing = next(
@@ -2479,6 +2486,9 @@ class ChatView:
                     "layout.unsplit": "/unsplit",
                 }[action_id]
             )
+            return
+        if action_id.startswith("project.edit:"):
+            self.project_panel.edit(action_id.partition(":")[2])
             return
         if action_id.startswith("project.select:"):
             self.choose_project(action_id.partition(":")[2])
