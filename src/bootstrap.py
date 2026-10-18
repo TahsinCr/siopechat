@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 from pathlib import Path
@@ -86,6 +87,9 @@ def create_application(root: Path | None = None):
     (root / "data").mkdir(parents=True, exist_ok=True)
     if not settings.path.exists():
         settings.save()
+    # Stop provider work and finish accepted-response writes before extensions
+    # close their repositories. Runtime shutdown callbacks execute in reverse.
+    api.runtime.on_shutdown(lambda: asyncio.to_thread(accounts.close))
     return api
 
 

@@ -3066,7 +3066,14 @@ class ChatView:
         elif name == "/refresh":
             archive = self.archive_service()
             if archive:
-                archive.refresh()
+                self._read_in_background(
+                    archive.refresh,
+                    lambda _: None,
+                    lambda reason: setattr(
+                        self, "status", "Senkronizasyon başlatılamadı: " + reason
+                    ),
+                    session_bound=False,
+                )
             self.refresh_sidebar()
             self.refresh_provider_catalog(force=True)
         elif name == "/action":

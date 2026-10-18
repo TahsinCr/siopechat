@@ -57,12 +57,14 @@ class Accounts:
         self._catalogs = {}
         self._catalog_tasks = {}
         self._catalog_versions = {}
+        self._catalog_io_lock = threading.Lock()
         self._sending = {}
         self._attachment_paths = {}
         self._loop = None
         self._thread = None
         self._lock = threading.Lock()
-        self._browser_lock = threading.Lock()
+        self._browser_locks = {}
+        self._send_locks = {}
         cache = self.root / "data" / "gemini-cookie-cache"
         cache.mkdir(parents=True, mode=0o700, exist_ok=True)
         if os.name != "nt":
@@ -186,7 +188,9 @@ class Accounts:
 
     def ensure_browser(self, key):
         """Recover the account browser before an operation, never replay a prompt."""
-        with self._browser_lock:
+        with self._lock:
+            lock = self._browser_locks.setdefault(key, threading.Lock())
+        with lock:
             session = self.session(key)
             path = (
                 session.paths.session_file
@@ -219,8 +223,10 @@ class Accounts:
                 )
             return self._providers[key]
 
-    def _start(self):
+    def _start(self, allow_closed=False):
         with self._lock:
+            if self.closed and not allow_closed:
+                raise RuntimeError("Hesap hizmeti kapalı")
             if self._loop is None:
                 self._loop = asyncio.new_event_loop()
                 self._thread = threading.Thread(
@@ -228,8 +234,12 @@ class Accounts:
                 )
                 self._thread.start()
 
-    def call(self, coroutine, timeout=45):
-        self._start()
+    def call(self, coroutine, timeout=45, *, _closing=False):
+        try:
+            self._start(allow_closed=_closing)
+        except Exception:
+            coroutine.close()
+            raise
 
         async def bounded():
             return await asyncio.wait_for(coroutine, timeout)
@@ -285,27 +295,45 @@ class Accounts:
                     if value.state != FeatureState.AVAILABLE:
                         raise RuntimeError(value.reason or "Model kataloğu şu anda kullanılamıyor")
                     if version == self._catalog_versions.get(key, 0):
-                        if (
-                            getattr(
-                                getattr(self.provider(key), "browser", None), "authenticated", False
-                            )
-                            is True
-                        ):
-                            self._remember_verification(key)
                         self._catalogs[key] = (time.monotonic(), value)
-                        if value.state == FeatureState.AVAILABLE:
-                            try:
-                                self.api.get("backend").atomic_json_write(
-                                    self.directory(key) / "models.json",
-                                    {"account_key": key, "catalog": asdict(value)},
-                                )
-                            except OSError:
-                                pass  # A cache write failure must not discard the live catalog.
+
+                        def save_catalog():
+                            # Logout and an old discovery result cannot race a
+                            # delayed atomic write back onto disk.
+                            with self._catalog_io_lock:
+                                if version != self._catalog_versions.get(key, 0):
+                                    return
+                                if (
+                                    getattr(
+                                        getattr(self.provider(key), "browser", None),
+                                        "authenticated",
+                                        False,
+                                    )
+                                    is True
+                                ):
+                                    self._remember_verification(key)
+                                try:
+                                    self.api.get("backend").atomic_json_write(
+                                        self.directory(key) / "models.json",
+                                        {"account_key": key, "catalog": asdict(value)},
+                                    )
+                                except OSError:
+                                    pass
+
+                        saving = asyncio.create_task(
+                            asyncio.to_thread(save_catalog), name="siope-persist:" + key
+                        )
+                        await asyncio.shield(saving)
                     return value
 
                 task = asyncio.create_task(fetch())
                 self._catalog_tasks[key] = task
-                task.add_done_callback(lambda done: self._catalog_tasks.pop(key, None))
+
+                def forget_task(done):
+                    if self._catalog_tasks.get(key) is done:
+                        self._catalog_tasks.pop(key, None)
+
+                task.add_done_callback(forget_task)
             return await asyncio.shield(task)
 
         return self.call(discover())
@@ -318,14 +346,15 @@ class Accounts:
                 current = asyncio.current_task()
                 pending = [task for task in asyncio.all_tasks() if task is not current]
                 for task in pending:
-                    task.cancel()
+                    if not task.get_name().startswith("siope-persist:"):
+                        task.cancel()
                 await asyncio.gather(*pending, return_exceptions=True)
                 for provider in self._providers.values():
                     close = getattr(provider, "close", None)
                     if close:
                         await close()
 
-            self.call(cleanup())
+            self.call(cleanup(), _closing=True)
             self._loop.call_soon_threadsafe(self._loop.stop)
             self._thread.join(timeout=5)
             self._loop.close()
@@ -402,9 +431,10 @@ class Accounts:
             return self.session(key).launch(PROVIDERS[item["provider"]][2])
         provider = self.provider(key)
         if action == "logout":
-            self._catalog_versions[key] = self._catalog_versions.get(key, 0) + 1
-            self._catalogs.pop(key, None)
-            (self.directory(key) / "models.json").unlink(missing_ok=True)
+            with self._catalog_io_lock:
+                self._catalog_versions[key] = self._catalog_versions.get(key, 0) + 1
+                self._catalogs.pop(key, None)
+                (self.directory(key) / "models.json").unlink(missing_ok=True)
 
             async def forget():
                 task = self._catalog_tasks.get(key)
@@ -688,6 +718,13 @@ class Accounts:
         stream_id = uuid.uuid4().hex
 
         async def consume():
+            # Serialize each account through persistence too, so two views of
+            # the same remote chat cannot lose a turn in a read/append/write race.
+            gate = self._send_locks.setdefault(key, asyncio.Lock())
+            async with gate:
+                return await consume_one()
+
+        async def consume_one():
             remote_id, text, reasoning = remote, "", ""
             if key.startswith("chatgpt/"):
                 await asyncio.to_thread(self.ensure_browser, key)
@@ -709,81 +746,92 @@ class Accounts:
                         )
                     else:
                         text = text + event.text if isinstance(event, TextDelta) else event.text
-            if (
-                key.startswith("gemini/")
-                and getattr(getattr(provider, "browser", None), "authenticated", False) is True
-            ):
-                self._remember_verification(key)
-            if not remote_id:
-                raise RuntimeError("Sağlayıcı sohbet kimliği döndürmedi")
-            cache_warning = None
-            try:
-                prior = {} if request.temporary else (self.cached(key, remote_id) or {})
-            except OSError:
-                prior = {}
-                cache_warning = "Yanıt alındı ancak yerel geçmiş okunamadı"
 
-            resources = []
-            archive = self.archive()
-            if archive and not request.temporary:
-                for attachment in attachments:
-                    resource = dict(attachment)
-                    path = resource.get("path") or self._attachment_paths.get(
-                        (key, resource.get("id") or resource.get("file_id"))
-                    )
-                    if (
-                        path
-                        and Path(path).is_file()
-                        and Path(path).stat().st_size <= 20 * 1024 * 1024
-                    ):
-                        try:
-                            resource["path"], resource["sha256"] = archive.files.save(
-                                Path(path).read_bytes()
-                            )
-                        except OSError:
-                            cache_warning = "Yanıt alındı ancak ek dosya arşivlenemedi"
-
-                    resources.append(resource)
-            messages = prior.get("messages", []) + [
-                {"role": "user", "text": prompt, "resources": resources}
-            ]
-            if reasoning:
-                messages.append({"role": "reasoning", "text": reasoning})
-            messages.append({"role": "assistant", "text": text})
-            title = prior.get("title") or prompt[:60]
-            record = {
-                "id": remote_id,
-                "title": title,
-                "messages": messages,
-                "project_id": options["project_id"]
-                if "project_id" in options
-                else prior.get("project_id"),
-                "context": key,
-                "provider_id": request.provider_id,
-                "account_id": request.account_id,
-                "model": model,
-                "temporary": request.temporary,
-            }
-            if not request.temporary:
+            def persist():
+                if (
+                    key.startswith("gemini/")
+                    and getattr(getattr(provider, "browser", None), "authenticated", False) is True
+                ):
+                    self._remember_verification(key)
+                if not remote_id:
+                    raise RuntimeError("Sağlayıcı sohbet kimliği döndürmedi")
+                cache_warning = None
                 try:
-                    archive = self.archive()
-                    if archive:
-                        archive.put(
-                            key,
-                            "conversation",
-                            remote_id,
-                            dict(record, id=identity(key, remote_id)),
+                    prior = {} if request.temporary else (self.cached(key, remote_id) or {})
+                except OSError:
+                    prior = {}
+                    cache_warning = "Yanıt alındı ancak yerel geçmiş okunamadı"
+
+                resources = []
+                archive = self.archive()
+                if archive and not request.temporary:
+                    for attachment in attachments:
+                        resource = dict(attachment)
+                        path = resource.get("path") or self._attachment_paths.get(
+                            (key, resource.get("id") or resource.get("file_id"))
                         )
-                        self.set_active(key, remote_id)
-                    else:
-                        self.cache(key).cache_conversation(record)
-                except (OSError, ValueError):
-                    cache_warning = "Yanıt alındı ancak yerel arşive kaydedilemedi"
-            return {
-                "conversation_id": identity(key, remote_id),
-                "cache_warning": cache_warning,
-                "conversation": {"title": title, "default_model_slug": model, "messages": []},
-            }
+                        if (
+                            path
+                            and Path(path).is_file()
+                            and Path(path).stat().st_size <= 20 * 1024 * 1024
+                        ):
+                            try:
+                                resource["path"], resource["sha256"] = archive.files.save(
+                                    Path(path).read_bytes()
+                                )
+                            except OSError:
+                                cache_warning = "Yanıt alındı ancak ek dosya arşivlenemedi"
+
+                        resources.append(resource)
+                messages = prior.get("messages", []) + [
+                    {"role": "user", "text": prompt, "resources": resources}
+                ]
+                if reasoning:
+                    messages.append({"role": "reasoning", "text": reasoning})
+                messages.append({"role": "assistant", "text": text})
+                title = prior.get("title") or prompt[:60]
+                record = {
+                    "id": remote_id,
+                    "title": title,
+                    "messages": messages,
+                    "project_id": options["project_id"]
+                    if "project_id" in options
+                    else prior.get("project_id"),
+                    "context": key,
+                    "provider_id": request.provider_id,
+                    "account_id": request.account_id,
+                    "model": model,
+                    "temporary": request.temporary,
+                }
+                if not request.temporary:
+                    try:
+                        archive = self.archive()
+                        if archive:
+                            archive.put(
+                                key,
+                                "conversation",
+                                remote_id,
+                                dict(record, id=identity(key, remote_id)),
+                            )
+                            self.set_active(key, remote_id)
+                        else:
+                            self.cache(key).cache_conversation(record)
+                    except (OSError, ValueError):
+                        cache_warning = "Yanıt alındı ancak yerel arşive kaydedilemedi"
+                return {
+                    "conversation_id": identity(key, remote_id),
+                    "cache_warning": cache_warning,
+                    "conversation": {"title": title, "default_model_slug": model, "messages": []},
+                }
+
+            # Disk I/O and large transcript copies must not block the common
+            # provider loop or pause another account's streamed response.
+            writing = asyncio.create_task(asyncio.to_thread(persist), name="siope-persist:" + key)
+            try:
+                return await asyncio.shield(writing)
+            except asyncio.CancelledError:
+                await asyncio.shield(writing)
+                raise
 
         self._start()
         future = asyncio.run_coroutine_threadsafe(consume(), self._loop)

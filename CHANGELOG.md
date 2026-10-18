@@ -10,6 +10,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Added
 
+- Deterministic synchronization/concurrency regressions covering slow storage, stale reads, bounded work queues, independent accounts and shutdown during accepted-response persistence.
+
 - Isolated Gemini native-browser sending component with owned-tab lifecycle, attachment upload, incremental Markdown extraction and bounded cancellation.
 
 - Gemini notebook-context chat requests, including compatibility with earlier saved Gemini notebook URL identities.
@@ -35,6 +37,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Changed
 
+- Store hot-cache records as immutable JSON snapshots to reduce copy cost and keep cache memory accounting tied to stored bytes.
+
 - Use a white ChatGPT rosette and light-blue Gemini icon while keeping conversation text consistent; render open chat labels in bold pure white.
 - Display project names without qualified account/remote IDs in navigation and project headings.
 
@@ -52,6 +56,12 @@ The project is currently unreleased; no release dates or tags have been assigned
 - Competing settings-page filler, repeated shortcut hints and SDK logs written over the terminal interface.
 
 ### Fixed
+
+- Prevent stale cold reads from replacing newer local records or returning an obsolete remote result after a completed send.
+- Move transcript/attachment persistence, model snapshot writes and manual archive refresh away from provider/UI event loops.
+- Serialize sends through persistence per account, while letting different accounts start browsers and stream independently.
+- Throttle failed revalidation, preserve worker/queue bounds during refresh bursts, and close repositories only after running reads finish.
+- Drain accepted-response writes before shutting down archive extensions; prevent closed account services from restarting their background loop.
 
 - Keep verified account links across browser closure and application restart; display browser connectivity separately and revoke verification only on local logout or an explicit authentication rejection.
 - Preserve archived notebook/project association when continuing a chat without repeating its project option, and accept reselecting the current project without attempting an unsupported move.

@@ -1,6 +1,7 @@
 """Bounded hot cache and single-flight stale-while-revalidate coordination."""
 
 import copy
+import json
 import threading
 import time
 from collections import OrderedDict
@@ -34,6 +35,7 @@ class Archive:
         self._fetchers = OrderedDict()
         self.revision = 0
         self.closed = False
+        self._repository_closed = False
 
     def conversations(self, account, **page):
         return self.repository.conversations(account, **page)
@@ -51,12 +53,13 @@ class Archive:
         self.mappings[provider] = mapping
 
     def _remember(self, key, value):
-        size = len(encode(value).encode())
+        snapshot = encode(value).encode()
+        size = len(snapshot)
         old = self._hot.pop(key, None)
         if old:
             self._size -= old[1]
         if size <= self.memory_bytes:
-            self._hot[key] = (copy.deepcopy(value), size)
+            self._hot[key] = (snapshot, size)
             self._size += size
         while self._size > self.memory_bytes:
             _, (_, removed) = self._hot.popitem(last=False)
@@ -65,14 +68,29 @@ class Archive:
     def get(self, account, kind, remote):
         key = (account, kind, remote)
         with self._lock:
+            if self._repository_closed:
+                return None
             if key in self._hot:
                 self._hot.move_to_end(key)
-                return copy.deepcopy(self._hot[key][0])
-        value = self.repository.get(*key)
-        if value is not None:
+                snapshot = self._hot[key][0]
+            else:
+                snapshot = None
+        if snapshot is not None:
+            return json.loads(snapshot)
+        # Serialize a cold read with writes, otherwise an older DB snapshot can
+        # replace a newer hot value after another thread completes a local send.
+        with self._write_lock:
             with self._lock:
-                self._remember(key, value)
-        return value
+                if self._repository_closed:
+                    return None
+                if key in self._hot:
+                    self._hot.move_to_end(key)
+                    return json.loads(self._hot[key][0])
+            value = self.repository.get(*key)
+            if value is not None:
+                with self._lock:
+                    self._remember(key, value)
+            return value
 
     def put(self, account, kind, remote, value):
         if value.get("temporary"):
@@ -82,7 +100,7 @@ class Archive:
         with self._write_lock:
             with self._lock:
                 if self.closed:
-                    return
+                    raise OSError("Archive is closed")
             try:
                 changed = self.repository.put(*key, value)
             except OSError as error:
@@ -90,6 +108,8 @@ class Archive:
                     self._state(key, "error", str(error))
                 raise
             with self._lock:
+                if self.closed:
+                    return
                 self._remember(key, value)
                 self._versions[key] = self._versions.get(key, 0) + 1
                 if len(self._versions) > 2048:
@@ -123,6 +143,7 @@ class Archive:
         """Return a saved value immediately; one bounded worker checks the remote value."""
         key = (account, kind, remote)
         value = self.get(*key)
+        started = False
         with self._lock:
             if self.closed:
                 return value
@@ -140,8 +161,8 @@ class Archive:
                 self._state(key, "syncing")
 
                 def work():
-                    self.repository.state(*key, "syncing")
                     try:
+                        self.repository.state(*key, "syncing")
                         result = fetch()
                         with self._write_lock:
                             with self._lock:
@@ -155,33 +176,47 @@ class Archive:
                                     if len(self._checked) > 2048:
                                         self._checked.pop(next(iter(self._checked)))
                         self.repository.state(*key, "ready")
-                        return result
+                        # A local send may have won while this remote read was
+                        # in flight. Cold waiters must also see that newer value.
+                        return result if accept else self.get(*key)
                     except Exception as error:
+                        with self._lock:
+                            self._checked[key] = time.monotonic()
+                            if len(self._checked) > 2048:
+                                self._checked.pop(next(iter(self._checked)))
                         self.repository.state(*key, "error", str(error))
                         raise
 
                 future = self._pool.submit(work)
                 self._pending[key] = future
+                started = True
 
                 def done(completed):
                     with self._lock:
                         self._pending.pop(key, None)
-                        if self.closed:
-                            return
-                        error = (
-                            completed.exception()
-                            if not completed.cancelled()
-                            else RuntimeError("İptal edildi")
-                        )
-                        self._state(
-                            key, "error" if error else "ready", str(error) if error else None
-                        )
+                        if not self.closed:
+                            error = (
+                                completed.exception()
+                                if not completed.cancelled()
+                                else RuntimeError("İptal edildi")
+                            )
+                            self._state(
+                                key, "error" if error else "ready", str(error) if error else None
+                            )
+                    self._maybe_close_repository()
 
-                future.add_done_callback(done)
+        # add_done_callback may execute immediately in this caller. Register it
+        # outside _lock to preserve the write-lock -> state-lock ordering.
+        if started:
+            future.add_done_callback(done)
         if value is not None:
             return value
         if future is not None:
             return future.result(timeout=50) if wait else None
+        with self._lock:
+            state = self._states.get(key, {})
+            if state.get("state") == "error":
+                raise RuntimeError(state.get("error") or "Senkronizasyon yeniden denenecek")
         return self.get(*key)
 
     def refresh(self):
@@ -189,14 +224,30 @@ class Archive:
         with self._lock:
             entries = list(self._fetchers.items())
         for key, fetch in entries:
+            with self._lock:
+                if self.closed or len(self._pending) >= 32:
+                    break
             self.read(*key, fetch, force=True, wait=False)
 
     def states(self):
         with self._lock:
             return copy.deepcopy(list(self._states.values()))
 
+    def _maybe_close_repository(self):
+        with self._write_lock:
+            with self._lock:
+                if not self.closed or self._pending or self._repository_closed:
+                    return
+                self._repository_closed = True
+            self.repository.close()
+
     def close(self):
         with self._lock:
             self.closed = True
+            self._hot.clear()
+            self._size = 0
+            self._fetchers.clear()
         self._pool.shutdown(wait=False, cancel_futures=True)
-        self.repository.close()
+        # Fetches already running may still need repository.state(). The last
+        # completion closes the backend; queued work is cancelled immediately.
+        self._maybe_close_repository()

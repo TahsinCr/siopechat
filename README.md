@@ -245,6 +245,14 @@ Copyright (C) 2026 **TahsinCr**. SiopeChat is licensed under [GNU GPL version 3]
 
 ChatGPT transport work originates from [tritao/chatgpt-web](https://github.com/tritao/chatgpt-web). Gemini uses its native connected browser for sending/model menus and [gemini-webapi](https://github.com/HanaokaYuzu/Gemini-API). The container and event modules are vendored from [vehicle-autonomy-core](https://github.com/TahsinCr/vehicle-autonomy-core/tree/2bac9cd5b1cbeae82b7d3beef670a37d7ee5caa2); their original notices and license remain in `src/utils/NOTICE` and `src/utils/LICENSE`. Third-party authors retain their copyrights.
 
+### Background execution and synchronization
+
+Cached data remains readable while remote records are checked by at most three archive workers, with at most 32 outstanding records and one fetch per record. Failed checks wait 60 seconds before an automatic retry; explicit refresh bypasses that delay. Refresh runs outside the terminal UI thread. Closing the archive cancels queued work and lets running reads finish before releasing the repository.
+
+Sends from one account are queued through the local save to preserve message order, including when two tabs open the same conversation. Different accounts can progress independently. Transcript copies, attachment storage and catalog snapshot writes run outside the common provider event loop. Shutdown drains accepted-response writes before unloading archive extensions. A storage failure is reported separately from successful provider delivery.
+
+The hot cache stores immutable JSON snapshots within its byte budget; returned records remain independent mutable copies. These limits bound local work and do not change provider quotas or guarantee remote response times.
+
 ### Connected browser recovery
 
 SiopeChat uses a separate browser profile for each account. If that browser closes, the next send (or Gemini model/notebook read) opens the same profile automatically. A saved account session is required; local logout is respected. Submitted prompts are never automatically replayed after a connection failure. Verified accounts stay linked across browser closure and application restart. Verification is stored separately from the browser connection; Accounts shows both states. A transport outage does not revoke verification. Local logout or an explicit provider authentication rejection clears it; a cached model list cannot create it. The native web transport still needs a browser process and starts the saved profile when needed.
