@@ -76,6 +76,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Fixed
 
+- Exclude hidden/tool-directed ChatGPT completion blocks and scan prior message identities once, keeping summary reconciliation linear for large histories.
+
 - Separate Gemini composer and history/notebook reader tabs and locks; drain read/catalog helpers, recover disconnected reads once, and keep transient transport errors separate from authentication loss.
 - Verify Gemini effort by native selected identity instead of model-button text; avoid duplicate navigation and tolerate execution-context replacement while waiting for page readiness.
 - Reject pending CDP operations promptly on disconnect and bound debugger connection startup.

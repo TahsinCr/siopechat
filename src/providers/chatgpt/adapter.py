@@ -365,8 +365,11 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
                     from .formats import message_parts, text_from_parts
 
                     summaries = []
+                    previous = set(previous or ())
                     for item in completed.get("messages", []):
-                        if item.get("id") in set(previous or ()):
+                        if item.get("id") in previous or item.get("recipient") not in (None, "all"):
+                            continue
+                        if (item.get("metadata") or {}).get("is_visually_hidden_from_conversation"):
                             continue
                         if (item.get("author") or {}).get("role") != "assistant":
                             continue

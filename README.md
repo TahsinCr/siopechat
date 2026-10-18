@@ -324,7 +324,7 @@ replayed. Native model/effort controls are checked by selected identity, not by
 whether the model button happens to display an effort label. Explicit interactive
 actions can activate the browser tab; passive cached startup does not open it.
 
-Only provider-published thinking text is displayed. ChatGPT completion snapshots
+Only provider-published thinking text is displayed; hidden messages and tool-directed protocol nodes are excluded from completion summaries. ChatGPT completion snapshots
 supply summaries that may be absent from stream deltas; Gemini keeps the last
 nonempty summary across temporary DOM updates; Claude can show published thinking
 blocks while streaming and reconcile them with its completed response. Models

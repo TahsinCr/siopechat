@@ -148,6 +148,34 @@ class ProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertIn(ReplaceText("Published summary", "analysis"), events)
 
+    async def test_completion_does_not_publish_hidden_or_tool_directed_analysis(self):
+        self.client.closed.set()
+        self.client.raw["messages"] = [
+            {
+                "id": "hidden",
+                "author": {"role": "assistant"},
+                "channel": "analysis",
+                "metadata": {"is_visually_hidden_from_conversation": True},
+                "content": {"parts": ["Hidden"]},
+            },
+            {
+                "id": "tool",
+                "author": {"role": "assistant"},
+                "recipient": "browser",
+                "channel": "analysis",
+                "content": {"parts": ["Tool protocol"]},
+            },
+        ]
+        events = [
+            event
+            async for event in self.provider.stream(
+                SendRequest("chatgpt", "default", "local", "hello")
+            )
+        ]
+        self.assertFalse(
+            any(isinstance(event, ReplaceText) and event.channel == "analysis" for event in events)
+        )
+
     async def test_stream_produces_common_events_and_releases_transport(self):
         self.client.closed.set()
         events = [
