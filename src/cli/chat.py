@@ -30,6 +30,7 @@ from rich.text import Text
 from accounts import origin
 from providers import Capability
 from providers.models import FeatureState, ModelCatalog
+from providers.registry import PROVIDERS
 from settings import DEFAULT_KEYBINDINGS
 from utils import clipboard
 
@@ -558,7 +559,9 @@ class ChatView:
             return
 
         def submit(values):
-            key = self.account_service.add(values["provider"], values["label"])
+            key = self.account_service.add(
+                values["provider"], values["label"], values.get("browser_account") or None
+            )
             self.select_account(key)
             self.settings_dialog.open("accounts")
 
@@ -569,9 +572,20 @@ class ChatView:
                     "provider",
                     "Sağlayıcı",
                     "chatgpt",
-                    [("chatgpt", "ChatGPT"), ("gemini", "Gemini")],
+                    [(key, item[0]) for key, item in PROVIDERS.items()],
                 ),
                 ("label", "Hesap adı", "", None),
+                (
+                    "browser_account",
+                    "Tarayıcı profili",
+                    "",
+                    [("", "Ayrı profil (önerilen)")]
+                    + [
+                        (x["key"], "Paylaş: " + x["label"])
+                        for x in self.account_service.items()
+                        if not x.get("browser_account")
+                    ],
+                ),
             ],
             submit,
         )
@@ -919,7 +933,11 @@ class ChatView:
             else self.effort or "Sağlayıcı varsayılanı"
         )
         if selected and not selected.efforts:
-            effort = "Desteklenmiyor"
+            effort = (
+                "Okunamadı · varsayılan"
+                if selected.metadata.get("effort_error")
+                else "Desteklenmiyor"
+            )
         model_text = f" Model: {model} ▾ "
         effort_text = f" Efor: {effort} ▾ "
         project_text = (
@@ -1368,7 +1386,7 @@ class ChatView:
                 fragments.append(
                     (
                         "class:provider." + provider,
-                        {"gemini": "✦ ", "chatgpt": "◎ ", "claude": "✳ "}.get(provider, "◈ "),
+                        PROVIDERS.get(provider, (provider, "◈", ""))[1] + " ",
                         click,
                     )
                 )
@@ -3274,14 +3292,14 @@ class ChatView:
                 "chat.temporary": "Yeni geçici sohbet",
                 "chat.interrupt": "Yanıtı durdur veya taslağı temizle",
                 "chat.clear_transcript": "Görünen konuşmayı temizle",
-                "chat.reload": "Etkin sohbeti yeniden yükle",
+                "chat.reload": "Sohbeti eşitle",
                 "chat.copy_response": "Son yanıtı kopyala",
                 "chat.remove_attachment": "Son eklenen görseli kaldır",
                 "command.help": "Kısayol ve komut yardımını göster",
                 "command.rename": "Etkin sohbeti yeniden adlandır",
                 "command.projects": "Proje bölümünü göster",
                 "command.project": "Seçili projenin bilgilerini aç",
-                "command.refresh": "Sağlayıcı kataloglarını ve listeleri yenile",
+                "command.refresh": "Verileri eşitle",
                 "command.settings": "Ayarları göster",
                 "app.quit": "Uygulamadan çık",
                 "app.quit_eof": "Boş girişte uygulamadan çık",

@@ -2,7 +2,7 @@
 
 A terminal workspace for AI conversations, built around reusable web-session providers.
 
-Keep conversations in tabs, select one account per provider without mixing their history, and choose the models available to those accounts. ChatGPT and Gemini are included. A shared service and extension API keeps the provider layer independent of the terminal and leaves room for other frontends.
+Keep conversations in tabs, select one account per provider without mixing their history, and choose the models available to those accounts. ChatGPT, Gemini and Claude are included. A shared service and extension API keeps the provider layer independent of the terminal and leaves room for other frontends.
 
 ![SiopeChat terminal workspace](assets/siopechat.png)
 
@@ -12,7 +12,7 @@ Keep conversations in tabs, select one account per provider without mixing their
 
 Requirements:
 
-- Python **3.10+** for ChatGPT, **3.11+** for Gemini.
+- Python **3.10+** for ChatGPT/Claude, **3.11+** for the optional standalone Gemini SDK transport.
 - Node.js **22+** for browser-session helpers.
 - Chrome or Chromium for connecting a login session.
 - A terminal with Unicode support; true color and mouse reporting improve the experience.
@@ -34,14 +34,14 @@ The launchers reuse the checkout's `python/` environment when present. They do n
 | Windows PowerShell | `./siopechat.ps1` |
 | Installed console command | `siopechat` |
 
-Open **Settings → Accounts**, add or select an account, then choose **Connected browser**. Sign in on the provider website and return to **Verify**. A valid saved session can be reused without signing in again. Opening the default browser does not import its login session into SiopeChat.
+Open **Settings → Accounts**, add or select an account, then choose **Connected browser**. Sign in on the provider website and return to **Verify**. A valid saved session can be reused without signing in again. Opening the default browser does not import its login session into SiopeChat. When adding an account, **Browser profile** can explicitly reuse an existing account’s connected profile for a different provider. Separate profiles remain the default. Shared profiles retain independent account records and verification markers, but share the browser’s website logins.
 
 This project uses unofficial web-session transports. It requires your own provider accounts and remains subject to their access and usage limits. It does not provide unlimited access or guarantee compatibility with future website changes.
 
 ## Working with conversations
 
 - **Tabs:** keep drafts, scroll positions and conversation state separate. Active replies and replies completed in another tab have distinct indicators.
-- **Sidebar:** search loaded chats, expand projects and load older pages when needed. ChatGPT uses a white rosette (`❋`); Gemini uses a light-blue star (`✦`). Chat titles use the same text color. Open conversations are bold white in the sidebar and tab labels are pure white. Projects display their names rather than qualified internal IDs. The sidebar lists projects and notebooks across providers independently of the selected model. Only the conversation project picker beside the effort selector follows the current model account: ChatGPT projects for GPT, Gemini notebooks for Gemini. ChatGPT and Gemini conversations have provider icons; a multi-select filter appears when multiple providers are configured.
+- **Sidebar:** search loaded chats, expand projects and load older pages when needed. ChatGPT uses a white ring (`◎`), Gemini a light-blue star (`✦`), and Claude a terracotta asterisk (`✳`). Chat titles use the same text color. Open conversations are bold white in the sidebar and tab labels are pure white. Projects display their names rather than qualified internal IDs. The sidebar lists projects and notebooks across providers independently of the selected model. Only the conversation project picker beside the effort selector follows the current model account: ChatGPT projects for GPT, Gemini notebooks for Gemini, and Claude projects for Claude. All three providers have distinct conversation icons; a multi-select filter appears when multiple providers are configured.
 - **Models and effort:** a new chat lists models from the selected account of each enabled provider. Choosing a model routes that draft to its provider/account; an existing chat remains tied to its original account. Lists come from the accounts, rather than a hardcoded version list. The last model and effort selection is remembered per account and reused in new chats, including an explicit provider-default effort choice. An obsolete choice falls back to an available model.
 - **Projects:** ChatGPT project chats, instructions and resource metadata are available in the sidebar. `/project` moves the current chat or assigns a new draft; **Unassigned** removes membership. `/project-new` opens the creation form.
 - **Files:** use the attachment command or button to choose a file. This client limits each file to 20 MiB; provider restrictions still apply.
@@ -64,7 +64,7 @@ Up to four tabs can have pending requests. Operations within one account are que
 | `Alt+V` / `Alt+H` / `Alt+U` | Split columns / rows / remove split |
 | `Alt+A` | Attach a file |
 | `F5` / `F12` | Settings / accounts |
-| `F10` | Refresh provider data |
+| `F10` | Synchronize models, library and current chat |
 | `Ctrl+D` / `Ctrl+Q` | Exit; repeat within three seconds if a draft or reply is open |
 
 Shift+Enter adds a line when the terminal sends a distinct modified-Enter sequence. Alt+Enter and Ctrl+J are alternatives. Dynamic text controls bound their cursor to the exact rendered snapshot, including after long-history reloads, provider filtering and resize. The composer grows before scrolling. Ctrl+A/C/X/V select, copy, cut and paste; selecting a message lets you copy its original text. In search and settings editors, Ctrl+D retains its text-editing meaning.
@@ -247,7 +247,7 @@ ChatGPT transport work originates from [tritao/chatgpt-web](https://github.com/t
 
 ### Delete chats and projects
 
-Use **Chat: Delete** or **Projects: Delete** in the command palette, or `/delete [ID]` and `/delete-project [ID]`. The default shortcuts are Alt+D and Alt+Delete. Both operations ask for confirmation, with **Cancel** selected initially. Project deletion also deletes its contained chats according to the provider's behavior. Only delete projects you own and no longer need.
+Use **Chat: Delete** or **Projects: Delete** in the command palette, or `/delete [ID]` and `/delete-project [ID]`. The default shortcuts are Alt+D and Alt+Delete. Both operations ask for confirmation, with **Cancel** selected initially. Project deletion follows the provider’s behavior for its contained chats. Only delete projects you own and no longer need.
 
 Configured Gemini accounts delete conversations through the signed-in browser session; standalone adapters can use the SDK transport. This does not require exporting the browser session again. Deletion happens on the provider first. Successful deletion removes cached list references and normalized archive rows and stores a persistent tombstone, preventing an older in-flight sync from restoring the record. Provider failures preserve the archive. Shared content-addressed files are retained rather than removed blindly. Unsupported or unauthorized operations return an explicit error.
 
@@ -274,3 +274,11 @@ SiopeChat uses a separate browser profile for each account. If that browser clos
 **F10**, `/refresh` and `/sync` use one synchronization operation. The sidebar `↻` refreshes the library (projects, notebooks and chats); `↻ Eşitle` above the transcript refreshes that conversation. `/sync library` and `/sync conversation` select the same scopes. These commands recover the saved account browser when necessary; restarting is not required. Startup restores cached models and records without opening a closed browser. Sending or explicit synchronization can reopen the saved profile. Verification and the browser connection remain separate states.
 
 Configured Gemini accounts read both conversation lists and histories through the same signed-in browser session used for generation. They no longer depend on the SDK's exported cookie snapshot for those reads. Published thinking summaries and raw provider media metadata remain in the archive. `!` means the last background revalidation failed; the last saved content remains visible. A successful synchronization clears that state.
+
+### Claude
+
+Add **Claude** in Settings → Accounts and select a separate browser profile, or explicitly reuse a connected profile that already has your Claude login. Click **Connected browser**, sign in if needed, and **Verify**. Verification is stored as an account marker; Claude cookies are not copied into configuration. Closing the browser keeps this verification record, and sending/explicit synchronization can reopen the same profile.
+
+The Claude adapter supports chat/history, rename/delete, projects and their instruction/source metadata, private project creation/deletion, moving chats into or out of projects, and generation in project context. Model and effort choices come from native menus, including available entries under More models. Upgrade-only entries are excluded. Legacy binary thinking switches retain their on/off choices. A failed effort component is marked unavailable for that model rather than blocking the complete catalog. Published thinking summaries are separate from final answers; final content is checked against the server’s completed message. Requests are never automatically resubmitted. File uploads and temporary Claude chats are currently unsupported and are reported explicitly. Project privacy/memory overrides beyond the native private/default setup are also rejected before writing.
+
+The shared browser transport and Markdown renderer live under `providers`; Claude’s catalog, composer and record mapping are separate provider components. No terminal or archive code is imported by the adapter. Claude chat, project and normal/follow-up generation were checked with disposable records, including project membership, rename and deletion; this does not validate every account tier, source format or model.

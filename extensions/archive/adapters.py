@@ -17,4 +17,4 @@ class GeminiMapping(Mapping):
     container_kind = "notebook"
 
 
-MAPPINGS = {"chatgpt": Mapping(), "gemini": GeminiMapping()}
+MAPPINGS = {"chatgpt": Mapping(), "gemini": GeminiMapping(), "claude": Mapping()}

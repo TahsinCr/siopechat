@@ -39,7 +39,10 @@ class ProductServicesTests(unittest.TestCase):
         rows = [
             r for r in SettingsCatalog(self.api).rows() if r["section"].startswith("providers.")
         ]
-        self.assertEqual({r["section"] for r in rows}, {"providers.chatgpt", "providers.gemini"})
+        self.assertEqual(
+            {r["section"] for r in rows},
+            {"providers.chatgpt", "providers.gemini", "providers.claude"},
+        )
         self.assertNotIn("default", self.api.settings.snapshot()["providers"])
 
     def test_account_preferences_survive_restart_and_theme_changes(self):

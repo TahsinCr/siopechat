@@ -47,10 +47,14 @@ def create_application(root: Path | None = None):
     backend = BackendService(root)
     api.provide("application", "backend", backend)
     api.providers.register(ChatGPTProvider(backend.create_session()))
+    from providers.claude import ClaudeProvider
     from providers.gemini import GeminiProvider
 
     api.providers.register(
         GeminiProvider(root / "data" / "accounts" / "gemini" / "default" / "cookies.json")
+    )
+    api.providers.register(
+        ClaudeProvider(root / "data" / "accounts" / "claude" / "default" / "native.json")
     )
     accounts = Accounts(api)
     api.provide("application", "accounts", accounts)
@@ -59,7 +63,9 @@ def create_application(root: Path | None = None):
     )
     api.actions.register("application", Action("accounts.add", "Hesap ekle", accounts.add))
     api.actions.register("application", Action("accounts.select", "Hesap seç", accounts.select))
-    api.actions.register("application", Action("accounts.synchronize", "Verileri eşitle", accounts.synchronize))
+    api.actions.register(
+        "application", Action("accounts.synchronize", "Verileri eşitle", accounts.synchronize)
+    )
     for locale in ("en", "tr"):
         api.languages.load("application", locale, Path(language_file).parent / f"{locale}.json")
     from themes import __file__ as themes_file

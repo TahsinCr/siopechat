@@ -4,6 +4,12 @@ from dataclasses import dataclass, field
 
 from .api import Capability, Provider
 
+PROVIDERS = {
+    "chatgpt": ("ChatGPT", "◎", "https://chatgpt.com/"),
+    "gemini": ("Gemini", "✦", "https://gemini.google.com/"),
+    "claude": ("Claude", "✳", "https://claude.ai/"),
+}
+
 
 @dataclass
 class _Entry:

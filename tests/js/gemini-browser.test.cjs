@@ -66,7 +66,7 @@ test("native model aliases are stable while displayed versions remain dynamic", 
 });
 const {
   renderMarkdown,
-} = require("../../src/providers/gemini/scripts/markdown.cjs");
+} = require("../../src/providers/scripts/markdown.cjs");
 function text(value) {
   return { nodeType: 3, textContent: value };
 }

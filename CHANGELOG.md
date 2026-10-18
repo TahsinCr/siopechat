@@ -10,6 +10,10 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Added
 
+- Independent Claude web-session provider with native model/effort discovery, chat history and generation, published thinking summaries, chat rename/deletion, projects, instruction/source metadata, private project creation/deletion and verified project membership changes.
+- Explicit cross-provider browser-profile sharing with independent account/verification/archive records and a shared launch lock.
+- Shared bounded browser transport, page handling and Markdown renderer; isolated Claude catalog, composer and record components.
+
 - One synchronization operation with conversation/library scopes, clickable controls, F10 and `/sync` (alias of `/refresh`).
 
 - Confirmed chat/project deletion through provider APIs and the command palette, `/delete` / `/delete-project`, and configurable shortcuts.
@@ -42,6 +46,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Changed
 
+- Distinct provider icons: white ChatGPT ring, light-blue Gemini star and terracotta Claude asterisk. F8 and the chat synchronization button use the same scoped synchronization operation as F10.
+
 - Store hot-cache records as immutable JSON snapshots to reduce copy cost and keep cache memory accounting tied to stored bytes.
 
 - Use a white ChatGPT rosette and light-blue Gemini icon while keeping conversation text consistent; render open chat labels in bold pure white.
@@ -61,6 +67,10 @@ The project is currently unreleased; no release dates or tags have been assigned
 - Competing settings-page filler, repeated shortcut hints and SDK logs written over the terminal interface.
 
 ### Fixed
+
+- Preserve legacy Claude binary thinking controls alongside current effort-level menus, with failures isolated to the affected model feature.
+- Open the requested provider login page when reusing an already running connected browser.
+- Wait for the new Claude document and fully closed menus before reading model/effort controls; ignore fading choices and use native submenu keyboard navigation.
 
 - Gemini history/list synchronization falsely requiring login because reads used a stale SDK cookie session while sends used the authenticated browser.
 - Passive startup opening account browsers to refresh cached catalogs and histories; closed profiles now remain closed until sending or explicit synchronization.

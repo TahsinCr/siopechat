@@ -19,18 +19,15 @@ from urllib.parse import quote, unquote
 from backend import BackendService
 from providers import Capability, ConversationBound, ReplaceText, SendRequest, TextDelta
 from providers.chatgpt import BrowserSession, ChatGPTClient, ChatGPTProvider, SessionPaths
+from providers.claude import ClaudeProvider
 from providers.errors import AccountPaused, RemoteNotFound
 from providers.gemini import GeminiProvider
 from providers.gemini.notebooks import Notebooks
 from providers.models import FeatureState, ModelCatalog, SessionState
+from providers.registry import PROVIDERS
 
 MODEL_TIMEOUT = 30
 HISTORY_TIMEOUT = 20
-
-PROVIDERS = {
-    "chatgpt": ("ChatGPT", "◎", "https://chatgpt.com/"),
-    "gemini": ("Gemini", "✦", "https://gemini.google.com/"),
-}
 
 
 def identity(context, remote):
@@ -153,7 +150,7 @@ class Accounts:
     def item(self, key):
         return next(item for item in self.items() if item["key"] == key)
 
-    def add(self, provider, label):
+    def add(self, provider, label, browser_account=None):
         if (
             provider not in PROVIDERS
             or not isinstance(label, str)
@@ -168,6 +165,11 @@ class Accounts:
             "label": label.strip(),
             "port": 9230 + len(data["items"]),
         }
+        if browser_account:
+            linked = self.item(browser_account)
+            if linked["provider"] == provider or linked.get("browser_account"):
+                raise ValueError("Paylaşılan tarayıcı farklı sağlayıcının bağımsız hesabı olmalı")
+            value["browser_account"] = browser_account
         data["items"].append(value)
         self.settings.update("accounts", data)
         return provider + "/" + value["id"]
@@ -186,6 +188,8 @@ class Accounts:
 
     def session(self, key):
         item = self.item(key)
+        if item.get("browser_account"):
+            return self.session(item["browser_account"])
         if key == "chatgpt/default":
             return self.api.get("backend").create_session(
                 self.cdp_url or f"http://127.0.0.1:{item['port']}"
@@ -198,18 +202,22 @@ class Accounts:
             f"http://127.0.0.1:{item['port']}",
         )
 
+    def credential_path(self, key):
+        if key.startswith("chatgpt/"):
+            return self.session(key).paths.session_file
+        return self.directory(key) / (
+            "native.json" if key.startswith("claude/") else "cookies.json"
+        )
+
     def ensure_browser(self, key):
         """Recover the account browser before an operation, never replay a prompt."""
+        browser_key = self.item(key).get("browser_account") or key
         with self._lock:
-            lock = self._browser_locks.setdefault(key, threading.Lock())
+            lock = self._browser_locks.setdefault(browser_key, threading.Lock())
         with lock:
             session = self.session(key)
-            path = (
-                session.paths.session_file
-                if key.startswith("chatgpt/")
-                else self.directory(key) / "cookies.json"
-            )
-            if not path.is_file():
+            path = self.credential_path(key)
+            if not path.is_file() and not (key.startswith("claude/") and session.is_ready()):
                 raise RuntimeError("Hesap oturumu yok; Hesaplar bölümünden giriş yapın")
             return session.launch(PROVIDERS[key.split("/")[0]][2])
 
@@ -220,11 +228,11 @@ class Accounts:
         with self._lock:
             if key not in self._providers:
                 item = self.item(key)
-                self._providers[key] = (
-                    ChatGPTProvider(self.session(key), item["id"])
-                    if item["provider"] == "chatgpt"
-                    else GeminiProvider(
-                        self.directory(key) / "cookies.json",
+                if item["provider"] == "chatgpt":
+                    provider = ChatGPTProvider(self.session(key), item["id"])
+                elif item["provider"] == "gemini":
+                    provider = GeminiProvider(
+                        self.credential_path(key),
                         item["id"],
                         notebooks=Notebooks(
                             self.session(key).cdp_url,
@@ -232,7 +240,16 @@ class Accounts:
                             ensure_ready=lambda: self.ensure_browser(key),
                         ),
                     )
-                )
+                elif item["provider"] == "claude":
+                    provider = ClaudeProvider(
+                        self.credential_path(key),
+                        item["id"],
+                        cdp_url=self.session(key).cdp_url,
+                        ensure_ready=lambda: self.ensure_browser(key),
+                    )
+                else:
+                    raise ValueError("Unknown provider")
+                self._providers[key] = provider
             return self._providers[key]
 
     def _start(self, allow_closed=False):
@@ -413,11 +430,7 @@ class Accounts:
             browser.authenticated = False
 
     def status(self, key):
-        path = (
-            self.session(key).paths.session_file
-            if key.startswith("chatgpt/")
-            else self.directory(key) / "cookies.json"
-        )
+        path = self.credential_path(key)
         saved = path.is_file()
         verified = (
             key in self._verified
@@ -448,7 +461,22 @@ class Accounts:
                 raise RuntimeError("Tarayıcı açılamadı")
             return {"opened": True}
         if action == "connect_browser":
-            return self.session(key).launch(PROVIDERS[item["provider"]][2])
+            session = self.session(key)
+            url = PROVIDERS[item["provider"]][2]
+            result = session.launch(url)
+            if result.get("browser") == "already_running":
+                helper = Path(__file__).parent / "providers" / "scripts" / "page.cjs"
+                opened = subprocess.run(
+                    ["node", str(helper)],
+                    input=json.dumps({"cdp_url": session.cdp_url, "origin": url}),
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                if opened.returncode:
+                    raise RuntimeError("Bağlı tarayıcıda giriş sayfası açılamadı")
+                result["opened"] = True
+            return result
         provider = self.provider(key)
         if action == "logout":
             with self._catalog_io_lock:
@@ -495,6 +523,10 @@ class Accounts:
                 raise
             if status.state != SessionState.AUTHENTICATED:
                 raise RuntimeError("Oturum doğrulanamadı")
+            if item["provider"] == "claude":
+                self.api.get("backend").atomic_json_write(
+                    self.credential_path(key), {"account_key": key, "transport": "browser"}
+                )
             self._remember_verification(key)
             return self.status(key)
         raise ValueError("unknown account operation")
@@ -793,7 +825,7 @@ class Accounts:
 
             def persist():
                 if (
-                    key.startswith("gemini/")
+                    not key.startswith("chatgpt/")
                     and getattr(getattr(provider, "browser", None), "authenticated", False) is True
                 ):
                     self._remember_verification(key)
@@ -920,6 +952,8 @@ class Accounts:
                 self._sending[key] -= 1
 
     def upload_image(self, key, data, name, mime, width, height):
+        if key.startswith("claude/") and Capability.ATTACHMENTS not in self.capabilities(key):
+            raise ValueError("Claude dosya ekleme henüz kullanılamıyor")
         if not data or len(data) > 20 * 1024 * 1024:
             raise ValueError("Görsel boyutu geçersiz")
         if key.startswith("chatgpt/"):
@@ -936,6 +970,9 @@ class Accounts:
         if not path.is_file() or not 0 < path.stat().st_size <= 20 * 1024 * 1024:
             raise ValueError("Dosya boş olmamalı ve 20 MiB sınırını aşmamalı")
         mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        if key.startswith("claude/"):
+            if Capability.ATTACHMENTS not in self.capabilities(key):
+                raise ValueError("Claude dosya ekleme henüz kullanılamıyor")
         if key.startswith("gemini/"):
             return {"id": uuid.uuid4().hex, "path": str(path), "name": path.name, "mime_type": mime}
         with ChatGPTClient(self.session(key)) as client:

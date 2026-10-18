@@ -182,7 +182,7 @@ def key_bindings(view) -> KeyBindings:
         view.handle_command("/clear")
 
     def reload_conversation(_event: Any) -> None:
-        view.handle_command("/history")
+        view.synchronize("conversation")
 
     def copy_response(_event: Any) -> None:
         view.copy_latest_response()

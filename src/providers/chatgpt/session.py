@@ -166,7 +166,7 @@ class BrowserSession:
             return False
 
     def launch(self, url: str = "https://chatgpt.com/") -> dict[str, Any]:
-        if url not in ("https://chatgpt.com/", "https://gemini.google.com/"):
+        if url not in ("https://chatgpt.com/", "https://gemini.google.com/", "https://claude.ai/"):
             raise ValueError("unsupported login origin")
         if self.is_ready():
             return {"browser": "already_running", "cdp_url": self.cdp_url}

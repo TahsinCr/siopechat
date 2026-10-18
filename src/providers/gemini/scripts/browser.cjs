@@ -1,7 +1,7 @@
 "use strict";
 const fs = require("node:fs");
 const { connect } = require("../../scripts/connection.cjs");
-const { renderMarkdown } = require("./markdown.cjs");
+const { renderMarkdown } = require("../../scripts/markdown.cjs");
 
 function validate(input) {
   const url = new URL(input.cdp_url);
@@ -12,7 +12,11 @@ function validate(input) {
     url.password
   )
     throw Error("Only a local debugging browser is supported");
-  if (!["models", "send", "delete_chat", "history", "chats", "close"].includes(input.mode))
+  if (
+    !["models", "send", "delete_chat", "history", "chats", "close"].includes(
+      input.mode,
+    )
+  )
     throw Error("Unknown browser operation");
   if (
     input.project_id &&
@@ -120,7 +124,8 @@ function menuEfforts(model) {
   });
 }
 async function nativeBatch(rpcid, payloads) {
-  if (location.origin !== "https://gemini.google.com") throw Error("Invalid Gemini origin");
+  if (location.origin !== "https://gemini.google.com")
+    throw Error("Invalid Gemini origin");
   const settings = window.WIZ_global_data;
   if (!settings?.SNlM0e) throw Error("Gemini sign-in required");
   const url = new URL("/_/BardChatUi/data/batchexecute", location.origin);
@@ -130,12 +135,22 @@ async function nativeBatch(rpcid, payloads) {
   if (settings.cfb2h) url.searchParams.set("bl", settings.cfb2h);
   if (settings.FdrFJe) url.searchParams.set("f.sid", settings.FdrFJe);
   const response = await fetch(url, {
-    method: "POST", credentials: "same-origin",
-    headers: { "content-type": "application/x-www-form-urlencoded;charset=UTF-8", "x-same-domain": "1" },
-    body: new URLSearchParams({ at: settings.SNlM0e, "f.req": JSON.stringify([payloads.map(args => [rpcid, JSON.stringify(args), null, "generic"])]) }),
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
+      "x-same-domain": "1",
+    },
+    body: new URLSearchParams({
+      at: settings.SNlM0e,
+      "f.req": JSON.stringify([
+        payloads.map((args) => [rpcid, JSON.stringify(args), null, "generic"]),
+      ]),
+    }),
     signal: AbortSignal.timeout(30000),
   });
-  if (!response.ok) throw Error("Gemini request failed (HTTP " + response.status + ")");
+  if (!response.ok)
+    throw Error("Gemini request failed (HTTP " + response.status + ")");
   const body = await response.text();
   if (body.length > 32 * 1024 * 1024) throw Error("Gemini response too large");
   const values = [];
@@ -147,11 +162,13 @@ async function nativeBatch(rpcid, payloads) {
       values.push(JSON.parse(part[2]));
     }
   }
-  if (values.length !== payloads.length) throw Error("Gemini response contract changed");
+  if (values.length !== payloads.length)
+    throw Error("Gemini response contract changed");
   return values;
 }
 async function deleteChatInPage(cid) {
-  if (!/^c_[a-f0-9]+$/.test(cid)) throw Error("Invalid Gemini deletion context");
+  if (!/^c_[a-f0-9]+$/.test(cid))
+    throw Error("Invalid Gemini deletion context");
   await nativeBatch("GzXR5e", [[cid]]);
   return true;
 }
@@ -173,11 +190,13 @@ async function run(input) {
     return;
   }
   const reading = ["history", "chats", "delete_chat"].includes(input.mode);
-  const route = reading ? "/app" : input.conversation_id
-    ? "/app/" + input.conversation_id.slice(2)
-    : input.project_id
-      ? "/notebook/" + input.project_id.slice(10)
-      : "/app";
+  const route = reading
+    ? "/app"
+    : input.conversation_id
+      ? "/app/" + input.conversation_id.slice(2)
+      : input.project_id
+        ? "/notebook/" + input.project_id.slice(10)
+        : "/app";
   if (!tab && input.resume_temporary)
     throw Error("Temporary Gemini browser context was closed");
   if (!tab) {
@@ -210,7 +229,9 @@ async function run(input) {
   };
   const invoke = (fn, ...args) =>
     evaluate(
-      "(()=>{const nativeBatch=" + nativeBatch.toString() + ";const renderMarkdown=" +
+      "(()=>{const nativeBatch=" +
+        nativeBatch.toString() +
+        ";const renderMarkdown=" +
         renderMarkdown.toString() +
         ";return (" +
         fn.toString() +
@@ -260,28 +281,41 @@ async function run(input) {
       });
     await pause(200);
     if (reading) {
-      await wait(() => evaluate("!!window.WIZ_global_data?.SNlM0e"), 30, "authenticated page");
-    } else await wait(() =>
-      invoke(pageState).then(
-        (s) =>
-          s.ready &&
-          (input.mode !== "send" || input.resume_temporary || s.path === route),
-      ),
-    );
+      await wait(
+        () => evaluate("!!window.WIZ_global_data?.SNlM0e"),
+        30,
+        "authenticated page",
+      );
+    } else
+      await wait(() =>
+        invoke(pageState).then(
+          (s) =>
+            s.ready &&
+            (input.mode !== "send" ||
+              input.resume_temporary ||
+              s.path === route),
+        ),
+      );
     if (input.mode === "delete_chat") {
       await invoke(deleteChatInPage, input.conversation_id);
       emit({ type: "deleted", id: input.conversation_id });
       return;
     }
     if (input.mode === "history") {
-      if (!/^c_[a-f0-9]+$/.test(input.conversation_id || "")) throw Error("Invalid conversation identity");
-      const data = await invoke(nativeBatch, "hNvQHb", [[input.conversation_id, 1000, null, 1, [1], [4], null, 1]]);
+      if (!/^c_[a-f0-9]+$/.test(input.conversation_id || ""))
+        throw Error("Invalid conversation identity");
+      const data = await invoke(nativeBatch, "hNvQHb", [
+        [input.conversation_id, 1000, null, 1, [1], [4], null, 1],
+      ]);
       emit({ type: "history", data: data[0] });
       return;
     }
     if (input.mode === "chats") {
       const count = Math.min(5001, Math.max(1, Number(input.limit) || 50));
-      const data = await invoke(nativeBatch, "MaZiqc", [[count, null, [1, null, 1]], [count, null, [0, null, 1]]]);
+      const data = await invoke(nativeBatch, "MaZiqc", [
+        [count, null, [1, null, 1]],
+        [count, null, [0, null, 1]],
+      ]);
       emit({ type: "chats", data });
       return;
     }

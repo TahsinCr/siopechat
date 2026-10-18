@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from providers.registry import PROVIDERS
 from utils.events import EventBus
 
 DEFAULT_KEYBINDINGS = {
@@ -80,7 +81,7 @@ DEFAULTS = {
         "show_reasoning": True,
     },
     "keybindings": DEFAULT_KEYBINDINGS,
-    "providers": {"chatgpt": {"enabled": True}, "gemini": {"enabled": True}},
+    "providers": {key: {"enabled": True} for key in PROVIDERS},
     "extensions": {"layout": {"enabled": True}, "archive": {"enabled": True}},
     "accounts": {
         "active": "chatgpt/default",
@@ -167,7 +168,7 @@ class Settings:
         for item in items:
             if (
                 not isinstance(item, dict)
-                or item.get("provider") not in ("chatgpt", "gemini")
+                or item.get("provider") not in PROVIDERS
                 or not isinstance(item.get("id"), str)
                 or not re.fullmatch("[A-Za-z0-9_-]+", item["id"])
                 or not isinstance(item.get("label"), str)
@@ -180,6 +181,15 @@ class Settings:
             if key in seen:
                 raise ValueError("duplicate account")
             seen.add(key)
+        by_key = {x["provider"] + "/" + x["id"]: x for x in items}
+        for item in items:
+            target = item.get("browser_account")
+            if target is not None and (
+                target not in by_key
+                or by_key[target].get("browser_account")
+                or by_key[target]["provider"] == item["provider"]
+            ):
+                raise ValueError("invalid shared browser account")
         if accounts.get("active") not in seen:
             raise ValueError("active account does not exist")
         selected = accounts.get("selected", {})
