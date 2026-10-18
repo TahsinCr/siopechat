@@ -75,8 +75,16 @@ class Notebooks:
     def __init__(self, cdp_url, account_id, *, ensure_ready=None):
         self.cdp_url, self.account_id = cdp_url, account_id
         self.ensure_ready = ensure_ready
+        self.reader = None
 
     async def read(self, remote=None, mode=None, cursor=None):
+        if self.reader is not None:
+            return await self.reader(
+                "notebooks",
+                remote=notebook_id(remote) if remote else None,
+                operation=mode or "list",
+                cursor=cursor,
+            )
         if self.ensure_ready is not None:
             await asyncio.to_thread(self.ensure_ready)
         if remote:

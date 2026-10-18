@@ -13,9 +13,15 @@ function validate(input) {
   )
     throw Error("Only a local debugging browser is supported");
   if (
-    !["models", "send", "delete_chat", "history", "chats", "close"].includes(
-      input.mode,
-    )
+    ![
+      "models",
+      "send",
+      "delete_chat",
+      "history",
+      "chats",
+      "notebooks",
+      "close",
+    ].includes(input.mode)
   )
     throw Error("Unknown browser operation");
   if (
@@ -50,7 +56,13 @@ function pageState() {
   const editor = document.querySelector('[contenteditable][role="textbox"]');
   const responses = Array.from(document.querySelectorAll("model-response"));
   const last = responses.at(-1);
-  const markdown = last?.querySelector(".markdown");
+  const markdown = [...(last?.querySelectorAll(".markdown") || [])].find(
+    (e) => !e.closest("thoughts-content,.thoughts-content,.thoughts-container"),
+  );
+  const toggle = last?.querySelector(
+    'button[aria-expanded="false"][aria-controls*="thought"],button.thoughts-header-button[aria-expanded="false"]',
+  );
+  if (toggle) toggle.click();
   const thinking = last?.querySelector(
     "thoughts-content,.thoughts-content,.thoughts-container",
   );
@@ -83,7 +95,9 @@ function menuModels() {
         e.querySelector(".label")?.textContent.trim() ||
         e.innerText.split("\n")[0].trim(),
       remote: e.getAttribute("data-test-id").slice("bard-mode-option-".length),
-      selected: e.classList.contains("selected"),
+      selected:
+        e.classList.contains("selected") ||
+        e.getAttribute("aria-checked") === "true",
     }));
 }
 function menuEfforts(model) {
@@ -118,7 +132,9 @@ function menuEfforts(model) {
             title:
               e.querySelector(".label")?.textContent.trim() ||
               e.innerText.split("\n")[0].trim(),
-            selected: e.classList.contains("selected"),
+            selected:
+              e.classList.contains("selected") ||
+              e.getAttribute("aria-checked") === "true",
           },
         ];
   });
@@ -175,6 +191,27 @@ async function deleteChatInPage(cid) {
   await nativeBatch("GzXR5e", [[cid]]);
   return true;
 }
+async function waitFor(fn, seconds = 15, label = "page") {
+  const until = Date.now() + seconds * 1000;
+  while (Date.now() < until) {
+    try {
+      const value = await fn();
+      if (value) return value;
+    } catch (error) {
+      if (
+        !/Cannot find (default execution )?context|Execution context was destroyed/i.test(
+          error.message,
+        )
+      )
+        throw error;
+    }
+    await pause(200);
+  }
+  throw Error(
+    "Gemini " + label + " did not become ready; the operation was not replayed",
+  );
+}
+
 async function run(input) {
   const base = validate(input);
   const json = async (path, options) => {
@@ -186,13 +223,16 @@ async function run(input) {
     return r.json();
   };
   let tab;
+  let created = false;
   if (input.tab_id)
     tab = (await json("/json/list")).find((t) => t.id === input.tab_id);
   if (input.mode === "close") {
     if (tab) await fetch(new URL("/json/close/" + tab.id, base));
     return;
   }
-  const reading = ["history", "chats", "delete_chat"].includes(input.mode);
+  const reading = ["history", "chats", "notebooks", "delete_chat"].includes(
+    input.mode,
+  );
   const route = reading
     ? "/app"
     : input.conversation_id
@@ -206,11 +246,12 @@ async function run(input) {
     const version = await json("/json/version");
     const browser = await connect(version.webSocketDebuggerUrl, base);
     try {
-      const created = await browser.call("Target.createTarget", {
+      const target = await browser.call("Target.createTarget", {
         url: "https://gemini.google.com" + route,
         background: true,
       });
-      tab = (await json("/json/list")).find((t) => t.id === created.targetId);
+      tab = (await json("/json/list")).find((t) => t.id === target.targetId);
+      created = true;
     } finally {
       browser.close();
     }
@@ -220,13 +261,20 @@ async function run(input) {
   emit({ type: "tab", id: tab.id });
   const cdp = await connect(tab.webSocketDebuggerUrl, base);
   await cdp.call("Emulation.setFocusEmulationEnabled", { enabled: true });
+  // Native menus/composer can remain unpainted in a background Chrome tab.
+  // RPC-only readers stay in the background; explicit interactive actions wake it.
+  if (!reading) await cdp.call("Page.bringToFront");
   const evaluate = async (expression) => {
-    const r = await cdp.call("Runtime.evaluate", {
-      expression,
-      returnByValue: true,
-      awaitPromise: true,
-      userGesture: true,
-    });
+    const r = await cdp.call(
+      "Runtime.evaluate",
+      {
+        expression,
+        returnByValue: true,
+        awaitPromise: true,
+        userGesture: true,
+      },
+      40000,
+    );
     if (r.exceptionDetails) throw Error("Gemini page contract changed");
     return r.result.value;
   };
@@ -242,19 +290,7 @@ async function run(input) {
         args.map((x) => JSON.stringify(x)).join(",") +
         ");})()",
     );
-  const wait = async (fn, seconds = 15, label = "page") => {
-    const until = Date.now() + seconds * 1000;
-    while (Date.now() < until) {
-      const value = await fn();
-      if (value) return value;
-      await pause(200);
-    }
-    throw Error(
-      "Gemini " +
-        label +
-        " did not become ready; check sign-in in the connected browser",
-    );
-  };
+  const wait = waitFor;
   let submitted = false;
   const stop = () =>
     invoke(() => {
@@ -278,7 +314,12 @@ async function run(input) {
   process.once("SIGTERM", cancel);
   process.once("SIGINT", cancel);
   try {
-    if (input.mode === "send" && !input.resume_temporary)
+    if (
+      input.mode === "send" &&
+      !input.resume_temporary &&
+      !created &&
+      new URL(tab.url).pathname !== route
+    )
       await cdp.call("Page.navigate", {
         url: "https://gemini.google.com" + route,
       });
@@ -302,6 +343,27 @@ async function run(input) {
     if (input.mode === "delete_chat") {
       await invoke(deleteChatInPage, input.conversation_id);
       emit({ type: "deleted", id: input.conversation_id });
+      return;
+    }
+    if (input.mode === "notebooks") {
+      if (input.remote && !/^notebooks\/[A-Za-z0-9_-]+$/.test(input.remote))
+        throw Error("Invalid notebook identity");
+      if (!["list", "get", "chats"].includes(input.operation))
+        throw Error("Invalid notebook read operation");
+      const rpc =
+        input.operation === "chats"
+          ? "MaZiqc"
+          : input.remote
+            ? "HcT8bb"
+            : "CNgdBe";
+      const language = await evaluate('document.documentElement.lang || "en"');
+      const args =
+        input.operation === "chats"
+          ? [10, input.cursor || null, [null, null, 1, input.remote, 1]]
+          : input.remote
+            ? [input.remote, [language], 0]
+            : [2, [language], 0, null, [2]];
+      emit({ type: "notebooks", data: await invoke(nativeBatch, rpc, [args]) });
       return;
     }
     if (input.mode === "history") {
@@ -458,7 +520,7 @@ async function run(input) {
                 Array.isArray(x) &&
                 ((x[0] === remote && "native:" + x[1] === id) || x.some(walk));
               if (walk(tree)) {
-                e.click();
+                (e.querySelector(".label") || e).click();
                 return true;
               }
             } catch {}
@@ -469,14 +531,15 @@ async function run(input) {
         wanted.id,
       );
       if (!ok) throw Error("Gemini effort control changed");
-      await wait(
-        () =>
-          evaluate(
-            'document.querySelector("[data-test-id=bard-mode-menu-button]")?.innerText || ""',
-          ).then((text) => text.includes(wanted.title)),
-        5,
-        "effort selection",
-      );
+      // The model button need not display the effort title. Reopen the native
+      // menu and verify its selected identity rather than translated header text.
+      const confirmed = await efforts(selected);
+      if (
+        !confirmed.some((choice) => choice.id === wanted.id && choice.selected)
+      )
+        throw Error(
+          "Gemini effort selection could not be confirmed; prompt was not sent",
+        );
     }
     await escape();
     await escape();
@@ -583,11 +646,11 @@ async function run(input) {
         emit({ type: "bound", id: bound });
       }
       if (state.count <= before.count) continue;
-      if (state.thoughts !== thoughts) {
+      if (state.thoughts && state.thoughts !== thoughts) {
         thoughts = state.thoughts;
         emit({ type: "replace", channel: "analysis", text: thoughts });
       }
-      if (state.text !== previous) {
+      if (state.text && state.text !== previous) {
         previous = state.text;
         stable = 0;
         emit({ type: "replace", channel: "final", text: previous });
@@ -614,7 +677,14 @@ async function run(input) {
     cdp.close();
   }
 }
-module.exports = { validate, canonicalModel, deleteChatInPage, nativeBatch };
+module.exports = {
+  validate,
+  canonicalModel,
+  deleteChatInPage,
+  nativeBatch,
+  waitFor,
+  menuEfforts,
+};
 if (require.main === module) {
   const raw = fs.readFileSync(0, "utf8");
   if (raw.length > 2 * 1024 * 1024) throw Error("Input too large");

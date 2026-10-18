@@ -313,3 +313,19 @@ late snapshots cannot discard a new response or its published thinking summary.
 Accepted turns are saved atomically with any history loaded in the meantime.
 Disabling the archive uses the same display reconciliation without importing the
 extension into the UI.
+
+
+### Provider browser lifecycle
+
+Gemini uses separate owned tabs for native history/notebook reads and composing.
+Reads drain their helper process before releasing the reader lock and may recover
+once from a disconnected debugger. Prompt submission is never automatically
+replayed. Native model/effort controls are checked by selected identity, not by
+whether the model button happens to display an effort label. Explicit interactive
+actions can activate the browser tab; passive cached startup does not open it.
+
+Only provider-published thinking text is displayed. ChatGPT completion snapshots
+supply summaries that may be absent from stream deltas; Gemini keeps the last
+nonempty summary across temporary DOM updates; Claude can show published thinking
+blocks while streaming and reconcile them with its completed response. Models
+that do not publish a summary will have no thinking block.

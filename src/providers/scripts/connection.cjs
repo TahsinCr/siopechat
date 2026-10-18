@@ -11,9 +11,36 @@ async function connect(address, base) {
     pending = new Map();
   const listeners = new Map();
   let seq = 0;
+  let closed = false;
+  const failPending = (message) => {
+    closed = true;
+    for (const p of pending.values()) {
+      clearTimeout(p.timer);
+      p.reject(Error(message));
+    }
+    pending.clear();
+  };
+  ws.addEventListener("close", () => failPending("Debugger disconnected"));
+  ws.addEventListener("error", () => failPending("Debugger connection failed"));
   await new Promise((resolve, reject) => {
-    ws.addEventListener("open", resolve, { once: true });
-    ws.addEventListener("error", reject, { once: true });
+    const timer = setTimeout(() => {
+      reject(Error("Debugger connection timed out"));
+      ws.close();
+    }, 10000);
+    const fail = () => {
+      clearTimeout(timer);
+      reject(Error("Debugger connection failed"));
+    };
+    ws.addEventListener(
+      "open",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+    ws.addEventListener("error", fail, { once: true });
+    ws.addEventListener("close", fail, { once: true });
   });
   ws.addEventListener("message", (event) => {
     const m = JSON.parse(event.data),
@@ -33,6 +60,7 @@ async function connect(address, base) {
       listeners.get(method).add(callback);
     },
     async call(method, params = {}, timeoutMs = 10000) {
+      if (closed) throw Error("Debugger disconnected");
       return new Promise((resolve, reject) => {
         const id = ++seq;
         const timer = setTimeout(() => {

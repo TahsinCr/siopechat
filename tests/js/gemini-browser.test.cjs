@@ -119,3 +119,11 @@ test('void source acknowledgements require explicit opt-in and still reject RPC 
     await assert.rejects(nativeBatch('AptDmf',[['owned']],true),/rejected/);
   }finally{Object.assign(global,previous);}
 });
+
+test('page readiness tolerates a navigation context change but never retries other errors',async()=>{
+ const{waitFor}=require('../../src/providers/gemini/scripts/browser.cjs');let calls=0;
+ assert.equal(await waitFor(()=>{if(!calls++)throw Error('Cannot find default execution context');return true;},1),true);
+ assert.equal(calls,2);calls=0;
+ await assert.rejects(waitFor(()=>{calls++;throw Error('write outcome unknown');},1),/write outcome unknown/);
+ assert.equal(calls,1);
+});

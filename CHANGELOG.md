@@ -74,6 +74,11 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Fixed
 
+- Separate Gemini composer and history/notebook reader tabs and locks; drain read/catalog helpers, recover disconnected reads once, and keep transient transport errors separate from authentication loss.
+- Verify Gemini effort by native selected identity instead of model-button text; avoid duplicate navigation and tolerate execution-context replacement while waiting for page readiness.
+- Reject pending CDP operations promptly on disconnect and bound debugger connection startup.
+- Publish ChatGPT completion thinking summaries, preserve Gemini summaries across empty DOM reads, and stream available Claude thinking blocks separately.
+
 - Reconcile late history snapshots with accepted visible turns instead of replacing the transcript; retain message identity, pending replies and published thinking during synchronization.
 - Atomically save accepted turns alongside history hydrated during persistence; share provider-neutral history reconciliation between UI and optional archive.
 

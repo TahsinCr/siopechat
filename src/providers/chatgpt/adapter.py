@@ -233,7 +233,9 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
             if not isinstance(item, dict):
                 continue
             content = item.get("content") or {}
-            parts = content.get("parts", ()) if isinstance(content, dict) else ()
+            from .formats import message_parts
+
+            parts = message_parts(content)
             parts = parts if isinstance(parts, list) else []
             author = item.get("author")
             author = author if isinstance(author, dict) else {}
@@ -248,7 +250,10 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
                     str(item.get("id", "")),
                     author.get("role", "unknown"),
                     blocks,
-                    item.get("channel"),
+                    "analysis"
+                    if content.get("content_type")
+                    in ("thoughts", "reasoning_recap", "reasoning_summary")
+                    else item.get("channel"),
                     dict(item),
                 )
             )
@@ -341,7 +346,7 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
                     holder.append(client)
                     if stopped.is_set():
                         return
-                    remote_id, _, _ = client.send_prompt(
+                    remote_id, completed, previous = client.send_prompt(
                         request.conversation_id,
                         request.prompt,
                         on_event=event,
@@ -355,6 +360,27 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
                         **({"project_id": request.project_id} if request.project_id else {}),
                         **({"temporary": True} if request.temporary else {}),
                     )
+                    # Native summaries can arrive only in the completion snapshot.
+                    # The common API must not drop these provider-visible blocks.
+                    from .formats import message_parts, text_from_parts
+
+                    summaries = []
+                    for item in completed.get("messages", []):
+                        if item.get("id") in set(previous or ()):
+                            continue
+                        if (item.get("author") or {}).get("role") != "assistant":
+                            continue
+                        content = item.get("content") or {}
+                        if item.get("channel") == "analysis" or content.get("content_type") in (
+                            "thoughts",
+                            "reasoning_recap",
+                            "reasoning_summary",
+                        ):
+                            text = text_from_parts(message_parts(content))
+                            if text:
+                                summaries.append(text)
+                    if summaries:
+                        publish(("event", ReplaceText("\n\n".join(summaries), "analysis")))
                     publish(("event", ConversationBound(remote_id)))
             except _Stopped:
                 return

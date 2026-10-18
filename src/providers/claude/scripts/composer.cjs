@@ -95,6 +95,7 @@ async function send(
 
   let cid = c.conversation_id,
     last = "",
+    lastThought = "",
     stable = 0,
     lastChange = Date.now(),
     lastConfirmation = 0,
@@ -110,10 +111,26 @@ async function send(
           document.querySelectorAll("[data-testid=assistant-message]"),
         ).at(-1),
       ),
+      thoughts: renderMarkdown(
+        Array.from(
+          document.querySelectorAll(
+            '[data-testid="thinking-content"], [data-testid="thinking-block"]',
+          ),
+        ).at(-1),
+      ),
       working: !!document.querySelector(
         '[data-testid=stop-button],button[aria-label="Stop response"],button[aria-label="Yanıtı durdur"],button[aria-label="Durdur"],button[aria-label="Stop"]',
       ),
     }));
+    if (
+      state.count > before &&
+      state.thoughts &&
+      state.thoughts !== lastThought
+    ) {
+      lastThought = state.thoughts;
+      lastChange = Date.now();
+      emit({ type: "replace", text: lastThought, channel: "analysis" });
+    }
     if (state.cid && !bound) {
       cid = state.cid;
       bound = true;

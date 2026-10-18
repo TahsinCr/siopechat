@@ -13,6 +13,62 @@ from providers.models import FeatureState, Model, ModelCatalog, Origin
 
 
 class NativeHistoryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_native_read_drains_subprocess_and_has_a_separate_tab(self):
+        from providers.gemini.browser import NativeBrowser
+
+        browser = NativeBrowser("http://127.0.0.1:9231")
+        browser.tab_id = "composer"
+        drained = []
+
+        async def events(mode, **kwargs):
+            self.assertFalse(kwargs["remember"])
+            self.assertIsNone(kwargs["tab_id"])
+            yield {"type": "tab", "id": "reader"}
+            yield {"type": mode, "data": []}
+            drained.append(True)
+
+        browser.events = events
+        self.assertEqual(await browser.read("history"), [])
+        self.assertEqual(drained, [True])
+        self.assertEqual((browser.tab_id, browser.read_tab_id), ("composer", "reader"))
+
+    async def test_native_history_read_does_not_wait_for_the_composer_gate(self):
+        import asyncio
+
+        provider = GeminiProvider(
+            Path("unused"), notebooks=SimpleNamespace(cdp_url="http://127.0.0.1:9231")
+        )
+        provider.browser.authenticated = True
+        provider.browser.read = AsyncMock(return_value=[[]])
+        async with provider._gate:
+            result = await asyncio.wait_for(provider.get_chat("c_abc"), 0.2)
+        self.assertEqual(result.messages, ())
+
+    async def test_native_notebooks_share_the_dedicated_reader(self):
+        from providers.gemini.notebooks import Notebooks
+
+        notebooks = Notebooks("http://127.0.0.1:9231", "personal")
+        provider = GeminiProvider(Path("unused"), notebooks=notebooks)
+        provider.browser.read = AsyncMock(return_value=[])
+        notebooks.reader = provider.browser.read
+        self.assertEqual((await notebooks.list()).items, ())
+        provider.browser.read.assert_awaited_once_with(
+            "notebooks", remote=None, operation="list", cursor=None
+        )
+
+    async def test_read_reconnects_once_without_replaying_a_send(self):
+        from providers.errors import ProviderError
+        from providers.gemini.browser import NativeBrowser
+
+        browser = NativeBrowser("http://127.0.0.1:9231")
+        browser._read_once = AsyncMock(side_effect=[ProviderError("Debugger disconnected"), []])
+        self.assertEqual(await browser.read("history"), [])
+        self.assertEqual(browser._read_once.await_count, 2)
+        browser._read_once = AsyncMock(side_effect=ProviderError("native contract changed"))
+        with self.assertRaisesRegex(ProviderError, "contract changed"):
+            await browser.read("history")
+        self.assertEqual(browser._read_once.await_count, 1)
+
     async def test_configured_reads_never_initialize_an_independent_cookie_session(self):
         provider = GeminiProvider(
             Path("unused"), notebooks=SimpleNamespace(cdp_url="http://127.0.0.1:9231")

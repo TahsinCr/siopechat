@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from providers import Capability, ProviderRegistry, SendRequest, TextDelta
+from providers import Capability, ProviderRegistry, ReplaceText, SendRequest, TextDelta
 from providers.chatgpt import BrowserSession, ChatGPTProvider, SessionPaths
 from providers.errors import RateLimited, RemoteNotFound
 from providers.models import Choice, FeatureState, Model, ModelCatalog, SessionState
@@ -133,6 +133,20 @@ class ProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
             delete.assert_awaited_once_with(
                 self.provider.session.cdp_url, "chatgpt", "g-p-created", name="Fixture"
             )
+
+    async def test_completed_snapshot_publishes_thinking_summaries(self):
+        self.client.closed.set()
+        self.client.raw["messages"][0]["content"] = {
+            "content_type": "thoughts",
+            "thoughts": [{"summary": "Published summary"}],
+        }
+        events = [
+            event
+            async for event in self.provider.stream(
+                SendRequest("chatgpt", "default", "local", "hello")
+            )
+        ]
+        self.assertIn(ReplaceText("Published summary", "analysis"), events)
 
     async def test_stream_produces_common_events_and_releases_transport(self):
         self.client.closed.set()

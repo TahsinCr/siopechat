@@ -15,6 +15,8 @@ class NativeBrowser:
         self.cdp_url = cdp_url
         self.ensure_ready = ensure_ready
         self.tab_id = None
+        self.read_tab_id = None
+        self._read_gate = asyncio.Lock()
         self.authenticated = False
         self.temporary_tabs = {}
         self.owned_tabs = set()
@@ -50,7 +52,8 @@ class NativeBrowser:
                     else:
                         yield event
                 elif event.get("type") == "error":
-                    self.authenticated = False
+                    if event.get("status") == 401:
+                        self.authenticated = False
                     message = event.get("message") or "Gemini browser operation failed"
                     if message == "fetch failed":
                         message = "Gemini bağlı tarayıcı bağlantısı kesildi; mesaj otomatik tekrar gönderilmedi"
@@ -75,11 +78,38 @@ class NativeBrowser:
                     await process.wait()
 
     async def read(self, mode, **options):
-        async for event in self.events(mode, **options):
-            if event.get("type") == mode:
-                self.authenticated = True
-                return event["data"]
-        raise ProviderError("Gemini veri okuma işlemi tamamlanmadı")
+        async with self._read_gate:
+            for attempt in range(2):
+                try:
+                    return await self._read_once(mode, **options)
+                except ProviderError as error:
+                    disconnected = any(
+                        word in str(error).lower()
+                        for word in (
+                            "fetch failed",
+                            "debugger disconnected",
+                            "debugger connection",
+                            "bağlantısı kesildi",
+                        )
+                    )
+                    if attempt or not disconnected:
+                        raise
+                    old, self.read_tab_id = self.read_tab_id, None
+                    if old:
+                        await self.close_tab(old)
+
+    async def _read_once(self, mode, **options):
+        result = None
+        found = False
+        async for event in self.events(mode, remember=False, tab_id=self.read_tab_id, **options):
+            if event.get("type") == "tab":
+                self.read_tab_id = event["id"]
+            elif event.get("type") == mode:
+                result, found = event["data"], True
+        if not found:
+            raise ProviderError("Gemini veri okuma işlemi tamamlanmadı")
+        self.authenticated = True
+        return result
 
     async def delete_chat(self, conversation_id):
         confirmed = False
@@ -91,10 +121,11 @@ class NativeBrowser:
             raise ProviderError("Gemini sohbet silme işlemi doğrulanamadı; listeyi yenileyin")
 
     async def models(self):
+        result = None
         async for event in self.events("models"):
             if event["type"] != "models":
                 continue
-            return ModelCatalog(
+            result = ModelCatalog(
                 FeatureState.AVAILABLE,
                 tuple(
                     Model(
@@ -113,7 +144,9 @@ class NativeBrowser:
                     for item in event["items"]
                 ),
             )
-        raise ProviderError("Gemini model menüsü okunamadı")
+        if result is None:
+            raise ProviderError("Gemini model menüsü okunamadı")
+        return result
 
     async def stream(self, request):
         complete = False
