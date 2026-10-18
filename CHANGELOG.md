@@ -76,6 +76,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Fixed
 
+- Remove full-history terminal wrapping and per-fragment click-handler construction from conversation paints. Prepare Markdown and indexed rows in one background renderer, skip obsolete inactive views and paint only requested rows, including streaming updates.
+
 - Move saved-history reads, Markdown/ANSI preparation and live archive snapshot reads off the UI thread; avoid synchronous cache reads on conversation selection and hydration callbacks.
 - Reuse complete prepared transcripts across initial paint and recent tab switches, with bounded storage; cancel preparation for superseded selections.
 - Coalesce navigation pointer writes in a background persistence queue and drain them on shutdown instead of blocking tab changes on disk writes.

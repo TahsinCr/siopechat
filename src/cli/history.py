@@ -1,5 +1,6 @@
 """Background-only archive snapshots and transcript preparation for the terminal."""
 
+import threading
 from types import SimpleNamespace
 
 from prompt_toolkit.formatted_text import ANSI
@@ -7,7 +8,20 @@ from prompt_toolkit.formatted_text import ANSI
 from accounts import origin
 from providers.history import merge_conversation
 
-from .markdown import MessageRenderer, visible_chat_message
+from .markdown import MessageRenderer, index_transcript, visible_chat_message
+
+_render_gate = threading.Semaphore(1)
+
+
+def prepare_transcript(messages, width, tokens, reasoning, cancelled=None):
+    with _render_gate:
+        if cancelled and cancelled():
+            raise InterruptedError("Superseded transcript")
+        renderer = MessageRenderer()
+        renderer.configure(tokens)
+        text, ranges = renderer.transcript(messages, width, reasoning, cancelled)
+        ansi = ANSI(text).__pt_formatted_text__()
+        return text, ranges, ansi, index_transcript(ansi, ranges)
 
 
 def prepare_archive_snapshot(
@@ -21,6 +35,7 @@ def prepare_archive_snapshot(
     reasoning,
     default_account,
     revision,
+    active_tab=None,
 ):
     values, deleted, prepared = {}, set(), []
     states = archive.states()
@@ -58,21 +73,11 @@ def prepare_archive_snapshot(
                 m for x in value.get("messages", []) if (m := visible_chat_message(x)) is not None
             ]
             messages = merge_conversation({"messages": messages}, {"messages": local})["messages"]
-            renderer = MessageRenderer()
-            renderer.configure(tokens)
-            text, ranges = renderer.transcript(messages, width, reasoning)
-            prepared.append(
-                (
-                    tab,
-                    messages,
-                    width,
-                    tokens,
-                    reasoning,
-                    text,
-                    ranges,
-                    ANSI(text).__pt_formatted_text__(),
+            if active_tab is None or tab is active_tab:
+                text, ranges, ansi, lines = prepare_transcript(messages, width, tokens, reasoning)
+                prepared.append(
+                    (tab, messages, width, tokens, reasoning, text, ranges, ansi, lines)
                 )
-            )
     for cid, kind in identities:
         if cid:
             key, remote = origin(cid, default_account)

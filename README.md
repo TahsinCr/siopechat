@@ -340,3 +340,13 @@ a bounded character budget; superseded loads stop preparing their old transcript
 Live archive polling also gathers its storage snapshot on a worker, so a slow
 SQLite read cannot stall keyboard input. Navigation pointer writes are coalesced
 in an ordered background queue and drained on shutdown.
+
+### Large-history terminal rendering
+
+Opening several saved histories does not parse or lay out their Markdown on the
+terminal event loop. A single background renderer prepares styled rows; the
+terminal paints visible rows and handles clicks without rebuilding the complete
+history. Preparations for inactive tabs are skipped while their loaded messages
+remain available. Prepared views use an LRU character budget; a single oversized
+active view is retained so long histories remain readable. Switching tabs,
+scrolling and background archive updates keep their existing state.

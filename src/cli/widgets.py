@@ -7,11 +7,51 @@ from typing import Any, Callable
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.layout import Window
-from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.layout.controls import FormattedTextControl, UIContent, UIControl
 from prompt_toolkit.layout.margins import Margin
 from prompt_toolkit.layout.processors import Processor, Transformation
 from prompt_toolkit.mouse_events import MouseButton, MouseEventType
 from prompt_toolkit.utils import get_cwidth
+
+
+class TranscriptControl(UIControl):
+    """Paint only requested transcript rows; selection never rebuilds all spans."""
+
+    def __init__(self, view):
+        self.view = view
+        self.rows = ()
+
+    def is_focusable(self):
+        return True
+
+    def create_content(self, width, height):
+        self.rows = self.view.transcript_rows()
+        rows = self.rows
+        cursor = self.view.transcript_cursor_position()
+        cursor = Point(0, min(max(0, cursor.y), max(0, len(rows) - 1)))
+
+        def get_line(number):
+            spans, message = rows[number]
+            selected = self.view.message_selection and message == self.view.selected_message
+            return [
+                (style + (" class:message.selected" if selected else ""), text)
+                for style, text in spans
+            ]
+
+        return UIContent(
+            get_line=get_line, line_count=len(rows), cursor_position=cursor, show_cursor=False
+        )
+
+    def mouse_handler(self, mouse_event):
+        if (
+            mouse_event.event_type == MouseEventType.MOUSE_UP
+            and mouse_event.button == MouseButton.LEFT
+        ):
+            line = mouse_event.position.y
+            if 0 <= line < len(self.rows):
+                self.view.select_message(self.rows[line][1])
+                return None
+        return NotImplemented
 
 
 class BoundedTextControl(FormattedTextControl):

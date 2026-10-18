@@ -175,6 +175,30 @@ def visible_chat_message(message: dict[str, Any]) -> dict[str, str] | None:
     }
 
 
+def index_transcript(ansi, ranges):
+    """Coalesce styled spans once and index logical rows for lazy terminal paint."""
+    rows = [[]]
+    for style, text in ansi:
+        for part in text.splitlines(keepends=True):
+            newline = part.endswith("\n")
+            value = part[:-1] if newline else part
+            row = rows[-1]
+            if value:
+                if row and row[-1][0] == style:
+                    row[-1][1].append(value)
+                else:
+                    row.append((style, [value]))
+            if newline:
+                rows.append([])
+    indexed, position = [], 0
+    for number, spans in enumerate(rows):
+        while position < len(ranges) and number >= ranges[position][1]:
+            position += 1
+        message = ranges[position][2] if position < len(ranges) else None
+        indexed.append((tuple((style, "".join(parts)) for style, parts in spans), message))
+    return tuple(indexed)
+
+
 class MessageRenderer:
     def __init__(self):
         self.theme = MARKDOWN_THEME

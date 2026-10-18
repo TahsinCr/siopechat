@@ -37,10 +37,11 @@ from utils import clipboard
 
 from .actions import action_order, action_title
 from .bindings import key_bindings
-from .history import prepare_archive_snapshot
+from .history import prepare_archive_snapshot, prepare_transcript
 from .layout import workspace_layout
 from .markdown import (
     MessageRenderer,
+    index_transcript,
     render_chatgpt_annotations,
     visible_chat_message,
 )
@@ -52,6 +53,7 @@ from .widgets import (
     BoundedTextControl,
     ComposerPlaceholderProcessor,
     SlashCommandCompleter,
+    TranscriptControl,
     TranscriptWindow,
     fit_text,
     on_click,
@@ -234,14 +236,10 @@ class ChatView:
         self.tabs: list[dict[str, Any]] = [dict(self._new_tab_state(), tab_id=uuid.uuid4().hex)]
         self.active_tab = 0
 
-        self.transcript_control = BoundedTextControl(
-            text=self.render_formatted_transcript,
-            focusable=True,
-            get_cursor_position=self.transcript_cursor_position,
-        )
+        self.transcript_control = TranscriptControl(self)
         self.transcript_window = TranscriptWindow(
             content=self.transcript_control,
-            wrap_lines=True,
+            wrap_lines=False,
             right_margins=[],
             allow_scroll_beyond_bottom=False,
             on_manual_scroll=self.pause_following,
@@ -426,6 +424,7 @@ class ChatView:
             )
 
             default_account = self.account_key
+            snapshot_active_tab = self.tabs[self.active_tab]
 
             def read():
                 return prepare_archive_snapshot(
@@ -439,6 +438,7 @@ class ChatView:
                     reasoning,
                     default_account,
                     revision[1],
+                    snapshot_active_tab,
                 )
 
             def completed(result):
@@ -2907,7 +2907,9 @@ class ChatView:
             )
         return FormattedText([("", " Hazır")])
 
-    def remember_transcript(self, tab, messages, width, tokens, reasoning, text, ranges, ansi):
+    def remember_transcript(
+        self, tab, messages, width, tokens, reasoning, text, ranges, ansi, lines=None
+    ):
         cache = getattr(self, "_prepared_transcripts", {})
         self._prepared_transcripts = cache
         key = tab["tab_id"]
@@ -2916,18 +2918,20 @@ class ChatView:
             len(text) + sum(len(part[1]) for part in ansi) + sum(len(m["text"]) for m in messages)
         )
         if cost > 4_000_000:
-            return
+            cache.clear()  # Keep one renderable oversized view; never loop on a placeholder.
         cache[key] = dict(
             width=width,
+            conversation_id=tab.get("conversation_id"),
             tokens=tokens,
             reasoning=reasoning,
             messages=tuple((m["role"], m["text"]) for m in messages),
             text=text,
             ranges=ranges,
             ansi=ansi,
+            lines=lines if lines is not None else index_transcript(ansi, ranges),
             cost=cost,
         )
-        while sum(item["cost"] for item in cache.values()) > 4_000_000:
+        while len(cache) > 1 and sum(item["cost"] for item in cache.values()) > 4_000_000:
             cache.pop(next(iter(cache)))
 
     def render_transcript(self) -> str:
@@ -2949,7 +2953,6 @@ class ChatView:
         snapshot = snapshots.get(tab_id)
         if (
             snapshot
-            and not self.active_busy()
             and snapshot["width"] == width
             and snapshot["tokens"] == self.renderer.tokens
             and snapshot["reasoning"] == self.show_reasoning
@@ -2960,8 +2963,57 @@ class ChatView:
             self.message_ranges = snapshot["ranges"]
             self.transcript_line_count = snapshot["text"].count("\n") + 1
             self._ansi_render_key, self._ansi_fragments = snapshot["text"], snapshot["ansi"]
+            self._line_render_key, self._transcript_lines = snapshot["text"], snapshot["lines"]
             self._transcript_signature, self._transcript_cache = signature, snapshot["text"]
             return snapshot["text"]
+        if self.app.is_running and messages:
+            tab = self.tabs[self.active_tab]
+            key = tab["tab_id"]
+            pending = getattr(self, "_render_pending", set())
+            self._render_pending = pending
+            if key not in pending:
+                pending.add(key)
+                tokens, reasoning = dict(self.renderer.tokens), self.show_reasoning
+                conversation_id = tab.get("conversation_id")
+
+                def read():
+                    return prepare_transcript(
+                        messages,
+                        width,
+                        tokens,
+                        reasoning,
+                        cancelled=lambda: (
+                            not any(tab is x for x in self.tabs)
+                            or self.tabs[self.active_tab] is not tab
+                            or tab.get("conversation_id") != conversation_id
+                        ),
+                    )
+
+                def ready(result):
+                    pending.discard(key)
+                    if tab.get("conversation_id") == conversation_id:
+                        self.remember_transcript(tab, messages, width, tokens, reasoning, *result)
+                    self.app.invalidate()
+
+                def failed(reason):
+                    pending.discard(key)
+                    self.app.invalidate()
+
+                self._read_in_background(read, ready, failed, session_bound=False)
+            if (
+                snapshot
+                and snapshot.get("conversation_id") == tab.get("conversation_id")
+                and snapshot["width"] == width
+                and snapshot["tokens"] == self.renderer.tokens
+                and snapshot["reasoning"] == self.show_reasoning
+            ):
+                self.message_ranges = snapshot["ranges"]
+                self.transcript_line_count = len(snapshot["lines"])
+                self._line_render_key, self._transcript_lines = snapshot["text"], snapshot["lines"]
+                return snapshot["text"]
+            self.message_ranges = []
+            self.transcript_line_count = 1
+            return "Sohbet görünümü hazırlanıyor…"
         if not messages:
             self.message_ranges = []
             buffer = StringIO()
@@ -3054,6 +3106,18 @@ class ChatView:
             getattr(self, "theme_options", {}).get("message_width", 100),
             max(8, self.main_width() - 5),
         )
+
+    def transcript_rows(self):
+        rendered = self.render_transcript()
+        if rendered != getattr(self, "_line_render_key", None):
+            if rendered != getattr(self, "_ansi_render_key", None):
+                self._ansi_render_key, self._ansi_fragments = (
+                    rendered,
+                    ANSI(rendered).__pt_formatted_text__(),
+                )
+            self._transcript_lines = index_transcript(self._ansi_fragments, self.message_ranges)
+            self._line_render_key = rendered
+        return self._transcript_lines
 
     def render_formatted_transcript(self):
         rendered = self.render_transcript()
@@ -3758,8 +3822,6 @@ class ChatView:
         render_width = self.transcript_width()
         render_reasoning = self.show_reasoning
         render_tokens = dict(self.renderer.tokens)
-        render_cache = self.renderer.cache.copy()
-        render_cache_characters = self.renderer.cache_characters
 
         def load_selected(use_cache=True) -> None:
             try:
@@ -3779,20 +3841,25 @@ class ChatView:
                     if visible is not None:
                         messages.append(visible)
 
-                prepared_renderer = MessageRenderer()
-                prepared_renderer.configure(render_tokens)
-                prepared_renderer.cache = render_cache
-                prepared_renderer.cache_characters = render_cache_characters
-                prepared_text, prepared_ranges = prepared_renderer.transcript(
-                    messages,
-                    render_width,
-                    render_reasoning,
-                    cancelled=lambda: (
-                        target_tab.get("load_token") != token
-                        or not any(tab is target_tab for tab in self.tabs)
-                    ),
+                try:
+                    prepared = prepare_transcript(
+                        messages,
+                        render_width,
+                        render_tokens,
+                        render_reasoning,
+                        cancelled=lambda: (
+                            target_tab.get("load_token") != token
+                            or self.tabs[self.active_tab] is not target_tab
+                        ),
+                    )
+                except InterruptedError:
+                    prepared = None
+                prepared_text, prepared_ranges, prepared_ansi, prepared_lines = prepared or (
+                    None,
+                    [],
+                    [],
+                    [],
                 )
-                prepared_ansi = ANSI(prepared_text).__pt_formatted_text__()
 
                 def apply_conversation() -> None:
                     if (
@@ -3836,26 +3903,20 @@ class ChatView:
                             target_tab["response_model"] = model
                         else:
                             target_tab["model"] = model
-                    self.remember_transcript(
-                        target_tab,
-                        messages,
-                        render_width,
-                        render_tokens,
-                        render_reasoning,
-                        prepared_text,
-                        prepared_ranges,
-                        prepared_ansi,
-                    )
+                    if prepared is not None:
+                        self.remember_transcript(
+                            target_tab,
+                            messages,
+                            render_width,
+                            render_tokens,
+                            render_reasoning,
+                            *prepared,
+                        )
                     if target_tab is self.tabs[self.active_tab]:
-                        if (
-                            self.transcript_width() == render_width
-                            and self.renderer.tokens == render_tokens
-                        ):
-                            self.renderer.cache = prepared_renderer.cache
-                            self.renderer.cache_characters = prepared_renderer.cache_characters
                         self._restore_active_tab(focus=False)
                         if (
-                            self.messages == messages
+                            prepared is not None
+                            and self.messages == messages
                             and self.transcript_width() == render_width
                             and self.show_reasoning == render_reasoning
                         ):
@@ -3873,6 +3934,10 @@ class ChatView:
                             self._ansi_render_key, self._ansi_fragments = (
                                 prepared_text,
                                 prepared_ansi,
+                            )
+                            self._line_render_key, self._transcript_lines = (
+                                prepared_text,
+                                prepared_lines,
                             )
                         self.status = (
                             "Kayıtlı geçmiş · arka planda eşitleniyor"

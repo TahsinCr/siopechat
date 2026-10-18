@@ -299,7 +299,11 @@ class FocusTests(unittest.IsolatedAsyncioTestCase):
         ) as (v, _):
             run = asyncio.create_task(v.app.run_async())
             try:
-                await self.settle(lambda: v.transcript_window.render_info is not None)
+                await self.settle(
+                    lambda: (
+                        v.transcript_window.render_info is not None and v.transcript_line_count > 80
+                    )
+                )
                 w = v.transcript_window
                 bottom = w.vertical_scroll
                 for _ in range(5):
