@@ -10,6 +10,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Added
 
+- Sidebar account filters labeled with provider names, plus newest/oldest and ascending/descending name ordering shared by projects and conversations. Browsing another configured account does not change the active sending account.
+
 - Provider-scoped project creation and editing forms, multiline instructions and dynamically discovered native source types for ChatGPT, Claude and Gemini notebooks.
 - Project edit/source actions in details, commands, configurable shortcuts and the command palette; long shared forms scroll with accessible save/cancel controls.
 - Frontend-independent project editing API with exact resource ownership, file size validation and server readback after each native write.

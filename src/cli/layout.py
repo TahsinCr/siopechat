@@ -71,15 +71,7 @@ def workspace_layout(view):
                                 ],
                                 width=3,
                             ),
-                            filter=Condition(
-                                lambda: (
-                                    view.account_service is not None
-                                    and len(
-                                        {item["provider"] for item in view.account_service.items()}
-                                    )
-                                    > 1
-                                )
-                            ),
+                            filter=Condition(lambda: view.account_service is not None),
                         ),
                     ]
                 ),

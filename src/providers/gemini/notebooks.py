@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 
 from ..errors import ProviderError
 from ..models import Conversation, Origin, Page, Project, Resource
+from .history import timestamp
 
 
 def notebook_id(value):
@@ -61,6 +62,7 @@ def project_from_native(row, account_id):
         tuple(resources),
         {
             "kind": "notebook",
+            "updated_at": timestamp(field(field(detail, 14), 1)),
             "url": "https://gemini.google.com/notebook/" + remote.removeprefix("notebooks/"),
             "native": row,
             "notebook_type": field(settings, 4),

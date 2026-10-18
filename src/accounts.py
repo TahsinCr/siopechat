@@ -637,12 +637,13 @@ class Accounts:
             ],
         }
 
-    def list_chats(self, selected=None, cursor=None, force=False):
+    def list_chats(self, selected=None, cursor=None, force=False, account_keys=None):
         cursors = json.loads(cursor) if cursor else None
         accounts = [
             item
-            for item in self.active_accounts()
-            if self.enabled(item["provider"])
+            for item in self.items()
+            if (account_keys is None or item["key"] in account_keys)
+            and self.enabled(item["provider"])
             and (selected is None or item["provider"] in selected)
             and (cursors is None or item["key"] in cursors)
             and self.status(item["key"])["saved_snapshot"]
@@ -706,14 +707,16 @@ class Accounts:
 
         return self.read_record(key, "containers", cursor, fetch, force)
 
-    def all_projects(self, cursor=None, force=False):
+    def all_projects(self, cursor=None, force=False, account_keys=None):
         from concurrent.futures import ThreadPoolExecutor
 
         cursors = json.loads(cursor) if cursor else None
         accounts = [
             item
-            for item in self.active_accounts()
-            if (cursors is None or item["key"] in cursors)
+            for item in self.items()
+            if self.enabled(item["provider"])
+            and (account_keys is None or item["key"] in account_keys)
+            and (cursors is None or item["key"] in cursors)
             and (
                 self.status(item["key"])["saved_snapshot"]
                 or (

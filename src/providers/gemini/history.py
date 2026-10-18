@@ -13,6 +13,12 @@ def nested(value, *path, default=None):
         return default
 
 
+def timestamp(value):
+    if isinstance(value, list) and len(value) == 2 and all(type(x) in (int, float) for x in value):
+        return value[0] + value[1] / 1e9
+    return None
+
+
 def conversations(pages, origin):
     result = {}
     for page in pages:
@@ -26,7 +32,9 @@ def conversations(pages, origin):
             if not isinstance(cid, str) or not cid.startswith("c_"):
                 continue
             result[cid] = Conversation(
-                origin(cid), title or "Gemini sohbeti", metadata={"native": row}
+                origin(cid),
+                title or "Gemini sohbeti",
+                metadata={"native": row, "updated_at": timestamp(nested(row, 5))},
             )
     return tuple(result.values())
 

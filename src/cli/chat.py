@@ -39,6 +39,7 @@ from .actions import action_order, action_title
 from .bindings import key_bindings
 from .history import prepare_archive_snapshot, prepare_transcript
 from .layout import workspace_layout
+from .library import SORT_OPTIONS, sort_records
 from .markdown import (
     MessageRenderer,
     index_transcript,
@@ -122,6 +123,8 @@ class ChatView:
         self.provider_id = self.account_key.split("/")[0]
         self.provider_features = frozenset({Capability.PROJECTS})
         self.provider_filter = None
+        self.account_filter = None
+        self.library_sort = "time_desc"
         self._account_projects = {}
         self._account_catalogs = {}
         self._catalog_requests = {}
@@ -587,11 +590,11 @@ class ChatView:
             self.set_active_conversation = lambda value: self.account_service.cache(
                 key
             ).set_active_conversation(origin(value, key)[1])
-        self.list_conversations = lambda: self.account_service.list_chats(self.provider_filter)[
-            "items"
-        ]
+        self.list_conversations = lambda: self.account_service.list_chats(
+            self.provider_filter, account_keys=self.account_filter
+        )["items"]
         self.list_history_page = lambda cursor: self.account_service.list_chats(
-            self.provider_filter, cursor
+            self.provider_filter, cursor, account_keys=self.account_filter
         )
 
     def select_account(self, key):
@@ -663,28 +666,40 @@ class ChatView:
     def open_filters(self):
         if not self.account_service:
             return
-        providers = sorted({account["provider"] for account in self.account_service.items()})
-        if len(providers) < 2:
+        accounts = [a for a in self.account_service.items() if a.get("enabled", True)]
+        if not accounts:
             return
 
         def apply(values):
-            if not values["providers"]:
-                raise ValueError("En az bir sağlayıcı seçin")
-            self.provider_filter = set(values["providers"])
+            if not values["accounts"]:
+                raise ValueError("En az bir hesap seçin")
+            self.account_filter = set(values["accounts"])
+            self.provider_filter = {
+                a["provider"] for a in accounts if a["key"] in self.account_filter
+            }
+            self.library_sort = values["sort"]
             self.refresh_sidebar()
 
         self.forms.open(
-            "Sohbet filtresi",
+            "Kütüphane filtresi ve sıralama",
             [
                 (
-                    "providers",
-                    "Gösterilecek sağlayıcılar",
+                    "accounts",
+                    "Gösterilecek hesaplar",
                     (
-                        [(key, key.title()) for key in providers],
-                        list(self.provider_filter or providers),
+                        [
+                            (a["key"], f"{a['label']} · {PROVIDERS[a['provider']][0]}")
+                            for a in accounts
+                        ],
+                        list(
+                            self.account_filter
+                            if self.account_filter is not None
+                            else [a["key"] for a in accounts]
+                        ),
                     ),
                     None,
-                )
+                ),
+                ("sort", "Sohbet ve proje sıralaması", self.library_sort, SORT_OPTIONS),
             ],
             apply,
         )
@@ -1498,8 +1513,8 @@ class ChatView:
     def _build_sidebar_rows(self) -> None:
         query = self.sidebar_search.text.strip().casefold()
         active_keys = (
-            {item["key"] for item in self.account_service.active_accounts()}
-            if self.account_service and hasattr(self.account_service, "active_accounts")
+            self.account_filter or {item["key"] for item in self.account_service.items()}
+            if self.account_service and hasattr(self.account_service, "items")
             else None
         )
         conversations = [
@@ -1516,8 +1531,11 @@ class ChatView:
         projects: dict[str, list[dict[str, Any]]] = {
             key: []
             for key, project in self.project_items.items()
-            if self.provider_filter is None
-            or project.get("provider_id", origin(key)[0].split("/")[0]) in self.provider_filter
+            if (active_keys is None or origin(key, self.account_key)[0] in active_keys)
+            and (
+                self.provider_filter is None
+                or project.get("provider_id", origin(key)[0].split("/")[0]) in self.provider_filter
+            )
         }
         unassigned: list[dict[str, Any]] = []
         for item in conversations:
@@ -1545,12 +1563,13 @@ class ChatView:
             }
         )
         if "section:projects" not in self.sidebar_collapsed:
-            for project_id, items in sorted(
-                projects.items(),
-                key=lambda pair: str(
-                    self.project_items.get(pair[0], {}).get("name") or pair[0]
-                ).casefold(),
-            ):
+            project_order = sort_records(
+                [dict(self.project_items.get(pid, {}), id=pid) for pid in projects],
+                self.library_sort,
+            )
+            for project_record in project_order:
+                project_id = project_record["id"]
+                items = sort_records(projects[project_id], self.library_sort)
                 project_meta = items[0].get("project") if items else {}
                 project_meta = project_meta if isinstance(project_meta, dict) else {}
                 remote = self.project_items.get(project_id, {})
@@ -1607,7 +1626,9 @@ class ChatView:
             if self.project_cursor:
                 rows.append({"kind": "projects_more", "title": "Daha fazla proje…"})
 
-        visible_chats = [item for item in unassigned if matches(item)]
+        visible_chats = sort_records(
+            [item for item in unassigned if matches(item)], self.library_sort
+        )
         rows.append(
             {
                 "kind": "section",
@@ -2012,7 +2033,7 @@ class ChatView:
         if self.account_service and hasattr(self.account_service, "all_projects"):
 
             def callback(cursor):
-                return self.account_service.all_projects(cursor)
+                return self.account_service.all_projects(cursor, account_keys=self.account_filter)
 
         epoch = self.session_epoch
 

@@ -53,7 +53,7 @@ class Accounts:
     def select(self, key):
         self.selected = key
 
-    def list_chats(self, selected=None, cursor=None):
+    def list_chats(self, selected=None, cursor=None, account_keys=None):
         return {"items": [], "cursor": None}
 
     def callbacks(self, key):
@@ -94,9 +94,10 @@ class AccountUiTests(unittest.IsolatedAsyncioTestCase):
                 attrs = v.app._merged_style.get_attrs_for_style_str("class:dialog.body")
                 self.assertEqual(attrs.bgcolor, "252525")
                 self.assertEqual(
-                    set(v.forms.fields["providers"].current_values), {"chatgpt", "gemini"}
+                    set(v.forms.fields["accounts"].current_values),
+                    {"chatgpt/default", "gemini/personal"},
                 )
-                v.forms.fields["providers"].current_values = ["gemini"]
+                v.forms.fields["accounts"].current_values = ["gemini/personal"]
                 pipe.send_bytes(b"\x13")
                 await self.settle(lambda: not v.forms.visible)
                 self.assertEqual(v.provider_filter, {"gemini"})

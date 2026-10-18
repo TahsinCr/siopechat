@@ -29,7 +29,7 @@ class Forms:
             )
             if choices:
                 widget = RadioList(choices, default=value)
-            elif key == "providers":
+            elif key in ("providers", "accounts"):
                 widget = CheckboxList(value[0], default_values=value[1])
             else:
                 widget = TextArea(

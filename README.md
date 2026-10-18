@@ -350,3 +350,18 @@ history. Preparations for inactive tabs are skipped while their loaded messages
 remain available. Prepared views use an LRU character budget; a single oversized
 active view is retained so long histories remain readable. Switching tabs,
 scrolling and background archive updates keep their existing state.
+
+### Library filters and ordering
+
+The filter button beside sidebar search opens a shared account checklist and sort
+selector, including when only one provider is configured. Each account is labeled
+with its provider. Choose newest/oldest first or A–Z/Z–A; the same order applies to
+projects, project children and unassigned conversations. Entries without a native
+date follow dated entries. Gemini chat and notebook timestamps are normalized by
+the provider adapter rather than guessed by the terminal UI.
+
+The library can browse multiple configured accounts without switching the active
+sending account. Only the selected account for each provider can send messages;
+viewing a different account's archive does not silently activate it. Filters are
+session-local and apply to the sidebar, independently of the draft's model and
+project picker.
