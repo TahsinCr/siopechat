@@ -78,6 +78,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Fixed
 
+- Honor Claude’s selected native workspace for chat and project requests; reject ambiguous or inaccessible workspace selection instead of silently reading the first organization.
+
 - Keep message selection attached to its original message when older history is inserted, remove the obsolete full-fragment painter, and retain a single oversized prepared transcript instead of repeatedly displaying its loading placeholder.
 
 - Remove full-history terminal wrapping and per-fragment click-handler construction from conversation paints. Prepare Markdown and indexed rows in one background renderer, skip obsolete inactive views and paint only requested rows, including streaming updates.

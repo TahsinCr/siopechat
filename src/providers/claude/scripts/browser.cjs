@@ -9,6 +9,25 @@ const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 const uuid = (value) =>
   typeof value === "string" &&
   /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
+function selectOrganization(organizations, preferred) {
+  if (!Array.isArray(organizations))
+    throw Error("Claude organization contract changed");
+  const usable = organizations.filter(
+    (x) =>
+      uuid(x.uuid) &&
+      Array.isArray(x.capabilities) &&
+      x.capabilities.includes("chat"),
+  );
+  if (preferred) {
+    const selected = usable.find((x) => x.uuid === preferred);
+    if (!selected)
+      throw Error("Selected Claude workspace is unavailable; select a workspace in Claude");
+    return selected;
+  }
+  if (usable.length > 1)
+    throw Error("Select a workspace in Claude before synchronizing");
+  return usable[0];
+}
 function validate(c) {
   if (
     ![
@@ -119,7 +138,11 @@ async function run(c) {
       "page",
     );
     const organizations = await request("/api/organizations");
-    const org = organizations.find((x) => x.capabilities?.includes("chat"));
+    const preferred = await p.evaluate(() => {
+      const match = document.cookie.match(/(?:^|;\s*)lastActiveOrg=([^;]*)/);
+      return match ? decodeURIComponent(match[1]) : null;
+    });
+    const org = selectOrganization(organizations, preferred);
     if (!org) {
       const e = Error("Claude chat account is not signed in");
       e.status = 401;
@@ -244,7 +267,7 @@ async function run(c) {
     await p.close();
   }
 }
-module.exports = { validate, modelOptions, apiRequest };
+module.exports = { validate, modelOptions, apiRequest, selectOrganization };
 if (require.main === module) {
   const raw = fs.readFileSync(0, "utf8");
   if (raw.length > 2 * 1024 * 1024) throw Error("Input too large");

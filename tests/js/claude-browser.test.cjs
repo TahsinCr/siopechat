@@ -263,3 +263,15 @@ test("legacy thinking switches retain binary choices", () => {
     global.document = previous;
   }
 });
+
+
+test("Claude respects selected workspace and never silently falls back", () => {
+  const { selectOrganization } = require("../../src/providers/claude/scripts/browser.cjs");
+  const first = { uuid: id, capabilities: ["chat"] };
+  const second = { uuid: "aaaaaaaa-abcd-1234-abcd-123456789abc", capabilities: ["chat"] };
+  assert.equal(selectOrganization([first, second], second.uuid), second);
+  assert.equal(selectOrganization([first], null), first);
+  assert.throws(() => selectOrganization([first, second], null), /workspace/);
+  assert.throws(() => selectOrganization([first], second.uuid), /workspace/);
+  assert.throws(() => selectOrganization({}, null), /contract/);
+});
