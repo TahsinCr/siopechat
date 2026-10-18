@@ -74,6 +74,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Fixed
 
+- Activate the hit-tested ChatGPT project deletion control directly, avoiding confirmation focus races during native dialog mounting.
+
 - Do not reject a successful ChatGPT authentication capture when the debugger reports an error during intentional socket shutdown; create projects in an owned tab rather than a potentially busy user tab.
 - Allow native Gemini notebook reads to finish within their network timeout, and confirm void source-deletion replies by reading the exact source identity back from the server.
 

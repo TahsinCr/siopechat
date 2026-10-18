@@ -249,7 +249,7 @@ ChatGPT transport work originates from [tritao/chatgpt-web](https://github.com/t
 
 ### Delete chats and projects
 
-Use **Chat: Delete** or **Projects: Delete** in the command palette, or `/delete [ID]` and `/delete-project [ID]`. The default shortcuts are Alt+D and Alt+Delete. Both operations ask for confirmation, with **Cancel** selected initially. Project deletion follows the provider’s behavior for its contained chats. Only delete projects you own and no longer need.
+Use **Chat: Delete** or **Projects: Delete** in the command palette, or `/delete [ID]` and `/delete-project [ID]`. The default shortcuts are Alt+D and Alt+Delete. Both operations ask for confirmation, with **Cancel** selected initially. ChatGPT project deletion targets the confirmed native button directly so a late browser focus change cannot redirect Enter. Project deletion follows the provider’s behavior for its contained chats. Only delete projects you own and no longer need.
 
 Configured Gemini accounts delete conversations through the signed-in browser session; standalone adapters can use the SDK transport. This does not require exporting the browser session again. Deletion happens on the provider first. Successful deletion removes cached list references and normalized archive rows and stores a persistent tombstone, preventing an older in-flight sync from restoring the record. Provider failures preserve the archive. Shared content-addressed files are retained rather than removed blindly. Unsupported or unauthorized operations return an explicit error.
 

@@ -131,3 +131,11 @@ test("Gemini custom menu activates its label and confirms delete-everywhere exac
     delete global.document;
   }
 });
+
+test("ChatGPT's chat-and-work delete label resolves to the exact confirmed control",()=>{
+ const confirm=button("Sohbet ve Çalışma'dan sil");
+ let focused=false;confirm.focus=()=>{focused=true;};
+ const dialog={...button('Dialog'),querySelectorAll:()=>[button('İptal'),confirm]};
+ global.document={querySelectorAll:s=>s.includes('role=dialog')?[dialog]:[]};
+ try{assert.deepEqual(findAction({provider:'chatgpt'},'confirm'),{x:11,y:7,settings:false});assert.equal(focused,true);}finally{delete global.document;}
+});

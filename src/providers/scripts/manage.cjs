@@ -237,19 +237,26 @@ async function main(config) {
         await pause();
         return;
       }
-      await c.call("Input.dispatchKeyEvent", {
-        type: "keyDown",
-        key: "Enter",
-        code: "Enter",
-        windowsVirtualKeyCode: 13,
-        nativeVirtualKeyCode: 13,
+      // Dialog focus can be reassigned after an overlay mounts. Activate the
+      // hit-tested control itself instead of sending Enter to transient focus.
+      await c.call("Input.dispatchMouseEvent", {
+        type: "mouseMoved",
+        x: b.x,
+        y: b.y,
       });
-      await c.call("Input.dispatchKeyEvent", {
-        type: "keyUp",
-        key: "Enter",
-        code: "Enter",
-        windowsVirtualKeyCode: 13,
-        nativeVirtualKeyCode: 13,
+      await c.call("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x: b.x,
+        y: b.y,
+        button: "left",
+        clickCount: 1,
+      });
+      await c.call("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x: b.x,
+        y: b.y,
+        button: "left",
+        clickCount: 1,
       });
       await pause();
     };
