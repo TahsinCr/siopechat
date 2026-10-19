@@ -611,5 +611,9 @@
   "ui.＋ Ekle": "＋ Ekle",
   "ui.Unut": "Unut",
   "ui.Yanıt tamamlandı: {0}": "Yanıt tamamlandı: {0}",
-  "ui.Yanıt arka planda sürüyor": "Yanıt arka planda sürüyor"
+  "ui.Yanıt arka planda sürüyor": "Yanıt arka planda sürüyor",
+  "ui.Hesabı düzenle": "Hesabı düzenle",
+  "ui.Hesap adı 1–80 karakter olmalı": "Hesap adı 1–80 karakter olmalı",
+  "ui.Düzenle": "Düzenle",
+  "ui.Hesaplar · Hesabı düzenle": "Hesaplar · Hesabı düzenle"
 }

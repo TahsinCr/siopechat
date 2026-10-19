@@ -407,6 +407,7 @@ class ProfileUiTests(unittest.IsolatedAsyncioTestCase):
                     for buttons in (
                         [
                             view.session_dialog.add_account_button,
+                            view.session_dialog.edit_account_button,
                             view.session_dialog.buttons["remove"],
                         ],
                         [
@@ -418,7 +419,9 @@ class ProfileUiTests(unittest.IsolatedAsyncioTestCase):
                         # The settings viewport may scroll either row off-screen.
                         visible = [line for line in text.splitlines() if labels[0] in line]
                         if visible:
-                            self.assertTrue(any(labels[1] in line for line in visible))
+                            self.assertTrue(
+                                any(all(label in line for label in labels) for line in visible)
+                            )
                     self.assertNotIn("Window too small", text)
                     self.assertNotIn("Bağlı tarayıcı", text)
                     self.assertNotIn("Tarayıcıda aç", text)

@@ -22,6 +22,9 @@ class SessionDialog:
         self.add_account_button = Button(
             self.view.tr("＋ Hesap ekle"), handler=self.view.add_account
         )
+        self.edit_account_button = Button(
+            self.view.tr("Hesabı düzenle"), handler=self.view.edit_account
+        )
         self.message = ""
         self.account_index = 0
         self.account_control = BoundedTextControl(
@@ -39,7 +42,9 @@ class SessionDialog:
             "remove": Button(self.view.tr("Hesabı sil"), width=24, handler=self.remove),
         }
         self.account_actions = VSplit(
-            [self.add_account_button, self.buttons["remove"]], padding=1, height=1
+            [self.add_account_button, self.edit_account_button, self.buttons["remove"]],
+            padding=1,
+            height=1,
         )
         self.actions = VSplit(
             [self.buttons["verify_profile"], self.buttons["logout"]], padding=1, height=1
@@ -101,9 +106,13 @@ class SessionDialog:
     def action_layout(self, accounts=False):
         width = max(1, self.view.settings_dialog.content_width() - 4)
         if accounts:
-            buttons = [self.add_account_button, self.buttons["remove"]]
-            labels = [self.view.tr("＋ Hesap ekle"), self.view.tr("Hesabı sil")]
-            compact = [self.view.tr("＋ Ekle"), self.view.tr("Sil")]
+            buttons = [self.add_account_button, self.edit_account_button, self.buttons["remove"]]
+            labels = [
+                self.view.tr("＋ Hesap ekle"),
+                self.view.tr("Hesabı düzenle"),
+                self.view.tr("Hesabı sil"),
+            ]
+            compact = [self.view.tr("＋ Ekle"), self.view.tr("Düzenle"), self.view.tr("Sil")]
         else:
             buttons = [self.buttons["verify_profile"], self.buttons["logout"]]
             labels = [
@@ -118,14 +127,20 @@ class SessionDialog:
         full_labels = [
             self.view.tr("＋ Hesap ekle"),
             self.view.tr("Hesabı sil"),
+            self.view.tr("Hesabı düzenle"),
             self.view.text("verify_profile", "Profil ile doğrula"),
             self.view.tr("Oturumu unut"),
             self.view.tr("Çıkış yap"),
         ]
         preferred = max(get_cwidth(label) for label in full_labels) + 4
-        button_width = max(1, min(preferred, (width - 1) // 2))
+        button_width = max(1, min(preferred, (width - 2) // 3))
         if any(get_cwidth(label) + 2 > button_width for label in labels):
             labels = compact
+        symbols = ["＋", "✎", "×"] if accounts else ["✓", "⏻"]
+        labels = [
+            label if get_cwidth(label) + 2 <= button_width else symbol
+            for label, symbol in zip(labels, symbols)
+        ]
         for button, label in zip(buttons, labels):
             button.text = label
             button.width = button.window.width = button_width

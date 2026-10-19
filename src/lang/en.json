@@ -611,5 +611,9 @@
   "ui.＋ Ekle": "＋ Add",
   "ui.Unut": "Forget",
   "ui.Yanıt tamamlandı: {0}": "Response completed: {0}",
-  "ui.Yanıt arka planda sürüyor": "Response continues in the background"
+  "ui.Yanıt arka planda sürüyor": "Response continues in the background",
+  "ui.Hesabı düzenle": "Edit account",
+  "ui.Hesap adı 1–80 karakter olmalı": "Account name must be 1–80 characters",
+  "ui.Düzenle": "Edit",
+  "ui.Hesaplar · Hesabı düzenle": "Accounts · Edit account"
 }

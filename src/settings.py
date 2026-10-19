@@ -29,6 +29,7 @@ DEFAULT_KEYBINDINGS = {
     "chat.attach": "escape a",
     "ui.filter": "escape f",
     "accounts.add": "escape n",
+    "accounts.edit": "escape c",
     "accounts.remove": "escape backspace",
     "chat.new": "c-t",
     "chat.close_tab": "c-w",
@@ -291,6 +292,26 @@ class Settings:
                 )
             self._commit(data)
         self._notify("providers", {provider_id: {"enabled": enabled}})
+
+    def rename_account(self, key, label):
+        """Change display metadata without replacing identity, sessions or preferences."""
+        if not isinstance(label, str) or not 1 <= len(label.strip()) <= 80:
+            raise ValueError("Hesap adı 1–80 karakter olmalı")
+        with self._lock:
+            data = self.snapshot()
+            item = next(
+                (
+                    item
+                    for item in data["accounts"]["items"]
+                    if item["provider"] + "/" + item["id"] == key
+                ),
+                None,
+            )
+            if item is None:
+                raise ValueError("Hesap bulunamadı")
+            item["label"] = label.strip()
+            self._commit(data)
+        self._notify("accounts", {"key": key, "label": label.strip()})
 
     def remove_account(self, key):
         """Remove metadata atomically, choosing another enabled account."""

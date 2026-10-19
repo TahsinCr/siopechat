@@ -34,6 +34,7 @@ def key_bindings(view) -> KeyBindings:
                     "chat.temporary",
                     "ui.command_palette",
                     "accounts.add",
+                    "accounts.edit",
                     "accounts.remove",
                 )
                 or view.palette_visible
@@ -320,6 +321,11 @@ def key_bindings(view) -> KeyBindings:
     bind("chat.attach", lambda _: view.open_attachment())
     bind("ui.filter", lambda _: view.open_filters())
     bind("accounts.add", lambda _: view.add_account())
+    bind(
+        "accounts.edit",
+        lambda _: view.edit_account(),
+        Condition(lambda: view.session_dialog.visible),
+    )
     bind(
         "accounts.remove",
         lambda _: view.session_dialog.remove(),

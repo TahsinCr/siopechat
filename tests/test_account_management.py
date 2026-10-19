@@ -20,6 +20,48 @@ class AccountManagementTests(unittest.TestCase):
         self.accounts = self.api.get("accounts")
         self.gemini = self.accounts.add("gemini", "Gemini personal")
 
+    def test_rename_preserves_identity_credentials_and_preferences(self):
+        key = self.gemini
+        self.accounts.select(key)
+        self.accounts.remember(key, "model", "effort")
+        path = self.accounts.credential_path(key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("preserved session")
+        before = self.api.settings.snapshot()["accounts"]
+        renamed = self.accounts.rename(key, "  Work account  ")
+        self.assertEqual(renamed["label"], "Work account")
+        self.assertEqual(renamed["key"], key)
+        self.assertEqual(path.read_text(), "preserved session")
+        after = Settings(self.api.settings.path).snapshot()["accounts"]
+        self.assertEqual(after["active"], before["active"])
+        self.assertEqual(after["selected"], before["selected"])
+        self.assertEqual(after["preferences"], before["preferences"])
+        item = next(x for x in after["items"] if x["provider"] + "/" + x["id"] == key)
+        self.assertEqual(item["label"], "Work account")
+        for invalid in ("", "   ", "x" * 81):
+            with self.assertRaises(ValueError):
+                self.accounts.rename(key, invalid)
+        self.assertEqual(self.accounts.item(key)["label"], "Work account")
+        with self.assertRaises(ValueError):
+            self.accounts.rename("gemini/missing", "Missing")
+
+    def test_edit_button_opens_selected_account_name_form(self):
+        with terminal(account_service=self.accounts) as (view, _):
+            view._read_in_background = immediate
+            view.refresh_sidebar = Mock()
+            view.refresh_provider_catalog = Mock()
+            view.select_account(self.gemini)
+            view.settings_dialog.open("accounts")
+            view.forms.open = Mock()
+            view.session_dialog.edit_account_button.handler()
+            _, fields, submit = view.forms.open.call_args.args
+            self.assertEqual(fields[0][0], "label")
+            self.assertEqual(fields[0][2], "Gemini personal")
+            submit({"label": "Gemini work"})
+            self.assertEqual(self.accounts.item(self.gemini)["label"], "Gemini work")
+            self.assertEqual(view.session_state["account"], "Gemini work")
+            self.assertIn("Gemini work", view.session_dialog.render_accounts()[1][1])
+
     def test_remove_account_clears_credentials_preferences_and_selection_on_restart(self):
         key = self.gemini
         self.accounts.select(key)

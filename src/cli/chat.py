@@ -665,6 +665,27 @@ class ChatView:
             submit,
         )
 
+    def edit_account(self):
+        if not self.account_service:
+            return
+        key = self.account_key
+        item = self.account_service.item(key)
+
+        def submit(values):
+            try:
+                updated = self.account_service.rename(key, values["label"])
+            except ValueError as error:
+                raise ValueError(self.tr(str(error))) from error
+            if self.account_key == key:
+                self.session_state = dict(self.session_state, account=updated["label"])
+            self.app.invalidate()
+
+        self.forms.open(
+            self.tr("Hesabı düzenle"),
+            [("label", self.tr("Hesap adı"), item["label"], None)],
+            submit,
+        )
+
     def open_filters(self):
         if not self.account_service:
             return

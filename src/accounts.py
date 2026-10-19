@@ -184,6 +184,11 @@ class Accounts:
         selected[key.split("/")[0]] = key
         self.settings.update("accounts", {"active": key, "selected": selected})
 
+    def rename(self, key, label):
+        """Rename the local display label while keeping the provider session intact."""
+        self.settings.rename_account(key, label)
+        return self.item(key)
+
     def remove(self, key):
         """Forget a local account; never delete the remote account or archived conversations."""
         self.item(key)
