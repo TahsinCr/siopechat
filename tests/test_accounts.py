@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import os
+import subprocess
 import tempfile
 import time
 import unittest
@@ -191,6 +193,28 @@ class AccountTests(unittest.TestCase):
         self.accounts.cdp_url = "http://127.0.0.1:9333"
         self.assertEqual(self.accounts.session("chatgpt/default").cdp_url, self.accounts.cdp_url)
         self.assertNotEqual(self.accounts.session(self.gemini).cdp_url, self.accounts.cdp_url)
+
+    def test_default_browser_launch_suppresses_child_output_from_terminal(self):
+        with patch("accounts.subprocess.run", return_value=Mock(returncode=0)) as launch:
+            self.assertEqual(
+                self.accounts.session_action(self.gemini, "default_browser"), {"opened": True}
+            )
+        args, kwargs = launch.call_args
+        self.assertEqual(args[0][1:4], ["-m", "webbrowser", "-t"])
+        self.assertEqual(args[0][4], "https://gemini.google.com/")
+        self.assertIs(kwargs["stdin"], subprocess.DEVNULL)
+        self.assertIs(kwargs["stdout"], subprocess.DEVNULL)
+        self.assertIs(kwargs["stderr"], subprocess.DEVNULL)
+        self.assertEqual(kwargs["timeout"], 15)
+        if os.name == "nt":
+            self.assertEqual(kwargs["creationflags"], 0x208)
+        else:
+            self.assertTrue(kwargs["start_new_session"])
+
+    def test_default_browser_launch_failure_is_reported(self):
+        with patch("accounts.subprocess.run", return_value=Mock(returncode=1)):
+            with self.assertRaisesRegex(RuntimeError, "Tarayıcı açılamadı"):
+                self.accounts.session_action(self.gemini, "default_browser")
 
     def test_mixed_list_filter_and_account_pagination(self):
         self.accounts.status = lambda _: {"saved_snapshot": True}

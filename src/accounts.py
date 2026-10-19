@@ -7,10 +7,10 @@ import json
 import mimetypes
 import os
 import subprocess
+import sys
 import threading
 import time
 import uuid
-import webbrowser
 from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -427,7 +427,20 @@ class Accounts:
         if action == "status":
             return self.status(key)
         if action == "default_browser":
-            if not webbrowser.open(PROVIDERS[item["provider"]][2], new=2):
+            # Browser stderr can contain Chromium diagnostics. Launch the
+            # stdlib browser handler in a quiet child so it cannot corrupt the
+            # terminal UI's alternate screen.
+            options = {"creationflags": 0x208} if os.name == "nt" else {"start_new_session": True}
+            result = subprocess.run(
+                [sys.executable, "-m", "webbrowser", "-t", PROVIDERS[item["provider"]][2]],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=15,
+                check=False,
+                **options,
+            )
+            if result.returncode:
                 raise RuntimeError("Tarayıcı açılamadı")
             return {"opened": True}
         if action == "connect_browser":

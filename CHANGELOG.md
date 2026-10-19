@@ -8,6 +8,10 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep default-browser diagnostics out of the terminal UI while reporting launch failures.
+
 ## [1.0-beta] - 2026-10-19
 
 First public beta.
