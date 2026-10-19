@@ -318,6 +318,8 @@ def key_bindings(view) -> KeyBindings:
     bind("chat.attach", lambda _: view.open_attachment())
     bind("ui.filter", lambda _: view.open_filters())
     bind("accounts.add", lambda _: view.add_account())
+    bind("layout.next_pane", lambda _: view.handle_command("/pane-next"))
+    bind("layout.previous_pane", lambda _: view.handle_command("/pane-prev"))
     bind("layout.split", lambda _: view.begin_split())
     bind("layout.split_down", lambda _: view.begin_split("rows"))
     bind(

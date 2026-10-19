@@ -24,6 +24,8 @@ DEFAULT_KEYBINDINGS = {
     "layout.split": "escape v",
     "layout.split_down": "escape h",
     "layout.unsplit": "escape u",
+    "layout.next_pane": "escape ]",
+    "layout.previous_pane": "escape [",
     "chat.attach": "escape a",
     "ui.filter": "escape f",
     "accounts.add": "escape n",

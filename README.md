@@ -354,3 +354,5 @@ The **⊗** button at the far right of the tab bar closes all idle tabs and leav
 ### Start a chat from project details
 
 Open a project’s details, choose its account’s model and effort, then write in the composer below. Sending creates a new conversation inside that project in a separate tab; the details tab remains available. The composer and model/effort bar are hidden while editing project information and return after saving or cancelling.
+
+In a split group, click anywhere in an inactive pane (including its gutter or empty area) to activate it. **Alt+[ / Alt+]** focus the previous/next pane in that group; **Alt+Left / Alt+Right** still switch tabs. The pane actions are also available as `/pane-prev` and `/pane-next`. Mouse-wheel scrolling keeps the current active pane. **F1** toggles help; pressing it again removes the help and restores the reading position.

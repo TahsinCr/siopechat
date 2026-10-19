@@ -4,6 +4,7 @@ from prompt_toolkit.data_structures import Point
 from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.layout import DynamicContainer, HSplit, VSplit, Window
 from prompt_toolkit.layout.margins import ScrollbarMargin
+from prompt_toolkit.mouse_events import MouseButton, MouseEventType
 
 from cli.markdown import MessageRenderer
 from cli.widgets import BoundedTextControl, TranscriptGutter, TranscriptWindow, fit_text, on_click
@@ -61,7 +62,7 @@ class SplitLayout:
         if target not in group["tabs"]:
             group["tabs"].append(target)
         self.pending = None
-        self.view.status = "Bölünmüş görünüm · panel başlığına tıklayarak odaklanın"
+        self.view.status = "Bölünmüş görünüm · panele tıklayarak odaklanın"
         self.view.app.invalidate()
 
     def unsplit(self):
@@ -70,6 +71,17 @@ class SplitLayout:
             self.groups.remove(group)
         self.pending = None
         self.view.app.invalidate()
+
+    def focus_pane(self, offset):
+        group = self.active_group()
+        if not group:
+            self.view.status = "Önce bölünmüş bir sohbet grubu açın"
+            self.view.app.invalidate()
+            return
+        current = self.view.tabs[self.view.active_tab]["tab_id"]
+        target = group["tabs"][(group["tabs"].index(current) + offset) % len(group["tabs"])]
+        index = next(i for i, tab in enumerate(self.view.tabs) if tab.get("tab_id") == target)
+        self.view.select_tab(index)
 
     def columns(self):
         group = self.active_group()
@@ -94,7 +106,9 @@ class SplitLayout:
                 )
             )
             panes.append(
-                HSplit([Window(content=pane.header, height=1, style="class:pane.header"), body])
+                _ClickablePane(
+                    pane, [Window(content=pane.header, height=1, style="class:pane.header"), body]
+                )
             )
 
         def row(items):
@@ -125,6 +139,46 @@ class SplitLayout:
         self._layout_signature = signature
         self._layout_container = result
         return result
+
+
+class _ClickablePane(HSplit):
+    """Intercept activation across the inactive pane, including margins and blank cells."""
+
+    def __init__(self, pane, children):
+        super().__init__(children)
+        self.pane = pane
+
+    def write_to_screen(
+        self, screen, mouse_handlers, write_position, parent_style, erase_bg, z_index
+    ):
+        super().write_to_screen(
+            screen, mouse_handlers, write_position, parent_style, erase_bg, z_index
+        )
+        pane = self.pane
+        if pane.view.tabs[pane.view.active_tab].get("tab_id") == pane.key:
+            return
+        wrapped = {}
+
+        def wrap(original):
+            def handler(event):
+                if event.button == MouseButton.LEFT and event.event_type in (
+                    MouseEventType.MOUSE_DOWN,
+                    MouseEventType.MOUSE_UP,
+                ):
+                    if pane.view.tabs[pane.view.active_tab].get("tab_id") != pane.key:
+                        pane.activate()
+                    return None
+                return original(event)
+
+            return handler
+
+        for y in range(write_position.ypos, write_position.ypos + write_position.height):
+            row = mouse_handlers.mouse_handlers[y]
+            for x in range(write_position.xpos, write_position.xpos + write_position.width):
+                original = row[x]
+                if original not in wrapped:
+                    wrapped[original] = wrap(original)
+                row[x] = wrapped[original]
 
 
 class _Pane:

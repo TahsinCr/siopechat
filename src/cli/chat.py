@@ -3462,6 +3462,9 @@ class ChatView:
             self.request_quit()
         elif name == "/new":
             self.new_tab()
+        elif name in ("/pane-next", "/pane-prev"):
+            if self.layout_controller and self.layout_enabled:
+                self.layout_controller.focus_pane(1 if name == "/pane-next" else -1)
         elif name == "/tab-next":
             self.switch_tab(1)
         elif name == "/tab-prev":
@@ -3572,6 +3575,21 @@ class ChatView:
                 self.status = "No pending image to remove"
             self.app.invalidate()
         elif name == "/help":
+            existing = next(
+                (message for message in self.messages if message.get("local_help")), None
+            )
+            if existing is not None:
+                with self.lock:
+                    self.messages.remove(existing)
+                state = self.tabs[self.active_tab].pop("help_view", None)
+                if state:
+                    self.follow_output, self.transcript_window.vertical_scroll = state
+                self.app.invalidate()
+                return
+            self.tabs[self.active_tab]["help_view"] = (
+                self.follow_output,
+                self.transcript_window.vertical_scroll,
+            )
             labels = {
                 "ui.command_palette": "Komut ve eylem paletini aç",
                 "ui.search": "Yüklenmiş sohbet listesini ara",
@@ -3659,6 +3677,7 @@ class ChatView:
                 "\n**Configured shortcuts**\n\n"
                 f"{shortcut_lines}"
             )
+            self.messages[-1]["local_help"] = True
         else:
             self.status = f"Unknown command: {name}"
             self.app.invalidate()

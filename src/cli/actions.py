@@ -30,6 +30,8 @@ _ACTION_NAMES = {
     "projects.remove_source": "Proje kaynağını kaldır",
     "chat.delete": "Sohbeti sağlayıcıdan sil",
     "projects.delete": "Projeyi sağlayıcıdan sil",
+    "layout.next_pane": "Sonraki bölünmüş panele geç",
+    "layout.previous_pane": "Önceki bölünmüş panele geç",
     "layout.split": "Yan yana böl",
     "layout.split_down": "Alt alta böl",
     "layout.unsplit": "Bölmeyi kaldır",

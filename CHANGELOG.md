@@ -10,6 +10,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Added
 
+- Activate split panes by clicking their content, margins or empty space; group-only previous/next navigation with configurable Alt+[ / Alt+] and `/pane-prev` / `/pane-next`.
+
 - Project details include a composer and account-scoped model/effort selectors. The first prompt opens a separate conversation in the project; editing hides the composer and selectors.
 
 - Direct Yes/No permanent-deletion confirmations, conversation composer and project-details delete buttons, and `/project-delete` with a searchable cross-provider project picker.
@@ -86,6 +88,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 - Competing settings-page filler, repeated shortcut hints and SDK logs written over the terminal interface.
 
 ### Fixed
+
+- F1 toggles help off on a second press, preserving conversation content and restoring its previous reading position.
 
 - Background project-detail loading preserves prompts and attachments entered while the request was pending.
 

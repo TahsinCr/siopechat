@@ -79,3 +79,71 @@ class SplitTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(v.layout_controller.groups)
             v.layout_controller.unsplit()
             self.assertIsNone(v.layout_controller.pending)
+
+    async def test_inactive_body_gutter_and_blank_space_activate_panel(self):
+        from prompt_toolkit.data_structures import Point
+        from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
+
+        from tests.test_terminal_responsiveness import ResizableOutput
+
+        with interaction.terminal(output=ResizableOutput(), layout_factory=SplitLayout) as (v, _):
+            v.messages = [{"role": "assistant", "text": "Left"}]
+            v.new_tab()
+            v.messages = [{"role": "assistant", "text": "Right"}]
+            v.layout_controller.begin()
+            v.select_tab(0)
+            v.layout_controller.attach()
+            run = asyncio.create_task(v.app.run_async())
+            try:
+                await self.settle(lambda: v.app.renderer._last_screen is not None)
+                for spot in ("body", "gutter", "blank"):
+                    v.select_tab(0)
+                    await asyncio.sleep(0.06)
+                    pane = v.layout_controller._panes[v.tabs[1]["tab_id"]]
+                    position = v.app.renderer._last_screen.visible_windows_to_write_positions[
+                        pane.body
+                    ]
+                    x = position.xpos + (0 if spot == "gutter" else 5)
+                    y = position.ypos + (position.height - 2 if spot == "blank" else 0)
+                    if spot == "body":
+                        wheel = MouseEvent(
+                            Point(x, y), MouseEventType.SCROLL_UP, MouseButton.NONE, frozenset()
+                        )
+                        v.app.renderer.mouse_handlers.mouse_handlers[y][x](wheel)
+                        self.assertEqual(v.active_tab, 0)
+                        self.assertFalse(pane.follow)
+                    event = MouseEvent(
+                        Point(x, y), MouseEventType.MOUSE_DOWN, MouseButton.LEFT, frozenset()
+                    )
+                    v.app.renderer.mouse_handlers.mouse_handlers[y][x](event)
+                    self.assertEqual(v.active_tab, 1, spot)
+            finally:
+                v.app.exit()
+                await run
+
+    async def test_split_shortcuts_cycle_group_only_and_f1_toggles(self):
+        with interaction.terminal(layout_factory=SplitLayout) as (v, pipe):
+            v.new_tab()
+            v.new_tab()
+            v.layout_controller.begin()
+            v.select_tab(0)
+            v.layout_controller.attach()
+            v.messages = [{"role": "assistant", "text": "Keep this"}]
+            v.follow_output = False
+            v.transcript_window.vertical_scroll = 0
+            run = asyncio.create_task(v.app.run_async())
+            try:
+                await self.settle(lambda: v.app.is_running)
+                pipe.send_bytes(b"\x1b]")
+                await self.settle(lambda: v.active_tab == 2)
+                pipe.send_bytes(b"\x1b[")
+                await self.settle(lambda: v.active_tab == 0)
+                pipe.send_bytes(b"\x1bOP")
+                await self.settle(lambda: any(m.get("local_help") for m in v.messages))
+                pipe.send_bytes(b"\x1bOP")
+                await self.settle(lambda: not any(m.get("local_help") for m in v.messages))
+                self.assertEqual(v.messages, [{"role": "assistant", "text": "Keep this"}])
+                self.assertFalse(v.follow_output)
+            finally:
+                v.app.exit()
+                await run

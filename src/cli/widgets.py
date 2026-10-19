@@ -110,6 +110,8 @@ class SlashCommandCompleter(Completer):
         ("/split-down", "split below; choose a chat from the sidebar"),
         ("/unsplit", "return to a single chat pane"),
         ("/new", "start a new conversation"),
+        ("/pane-next", "focus the next split pane"),
+        ("/pane-prev", "focus the previous split pane"),
         ("/tab-next", "switch to the next tab"),
         ("/tab-prev", "switch to the previous tab"),
         ("/tab-close", "close the current tab"),
