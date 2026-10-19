@@ -592,8 +592,13 @@
   "ui.Varsayılan tarayıcı profili bulunamadı": "Профиль браузера по умолчанию не найден",
   "ui.Bu profilde sağlayıcıya ait açık oturum bulunamadı": "В этом профиле не найден сеанс выбранного провайдера",
   "ui.Profil okuma zaman aşımına uğradı; sistem anahtarlığının kilidini açın": "Время чтения профиля истекло; разблокируйте системное хранилище ключей",
-  "ui.Profil okunamadı; tarayıcıyı kapatıp sistem anahtarlığının kilidini açın. Tarayıcının şifrelemesi desteklenmiyor olabilir": "Не удалось прочитать профиль; закройте браузер и разблокируйте хранилище ключей. Шифрование браузера может не поддерживаться",
   "ui.Profil okuma sonucu geçersiz": "Недопустимый результат чтения профиля",
   "ui.Profil doğrulaması tamamlanana kadar bekleyin": "Дождитесь завершения проверки профиля",
-  "ui.Profil ile doğrula, varsayılan tarayıcının son kullanılan profilini okur.\nHesabınıza bu profilde önceden giriş yapmış olmalısınız.\nDoğrulama sırasında tarayıcı açılmaz.\nÇıkış yalnız uygulamadaki oturumu unutur.": "Проверка из профиля читает последний профиль браузера по умолчанию.\nВ этом профиле уже должен быть выполнен вход в аккаунт.\nПроверка не запускает браузер.\nВыход удаляет только сеанс приложения."
+  "ui.Profil ile doğrula, varsayılan tarayıcının son kullanılan profilini okur.\nHesabınıza bu profilde önceden giriş yapmış olmalısınız.\nDoğrulama sırasında tarayıcı açılmaz.\nÇıkış yalnız uygulamadaki oturumu unutur.": "Проверка из профиля читает последний профиль браузера по умолчанию.\nВ этом профиле уже должен быть выполнен вход в аккаунт.\nПроверка не запускает браузер.\nВыход удаляет только сеанс приложения.",
+  "ui.Profil okunamadı (beklenmeyen hata); Python bağımlılıklarını ve profil erişimini kontrol edin": "Не удалось прочитать профиль (неожиданная ошибка); проверьте зависимости Python и доступ к профилю",
+  "ui.Profil okuyucu bağımlılıkları eksik; uygulamanın Python ortamında bağımlılıkları güncelleyin": "Отсутствуют зависимости чтения профиля; обновите их в окружении Python приложения",
+  "ui.Profil dosyasına erişim reddedildi; uygulamayı profilin sahibi olan kullanıcıyla çalıştırın": "Доступ к профилю запрещён; запустите приложение от имени владельца профиля",
+  "ui.Çerez veritabanı okunamadı; tarayıcıyı kapatıp yeniden deneyin": "Не удалось прочитать базу cookie; закройте браузер и повторите попытку",
+  "ui.Sistem anahtarlığına erişilemedi; masaüstü oturumunu ve anahtarlık kilidini kontrol edin": "Нет доступа к системному хранилищу ключей; проверьте сеанс рабочего стола и блокировку хранилища",
+  "ui.Tarayıcı çerezleri çözülemedi; anahtarlık erişimi veya tarayıcı şifrelemesi uyumsuz olabilir": "Не удалось расшифровать cookie; возможна проблема доступа к ключам или несовместимое шифрование браузера"
 }

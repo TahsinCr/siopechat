@@ -140,6 +140,52 @@ class ProfileTests(unittest.TestCase):
                 import_cookies("claude")
             self.assertNotIn("sensitive", str(error.exception))
 
+    def test_worker_errors_have_safe_distinct_categories(self):
+        from providers.profiles import _failure_code, _main
+
+        cases = [
+            (ModuleNotFoundError("private-value"), 3),
+            (PermissionError("private-value"), 4),
+            (sqlite3.OperationalError("database is locked: private-value"), 5),
+            (RuntimeError("Can not find secret for brave: private-value"), 6),
+            (RuntimeError("Unable to get key for cookie decryption: private-value"), 7),
+            (RuntimeError("private-value"), 1),
+        ]
+        for error, code in cases:
+            with self.subTest(code=code):
+                self.assertEqual(_failure_code(error), code)
+                if code == 3:
+                    continue
+                data = {
+                    "provider": "claude",
+                    "browser": "brave",
+                    "cookies": "/unused",
+                    "key_file": None,
+                }
+                output = io.StringIO()
+                with (
+                    patch("sys.stdin", io.StringIO(json.dumps(data))),
+                    contextlib.redirect_stdout(output),
+                    patch("browser_cookie3.brave", side_effect=error),
+                ):
+                    self.assertEqual(_main(), code)
+                self.assertEqual(output.getvalue(), "")
+
+    def test_dependency_failure_does_not_claim_keyring_or_browser_lock(self):
+        profile = BrowserProfile("brave", self.home / "Cookies")
+        with (
+            patch("providers.profiles.default_profile", return_value=profile),
+            patch(
+                "providers.profiles.subprocess.run",
+                return_value=Mock(returncode=3, stderr="private-value"),
+            ),
+        ):
+            with self.assertRaises(ProfileError) as error:
+                import_cookies("claude")
+        self.assertIn("bağımlılıkları eksik", str(error.exception))
+        self.assertNotIn("tarayıcıyı kapat", str(error.exception))
+        self.assertNotIn("private-value", str(error.exception))
+
     def test_real_worker_reads_only_firefox_default_container_without_launching_browser(self):
         path = self.home / "cookies.sqlite"
         with contextlib.closing(sqlite3.connect(path)) as db:

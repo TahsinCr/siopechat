@@ -23,6 +23,44 @@ class ProfileError(RuntimeError):
     """Safe diagnostic: never include decryption exceptions or cookie values."""
 
 
+PROFILE_FAILURES = {
+    1: "Profil okunamadı (beklenmeyen hata); Python bağımlılıklarını ve profil erişimini kontrol edin",
+    3: "Profil okuyucu bağımlılıkları eksik; uygulamanın Python ortamında bağımlılıkları güncelleyin",
+    4: "Profil dosyasına erişim reddedildi; uygulamayı profilin sahibi olan kullanıcıyla çalıştırın",
+    5: "Çerez veritabanı okunamadı; tarayıcıyı kapatıp yeniden deneyin",
+    6: "Sistem anahtarlığına erişilemedi; masaüstü oturumunu ve anahtarlık kilidini kontrol edin",
+    7: "Tarayıcı çerezleri çözülemedi; anahtarlık erişimi veya tarayıcı şifrelemesi uyumsuz olabilir",
+}
+
+
+def _failure_code(error):
+    """Classify locally; raw exceptions may contain secrets and never leave the worker."""
+    if isinstance(error, ImportError):
+        return 3
+    if isinstance(error, PermissionError):
+        return 4
+    if isinstance(error, sqlite3.Error):
+        return 5
+    message = str(error).lower()
+    if any(
+        token in message for token in ("unable to read database", "not a chromium", "not a firefox")
+    ):
+        return 5
+    if type(error).__module__.startswith(("jeepney", "dbus", "secretstorage")) or any(
+        token in message
+        for token in (
+            "can not find secret",
+            "kde wallet",
+            "dbus_session_bus_address",
+            "org.freedesktop.secret",
+        )
+    ):
+        return 6
+    if any(token in message for token in ("decrypt", "dpapi", "app-bound", "encrypted key")):
+        return 7
+    return 1
+
+
 @dataclass(frozen=True)
 class BrowserProfile:
     browser: str
@@ -280,9 +318,7 @@ def import_cookies(provider):
     if result.returncode == 2:
         raise ProfileError("Bu profilde sağlayıcıya ait açık oturum bulunamadı")
     if result.returncode:
-        raise ProfileError(
-            "Profil okunamadı; tarayıcıyı kapatıp sistem anahtarlığının kilidini açın. Tarayıcının şifrelemesi desteklenmiyor olabilir"
-        )
+        raise ProfileError(PROFILE_FAILURES.get(result.returncode, PROFILE_FAILURES[1]))
     try:
         if len(result.stdout) > 1_048_576:
             raise ValueError("invalid result")
@@ -336,9 +372,9 @@ def _main():
         sys.stdout.write(json.dumps(values))
     except ProfileError:
         return 2
-    except Exception:
-        # Upstream exceptions can contain decrypted bytes. Never forward them.
-        return 1
+    except Exception as error:
+        # Return only an allowlisted category, never the exception text.
+        return _failure_code(error)
     return 0
 
 

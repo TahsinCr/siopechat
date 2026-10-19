@@ -592,8 +592,13 @@
   "ui.Varsayılan tarayıcı profili bulunamadı": "Default browser profile was not found",
   "ui.Bu profilde sağlayıcıya ait açık oturum bulunamadı": "No signed-in session for this provider was found in this profile",
   "ui.Profil okuma zaman aşımına uğradı; sistem anahtarlığının kilidini açın": "Profile reading timed out; unlock the system keyring",
-  "ui.Profil okunamadı; tarayıcıyı kapatıp sistem anahtarlığının kilidini açın. Tarayıcının şifrelemesi desteklenmiyor olabilir": "Could not read the profile; close the browser and unlock the system keyring. The browser encryption may not be supported",
   "ui.Profil okuma sonucu geçersiz": "Invalid profile reading result",
   "ui.Profil doğrulaması tamamlanana kadar bekleyin": "Wait for profile verification to finish",
-  "ui.Profil ile doğrula, varsayılan tarayıcının son kullanılan profilini okur.\nHesabınıza bu profilde önceden giriş yapmış olmalısınız.\nDoğrulama sırasında tarayıcı açılmaz.\nÇıkış yalnız uygulamadaki oturumu unutur.": "Verify from profile reads the default browser’s last-used profile.\nYou must already be signed in to your account in that profile.\nVerification does not launch a browser.\nLogout forgets only the application session."
+  "ui.Profil ile doğrula, varsayılan tarayıcının son kullanılan profilini okur.\nHesabınıza bu profilde önceden giriş yapmış olmalısınız.\nDoğrulama sırasında tarayıcı açılmaz.\nÇıkış yalnız uygulamadaki oturumu unutur.": "Verify from profile reads the default browser’s last-used profile.\nYou must already be signed in to your account in that profile.\nVerification does not launch a browser.\nLogout forgets only the application session.",
+  "ui.Profil okunamadı (beklenmeyen hata); Python bağımlılıklarını ve profil erişimini kontrol edin": "Could not read the profile (unexpected error); check Python dependencies and profile access",
+  "ui.Profil okuyucu bağımlılıkları eksik; uygulamanın Python ortamında bağımlılıkları güncelleyin": "Profile reader dependencies are missing; update dependencies in the application’s Python environment",
+  "ui.Profil dosyasına erişim reddedildi; uygulamayı profilin sahibi olan kullanıcıyla çalıştırın": "Profile access was denied; run the application as the user who owns the profile",
+  "ui.Çerez veritabanı okunamadı; tarayıcıyı kapatıp yeniden deneyin": "Could not read the cookie database; close the browser and retry",
+  "ui.Sistem anahtarlığına erişilemedi; masaüstü oturumunu ve anahtarlık kilidini kontrol edin": "Could not access the system keyring; check the desktop session and keyring lock",
+  "ui.Tarayıcı çerezleri çözülemedi; anahtarlık erişimi veya tarayıcı şifrelemesi uyumsuz olabilir": "Could not decrypt browser cookies; keyring access or browser encryption may be incompatible"
 }

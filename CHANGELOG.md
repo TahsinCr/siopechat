@@ -27,6 +27,7 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 
 ### Fixed
 
+- Distinguish missing profile-reader dependencies, filesystem permissions, cookie database failures, keyring access and decryption errors without exposing cookie values or raw exceptions.
 - Keep default-browser diagnostics out of the terminal UI while reporting launch failures.
 
 ## [1.0-beta] - 2026-10-19

@@ -592,8 +592,13 @@
   "ui.Varsayılan tarayıcı profili bulunamadı": "Varsayılan tarayıcı profili bulunamadı",
   "ui.Bu profilde sağlayıcıya ait açık oturum bulunamadı": "Bu profilde sağlayıcıya ait açık oturum bulunamadı",
   "ui.Profil okuma zaman aşımına uğradı; sistem anahtarlığının kilidini açın": "Profil okuma zaman aşımına uğradı; sistem anahtarlığının kilidini açın",
-  "ui.Profil okunamadı; tarayıcıyı kapatıp sistem anahtarlığının kilidini açın. Tarayıcının şifrelemesi desteklenmiyor olabilir": "Profil okunamadı; tarayıcıyı kapatıp sistem anahtarlığının kilidini açın. Tarayıcının şifrelemesi desteklenmiyor olabilir",
   "ui.Profil okuma sonucu geçersiz": "Profil okuma sonucu geçersiz",
   "ui.Profil doğrulaması tamamlanana kadar bekleyin": "Profil doğrulaması tamamlanana kadar bekleyin",
-  "ui.Profil ile doğrula, varsayılan tarayıcının son kullanılan profilini okur.\nHesabınıza bu profilde önceden giriş yapmış olmalısınız.\nDoğrulama sırasında tarayıcı açılmaz.\nÇıkış yalnız uygulamadaki oturumu unutur.": "Profil ile doğrula, varsayılan tarayıcının son kullanılan profilini okur.\nHesabınıza bu profilde önceden giriş yapmış olmalısınız.\nDoğrulama sırasında tarayıcı açılmaz.\nÇıkış yalnız uygulamadaki oturumu unutur."
+  "ui.Profil ile doğrula, varsayılan tarayıcının son kullanılan profilini okur.\nHesabınıza bu profilde önceden giriş yapmış olmalısınız.\nDoğrulama sırasında tarayıcı açılmaz.\nÇıkış yalnız uygulamadaki oturumu unutur.": "Profil ile doğrula, varsayılan tarayıcının son kullanılan profilini okur.\nHesabınıza bu profilde önceden giriş yapmış olmalısınız.\nDoğrulama sırasında tarayıcı açılmaz.\nÇıkış yalnız uygulamadaki oturumu unutur.",
+  "ui.Profil okunamadı (beklenmeyen hata); Python bağımlılıklarını ve profil erişimini kontrol edin": "Profil okunamadı (beklenmeyen hata); Python bağımlılıklarını ve profil erişimini kontrol edin",
+  "ui.Profil okuyucu bağımlılıkları eksik; uygulamanın Python ortamında bağımlılıkları güncelleyin": "Profil okuyucu bağımlılıkları eksik; uygulamanın Python ortamında bağımlılıkları güncelleyin",
+  "ui.Profil dosyasına erişim reddedildi; uygulamayı profilin sahibi olan kullanıcıyla çalıştırın": "Profil dosyasına erişim reddedildi; uygulamayı profilin sahibi olan kullanıcıyla çalıştırın",
+  "ui.Çerez veritabanı okunamadı; tarayıcıyı kapatıp yeniden deneyin": "Çerez veritabanı okunamadı; tarayıcıyı kapatıp yeniden deneyin",
+  "ui.Sistem anahtarlığına erişilemedi; masaüstü oturumunu ve anahtarlık kilidini kontrol edin": "Sistem anahtarlığına erişilemedi; masaüstü oturumunu ve anahtarlık kilidini kontrol edin",
+  "ui.Tarayıcı çerezleri çözülemedi; anahtarlık erişimi veya tarayıcı şifrelemesi uyumsuz olabilir": "Tarayıcı çerezleri çözülemedi; anahtarlık erişimi veya tarayıcı şifrelemesi uyumsuz olabilir"
 }
