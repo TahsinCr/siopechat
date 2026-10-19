@@ -13,6 +13,7 @@ _ACTION_NAMES = {
     "chat.next_tab": "Sonraki sekme",
     "chat.previous_tab": "Önceki sekme",
     "chat.close_tab": "Sekmeyi kapat",
+    "chat.close_all_tabs": "Tüm sekmeleri kapat",
     "chat.copy_response": "Son yanıtı kopyala",
     "chat.reload": "Sohbeti eşitle",
     "chat.clear_transcript": "Görüntülenen geçmişi temizle",

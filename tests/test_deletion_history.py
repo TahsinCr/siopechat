@@ -320,10 +320,9 @@ class DeleteAndCacheTests(unittest.TestCase):
         chat = self.seed()
         with terminal(account_service=self.accounts) as (view, _):
             view.conversation_id = chat["id"]
-            with patch.object(view.forms, "open") as opened:
+            with patch.object(view.forms, "confirm") as opened:
                 view.delete_record()
-                self.assertEqual(opened.call_args.args[1][0][2], "cancel")
-                opened.call_args.args[2]({"confirm": "cancel"})
+                self.assertEqual(opened.call_args.args[0], "Sohbeti sil")
                 self.provider.delete_chat.assert_not_awaited()
 
 

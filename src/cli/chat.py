@@ -732,9 +732,7 @@ class ChatView:
             return
         title = "Projeyi ve içindeki sohbetleri sil" if kind == "container" else "Sohbeti sil"
 
-        def submit(values):
-            if values["confirm"] != "delete":
-                return
+        def submit():
             self.status = "Sağlayıcıdan siliniyor…"
 
             def success(result):
@@ -775,18 +773,7 @@ class ChatView:
                 session_bound=False,
             )
 
-        self.forms.open(
-            title,
-            [
-                (
-                    "confirm",
-                    "Bu işlem sağlayıcıdaki kaydı da siler ve geri alınamaz.",
-                    "cancel",
-                    [("cancel", "İptal"), ("delete", "Kalıcı olarak sil")],
-                )
-            ],
-            submit,
-        )
+        self.forms.confirm(title, submit)
 
     def open_project_create(self):
         self.project_panel.create()
@@ -857,9 +844,9 @@ class ChatView:
 
     def render_tabs(self):
         width = self.terminal_width()
-        prefix = fit_text(" ☰ SiopeChat ", max(0, width - 9))
+        prefix = fit_text(" ☰ SiopeChat ", max(0, width - 12))
         fragments = [("class:brand", prefix, on_click(self.toggle_sidebar))]
-        available = max(0, width - get_cwidth(prefix) - 9)
+        available = max(0, width - get_cwidth(prefix) - 12)
         entries = list(range(len(self.tabs)))
         group_titles = {}
         if self.layout_controller and self.layout_enabled:
@@ -917,12 +904,13 @@ class ChatView:
                 ("class:tab.close " + style, " × ", on_click(lambda i=i: self.close_clicked_tab(i)))
             )
         used = sum(get_cwidth(fragment[1]) for fragment in fragments)
-        fragments.append(("class:tabs", " " * max(0, width - used - 9)))
+        fragments.append(("class:tabs", " " * max(0, width - used - 12)))
         fragments.extend(
             [
                 ("class:button", " ‹ ", on_click(lambda: self.switch_tab(-1))),
                 ("class:button", " › ", on_click(lambda: self.switch_tab(1))),
                 ("class:button", " + ", on_click(self.new_tab)),
+                ("class:button", " ⊗ ", on_click(self.close_all_tabs)),
             ]
         )
         return FormattedText(fragments)
@@ -948,6 +936,13 @@ class ChatView:
                     ),
                     ("class:button", " ＋ Kaynak ", on_click(self.project_panel.add_source)),
                     ("class:button", " − Kaynak ", on_click(self.project_panel.remove_source)),
+                    (
+                        "class:button",
+                        " Sil ",
+                        on_click(
+                            lambda: self.delete_record("container", self.current_project.get("id"))
+                        ),
+                    ),
                     (
                         "class:button",
                         " ↻ Eşitle ",
@@ -1063,14 +1058,20 @@ class ChatView:
             }
         ] + [
             {
-                "id": ("project.edit:" if purpose == "edit" else "project.select:") + project_id,
+                "id": (
+                    "project." + purpose + ":"
+                    if purpose in ("edit", "delete")
+                    else "project.select:"
+                )
+                + project_id,
                 "title": item.get("name") or project_id,
                 "detail": origin(project_id, self.account_key)[0]
-                if purpose == "edit"
+                if purpose in ("edit", "delete")
                 else "Sohbeti taşı / yeni sohbete bağla",
             }
             for project_id, item in self.project_items.items()
-            if purpose == "edit" or origin(project_id, self.account_key)[0] == self.account_key
+            if purpose in ("edit", "delete")
+            or origin(project_id, self.account_key)[0] == self.account_key
         ]
         self.palette_items.append(
             {"id": "command.temporary", "title": "Yeni geçici sohbet", "detail": "Yerel kayıt yok"}
@@ -1079,9 +1080,11 @@ class ChatView:
             self.palette_items.append(
                 {"id": "project.more", "title": "Daha fazla proje…", "detail": ""}
             )
-        if purpose == "edit":
+        if purpose in ("edit", "delete"):
             self.palette_items = [
-                i for i in self.palette_items if i["id"].startswith("project.edit:")
+                i
+                for i in self.palette_items
+                if i["id"].startswith("project." + purpose + ":") or i["id"] == "project.more"
             ]
         self.palette_search.text = query
         self.filter_palette()
@@ -1197,7 +1200,19 @@ class ChatView:
 
     def render_composer_actions(self):
         compact = self.main_width() < 42
-        controls = []
+        controls = [
+            (
+                "class:button" if self.conversation_id else "class:sidebar.muted",
+                " × " if compact else " Sil ",
+                on_click(
+                    lambda: (
+                        self.delete_record(value=self.conversation_id)
+                        if self.conversation_id
+                        else None
+                    )
+                ),
+            )
+        ]
         if self.attach_file_callback:
             controls.append(
                 (
@@ -2569,6 +2584,9 @@ class ChatView:
                 }[action_id]
             )
             return
+        if action_id.startswith("project.delete:"):
+            self.delete_record("container", action_id.partition(":")[2])
+            return
         if action_id.startswith("project.edit:"):
             self.project_panel.edit(action_id.partition(":")[2])
             return
@@ -2577,7 +2595,7 @@ class ChatView:
             return
         if action_id == "project.more":
             self.refresh_projects(more=True)
-            self.open_project_picker()
+            self.open_project_picker(getattr(self, "project_picker_purpose", "select"))
             return
         if action_id == "command.temporary":
             self.new_temporary_chat()
@@ -2845,6 +2863,60 @@ class ChatView:
             self.tabs.pop(self.active_tab)
             self.active_tab = min(self.active_tab, len(self.tabs) - 1)
         self._restore_active_tab()
+
+    def close_all_tabs(self) -> None:
+        """Close idle tabs atomically; retain a clean draft as the last tab."""
+        self._save_active_tab()
+        if (
+            self.busy
+            or self.uploading_image
+            or self.background_jobs
+            or any(tab.get("busy") or tab.get("loading") for tab in self.tabs)
+        ):
+            self.status = "Sekmeleri kapatmadan önce devam eden işlemin tamamlanmasını bekleyin"
+            self.app.invalidate()
+            return
+        cleanup = []
+        for tab in self.tabs:
+            if tab.get("temporary") and tab.get("conversation_id"):
+                callback = (
+                    self.account_service.callbacks(tab.get("account_key", self.account_key)).get(
+                        "forget_temporary"
+                    )
+                    if self.account_service
+                    else self.forget_temporary
+                )
+                if callback:
+                    cleanup.append((callback, tab["conversation_id"]))
+        self.close_overlays()
+        self.tabs = [
+            {
+                "account_key": self.account_key,
+                "conversation_id": None,
+                "title": "Yeni sohbet",
+                "messages": [],
+                "model": self.model,
+                "effort": self.effort,
+                "project": {},
+                "pending_attachments": [],
+                "busy": False,
+                "completed_pending": False,
+            }
+        ]
+        self.active_tab = 0
+        self._restore_active_tab()
+        for callback, remote_id in cleanup:
+            self._read_in_background(
+                lambda callback=callback, remote_id=remote_id: callback(remote_id),
+                lambda _: None,
+                lambda reason: setattr(self, "status", "Geçici sohbet temizlenemedi: " + reason),
+                session_bound=False,
+            )
+        if self.layout_controller:
+            self.layout_controller.pending = None
+            self.layout_controller.active_group()
+        self.status = "Sekmeler kapatıldı"
+        self.app.invalidate()
 
     def viewport_height(self) -> D:
         try:
@@ -3358,6 +3430,8 @@ class ChatView:
             self.switch_tab(1)
         elif name == "/tab-prev":
             self.switch_tab(-1)
+        elif name == "/tabs-close":
+            self.close_all_tabs()
         elif name == "/tab-close":
             self.close_tab()
         elif name == "/search":
@@ -3383,8 +3457,11 @@ class ChatView:
                 self.layout_controller.unsplit()
         elif name == "/delete":
             self.delete_record("conversation", argument.strip() or None)
-        elif name == "/delete-project":
-            self.delete_record("container", argument.strip() or None)
+        elif name in ("/project-delete", "/delete-project"):
+            if argument.strip():
+                self.delete_record("container", argument.strip())
+            else:
+                self.open_project_picker("delete")
         elif name == "/projects":
             self.show_projects()
         elif name == "/actions":
@@ -3533,7 +3610,7 @@ class ChatView:
                 "- `/resume ID` open a conversation directly\n"
                 "- `/history` reload this conversation\n"
                 "- `/rename TITLE` rename this conversation\n"
-                "- `/delete [ID]` delete a chat; `/delete-project [ID]` delete a project and its contents (confirmation required)\n"
+                "- `/delete [ID]` delete a chat; `/project-delete [ID]` delete a project and its contents (confirmation required)\n"
                 "- `/copy` copy the latest assistant response\n"
                 "- `/remove` remove the latest pending image\n"
                 "- `/clear` clear the displayed transcript\n"

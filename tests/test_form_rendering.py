@@ -83,8 +83,8 @@ class FormsRenderTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.sleep(0.06)
                 self.assertIn("Kalıcı olarak sil", screen_text(v))
                 service.delete.assert_not_called()
-                v.forms.fields["confirm"].current_value = "delete"
-                pipe.send_bytes(b"\x13")
+                v.app.layout.focus(v.forms.confirm_buttons[0])
+                pipe.send_bytes(b"\r")
                 await self.settle(lambda: service.delete.called)
                 service.delete.assert_called_once_with(value, "chatgpt/default", "conversation")
             finally:
@@ -118,3 +118,124 @@ class FormsRenderTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(labels), 1)
             self.assertIn("class:tab.active", labels[0][0])
             self.assertIn("◫", labels[0][1])
+
+    async def test_inline_project_editor_uses_available_width_on_resize(self):
+        output = ResizableOutput()
+        with terminal(output=output) as (v, _):
+            run = asyncio.create_task(v.app.run_async())
+            try:
+                await self.settle(lambda: v.app.is_running)
+                v.tab_kind = "project"
+                v.current_project = {"id": "p"}
+                v.forms.open(
+                    "Projeyi düzenle",
+                    [
+                        ("name", "Proje adı", "Testo", None),
+                        ("instructions", "Talimatlar", "", None),
+                    ],
+                    lambda _: None,
+                    inline_project="p",
+                )
+                for width, height in [(100, 30), (80, 24), (60, 18)]:
+                    output.columns, output.rows = width, height
+                    v.app.invalidate()
+                    await asyncio.sleep(0.08)
+                    self.assertIn("Kaydet", screen_text(v))
+                    self.assertNotIn("Window too small", screen_text(v))
+                    field = v.forms.fields["name"].window
+                    self.assertGreaterEqual(field.render_info.window_width, v.main_width() - 2)
+            finally:
+                v.app.exit()
+                await run
+
+    async def test_confirmation_defaults_to_no_and_escape_cancels(self):
+        with terminal() as (v, pipe):
+            callback = Mock()
+            run = asyncio.create_task(v.app.run_async())
+            try:
+                await self.settle(lambda: v.app.is_running)
+                v.forms.confirm("Sohbeti sil", callback)
+                self.assertIs(v.app.layout.current_control, v.forms.confirm_buttons[1].control)
+                pipe.send_bytes(b"\r")
+                await self.settle(lambda: not v.forms.visible)
+                callback.assert_not_called()
+                v.forms.confirm("Projeyi sil", callback)
+                pipe.send_bytes(b"\x1b")
+                await self.settle(lambda: not v.forms.visible)
+                callback.assert_not_called()
+            finally:
+                v.app.exit()
+                await run
+
+    def test_project_delete_picker_includes_all_providers(self):
+        with terminal() as (v, _):
+            v.projects_loaded = True
+            v.project_items = {
+                "@chatgpt/default/p": {"name": "GPT"},
+                "@gemini/default/p": {"name": "Gemini"},
+            }
+            v.handle_command("/project-delete")
+            self.assertEqual({i["title"] for i in v.palette_items}, {"GPT", "Gemini"})
+            v.delete_record = Mock()
+            v.palette_filtered = v.palette_items
+            v.palette_index = 1
+            v.execute_palette_item()
+            v.delete_record.assert_called_once_with("container", "@gemini/default/p")
+
+    def test_close_all_tabs_clears_groups_and_keeps_a_fresh_draft(self):
+        from extensions.layout.panes import SplitLayout
+
+        with terminal(layout_factory=SplitLayout) as (v, _):
+            v.new_tab()
+            v.layout_controller.begin()
+            v.select_tab(0)
+            v.layout_controller.attach()
+            v.handle_command("/tabs-close")
+            self.assertEqual(len(v.tabs), 1)
+            self.assertIsNone(v.conversation_id)
+            self.assertFalse(v.layout_controller.groups)
+            self.assertEqual(v.input.text, "")
+            self.assertEqual(v.render_tabs()[-1][1], " ⊗ ")
+
+    def test_close_all_preserves_tabs_with_running_work(self):
+        with terminal() as (v, _):
+            v.new_tab()
+            v.tabs[0]["busy"] = True
+            v.close_all_tabs()
+            self.assertEqual(len(v.tabs), 2)
+
+    def test_delete_buttons_use_the_visible_record(self):
+        with terminal() as (v, _):
+            v.conversation_id = "@chatgpt/default/chat"
+            v.delete_record = Mock()
+            from prompt_toolkit.data_structures import Point
+            from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
+
+            click = MouseEvent(Point(0, 0), MouseEventType.MOUSE_UP, MouseButton.LEFT, frozenset())
+            controls = v.render_composer_actions()
+            self.assertEqual(controls[1][1], " Sil ")
+            controls[1][2](click)
+            v.delete_record.assert_called_once_with(value=v.conversation_id)
+            v.delete_record.reset_mock()
+            v.tab_kind = "project"
+            v.current_project = {"id": "@gemini/default/notebook"}
+            delete = next(fragment for fragment in v.render_chat_header() if fragment[1] == " Sil ")
+            delete[2](click)
+            v.delete_record.assert_called_once_with("container", v.current_project["id"])
+
+    def test_close_all_cleans_temporary_records_in_their_account(self):
+        service = Accounts()
+        cleanup = Mock()
+        service.callbacks = Mock(return_value={"forget_temporary": cleanup})
+        with terminal(account_service=service) as (v, _):
+            v._read_in_background = immediate
+            v.new_tab()
+            v.tabs[0].update(
+                temporary=True,
+                conversation_id="@gemini/personal/temp",
+                account_key="gemini/personal",
+            )
+            v.close_all_tabs()
+            service.callbacks.assert_any_call("gemini/personal")
+            cleanup.assert_called_once_with("@gemini/personal/temp")
+            self.assertEqual(len(v.tabs), 1)

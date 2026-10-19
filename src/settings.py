@@ -29,6 +29,7 @@ DEFAULT_KEYBINDINGS = {
     "accounts.add": "escape n",
     "chat.new": "c-t",
     "chat.close_tab": "c-w",
+    "chat.close_all_tabs": "escape w",
     "chat.next_tab": "escape right",
     "chat.previous_tab": "escape left",
     "chat.resume": "c-r",

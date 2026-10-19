@@ -249,7 +249,7 @@ ChatGPT transport work originates from [tritao/chatgpt-web](https://github.com/t
 
 ### Delete chats and projects
 
-Use **Chat: Delete** or **Projects: Delete** in the command palette, or `/delete [ID]` and `/delete-project [ID]`. The default shortcuts are Alt+D and Alt+Delete. Both operations ask for confirmation, with **Cancel** selected initially. Project deletion follows the provider’s behavior for its contained chats. Only delete projects you own and no longer need.
+Use **Chat: Delete** or **Projects: Delete** in the command palette, or `/delete [ID]` and `/project-delete [ID]`. The default shortcuts are Alt+D and Alt+Delete. Both operations ask **“Kalıcı olarak silinsin mi?”** with **Evet / Hayır** buttons; **Hayır** is focused initially. Without an ID, `/project-delete` opens a searchable picker containing projects from all providers. The old `/delete-project` spelling remains an alias. Conversation deletion is also available beside the composer controls; project details have a **Sil** button. Project deletion follows the provider’s behavior for its contained chats. Only delete projects you own and no longer need.
 
 All configured providers use their authenticated HTTP sessions for deletion. Deletion happens on the provider first, followed by bounded server readback. Only reads are retried; the delete request is submitted once. A missing delete route or a network error does not count as confirmed absence. If confirmation fails, the local record is retained. Confirmed deletion removes cached list references and normalized archive rows and stores a persistent tombstone, preventing an older in-flight sync from restoring the record. Provider failures preserve the archive. Shared content-addressed files are retained rather than removed blindly. Unsupported or unauthorized operations return an explicit error.
 
@@ -348,3 +348,5 @@ sending account. Only the selected account for each provider can send messages;
 viewing a different account's archive does not silently activate it. Filters are
 session-local and apply to the sidebar, independently of the draft's model and
 project picker.
+
+The **⊗** button at the far right of the tab bar closes all idle tabs and leaves one empty draft. Use **Alt+W**, `/tabs-close`, or **Tüm sekmeleri kapat** in the command palette for the same action. Running responses, loads and uploads must finish first. Closing tabs does not delete saved conversations.

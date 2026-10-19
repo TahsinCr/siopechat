@@ -275,6 +275,7 @@ def key_bindings(view) -> KeyBindings:
     for action_id, callback in (
         ("chat.new", create_tab),
         ("chat.close_tab", close_tab),
+        ("chat.close_all_tabs", lambda _: view.close_all_tabs()),
         ("chat.next_tab", next_tab),
         ("chat.previous_tab", previous_tab),
         ("ui.command_palette", command_palette),
@@ -311,7 +312,7 @@ def key_bindings(view) -> KeyBindings:
     bind("projects.add_source", lambda _: view.project_panel.add_source())
     bind("projects.remove_source", lambda _: view.project_panel.remove_source())
     bind("chat.delete", lambda _: view.delete_record())
-    bind("projects.delete", lambda _: view.delete_record("container"))
+    bind("projects.delete", lambda _: view.open_project_picker("delete"))
     bind("command.model", lambda _: view.handle_command("/model"))
     bind("command.effort", lambda _: view.handle_command("/effort"))
     bind("chat.attach", lambda _: view.open_attachment())

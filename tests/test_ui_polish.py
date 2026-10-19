@@ -47,7 +47,7 @@ class PolishTests(unittest.TestCase):
             self.assertTrue(
                 all(get_cwidth(f[1]) <= 22 for f in fragments if f[0] == "class:tab.active")
             )
-            self.assertEqual("".join(f[1] for f in fragments[-3:]), " ‹  ›  + ")
+            self.assertEqual("".join(f[1] for f in fragments[-4:]), " ‹  ›  +  ⊗ ")
 
     def test_project_move_detach_failure_and_draft_preserve_context(self):
         move = Mock()

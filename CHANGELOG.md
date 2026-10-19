@@ -10,6 +10,9 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Added
 
+- Direct Yes/No permanent-deletion confirmations, conversation composer and project-details delete buttons, and `/project-delete` with a searchable cross-provider project picker.
+- Close-all-tabs control at the far right of the tab bar, `/tabs-close`, and configurable Alt+W action; active work is protected and temporary-chat cleanup keeps account ownership.
+
 - Account-scoped HTTPS transports for Claude and Gemini, with reusable connections, private atomic session persistence and no browser dependency after explicit login verification.
 - Direct HTTP project creation, editing and source management for ChatGPT and Claude; Gemini notebook CRUD, instructions and text sources through account-owned RPCs.
 - Regression tests for origin restrictions, authentication versus access errors, mutation non-replay, session rotation, guest rejection and notebook request mappings.
@@ -81,6 +84,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 - Competing settings-page filler, repeated shortcut hints and SDK logs written over the terminal interface.
 
 ### Fixed
+
+- Inline project editors fill the available conversation panel width and resize with the terminal instead of collapsing to their labels and buttons.
 
 - Require server readback after ChatGPT, Gemini and Claude conversation deletion before purging local archives; retry verification reads without replaying deletion.
 - Distinguish a missing mutation route from a missing record, and reject missing or malformed Gemini RPC acknowledgements instead of reporting false success.

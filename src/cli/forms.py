@@ -109,6 +109,8 @@ class Forms:
                     VSplit(buttons, padding=2, height=1),
                 ],
                 padding=1,
+                width=lambda: D.exact(self.view.main_width()),
+                style="class:transcript",
             )
             if inline_project
             else Dialog(title=title, body=pane, buttons=buttons, width=64, with_background=False)
@@ -116,6 +118,34 @@ class Forms:
         self.visible = True
         self.view.app.layout.update_parents_relations()
         self.view.app.layout.focus(next(iter(self.fields.values())))
+        self.view.app.invalidate()
+
+    def confirm(self, title, submit):
+        """A destructive action needs one explicit affirmative click or keypress."""
+        self.inline_project = None
+        self.fields = {}
+        self.error = ""
+
+        def accept():
+            self.close()
+            submit()
+
+        self.confirm_buttons = [Button("Evet", handler=accept), Button("Hayır", handler=self.close)]
+        keys = KeyBindings()
+        keys.add("escape", is_global=True)(lambda _: self.close())
+        self.container = Dialog(
+            title=title,
+            body=HSplit(
+                [Window(content=FormattedTextControl("Kalıcı olarak silinsin mi?"), height=1)],
+                key_bindings=keys,
+            ),
+            buttons=self.confirm_buttons,
+            width=54,
+            with_background=False,
+        )
+        self.visible = True
+        self.view.app.layout.update_parents_relations()
+        self.view.app.layout.focus(self.confirm_buttons[1])
         self.view.app.invalidate()
 
     def close(self):
