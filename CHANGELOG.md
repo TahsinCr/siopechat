@@ -33,6 +33,10 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 
 ### Fixed
 
+- Retry locked Firefox/Zen cookie reads from a private SQLite snapshot, preserving committed WAL data and leaving the source profile untouched.
+
+- Include Firefox/Zen session-store cookies when importing a profile, rather than reading only persistent SQLite cookies. Read one current recovery snapshot without combining containers or old backups.
+
 - Keep role gutters aligned with the rendered transcript snapshot when toggling F1 help or replacing history, and ignore obsolete message indices safely.
 - Allow switching away from and closing the Settings tab with global shortcuts; reopening Settings reuses its existing tab, including while another conversation is running.
 

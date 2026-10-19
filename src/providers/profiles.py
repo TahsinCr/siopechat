@@ -11,9 +11,11 @@ import json
 import os
 import plistlib
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
@@ -364,6 +366,106 @@ def import_cookies(provider):
     return profile.browser, values
 
 
+def _firefox_rows(cookie_file, provider):
+    """Read a consistent private SQLite/WAL copy if the live database is locked."""
+    source = Path(cookie_file)
+
+    def read(path, private=False):
+        uri = path.resolve().as_uri() + ("?mode=rw" if private else "?mode=ro")
+        with closing(sqlite3.connect(uri, uri=True, timeout=0.25)) as database:
+            columns = {row[1] for row in database.execute("PRAGMA table_info(moz_cookies)")}
+            scope = (
+                " AND COALESCE(originAttributes, '') = ''" if "originAttributes" in columns else ""
+            )
+            host = HOSTS[provider]
+            domains = [host, "." + host]
+            if provider == "gemini":
+                domains.extend(["google.com", ".google.com"])
+            query = (
+                "SELECT host,path,isSecure,expiry,name,value,isHttpOnly FROM moz_cookies WHERE host IN ("
+                + ",".join("?" for _ in domains)
+                + ")"
+                + scope
+            )
+            return list(database.execute(query, domains))
+
+    try:
+        return read(source)
+    except sqlite3.OperationalError:
+        # Browser locks and read-only WAL shared-memory access vary by platform.
+        # Never use immutable=1 on the original: it would ignore committed WAL data.
+        pass
+    sidecars = [source.with_name(source.name + suffix) for suffix in ("-wal", "-journal")]
+    for _ in range(3):
+        with tempfile.TemporaryDirectory(prefix="siope-profile-") as folder:
+            try:
+                files = [source] + [path for path in sidecars if path.is_file()]
+                before = [(p.stat().st_size, p.stat().st_mtime_ns) for p in files]
+                target = Path(folder) / source.name
+                for path in files:
+                    shutil.copyfile(path, Path(folder) / path.name)
+                after = [(p.stat().st_size, p.stat().st_mtime_ns) for p in files]
+                if before != after or any(
+                    path.is_file() and path not in files for path in sidecars
+                ):
+                    continue
+                # Recovery, if required, writes only inside the private temporary directory.
+                return read(target, private=True)
+            except FileNotFoundError:
+                # A browser checkpoint can remove a WAL/journal while copying it.
+                continue
+    raise sqlite3.OperationalError("Cookie snapshot changed during copy")
+
+
+def _firefox_session_cookies(directory, provider):
+    """Read the newest session snapshot, never combine historical recovery files."""
+    candidates = [
+        directory / "sessionstore-backups/recovery.jsonlz4",
+        directory / "sessionstore.jsonlz4",
+        directory / "sessionstore.js",
+    ]
+    limit = 64 * 1024 * 1024
+    try:
+        existing = [path for path in candidates if path.is_file()]
+        if not existing:
+            return []
+        path = max(existing, key=lambda item: item.stat().st_mtime_ns)
+        with path.open("rb") as stream:
+            raw = stream.read(limit + 1)
+        if len(raw) > limit:
+            return []
+        if path.suffix == ".jsonlz4":
+            import lz4.block
+
+            if not raw.startswith(b"mozLz40\0") or len(raw) < 12:
+                return []
+            if int.from_bytes(raw[8:12], "little") > limit:
+                return []
+            raw = lz4.block.decompress(raw[8:])
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return []
+        cookies = list(data.get("cookies") or [])
+        for window in data.get("windows") or []:
+            if isinstance(window, dict):
+                cookies.extend(window.get("cookies") or [])
+    except (OSError, ValueError, RuntimeError):
+        # A partially written recovery file must not invalidate persistent cookies.
+        return []
+    domains = {HOSTS[provider], "." + HOSTS[provider]}
+    if provider == "gemini":
+        domains.update({"google.com", ".google.com"})
+    return [
+        cookie
+        for cookie in cookies
+        if isinstance(cookie, dict)
+        and cookie.get("host") in domains
+        and not cookie.get("originAttributes")
+        and not cookie.get("userContextId")
+        and not cookie.get("privateBrowsingId")
+    ]
+
+
 def _main():
     try:
         import browser_cookie3
@@ -376,20 +478,20 @@ def _main():
             from http.cookiejar import CookieJar
 
             jar = CookieJar()
-            path = Path(data["cookies"]).resolve().as_uri() + "?mode=ro"
-            with closing(sqlite3.connect(path, uri=True, timeout=3)) as database:
-                columns = {row[1] for row in database.execute("PRAGMA table_info(moz_cookies)")}
-                scope = " AND originAttributes = ''" if "originAttributes" in columns else ""
-                host = HOSTS[data["provider"]]
-                domains = [host, "." + host]
-                if data["provider"] == "gemini":
-                    domains.extend(["google.com", ".google.com"])
-                query = (
-                    "SELECT host,path,isSecure,expiry,name,value,isHttpOnly FROM moz_cookies "
-                    "WHERE host IN (" + ",".join("?" for _ in domains) + ")" + scope
+            for row in _firefox_rows(data["cookies"], data["provider"]):
+                jar.set_cookie(browser_cookie3.create_cookie(*row))
+            for cookie in _firefox_session_cookies(Path(data["cookies"]).parent, data["provider"]):
+                jar.set_cookie(
+                    browser_cookie3.create_cookie(
+                        cookie.get("host", ""),
+                        cookie.get("path", "/"),
+                        cookie.get("secure", False),
+                        cookie.get("expiry"),
+                        cookie.get("name", ""),
+                        cookie.get("value", ""),
+                        cookie.get("httponly", False),
+                    )
                 )
-                for row in database.execute(query, domains):
-                    jar.set_cookie(browser_cookie3.create_cookie(*row))
         else:
             jar = getattr(browser_cookie3, browser)(
                 cookie_file=data["cookies"],

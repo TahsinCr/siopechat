@@ -40,6 +40,7 @@ class ArchitectureTests(unittest.TestCase):
             "gemini_webapi",
             "curl_cffi",
             "browser_cookie3",
+            "lz4",
         }
         for path in files:
             for node in ast.walk(ast.parse(path.read_text())):

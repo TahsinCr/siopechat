@@ -249,6 +249,115 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(values, {"sessionKey": "default-session"})
         self.assertEqual(before, path.read_bytes())
 
+    def test_firefox_locked_database_is_read_from_private_snapshot(self):
+        from providers.profiles import _firefox_rows
+
+        path = self.home / "locked.sqlite"
+        with contextlib.closing(sqlite3.connect(path)) as db:
+            db.execute(
+                "CREATE TABLE moz_cookies(host,path,isSecure,expiry,name,value,isHttpOnly,originAttributes)"
+            )
+            db.execute(
+                "INSERT INTO moz_cookies VALUES(?,?,?,?,?,?,?,?)",
+                (".claude.ai", "/", 1, time.time() + 3600, "sessionKey", "committed", 1, ""),
+            )
+            db.commit()
+            db.execute("BEGIN EXCLUSIVE")
+            before = path.read_bytes()
+            self.assertEqual(_firefox_rows(path, "claude")[0][5], "committed")
+            self.assertEqual(path.read_bytes(), before)
+            db.rollback()
+
+    def test_firefox_snapshot_keeps_committed_wal_cookies(self):
+        from providers.profiles import _firefox_rows
+
+        path = self.home / "wal.sqlite"
+        with contextlib.closing(sqlite3.connect(path)) as db:
+            db.execute("PRAGMA journal_mode=WAL")
+            db.execute(
+                "CREATE TABLE moz_cookies(host,path,isSecure,expiry,name,value,isHttpOnly,originAttributes)"
+            )
+            db.execute(
+                "INSERT INTO moz_cookies VALUES(?,?,?,?,?,?,?,?)",
+                (".claude.ai", "/", 1, time.time() + 3600, "sessionKey", "in-wal", 1, ""),
+            )
+            db.commit()
+            original = sqlite3.connect
+
+            def connect(database, **kwargs):
+                if str(database).startswith(path.resolve().as_uri()):
+                    raise sqlite3.OperationalError("database is locked")
+                return original(database, **kwargs)
+
+            with patch("providers.profiles.sqlite3.connect", side_effect=connect):
+                self.assertEqual(_firefox_rows(path, "claude")[0][5], "in-wal")
+
+    def test_firefox_worker_imports_live_sessionstore_cookies_without_merging_containers(self):
+        import lz4.block
+
+        path = self.home / "cookies.sqlite"
+        with contextlib.closing(sqlite3.connect(path)) as db:
+            db.execute(
+                "CREATE TABLE moz_cookies(host,path,isSecure,expiry,name,value,isHttpOnly,originAttributes)"
+            )
+            db.commit()
+        directory = self.home / "sessionstore-backups"
+        directory.mkdir()
+        current = directory / "recovery.jsonlz4"
+        payload = {
+            "cookies": [
+                {
+                    "host": ".claude.ai",
+                    "path": "/",
+                    "name": "sessionKey",
+                    "value": "live-session",
+                    "secure": True,
+                },
+                {
+                    "host": ".claude.ai",
+                    "path": "/",
+                    "name": "sessionKey",
+                    "value": "other-container",
+                    "originAttributes": {"userContextId": 1},
+                },
+                {"host": ".evil.test", "path": "/", "name": "sessionKey", "value": "foreign"},
+            ]
+        }
+        current.write_bytes(b"mozLz40\0" + lz4.block.compress(json.dumps(payload).encode()))
+        for browser in ("firefox", "zen"):
+            with patch(
+                "providers.profiles.default_profile", return_value=BrowserProfile(browser, path)
+            ):
+                _, values = import_cookies("claude")
+            self.assertEqual(values, {"sessionKey": "live-session"})
+
+    def test_firefox_session_reader_uses_one_snapshot_and_legacy_windows(self):
+        from providers.profiles import _firefox_session_cookies
+
+        old = self.home / "sessionstore.js"
+        old.write_text(
+            json.dumps(
+                {
+                    "windows": [
+                        {
+                            "cookies": [
+                                {"host": ".claude.ai", "name": "sessionKey", "value": "legacy"}
+                            ]
+                        }
+                    ]
+                }
+            )
+        )
+        self.assertEqual(_firefox_session_cookies(self.home, "claude")[0]["value"], "legacy")
+        new = self.home / "sessionstore.jsonlz4"
+        import lz4.block
+
+        new.write_bytes(b"mozLz40\0" + lz4.block.compress(b'{"cookies":[]}'))
+        os.utime(old, (1, 1))
+        self.assertEqual(_firefox_session_cookies(self.home, "claude"), [])
+        new.write_bytes(b"invalid")
+        self.assertEqual(_firefox_session_cookies(self.home, "claude"), [])
+
     def test_worker_failure_never_prints_library_exception(self):
         from providers.profiles import _main
 
