@@ -31,6 +31,7 @@ def key_bindings(view) -> KeyBindings:
                     "chat.next_tab",
                     "chat.previous_tab",
                     "chat.close_tab",
+                    "chat.close_all_tabs",
                     "chat.temporary",
                     "ui.command_palette",
                     "accounts.add",

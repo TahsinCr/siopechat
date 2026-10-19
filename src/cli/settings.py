@@ -175,7 +175,7 @@ class SettingsDialog:
                 ),
             ],
             key_bindings=self.keys,
-            modal=True,
+            modal=False,
             style="class:settings",
         )
 
@@ -487,10 +487,7 @@ class SettingsDialog:
         self.visible = False
         self.view.session_dialog.visible = False
         if self.view.tab_kind == "settings":
-            if self.view.busy:
-                self.view.switch_tab(-1)
-            else:
-                self.view.close_tab()
+            self.view.close_tab()
         else:
             self.view.app.layout.focus(self.view.input)
         self.view.app.invalidate()

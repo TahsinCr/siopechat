@@ -82,6 +82,8 @@ Sohbet sekmesini kapatmak, devam eden yanıtı durdurmaz. Sol listede yeşil **�
 
 Kısayol değişiklikleri arayüzün tamamında anında geçerli olur. Bütün eşleşmeler **Ayarlar → Kısayollar** bölümünden veya yerel `config.json` dosyasından değiştirilebilir. Komut paleti, eklenti aksiyonları dahil aynı işlemleri sunar.
 
+Ayarlar normal bir çalışma alanı sekmesidir: Alt+Sol/Sağ ile sohbetlere geçebilir, F5 ile mevcut Ayarlar sekmesini yeniden açabilir ve Ctrl+W ile kapatabilirsiniz.
+
 ### Projeler ve bölünmüş görünüm
 
 Yeni sohbetin projesini seçmek veya destekleniyorsa mevcut sohbeti taşımak için `/project` kullanın. **Projesiz** seçeneği üyeliği kaldırır. `/project-new` önce sağlayıcı ve hesabı, ardından desteklenen oluşturma alanlarını sorar. Proje bilgilerinde isim, talimat ve kaynaklar düzenlenebilir; satır içi düzenleyicide Ctrl+S kaydeder.

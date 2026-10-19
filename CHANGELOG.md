@@ -33,6 +33,9 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 
 ### Fixed
 
+- Keep role gutters aligned with the rendered transcript snapshot when toggling F1 help or replacing history, and ignore obsolete message indices safely.
+- Allow switching away from and closing the Settings tab with global shortcuts; reopening Settings reuses its existing tab, including while another conversation is running.
+
 - Open message links with the native desktop URL launcher, ignoring a stale BROWSER override that could silently select a removed browser. Add a terminal mouse-protocol regression for rendered links.
 
 - Make Markdown web links clickable in conversation messages, cached history and split panes; preserve link targets during ANSI rendering and scrolling.

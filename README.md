@@ -82,6 +82,8 @@ Closing a conversation tab keeps its running response in the background. In the 
 
 Shortcut changes take effect immediately throughout the interface. Every binding is editable under **Settings → Keyboard** and in the local `config.json`. The command palette exposes the same actions, including extension actions.
 
+Settings is a regular workspace tab: switch back to a conversation with Alt+Left/Right, reopen the same Settings tab with F5, or close it with Ctrl+W.
+
 ### Projects and split views
 
 Use `/project` to choose a project for a new chat or move the current chat where supported. Choose **Unassigned** to remove membership. `/project-new` asks for the provider/account and then its supported creation fields. Project details provide name/instruction editing and source controls; Ctrl+S saves the inline editor.

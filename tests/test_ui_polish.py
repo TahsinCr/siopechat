@@ -25,6 +25,17 @@ from tests.test_ui_controls import click, immediate
 
 
 class PolishTests(unittest.TestCase):
+    def test_gutter_uses_rendered_roles_and_ignores_stale_out_of_bounds_ranges(self):
+        info = SimpleNamespace(visible_line_to_row_col={0: (0, 0), 1: (1, 0)})
+        view = SimpleNamespace(
+            messages=[], message_ranges=[(0, 1, 0), (1, 2, 3)], _transcript_roles=("assistant",)
+        )
+        margin = TranscriptGutter(view).create_margin(info, 3, 2)
+        self.assertIn("🤖", margin[0][1])
+        self.assertNotIn("🤖", margin[1][1])
+        del view._transcript_roles
+        self.assertEqual(len(TranscriptGutter(view).create_margin(info, 3, 2)), 2)
+
     def test_palette_and_keyboard_share_canonical_actions(self):
         from settings import DEFAULT_KEYBINDINGS
 

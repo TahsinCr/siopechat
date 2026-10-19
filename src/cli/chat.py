@@ -3253,6 +3253,7 @@ class ChatView:
             if signature == getattr(self, "_transcript_signature", None):
                 return self._transcript_cache
             messages = [dict(message) for message in self.messages]
+        self._transcript_roles = tuple(message.get("role") for message in messages)
         snapshots = getattr(self, "_prepared_transcripts", {})
         tab_id = self.tabs[self.active_tab].get("tab_id")
         snapshot = snapshots.get(tab_id)
@@ -3265,6 +3266,7 @@ class ChatView:
         ):
             snapshots.pop(tab_id)
             snapshots[tab_id] = snapshot
+            self._transcript_roles = tuple(role for role, _ in snapshot["messages"])
             self.message_ranges = snapshot["ranges"]
             self.transcript_line_count = snapshot["text"].count("\n") + 1
             self._ansi_render_key, self._ansi_fragments = snapshot["text"], snapshot["ansi"]
@@ -3312,6 +3314,7 @@ class ChatView:
                 and snapshot["tokens"] == self.renderer.tokens
                 and snapshot["reasoning"] == self.show_reasoning
             ):
+                self._transcript_roles = tuple(role for role, _ in snapshot["messages"])
                 self.message_ranges = snapshot["ranges"]
                 self.transcript_line_count = len(snapshot["lines"])
                 self._line_render_key, self._transcript_lines = snapshot["text"], snapshot["lines"]
@@ -3431,7 +3434,7 @@ class ChatView:
         return self._transcript_lines
 
     def select_message(self, index):
-        if index is None:
+        if index is None or not 0 <= index < len(self.messages):
             return
         self.selected_message = index
         self.selected_message_ref = self.messages[index]

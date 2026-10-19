@@ -217,9 +217,13 @@ class TranscriptGutter(Margin):
         return 3
 
     def create_margin(self, window_render_info, width, height):
+        roles = getattr(self.view, "_transcript_roles", None)
+        if roles is None:
+            roles = tuple(message.get("role") for message in self.view.messages)
         starts = {
-            start: self.view.messages[index].get("role")
+            start: roles[index]
             for start, _, index in getattr(self.view, "message_ranges", [])
+            if 0 <= index < len(roles)
         }
         markers = {"user": ">", "reasoning": "🧠", "assistant": "🤖"}
         rows = []

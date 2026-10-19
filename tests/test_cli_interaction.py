@@ -43,6 +43,51 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
 
         await asyncio.wait_for(wait(), 1)
 
+    async def test_settings_tab_can_switch_reopen_and_close_with_global_keys(self):
+        with terminal(settings_rows=lambda: []) as (view, pipe):
+            view._read_in_background = immediate
+            run = asyncio.create_task(view.app.run_async())
+            try:
+                await self.settle(lambda: view.app.is_running)
+                pipe.send_bytes(b"\x1b[15~")  # F5 settings
+                await self.settle(lambda: view.tab_kind == "settings")
+                settings_tab = view.tabs[view.active_tab]
+                pipe.send_bytes(b"\x1b\x1b[D")  # Alt+Left
+                await self.settle(lambda: view.tab_kind == "chat")
+                self.assertFalse(view.settings_dialog.visible)
+                pipe.send_bytes(b"\x1b[15~")
+                await self.settle(lambda: view.tab_kind == "settings")
+                self.assertIs(view.tabs[view.active_tab], settings_tab)
+                self.assertEqual(len(view.tabs), 2)
+                view.app.layout.focus(view.settings_dialog.editor)
+                pipe.send_bytes(b"\x17")  # Ctrl+W closes settings even from its editor
+                await self.settle(lambda: view.tab_kind == "chat")
+                self.assertFalse(any(tab.get("kind") == "settings" for tab in view.tabs))
+            finally:
+                view.app.exit()
+                await run
+
+    async def test_f1_toggle_redraw_keeps_gutter_snapshot_consistent(self):
+        with terminal(initial_messages=[{"role": "assistant", "text": "Original reply"}]) as (
+            view,
+            pipe,
+        ):
+            run = asyncio.create_task(view.app.run_async())
+            try:
+                await self.settle(lambda: view.app.is_running)
+                for _ in range(2):
+                    pipe.send_bytes(b"\x1bOP")
+                    await self.settle(lambda: any(m.get("local_help") for m in view.messages))
+                    await self.settle(lambda: len(getattr(view, "_transcript_roles", ())) == 2)
+                    pipe.send_bytes(b"\x1bOP")
+                    await self.settle(lambda: not any(m.get("local_help") for m in view.messages))
+                    view.app.invalidate()
+                    await asyncio.sleep(0.08)
+                    self.assertEqual(view.messages[0]["text"], "Original reply")
+            finally:
+                view.app.exit()
+                await run
+
     async def test_remapped_shortcuts_replace_cached_bindings_in_every_focus(self):
         with terminal() as (view, pipe):
             run = asyncio.create_task(view.app.run_async())
