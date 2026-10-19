@@ -607,5 +607,7 @@
   "ui.Yerel hesap silindi": "Local account removed",
   "ui.Hesap bulunamadı": "Account was not found",
   "ui.Son etkin hesap silinemez; önce başka bir hesap ekleyin": "The last enabled account cannot be removed; add another account first",
-  "ui.Hesaplar · Hesabı sil": "Accounts · Remove account"
+  "ui.Hesaplar · Hesabı sil": "Accounts · Remove account",
+  "ui.＋ Ekle": "＋ Add",
+  "ui.Unut": "Forget"
 }

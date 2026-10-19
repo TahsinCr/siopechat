@@ -394,7 +394,7 @@ class ProfileUiTests(unittest.IsolatedAsyncioTestCase):
             try:
                 await InputTests.settle(self, lambda: view.app.is_running)
                 view.settings_dialog.open("accounts")
-                for columns, rows in ((100, 30), (80, 24), (60, 18)):
+                for columns, rows in ((100, 30), (80, 24), (60, 18), (40, 12)):
                     output.columns, output.rows = columns, rows
                     view.app.layout.focus(view.session_dialog.buttons["verify_profile"])
                     view.app.invalidate()
@@ -404,7 +404,17 @@ class ProfileUiTests(unittest.IsolatedAsyncioTestCase):
                         "".join(screen.data_buffer[y][x].char for x in range(columns))
                         for y in range(rows)
                     )
-                    self.assertIn("Profil ile doğrula", text)
+                    labels = [
+                        button.text
+                        for button in [
+                            view.session_dialog.add_account_button,
+                            *view.session_dialog.buttons.values(),
+                        ]
+                    ]
+                    self.assertTrue(
+                        any(all(label in line for label in labels) for line in text.splitlines()),
+                        f"Account actions must share a row at {columns} columns: {labels}",
+                    )
                     self.assertNotIn("Window too small", text)
                     self.assertNotIn("Bağlı tarayıcı", text)
                     self.assertNotIn("Tarayıcıda aç", text)

@@ -607,5 +607,7 @@
   "ui.Yerel hesap silindi": "Локальный аккаунт удалён",
   "ui.Hesap bulunamadı": "Аккаунт не найден",
   "ui.Son etkin hesap silinemez; önce başka bir hesap ekleyin": "Нельзя удалить последний активный аккаунт; сначала добавьте другой",
-  "ui.Hesaplar · Hesabı sil": "Аккаунты · Удалить аккаунт"
+  "ui.Hesaplar · Hesabı sil": "Аккаунты · Удалить аккаунт",
+  "ui.＋ Ekle": "＋ Добавить",
+  "ui.Unut": "Забыть"
 }
