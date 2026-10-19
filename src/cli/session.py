@@ -253,6 +253,12 @@ class SessionDialog:
                 self.view.bind_account(result["active_account"])
                 self.view.restore_account_preference()
                 self.view._account_projects.pop(key, None)
+                if self.view.provider_filter is not None:
+                    self.view.provider_filter.intersection_update(
+                        item["provider"] for item in self.view.account_service.items()
+                    )
+                    if not self.view.provider_filter:
+                        self.view.provider_filter = None
                 if self.view.account_filter is not None:
                     self.view.account_filter.discard(key)
                     if not self.view.account_filter:

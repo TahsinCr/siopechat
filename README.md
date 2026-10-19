@@ -54,7 +54,7 @@ Firefox and Zen share a read-only cookie reader. Profile selection follows `prof
 
 You can add several accounts. One account per provider is selected for sending; browsing another account’s history does not silently change that selection. To verify a different account, first select its signed-in profile in your default browser, then use **Verify from profile** on the corresponding SiopeChat account.
 
-Click an account row to select it; the arrow marks the account currently being managed. **Remove account** (Alt+Backspace while viewing accounts) asks for confirmation and removes the local account record, saved login and model preferences. It keeps the provider account and archived conversations. Tabs belonging to the removed account close, and another enabled account is selected. Add a replacement before removing the last enabled account.
+Click an account row to select it; the arrow marks the account currently being managed. **Remove account** (Alt+Backspace while viewing accounts) asks for confirmation and removes the local account record, saved login and model preferences. It keeps the provider account and archived conversations. Tabs belonging to the removed account close, obsolete filters are cleared, and another enabled account is selected. Add a replacement before removing the last enabled account.
 
 ## Everyday use
 

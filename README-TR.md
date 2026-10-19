@@ -54,7 +54,7 @@ Firefox ve Zen aynı salt okunur çerez okuyucusunu kullanır. Profil seçimi `p
 
 Birden fazla hesap ekleyebilirsiniz. Gönderim için her sağlayıcıda bir hesap seçilidir; başka hesabın geçmişini görüntülemek bu seçimi değiştirmez. Farklı bir hesabı doğrulamak için önce varsayılan tarayıcınızda o hesabın açık olduğu profili seçin, ardından SiopeChat’te ilgili hesapta **Profil ile doğrula** seçeneğini kullanın.
 
-Hesap satırına tıklayarak seçim yapın; ok işareti yönetilen hesabı gösterir. **Hesabı sil** (Hesaplar ekranında Alt+Backspace), onay aldıktan sonra yerel hesap kaydını, kayıtlı oturumu ve model tercihlerini kaldırır. Sağlayıcıdaki hesap ve arşivlenmiş sohbetler korunur. Silinen hesabın sekmeleri kapatılıp başka etkin hesap seçilir. Son etkin hesabı silmeden önce başka hesap ekleyin.
+Hesap satırına tıklayarak seçim yapın; ok işareti yönetilen hesabı gösterir. **Hesabı sil** (Hesaplar ekranında Alt+Backspace), onay aldıktan sonra yerel hesap kaydını, kayıtlı oturumu ve model tercihlerini kaldırır. Sağlayıcıdaki hesap ve arşivlenmiş sohbetler korunur. Silinen hesabın sekmeleri kapatılır, geçersiz kalan filtreler temizlenir ve başka etkin hesap seçilir. Son etkin hesabı silmeden önce başka hesap ekleyin.
 
 ## Kullanım
 

@@ -72,6 +72,8 @@ class AccountManagementTests(unittest.TestCase):
             view._read_in_background = immediate
             view.refresh_sidebar = Mock()
             view.refresh_provider_catalog = Mock()
+            view.provider_filter = {"chatgpt"}
+            view.account_filter = {"chatgpt/default"}
             view.settings_dialog.open("accounts")
             view.session_dialog.remove()
             self.assertTrue(view.forms.visible)
@@ -79,5 +81,7 @@ class AccountManagementTests(unittest.TestCase):
             view.forms.confirm_buttons[0].handler()
             self.assertEqual([x["key"] for x in self.accounts.items()], [self.gemini])
             self.assertEqual(view.account_key, self.gemini)
+            self.assertIsNone(view.provider_filter)
+            self.assertIsNone(view.account_filter)
             self.assertTrue(all(x.get("account_key") != "chatgpt/default" for x in view.tabs))
             self.assertIn("silindi", view.session_dialog.message)
