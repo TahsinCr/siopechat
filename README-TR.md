@@ -36,6 +36,8 @@ Projeyi indirdiğiniz dizinde, kendi Python ortamınızla kurun:
 python -m pip install -e .
 ```
 
+Yanıt veya düşünme özeti üzerinde sürükleyerek metnin bir kısmını seçip Ctrl+C ile kopyalayabilirsiniz. Mesaja tıkladıktan sonra Ctrl+A ile mesajın tamamını seçebilirsiniz.
+
 | Sistem | Başlatma |
 | --- | --- |
 | Linux / macOS terminal | `./siopechat.sh` |

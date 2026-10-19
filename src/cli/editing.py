@@ -24,13 +24,24 @@ def select_all(view):
             (i for i, item in enumerate(view.messages) if item is reference),
             min(max(0, view.selected_message), len(view.messages) - 1),
         )
+        view.transcript_control.clear_selection()
         view.message_selection = True
     view.app.invalidate()
 
 
 def has_selection(view):
     buffer = active_buffer(view)
-    return bool(buffer.selection_state) if buffer is not None else view.message_selection
+    return (
+        bool(buffer.selection_state)
+        if buffer is not None
+        else bool(
+            view.message_selection
+            or (
+                view.app.layout.current_control is view.transcript_control
+                and view.transcript_control.selected_text
+            )
+        )
+    )
 
 
 def copy_selection(view, cut=False):
@@ -38,6 +49,11 @@ def copy_selection(view, cut=False):
     if buffer is not None and buffer.selection_state:
         data = buffer.cut_selection() if cut and not buffer.read_only() else buffer.copy_selection()
         text = data.text
+    elif (
+        view.app.layout.current_control is view.transcript_control
+        and view.transcript_control.selected_text
+    ):
+        text = view.transcript_control.selected_text
     elif view.message_selection and 0 <= view.selected_message < len(view.messages):
         reference = getattr(view, "selected_message_ref", None)
         index = next(

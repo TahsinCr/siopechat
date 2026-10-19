@@ -10,6 +10,8 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 
 ### Added
 
+- Drag to select and copy part of a rendered response or thinking summary; Ctrl+A still selects the complete message.
+
 - Edit a selected account’s display name from the account toolbar or the accounts.edit action (Alt+C), preserving its saved session and history.
 
 - Close a streaming conversation tab without interrupting its response; the sidebar marks running chats in green and completed background replies with a check mark. Reopen them without restarting the request.

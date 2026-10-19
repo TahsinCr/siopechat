@@ -2946,6 +2946,7 @@ class ChatView:
         self._restore_active_tab()
 
     def _restore_active_tab(self, *, focus: bool = True) -> None:
+        self.transcript_control.clear_selection()
         tab = self.tabs[self.active_tab]
         tab.setdefault("tab_id", uuid.uuid4().hex)
         if self.account_service:

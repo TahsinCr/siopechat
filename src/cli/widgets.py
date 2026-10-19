@@ -20,6 +20,37 @@ class TranscriptControl(UIControl):
     def __init__(self, view):
         self.view = view
         self.rows = ()
+        self.clear_selection()
+
+    def clear_selection(self):
+        self.anchor = self.extent = None
+        self.selection_rows = ()
+        self.selected_text = ""
+
+    def _bounds(self, line):
+        if not self.selected_text or self.anchor is None or self.extent is None:
+            return None
+        start, end = sorted((self.anchor, self.extent))
+        if not start[0] <= line <= end[0]:
+            return None
+        return (start[1] if line == start[0] else 0, end[1] if line == end[0] else 10**9)
+
+    def _select_to(self, point):
+        if self.anchor is None or not self.selection_rows:
+            return
+        y = min(max(0, point.y), len(self.selection_rows) - 1)
+        line = "".join(span[1] for span in self.selection_rows[y][0])
+        self.extent = (y, min(max(0, point.x), len(line)))
+        start, end = sorted((self.anchor, self.extent))
+        lines = []
+        for number in range(start[0], end[0] + 1):
+            text = "".join(span[1] for span in self.selection_rows[number][0])
+            value = text[
+                start[1] if number == start[0] else 0 : end[1] if number == end[0] else None
+            ]
+            lines.append(value.rstrip() if number < end[0] else value)
+        self.selected_text = "\n".join(lines) if start != end else ""
+        self.view.app.invalidate()
 
     def is_focusable(self):
         return True
@@ -33,30 +64,64 @@ class TranscriptControl(UIControl):
         def get_line(number):
             spans, message = rows[number]
             selected = self.view.message_selection and message == self.view.selected_message
-            return [
-                (span[0] + (" class:message.selected" if selected else ""), *span[1:])
-                for span in spans
-            ]
+            bounds = self._bounds(number)
+            result, position = [], 0
+            for span in spans:
+                style, text = span[:2]
+                cuts = {0, len(text)}
+                if bounds:
+                    cuts.update(min(len(text), max(0, value - position)) for value in bounds)
+                cuts = sorted(cuts)
+                for start, end in zip(cuts, cuts[1:]):
+                    highlight = selected or (bounds and bounds[0] <= position + start < bounds[1])
+                    result.append(
+                        (
+                            style + (" class:message.selected" if highlight else ""),
+                            text[start:end],
+                            *span[2:],
+                        )
+                    )
+                position += len(text)
+            return result
 
         return UIContent(
             get_line=get_line, line_count=len(rows), cursor_position=cursor, show_cursor=False
         )
 
     def mouse_handler(self, mouse_event):
-        if (
-            mouse_event.event_type == MouseEventType.MOUSE_UP
-            and mouse_event.button == MouseButton.LEFT
-        ):
-            line = mouse_event.position.y
-            if 0 <= line < len(self.rows):
-                position = 0
-                for span in self.rows[line][0]:
-                    end = position + len(span[1])
-                    if position <= mouse_event.position.x < end and len(span) > 2:
-                        return span[2](mouse_event)
-                    position = end
-                self.view.select_message(self.rows[line][1])
+        if mouse_event.button != MouseButton.LEFT:
+            return NotImplemented
+        line = mouse_event.position.y
+        if not 0 <= line < len(self.rows):
+            return NotImplemented
+        if mouse_event.event_type == MouseEventType.MOUSE_DOWN:
+            self.clear_selection()
+            self.selection_rows = self.rows
+            self.anchor = (line, mouse_event.position.x)
+            self.extent = self.anchor
+            self.view.select_message(self.rows[line][1])
+            return None
+        if mouse_event.event_type == MouseEventType.MOUSE_MOVE and self.anchor is not None:
+            self._select_to(mouse_event.position)
+            return None
+        if mouse_event.event_type == MouseEventType.MOUSE_UP:
+            if self.anchor is not None:
+                self._select_to(mouse_event.position)
+            if self.selected_text:
                 return None
+            position = 0
+            for span in self.rows[line][0]:
+                end = position + len(span[1])
+                if position <= mouse_event.position.x < end and len(span) > 2:
+                    # The view resolves files with the originating account/chat context.
+                    url = getattr(span[2], "url", None)
+                    if url and hasattr(self.view, "open_message_link"):
+                        self.view.open_message_link(url, self.rows[line][1])
+                        return None
+                    return span[2](mouse_event)
+                position = end
+            self.view.select_message(self.rows[line][1])
+            return None
         return NotImplemented
 
 

@@ -36,6 +36,8 @@ Install from this checkout in your Python environment:
 python -m pip install -e .
 ```
 
+Drag across a response or thinking summary to select part of its rendered text, then press Ctrl+C. Click a message and press Ctrl+A to select the whole message.
+
 | Platform | Launcher |
 | --- | --- |
 | Linux / macOS terminal | `./siopechat.sh` |
