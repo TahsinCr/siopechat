@@ -5,6 +5,7 @@ from typing import Protocol
 
 from .api import Capability, Provider
 from .errors import FeatureUnavailable, ProviderError, RemoteNotFound
+from .files import DownloadSource
 from .models import Conversation, ModelCatalog, Page, Project, ProviderDescription, SessionStatus
 from .projects import ProjectOptions
 
@@ -37,9 +38,16 @@ class Backend(Provider, Protocol):
     async def delete_project(self, project_id: str) -> None: ...
     async def move_chat(self, conversation_id: str, project_id: str | None) -> None: ...
 
+    async def resolve_download(
+        self, url: str, conversation_id: str | None = None, message_id: str | None = None
+    ) -> DownloadSource | None: ...
+
 
 class OptionalFeatures:
     """Explicit failures keep unimplemented operations distinct from empty results."""
+
+    async def resolve_download(self, url, conversation_id=None, message_id=None):
+        return None
 
     async def delete_chat(self, conversation_id: str) -> None:
         raise FeatureUnavailable(Capability.DELETE, "not_implemented")

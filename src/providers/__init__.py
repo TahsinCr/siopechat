@@ -19,6 +19,7 @@ __all__ = [
     "CompatibilityError",
     "ConversationBound",
     "Provider",
+    "DownloadSource",
     "Backend",
     "ProviderDescription",
     "ModelCatalog",
@@ -31,5 +32,6 @@ __all__ = [
 ]
 
 from .contracts import Backend
+from .files import DownloadSource
 from .models import ModelCatalog, ProviderDescription
 from .registry import ProviderRegistry

@@ -3437,6 +3437,55 @@ class ChatView:
             self._line_render_key = rendered
         return self._transcript_lines
 
+    def open_message_link(self, url, index=None):
+        from .markdown import open_link
+
+        if self.account_service is None:
+            open_link(url)
+            return
+        key, conversation = self.account_key, self.conversation_id
+        message = (
+            self.messages[index] if index is not None and 0 <= index < len(self.messages) else {}
+        )
+        message_id = message.get("id")
+        self.status = self.tr("Bağlantı hazırlanıyor…")
+
+        def progress(name, size, total):
+            label = f"{size // 1024} KiB" + (f" / {total // 1024} KiB" if total else "")
+
+            def report():
+                self.status = self.tr("İndiriliyor: {0} · {1}").format(name, label)
+                self.app.invalidate()
+
+            self._dispatch_ui(report)
+
+        def completed(result):
+            if result["kind"] == "page":
+                open_link(result["url"])
+                self.status = self.tr("Bağlantı tarayıcıda açıldı")
+            else:
+                self.status = self.tr("İndirildi: {0}").format(result["path"])
+            self.app.invalidate()
+
+        def failed(reason):
+            import re
+
+            status = re.fullmatch(r"Dosya alınamadı \(HTTP (\d+)\)", str(reason))
+            detail = (
+                self.tr("Dosya alınamadı (HTTP {0})").format(status[1])
+                if status
+                else self.tr(str(reason))
+            )
+            self.status = self.tr("İndirme başarısız: {0}").format(detail)
+            self.app.invalidate()
+
+        self._read_in_background(
+            lambda: self.account_service.download(key, url, conversation, message_id, progress),
+            completed,
+            failed,
+            session_bound=False,
+        )
+
     def select_message(self, index):
         if index is None or not 0 <= index < len(self.messages):
             return

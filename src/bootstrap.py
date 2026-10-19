@@ -59,6 +59,9 @@ def create_application(root: Path | None = None):
     )
     accounts = Accounts(api)
     api.provide("application", "accounts", accounts)
+    from downloads import Downloads
+
+    api.provide("application", "downloads", Downloads(settings, root, accounts))
     api.actions.register(
         "application", Action("accounts.list", "Hesapları listele", accounts.items)
     )

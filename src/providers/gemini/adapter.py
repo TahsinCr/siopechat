@@ -20,6 +20,7 @@ from ..models import (
     Origin,
     Page,
     ProviderDescription,
+    Resource,
     SessionState,
     SessionStatus,
 )
@@ -50,6 +51,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
         quiet=True,
         notebooks=None,
     ):
+        self._media = {}
         self.cookie_file = Path(cookie_file)
         self.account_id = account_id
         self.quiet = quiet
@@ -267,11 +269,26 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                             channel="analysis",
                         )
                     )
+                from .media import render_images, sdk_images
+
+                images = sdk_images(output) if output else []
                 messages.append(
                     Message(
                         stable_id,
                         "user" if turn.role == "user" else "assistant",
-                        (Content("text", turn.text),),
+                        (Content("text", render_images(turn.text, images)),)
+                        + tuple(
+                            Content(
+                                "image",
+                                resource=Resource(
+                                    image["alias"],
+                                    image["name"],
+                                    image.get("media_type"),
+                                    image["url"],
+                                ),
+                            )
+                            for image in images
+                        ),
                     )
                 )
             title = next(
@@ -422,7 +439,15 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                             bound = True
                         if chunk.thoughts:
                             yield ReplaceText(chunk.thoughts, "analysis")
-                        yield ReplaceText(chunk.text or "", "final")
+                        from .media import render_images, sdk_images
+
+                        images = sdk_images(chunk)
+                        for image in images:
+                            self._media[chat.cid, image["alias"]] = image
+                            self._media[chat.cid, image["url"]] = image
+                        while len(self._media) > 256:
+                            self._media.pop(next(iter(self._media)))
+                        yield ReplaceText(render_images(chunk.text or "", images), "final")
             except asyncio.CancelledError:
                 raise
             except ProviderError:
@@ -441,6 +466,30 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                     self._temporary.pop(next(iter(self._temporary)))
             if not bound:
                 yield ConversationBound(chat.cid)
+
+    async def resolve_download(self, url, conversation_id=None, message_id=None):
+        from ..files import DownloadSource
+        from .media import PLACEHOLDER, valid_media_url
+
+        if not PLACEHOLDER.fullmatch(url) and not valid_media_url(url):
+            return None
+        target = self._media.get((conversation_id, url))
+        if target is None and PLACEHOLDER.fullmatch(url) and conversation_id:
+            chat = await self.get_chat(conversation_id)
+            for message in chat.messages:
+                for content in message.content:
+                    resource = content.resource
+                    if resource and resource.id == url:
+                        target = {"url": resource.remote_url, "name": resource.name}
+        if target is None and valid_media_url(url):
+            target = {"url": url, "name": "image"}
+        if not target or not valid_media_url(target["url"]):
+            raise ValueError(
+                "Görselin gerçek dosya adresi sağlayıcıdan alınamadı; sohbeti eşitleyin"
+            )
+        return DownloadSource(
+            target["url"], target["name"], True, {"Referer": "https://gemini.google.com/"}
+        )
 
     async def forget_temporary(self, remote_id):
         self._temporary.pop(remote_id, None)

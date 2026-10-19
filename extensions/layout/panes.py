@@ -212,6 +212,10 @@ class _Pane:
         if index is not None:
             self.view.select_tab(index)
 
+    def open_link(self, url):
+        self.activate()
+        self.view.open_message_link(url)
+
     def pause(self):
         self.follow = False
 
@@ -263,5 +267,15 @@ class _Pane:
                 line = end
             self.line_count = line + 1
             self.cached = transcript_fragments("".join(values))
+            self.cached = [
+                (
+                    span[0],
+                    span[1],
+                    on_click(lambda url=getattr(span[2], "url", ""): self.open_link(url)),
+                )
+                if len(span) > 2 and getattr(span[2], "url", None)
+                else span
+                for span in self.cached
+            ]
             self.cache_key = key
         return self.cached

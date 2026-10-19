@@ -10,7 +10,9 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 
 ### Added
 
+- Background file downloads with a configurable General → Download folder (default: project downloads/), two concurrent transfers, streamed writes, collision-safe filenames and incomplete-file cleanup.
 - Drag to select and copy part of a rendered response or thinking summary; Ctrl+A still selects the complete message.
+- Provider-owned file resolution for ChatGPT sandbox links and Gemini generated images, shared with cached history and split views.
 
 - Edit a selected account’s display name from the account toolbar or the accounts.edit action (Alt+C), preserving its saved session and history.
 
@@ -36,6 +38,9 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 - Scope profile imports to provider authentication cookies, exclude Firefox containers, bound keyring work, and validate candidate sessions before replacing existing account credentials.
 
 ### Fixed
+
+- Resolve Gemini image_generation_content placeholders from actual provider media records instead of opening placeholder URLs that return 404.
+- Make plain web URLs clickable without turning code examples into links; dragging across a link selects text without opening it.
 
 - Retry locked Firefox/Zen cookie reads from a private SQLite snapshot, preserving committed WAL data and leaving the source profile untouched.
 

@@ -1,7 +1,8 @@
 """Native Gemini read contracts; parsing has no session or frontend dependency."""
 
 from ..errors import ProviderError
-from ..models import Content, Conversation, Message
+from ..models import Content, Conversation, Message, Resource
+from .media import candidate_images, render_images
 
 
 def nested(value, *path, default=None):
@@ -67,12 +68,23 @@ def history(data, origin, cid):
                     channel="analysis",
                 )
             )
-        if isinstance(text, str) and text:
+        images = candidate_images(candidate)
+        text = render_images(text if isinstance(text, str) else "", images)
+        if text:
             messages.append(
                 Message(
                     rid + ":model",
                     "assistant",
-                    (Content("text", text),),
+                    (Content("text", text),)
+                    + tuple(
+                        Content(
+                            "image",
+                            resource=Resource(
+                                image["alias"], image["name"], image.get("media_type"), image["url"]
+                            ),
+                        )
+                        for image in images
+                    ),
                     metadata={"native_candidate": candidate},
                 )
             )

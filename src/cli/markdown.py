@@ -94,6 +94,46 @@ class ChatMarkdown(Markdown):
         "code_block": HighlightedCodeBlock,
     }
 
+    def __init__(self, markup, **kwargs):
+        super().__init__(markup, **kwargs)
+        # Linkify prose only: code blocks and inline code retain their original text.
+        pattern = re.compile(r"(?:https?://|sandbox:/)[^\s<>\"]+")
+        for block in self.parsed:
+            if not block.children:
+                continue
+            children, depth = [], 0
+            for token in block.children:
+                if token.type == "link_open":
+                    depth += 1
+                elif token.type == "link_close":
+                    depth -= 1
+                if token.type != "text" or depth:
+                    children.append(token)
+                    continue
+                position = 0
+                for match in pattern.finditer(token.content):
+                    url = match.group().rstrip(".,;!")
+                    while url.endswith(")") and url.count(")") > url.count("("):
+                        url = url[:-1]
+                    if match.start() > position:
+                        text = type(token)("text", "", 0)
+                        text.content = token.content[position : match.start()]
+                        children.append(text)
+                    opening = type(token)("link_open", "a", 1)
+                    opening.attrSet("href", url)
+                    text = type(token)("text", "", 0)
+                    text.content = url
+                    children.extend((opening, text, type(token)("link_close", "a", -1)))
+                    position = match.start() + len(url)
+                if position:
+                    if position < len(token.content):
+                        text = type(token)("text", "", 0)
+                        text.content = token.content[position:]
+                        children.append(text)
+                else:
+                    children.append(token)
+            block.children = children
+
 
 def render_chatgpt_annotations(text: str) -> str:
     """Turn ChatGPT web's private-use annotations into terminal-safe text."""
@@ -228,6 +268,7 @@ def link_handler(url):
             return None
         return NotImplemented
 
+    click.url = url
     return click
 
 

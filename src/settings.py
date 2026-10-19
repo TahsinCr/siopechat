@@ -87,6 +87,7 @@ DEFAULTS = {
         "effort": "medium",
         "mouse": True,
         "show_reasoning": True,
+        "download_directory": "downloads",
     },
     "keybindings": DEFAULT_KEYBINDINGS,
     "providers": {key: {"enabled": True} for key in PROVIDERS},
@@ -206,7 +207,7 @@ class Settings:
             for provider, key in selected.items()
         ):
             raise ValueError("invalid per-provider account selection")
-        for key in ("language", "theme", "effort"):
+        for key in ("language", "theme", "effort", "download_directory"):
             if not isinstance(data["application"].get(key), str):
                 raise ValueError(f"invalid application setting {key}")
         if (
@@ -215,6 +216,11 @@ class Settings:
             or type(data["application"].get("show_reasoning", True)) is not bool
         ):
             raise ValueError("invalid model/mouse preference")
+        if (
+            not data["application"]["download_directory"].strip()
+            or "\0" in data["application"]["download_directory"]
+        ):
+            raise ValueError("İndirme klasörü boş veya geçersiz")
         for value in data["extensions"].values():
             if not isinstance(value, dict) or type(value.get("enabled", True)) is not bool:
                 raise ValueError("invalid extension settings")

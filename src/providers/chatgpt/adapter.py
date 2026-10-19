@@ -285,6 +285,61 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
         async with self._gate:
             return self._conversation(await asyncio.to_thread(read))
 
+    async def resolve_download(self, url, conversation_id=None, message_id=None):
+        from urllib.parse import quote, unquote, urlsplit
+
+        from ..files import DownloadSource
+
+        parsed = urlsplit(url)
+        if parsed.scheme != "sandbox":
+            return None
+        if not conversation_id:
+            raise ValueError("Dosyanın sohbet kimliği henüz alınmadı")
+        sandbox_path = unquote(parsed.path)
+        if not sandbox_path.startswith("/mnt/data/"):
+            raise ValueError("Desteklenmeyen sohbet dosyası yolu")
+
+        def resolve():
+            with self._factory(self.session) as client:
+                chat = client.get_conversation(conversation_id)
+                candidates = chat.get("messages", [])
+                if not candidates and isinstance(chat.get("mapping"), dict):
+                    candidates = [
+                        node.get("message")
+                        for node in chat["mapping"].values()
+                        if isinstance(node, dict)
+                    ]
+                import json
+
+                matched = [
+                    item
+                    for item in candidates
+                    if isinstance(item, dict)
+                    and sandbox_path in json.dumps(item.get("content", {}), ensure_ascii=False)
+                ]
+                selected = next(
+                    (item for item in matched if item.get("id") == message_id),
+                    matched[-1] if matched else None,
+                )
+                if selected is None or not selected.get("id"):
+                    raise ValueError("Dosya sohbet kaydında bulunamadı veya süresi doldu")
+                endpoint = (
+                    "https://chatgpt.com/backend-api/conversation/"
+                    + quote(conversation_id, safe="")
+                    + "/interpreter/download"
+                )
+                result = client.request(
+                    "GET",
+                    endpoint,
+                    params={"message_id": selected["id"], "sandbox_path": sandbox_path},
+                ).json()
+                target = result.get("download_url") if isinstance(result, dict) else None
+                if not target or urlsplit(target).scheme != "https":
+                    raise ValueError("Sağlayıcı dosya indirme adresi döndürmedi")
+                return DownloadSource(target, sandbox_path.rsplit("/", 1)[-1], True)
+
+        return await asyncio.to_thread(resolve)
+
     async def rename_chat(self, conversation_id: str, title: str) -> None:
         if not title.strip():
             raise ValueError("title must be nonempty")

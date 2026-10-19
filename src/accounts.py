@@ -1110,6 +1110,24 @@ class Accounts:
             with self._lock:
                 self._sending[key] -= 1
 
+    def resolve_download(self, key, url, conversation_id=None, message_id=None):
+        from urllib.parse import urlsplit
+
+        from providers.files import DownloadSource
+
+        _, remote = origin(conversation_id, key)
+        provider = self.provider(key) if key else None
+        if provider and hasattr(provider, "resolve_download"):
+            source = self.call(provider.resolve_download(url, remote, message_id))
+            if source is not None:
+                return source
+        if urlsplit(url).scheme not in ("http", "https"):
+            raise ValueError("Bu dosya sağlayıcı tarafından çözümlenemedi")
+        return DownloadSource(url)
+
+    def download(self, key, url, conversation_id=None, message_id=None, progress=None):
+        return self.api.get("downloads").fetch(key, url, conversation_id, message_id, progress)
+
     def upload_image(self, key, data, name, mime, width, height):
         if key.startswith("claude/") and Capability.ATTACHMENTS not in self.capabilities(key):
             raise ValueError("Claude dosya ekleme henüz kullanılamıyor")

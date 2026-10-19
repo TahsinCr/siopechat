@@ -36,8 +36,6 @@ Install from this checkout in your Python environment:
 python -m pip install -e .
 ```
 
-Drag across a response or thinking summary to select part of its rendered text, then press Ctrl+C. Click a message and press Ctrl+A to select the whole message.
-
 | Platform | Launcher |
 | --- | --- |
 | Linux / macOS terminal | `./siopechat.sh` |
@@ -69,6 +67,10 @@ Write in the composer and press **Enter** to send. **Shift+Enter** inserts a new
 A new chat offers models from the selected accounts of enabled providers. An existing chat stays with its original account. Model and effort choices come from provider catalogs; unavailable or upgrade-only entries are filtered when that information is available. A listed model can still be refused by the server. Provider-published thinking summaries appear separately from answers; private reasoning is not available.
 
 Click a Markdown web link in a message to open it in your default browser. Clicking elsewhere in the message still selects it for copying.
+
+File links download in the background to `downloads/` under the project directory. Change this in **Settings → General → Download folder**; relative paths are resolved against the project and absolute paths are supported. At most two transfers run at once, progress appears in the status bar, existing files are preserved and failed transfers are cleaned up. Ordinary web pages still open in your default browser. ChatGPT sandbox files are resolved through the owning conversation; Gemini image placeholders use actual provider media records. Missing or expired resources show an error instead of a fabricated URL.
+
+Drag across a response or thinking summary to select part of its rendered text, then press Ctrl+C. Click a message and press Ctrl+A to select the whole message.
 
 Closing a conversation tab keeps its running response in the background. In the sidebar, a green **●** marks a running conversation and **✓** marks a completed background reply. Select it to reopen the same conversation. You can open other conversations and synchronize history while a response is running. This continues only while SiopeChat is running.
 
