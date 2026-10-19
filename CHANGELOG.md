@@ -82,6 +82,9 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Fixed
 
+- Restore visible filter, project-provider and deletion choices by giving shared form viewports a bounded preferred height; preserve checkbox account IDs on submission.
+- Keep active tab and split-group colors from being overridden by the generic open-tab text style.
+
 - Delete Claude project files using their native file identities and the file-deletion endpoint, while keeping document deletion separate.
 
 - Send Claude thinking choices through `thinking_mode` rather than the rejected `paprika_mode` field. Keep model selection on completion requests rather than the empty-conversation creation call.

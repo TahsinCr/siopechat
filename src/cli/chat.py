@@ -911,10 +911,10 @@ class ChatView:
             )
             fragments.append(("class:tab.divider", "│"))
             fragments.append(
-                (style + " class:tab.open", label, on_click(lambda i=i: self.select_tab(i)))
+                ("class:tab.open " + style, label, on_click(lambda i=i: self.select_tab(i)))
             )
             fragments.append(
-                (style + " class:tab.close", " × ", on_click(lambda i=i: self.close_clicked_tab(i)))
+                ("class:tab.close " + style, " × ", on_click(lambda i=i: self.close_clicked_tab(i)))
             )
         used = sum(get_cwidth(fragment[1]) for fragment in fragments)
         fragments.append(("class:tabs", " " * max(0, width - used - 9)))

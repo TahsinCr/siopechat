@@ -23,6 +23,7 @@ class Forms:
         self.inline_project = inline_project
         self.fields, body, self.error = {}, [], ""
         single_line_controls = []
+        content_height = 1
         for key, label, value, choices in fields:
             body.append(
                 Window(height=1, content=FormattedTextControl(label), style="class:settings.title")
@@ -43,6 +44,15 @@ class Forms:
                 widget.control.focus_on_click = Condition(lambda: True)
                 if key not in ("instructions", "text"):
                     single_line_controls.append(widget.control)
+            content_height += 2 + (
+                len(choices)
+                if choices
+                else len(value[0])
+                if key in ("providers", "accounts")
+                else 5
+                if key in ("instructions", "text")
+                else 1
+            )
             self.fields[key] = widget
             body.append(widget)
             body.append(Window(height=1))
@@ -52,10 +62,10 @@ class Forms:
 
         def save():
             values = {
-                key: widget.current_value
-                if isinstance(widget, RadioList)
-                else widget.current_values
+                key: widget.current_values
                 if isinstance(widget, CheckboxList)
+                else widget.current_value
+                if isinstance(widget, RadioList)
                 else widget.text
                 for key, widget in self.fields.items()
             }
@@ -79,7 +89,11 @@ class Forms:
         )(lambda _: save())
         pane = ScrollablePane(
             HSplit(body, padding=0, key_bindings=keys),
-            height=lambda: D(max=max(4, self.view.app.output.get_size().rows - 8)),
+            height=lambda: D(
+                min=1,
+                preferred=min(content_height, max(1, self.view.app.output.get_size().rows - 10)),
+                max=max(1, self.view.app.output.get_size().rows - 10),
+            ),
         )
         buttons = [
             Button("Kaydet" if inline_project else "Uygula", handler=save),
