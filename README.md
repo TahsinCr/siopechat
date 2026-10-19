@@ -350,3 +350,7 @@ session-local and apply to the sidebar, independently of the draft's model and
 project picker.
 
 The **⊗** button at the far right of the tab bar closes all idle tabs and leaves one empty draft. Use **Alt+W**, `/tabs-close`, or **Tüm sekmeleri kapat** in the command palette for the same action. Running responses, loads and uploads must finish first. Closing tabs does not delete saved conversations.
+
+### Start a chat from project details
+
+Open a project’s details, choose its account’s model and effort, then write in the composer below. Sending creates a new conversation inside that project in a separate tab; the details tab remains available. The composer and model/effort bar are hidden while editing project information and return after saving or cancelling.

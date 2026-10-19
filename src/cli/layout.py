@@ -119,7 +119,7 @@ def workspace_layout(view):
                         text_window(view.render_composer_actions, 1, "class:composer"),
                     ]
                 ),
-                filter=Condition(lambda: view.tab_kind != "project"),
+                filter=Condition(lambda: not view.editing_project()),
             ),
         ],
         style="class:transcript",
@@ -164,7 +164,9 @@ def workspace_layout(view):
                     style="class:chat.header",
                     wrap_lines=False,
                 ),
-                filter=Condition(lambda: view.tab_kind != "settings"),
+                filter=Condition(
+                    lambda: view.tab_kind != "settings" and not view.editing_project()
+                ),
             ),
             text_window(view.render_footer, 1, "class:help"),
         ]

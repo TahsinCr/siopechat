@@ -10,6 +10,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Added
 
+- Project details include a composer and account-scoped model/effort selectors. The first prompt opens a separate conversation in the project; editing hides the composer and selectors.
+
 - Direct Yes/No permanent-deletion confirmations, conversation composer and project-details delete buttons, and `/project-delete` with a searchable cross-provider project picker.
 - Close-all-tabs control at the far right of the tab bar, `/tabs-close`, and configurable Alt+W action; active work is protected and temporary-chat cleanup keeps account ownership.
 
@@ -84,6 +86,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 - Competing settings-page filler, repeated shortcut hints and SDK logs written over the terminal interface.
 
 ### Fixed
+
+- Background project-detail loading preserves prompts and attachments entered while the request was pending.
 
 - Inline project editors fill the available conversation panel width and resize with the terminal instead of collapsing to their labels and buttons.
 

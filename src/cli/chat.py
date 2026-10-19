@@ -256,7 +256,7 @@ class ChatView:
             completer=SlashCommandCompleter(),
             complete_while_typing=True,
             input_processors=[ComposerPlaceholderProcessor()],
-            read_only=Condition(lambda: self.tab_kind == "project"),
+            read_only=Condition(self.editing_project),
             style="class:composer",
             scrollbar=False,
         )
@@ -923,33 +923,43 @@ class ChatView:
     def select_tab(self, index):
         self.switch_tab(index - self.active_tab)
 
+    def editing_project(self):
+        return bool(
+            self.tab_kind == "project"
+            and self.forms.visible
+            and self.forms.inline_project == self.current_project.get("id")
+        )
+
+    def render_project_actions(self):
+        return FormattedText(
+            [
+                (
+                    "class:button",
+                    " ✎ Düzenle ",
+                    on_click(lambda: self.project_panel.edit(self.current_project.get("id"))),
+                ),
+                ("class:button", " ＋ Kaynak ", on_click(self.project_panel.add_source)),
+                ("class:button", " − Kaynak ", on_click(self.project_panel.remove_source)),
+                (
+                    "class:button",
+                    " Sil ",
+                    on_click(
+                        lambda: self.delete_record("container", self.current_project.get("id"))
+                    ),
+                ),
+                (
+                    "class:button",
+                    " ↻ Eşitle ",
+                    on_click(self.show_project_details),
+                ),
+            ]
+        )
+
     def render_chat_header(self):
         if self.tab_kind == "settings":
             return FormattedText([("class:settings.title", " Ayarlar")])
-        if self.tab_kind == "project":
-            return FormattedText(
-                [
-                    (
-                        "class:button",
-                        " ✎ Düzenle ",
-                        on_click(lambda: self.project_panel.edit(self.current_project.get("id"))),
-                    ),
-                    ("class:button", " ＋ Kaynak ", on_click(self.project_panel.add_source)),
-                    ("class:button", " − Kaynak ", on_click(self.project_panel.remove_source)),
-                    (
-                        "class:button",
-                        " Sil ",
-                        on_click(
-                            lambda: self.delete_record("container", self.current_project.get("id"))
-                        ),
-                    ),
-                    (
-                        "class:button",
-                        " ↻ Eşitle ",
-                        on_click(self.show_project_details),
-                    ),
-                ]
-            )
+        if self.editing_project():
+            return FormattedText([])
         selected = next((m for m in self.catalog.chat_models if m.id == self.model), None)
         model = (
             (selected.chat_title or selected.title)
@@ -985,7 +995,9 @@ class ChatView:
             )
             + " "
         )
-        fragments = []
+        fragments = (
+            list(self.render_project_actions()) + [("", "\n")] if self.tab_kind == "project" else []
+        )
         used = 0
         width = self.terminal_width()
         for style, label, callback in (
@@ -994,6 +1006,11 @@ class ChatView:
             ("class:metadata.project", project_text, self.open_project_picker),
             ("class:metadata.temporary", temporary_text, self.toggle_temporary_chat),
         ):
+            if self.tab_kind == "project" and style in (
+                "class:metadata.project",
+                "class:metadata.temporary",
+            ):
+                continue
             if (
                 style == "class:metadata.project"
                 and Capability.PROJECTS not in self.provider_features
@@ -2223,6 +2240,8 @@ class ChatView:
         def update(text, project):
             for index, tab in enumerate(self.tabs):
                 if tab.get("kind") == "project" and tab.get("project", {}).get("id") == project_id:
+                    if index == self.active_tab:
+                        self._save_active_tab()
                     tab.update(
                         messages=[{"role": "system", "text": text}],
                         project=project,
@@ -2444,6 +2463,7 @@ class ChatView:
                 and hasattr(self.account_service, "active_accounts")
                 and not self.conversation_id
                 and not self.messages
+                and self.tab_kind == "chat"
             ):
                 catalogs = []
                 for account in self.account_service.active_accounts():
@@ -3317,8 +3337,8 @@ class ChatView:
             self.app.invalidate()
             return
         self.normalize_model_selection()
-        if self.tab_kind == "project":
-            self.status = "Bu sekme proje bilgilerini gösterir; sohbet listesinden bir sohbet açın"
+        if self.editing_project():
+            self.status = "Önce proje düzenlemesini kaydedin veya iptal edin"
             self.app.invalidate()
             return
         if not self.input.text.lstrip().startswith("/") and (
@@ -3374,6 +3394,22 @@ class ChatView:
         attachments = list(self.pending_attachments)
         if not prompt and not attachments:
             return
+        if self.tab_kind == "project":
+            source_tab = self.tabs[self.active_tab]
+            project, key = dict(self.current_project), self.account_key
+            model, effort = self.model, self.effort
+            count = len(self.tabs)
+            self.new_tab()
+            if len(self.tabs) == count:
+                return
+            if self.account_service:
+                self.bind_account(key)
+            self.model, self.effort = model, effort
+            self.current_project = project
+            self.temporary = False
+            self.pending_attachments = attachments
+            # The details tab keeps its content; its submitted draft belongs to the new chat.
+            source_tab.update(draft="", pending_attachments=[])
         self.input.text = ""
         if prompt.startswith("/"):
             self.handle_command(prompt)
