@@ -20,7 +20,7 @@ from backend import BackendService
 from providers import Capability, ConversationBound, ReplaceText, SendRequest, TextDelta
 from providers.chatgpt import BrowserSession, ChatGPTClient, ChatGPTProvider, SessionPaths
 from providers.claude import ClaudeProvider
-from providers.errors import AccountPaused, RemoteNotFound
+from providers.errors import AccountPaused, ProviderError, RemoteNotFound
 from providers.gemini import GeminiProvider
 from providers.models import FeatureState, ModelCatalog, SessionState
 from providers.registry import PROVIDERS
@@ -315,7 +315,11 @@ class Accounts:
                                 try:
                                     self.api.get("backend").atomic_json_write(
                                         self.directory(key) / "models.json",
-                                        {"schema": CATALOG_SCHEMA, "account_key": key, "catalog": asdict(value)},
+                                        {
+                                            "schema": CATALOG_SCHEMA,
+                                            "account_key": key,
+                                            "catalog": asdict(value),
+                                        },
                                     )
                                 except OSError:
                                     pass
@@ -1126,7 +1130,19 @@ class Accounts:
                         else provider.delete_project(remote)
                     )
                 except RemoteNotFound:
-                    pass  # Already deleted upstream; finish local reconciliation.
+                    # A missing mutation route is not proof that the record is gone.
+                    try:
+                        await (
+                            provider.get_chat(remote)
+                            if kind == "conversation"
+                            else provider.get_project(remote)
+                        )
+                    except RemoteNotFound:
+                        pass
+                    else:
+                        raise ProviderError(
+                            "Sağlayıcı silmeyi doğrulamadı; uzak ve yerel kayıt korundu"
+                        )
                 return await asyncio.to_thread(cleanup)
 
         return self.call(remove(), timeout=60)

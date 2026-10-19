@@ -192,8 +192,20 @@ class DeleteAndCacheTests(unittest.TestCase):
     def test_delete_already_missing_upstream_still_cleans_the_archive(self):
         chat = self.seed()
         self.provider.delete_chat.side_effect = RemoteNotFound("already deleted")
+        self.provider.get_chat = AsyncMock(side_effect=RemoteNotFound("missing"))
         self.accounts.delete(chat["id"], self.key)
         self.assertIsNone(self.accounts.cached(self.key, "c_abc"))
+
+    def test_missing_delete_route_is_not_evidence_that_the_conversation_is_gone(self):
+        from providers.errors import ProviderError
+
+        chat = self.seed()
+        self.provider.delete_chat.side_effect = RemoteNotFound("missing route")
+        self.provider.get_chat = AsyncMock(return_value=object())
+        with self.assertRaisesRegex(ProviderError, "uzak ve yerel kayıt korundu"):
+            self.accounts.delete(chat["id"], self.key)
+        self.assertIsNotNone(self.accounts.cached(self.key, "c_abc"))
+        self.assertFalse(self.archive.deleted(self.key, "conversation", "c_abc"))
 
     def test_remote_failure_does_not_remove_local_history(self):
         chat = self.seed()

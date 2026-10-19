@@ -7,7 +7,7 @@ from collections import OrderedDict
 from typing import Callable
 
 from ..api import Capability, ConversationBound, ReplaceText, SendRequest, TextDelta
-from ..contracts import OptionalFeatures
+from ..contracts import OptionalFeatures, confirm_deleted
 from ..errors import AccountPaused, CompatibilityError, RateLimited
 from ..models import (
     Content,
@@ -155,6 +155,15 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
                     client.delete_conversation(conversation_id)
 
             await asyncio.to_thread(remove)
+
+            async def readback():
+                def read():
+                    with self._factory(self.session) as client:
+                        return client.get_conversation(conversation_id)
+
+                return await asyncio.to_thread(read)
+
+            await confirm_deleted(readback, lambda value: value.get("is_visible") is False)
 
     async def delete_project(self, project_id):
         from urllib.parse import quote

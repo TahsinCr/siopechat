@@ -82,6 +82,9 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Fixed
 
+- Require server readback after ChatGPT, Gemini and Claude conversation deletion before purging local archives; retry verification reads without replaying deletion.
+- Distinguish a missing mutation route from a missing record, and reject missing or malformed Gemini RPC acknowledgements instead of reporting false success.
+
 - Use Claude’s account-entitled model selector instead of global bootstrap definitions, excluding plan-locked models and retaining dynamic effort/mode settings.
 - Invalidate catalog snapshots from before entitlement-aware discovery instead of restoring unavailable model choices after an upgrade.
 

@@ -251,7 +251,7 @@ ChatGPT transport work originates from [tritao/chatgpt-web](https://github.com/t
 
 Use **Chat: Delete** or **Projects: Delete** in the command palette, or `/delete [ID]` and `/delete-project [ID]`. The default shortcuts are Alt+D and Alt+Delete. Both operations ask for confirmation, with **Cancel** selected initially. Project deletion follows the provider’s behavior for its contained chats. Only delete projects you own and no longer need.
 
-All configured providers use their authenticated HTTP sessions for deletion. Deletion happens on the provider first. Successful deletion removes cached list references and normalized archive rows and stores a persistent tombstone, preventing an older in-flight sync from restoring the record. Provider failures preserve the archive. Shared content-addressed files are retained rather than removed blindly. Unsupported or unauthorized operations return an explicit error.
+All configured providers use their authenticated HTTP sessions for deletion. Deletion happens on the provider first, followed by bounded server readback. Only reads are retried; the delete request is submitted once. A missing delete route or a network error does not count as confirmed absence. If confirmation fails, the local record is retained. Confirmed deletion removes cached list references and normalized archive rows and stores a persistent tombstone, preventing an older in-flight sync from restoring the record. Provider failures preserve the archive. Shared content-addressed files are retained rather than removed blindly. Unsupported or unauthorized operations return an explicit error.
 
 ### Open saved conversations immediately
 

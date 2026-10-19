@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from ..api import Capability, ConversationBound, ReplaceText, SendRequest
-from ..contracts import OptionalFeatures
+from ..contracts import OptionalFeatures, confirm_deleted
 from ..errors import AccountPaused, FeatureUnavailable, ProviderError
 from ..models import (
     Choice,
@@ -288,7 +288,19 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
     async def delete_chat(self, conversation_id):
         async with self._gate:
             client = await self._connect()
-            await client.delete_chat(conversation_id)
+            if self._factory is not None:
+                await client.delete_chat(conversation_id)
+                return
+            await self.rpc.call("GzXR5e", [conversation_id], "/app", allow_empty=True)
+            await confirm_deleted(
+                lambda: self.rpc.call(
+                    "hNvQHb",
+                    [conversation_id, 1, None, 1, [1], [4], None, 1],
+                    "/app",
+                    allow_empty=True,
+                ),
+                lambda parts: not parts,
+            )
 
     async def delete_project(self, project_id):
         from .notebooks import notebook_id

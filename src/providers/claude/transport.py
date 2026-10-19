@@ -5,6 +5,7 @@ import uuid
 from pathlib import Path
 from urllib.parse import quote
 
+from ..contracts import confirm_deleted
 from ..errors import AccountPaused, ProviderError
 from ..projects import ProjectOptions
 from ..session import WebSession, read_session
@@ -113,7 +114,8 @@ class ClaudeTransport:
             raise ValueError("Conversation required")
         path = base + "/chat_conversations/" + cid
         if mode == "delete_chat":
-            return await call("DELETE", path)
+            await call("DELETE", path)
+            return await confirm_deleted(lambda: call("GET", path))
         if mode == "rename_chat":
             await call("PUT", path, json={"name": v["title"]})
             if (await call("GET", path)).get("name") != v["title"]:

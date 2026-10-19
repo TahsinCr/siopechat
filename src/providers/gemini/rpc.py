@@ -41,7 +41,7 @@ class NotebookRPC:
                             "Gemini işlem izni vermedi veya RPC sözleşmesi değişmiş"
                         )
                     parts.append(json.loads(row[2]))
-        if not parts and not allow_empty:
+        if not parts:
             raise ProviderError("Gemini notebook RPC response changed")
         return parts
 

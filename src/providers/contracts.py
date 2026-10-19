@@ -1,9 +1,10 @@
 """Optional common feature contracts; use describe() before offering operations."""
 
+import asyncio
 from typing import Protocol
 
 from .api import Capability, Provider
-from .errors import FeatureUnavailable
+from .errors import FeatureUnavailable, ProviderError, RemoteNotFound
 from .models import Conversation, ModelCatalog, Page, Project, ProviderDescription, SessionStatus
 from .projects import ProjectOptions
 
@@ -76,3 +77,17 @@ class OptionalFeatures:
 
     async def move_chat(self, conversation_id: str, project_id: str | None) -> None:
         raise FeatureUnavailable(Capability.PROJECT_MEMBERSHIP, "not_implemented")
+
+
+async def confirm_deleted(read, missing=lambda value: False):
+    """Retry only the readback; callers submit the destructive request exactly once."""
+    for delay in (0, 0.2, 0.5, 1):
+        if delay:
+            await asyncio.sleep(delay)
+        try:
+            value = await read()
+        except RemoteNotFound:
+            return
+        if missing(value):
+            return
+    raise ProviderError("Silme sunucuda doğrulanamadı; yerel kayıt korundu. Eşitleyin.")
