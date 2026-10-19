@@ -12,10 +12,10 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 from accounts import Accounts, identity, origin
-from bootstrap import create_application
 from providers import ConversationBound, ReplaceText
 from providers.errors import AccountPaused
 from providers.models import Conversation, FeatureState, Model, ModelCatalog, Origin, Page
+from tests.account_fixture import configured_application as create_application
 
 
 class AccountTests(unittest.TestCase):

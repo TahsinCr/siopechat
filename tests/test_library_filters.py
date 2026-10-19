@@ -5,11 +5,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock
 
-from bootstrap import create_application
 from cli.library import sort_records
 from providers.gemini.history import conversations
 from providers.gemini.notebooks import project_from_native
 from providers.models import Conversation, Origin, Page
+from tests.account_fixture import configured_application as create_application
 from tests.test_account_ui import Accounts
 from tests.test_cli_interaction import terminal
 from tests.test_gemini_notebooks import notebook

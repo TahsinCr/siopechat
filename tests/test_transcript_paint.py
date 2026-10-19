@@ -7,8 +7,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from bootstrap import create_application
 from cli.markdown import MessageRenderer, index_transcript, open_link, transcript_fragments
+from tests.account_fixture import configured_application as create_application
 from tests.test_cli_interaction import terminal
 
 

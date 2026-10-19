@@ -7,8 +7,8 @@ from pathlib import Path
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.layout.controls import FormattedTextControl
 
-from bootstrap import create_application
 from cli.widgets import BoundedTextControl
+from tests.account_fixture import configured_application as create_application
 from tests.test_cli_interaction import terminal
 
 

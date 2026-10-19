@@ -46,6 +46,8 @@ python -m pip install -e .
 
 Launchers reuse a `python/` environment in the checkout when present; they do not create one.
 
+New installations start without any accounts. Add your first account under Settings → Accounts; SiopeChat does not create a ChatGPT account entry automatically.
+
 Open **Settings → Accounts**, add or select an account and choose **Verify from profile**. You must already be signed in to the provider in your default browser’s last-used profile. SiopeChat imports and verifies that session without launching a browser. Chat, history, model and project operations then use HTTP. If the session expires, sign in again in your usual browser and repeat **Verify from profile**.
 
 Add, edit and remove account buttons sit beneath the account list. Edit changes only the selected account’s display name; its login and history stay intact. Profile verification and logout share a separate row below the session details. Labels shorten in narrow terminals.

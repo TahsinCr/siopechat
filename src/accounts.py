@@ -112,7 +112,8 @@ class Accounts:
         data = self.settings.snapshot()["accounts"]
         chosen = dict(data.get("selected", {}))
         legacy = data["active"]
-        chosen.setdefault(legacy.split("/")[0], legacy)
+        if legacy:
+            chosen.setdefault(legacy.split("/")[0], legacy)
         for item in self.items():
             chosen.setdefault(item["provider"], item["key"])
         return [self.item(key) for provider, key in chosen.items() if self.enabled(provider)]
@@ -138,9 +139,10 @@ class Accounts:
     def active(self):
         data = self.settings.snapshot()
         key = data["accounts"]["active"]
-        if self.enabled(key.split("/")[0]):
+        if key and self.enabled(key.split("/")[0]):
             return key
-        return self.active_accounts()[0]["key"]
+        active = self.active_accounts()
+        return active[0]["key"] if active else ""
 
     def item(self, key):
         item = next((item for item in self.items() if item["key"] == key), None)
@@ -173,6 +175,8 @@ class Accounts:
                 raise ValueError("Paylaşılan tarayıcı farklı sağlayıcının bağımsız hesabı olmalı")
             value["browser_account"] = browser_account
         data["items"].append(value)
+        if not data.get("active"):
+            data["active"] = provider + "/" + value["id"]
         self.settings.update("accounts", data)
         return provider + "/" + value["id"]
 
@@ -461,6 +465,14 @@ class Accounts:
             transport.authenticated = False
 
     def status(self, key):
+        if not key:
+            return {
+                "saved_snapshot": False,
+                "authenticated": False,
+                "account": "",
+                "provider": "",
+                "transport": "http",
+            }
         path = self.credential_path(key)
         saved = path.is_file()
         verified = (
@@ -634,6 +646,8 @@ class Accounts:
         raise ValueError("unknown account operation")
 
     def cached(self, key, remote=None):
+        if not key:
+            return None
         archive = self.archive()
         if archive and remote is None:
             pointer = archive.get(key, "pointer", "active")
@@ -1289,6 +1303,27 @@ class Accounts:
         return self.call(remove(), timeout=60)
 
     def callbacks(self, key):
+        if not key:
+
+            def unavailable(*args, **kwargs):
+                raise ValueError("Önce hesap ekleyin")
+
+            return {
+                "load_conversation": unavailable,
+                "send_prompt": unavailable,
+                "load_catalog": None,
+                "list_projects_callback": None,
+                "get_project_callback": None,
+                "list_project_chats_callback": None,
+                "upload_image": None,
+                "move_conversation": None,
+                "rename_conversation": None,
+                "session_action": lambda action: (
+                    self.status("") if action == "status" else unavailable()
+                ),
+                "forget_temporary": None,
+                "attach_file_callback": None,
+            }
         provider = self.provider(key)
 
         def get_project(project):

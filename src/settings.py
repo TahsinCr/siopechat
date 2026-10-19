@@ -92,10 +92,10 @@ DEFAULTS = {
     "providers": {key: {"enabled": True} for key in PROVIDERS},
     "extensions": {"layout": {"enabled": True}, "archive": {"enabled": True}},
     "accounts": {
-        "active": "chatgpt/default",
+        "active": "",
         "selected": {},
         "preferences": {},
-        "items": [{"provider": "chatgpt", "id": "default", "label": "ChatGPT", "port": 9222}],
+        "items": [],
     },
 }
 
@@ -170,8 +170,8 @@ class Settings:
             raise ValueError("invalid account model preferences")
         accounts = data["accounts"]
         items = accounts.get("items")
-        if not isinstance(items, list) or not items:
-            raise ValueError("accounts must contain at least one account")
+        if not isinstance(items, list):
+            raise ValueError("accounts must be a list")
         seen = set()
         for item in items:
             if (
@@ -198,7 +198,7 @@ class Settings:
                 or by_key[target]["provider"] == item["provider"]
             ):
                 raise ValueError("invalid shared browser account")
-        if accounts.get("active") not in seen:
+        if accounts.get("active") not in seen and not (not items and accounts.get("active") == ""):
             raise ValueError("active account does not exist")
         selected = accounts.get("selected", {})
         if not isinstance(selected, dict) or any(
@@ -283,12 +283,13 @@ class Settings:
                 for item in data["accounts"]["items"]
                 if data["providers"].get(item["provider"], {}).get("enabled", False)
             ]
-            if not candidates:
+            if not candidates and data["accounts"]["items"]:
                 raise ValueError("En az bir sağlayıcı ve ona ait bir hesap etkin kalmalı")
             if data["accounts"]["active"] not in candidates:
                 chosen = data["accounts"].get("selected", {})
                 data["accounts"]["active"] = next(
-                    (key for key in chosen.values() if key in candidates), candidates[0]
+                    (key for key in chosen.values() if key in candidates),
+                    candidates[0] if candidates else "",
                 )
             self._commit(data)
         self._notify("providers", {provider_id: {"enabled": enabled}})

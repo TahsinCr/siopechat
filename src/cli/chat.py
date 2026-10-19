@@ -569,7 +569,7 @@ class ChatView:
         self.normalize_model_selection()
 
     def remember_selection(self):
-        if self.account_service and hasattr(self.account_service, "remember"):
+        if self.account_service and self.account_key and hasattr(self.account_service, "remember"):
             self.account_service.remember(self.account_key, self.model, self.effort)
 
     def bind_account(self, key):
@@ -581,9 +581,9 @@ class ChatView:
             self.projects_loaded = bool(self.project_items)
         self.account_key = key
         self.provider_id = key.split("/")[0]
-        self.provider_features = self.account_service.capabilities(key)
+        self.provider_features = self.account_service.capabilities(key) if key else frozenset()
         known = self._account_catalogs.get(key)
-        if known is None and hasattr(self.account_service, "cached_models"):
+        if key and known is None and hasattr(self.account_service, "cached_models"):
             known = self.account_service.cached_models(key)
         self.catalog = known or ModelCatalog(FeatureState.UNKNOWN)
         if known:
@@ -594,7 +594,9 @@ class ChatView:
         for name, callback in self.account_service.callbacks(key).items():
             setattr(self, name, callback)
         self.session_state = self.account_service.status(key)
-        if hasattr(self.account_service, "set_active"):
+        if not key:
+            self.set_active_conversation = lambda value: None
+        elif hasattr(self.account_service, "set_active"):
             self.set_active_conversation = lambda value: (
                 self.account_service.queue_active(key, value)
                 if hasattr(self.account_service, "queue_active")
@@ -666,7 +668,7 @@ class ChatView:
         )
 
     def edit_account(self):
-        if not self.account_service:
+        if not self.account_service or not self.account_key:
             return
         key = self.account_key
         item = self.account_service.item(key)
@@ -1446,6 +1448,7 @@ class ChatView:
             self.status = self.tr("Tema stilleri geçersiz; varsayılan görünüm kullanılıyor")
         if (
             self.account_service
+            and self.account_key
             and hasattr(self.account_service, "enabled")
             and not self.account_service.enabled(self.provider_id)
         ):
@@ -3517,6 +3520,10 @@ class ChatView:
         if prompt.startswith("/"):
             self.input.text = ""
             self.handle_command(prompt)
+            return
+        if self.account_service and not self.account_key:
+            self.status = self.tr("Önce hesap ekleyin")
+            self.settings_dialog.open("accounts")
             return
         if (
             self.account_service

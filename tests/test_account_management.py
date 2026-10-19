@@ -5,10 +5,45 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
-from bootstrap import create_application
 from settings import Settings
+from tests.account_fixture import configured_application as create_application
 from tests.test_cli_interaction import terminal
 from tests.test_ui_controls import immediate
+
+
+class EmptyAccountStartupTests(unittest.TestCase):
+    def test_new_install_is_empty_and_first_account_is_selected(self):
+        from bootstrap import create_application
+
+        with tempfile.TemporaryDirectory() as folder:
+            api = create_application(Path(folder))
+            try:
+                accounts = api.get("accounts")
+                self.assertEqual(accounts.items(), [])
+                self.assertEqual(accounts.active_accounts(), [])
+                self.assertEqual(accounts.active(), "")
+                with terminal(account_service=accounts) as (view, _):
+                    view._read_in_background = immediate
+                    view.settings_dialog.open("accounts")
+                    self.assertEqual(view.session_dialog.render_accounts(), [])
+                    view.session_dialog.remove()
+                    view.edit_account()
+                    view.new_tab()
+                    view.input.text = "Hello"
+                    view.submit_prompt()
+                    self.assertTrue(any(tab.get("draft") == "Hello" for tab in view.tabs))
+                    self.assertEqual(view.tab_kind, "settings")
+                    key = accounts.add("gemini", "Personal")
+                    self.assertEqual(accounts.active(), key)
+                    self.assertEqual(len(accounts.items()), 1)
+                    self.assertTrue(view.select_account(key))
+                    self.assertEqual(view.account_key, key)
+                self.assertEqual(
+                    Settings(api.settings.path).snapshot()["accounts"]["items"][0]["label"],
+                    "Personal",
+                )
+            finally:
+                api.runtime.close()
 
 
 class AccountManagementTests(unittest.TestCase):

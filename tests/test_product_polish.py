@@ -8,10 +8,10 @@ import time
 import unittest
 from pathlib import Path
 
-from bootstrap import create_application
 from providers.models import Choice, FeatureState, Model, ModelCatalog
 from settings import SettingsCatalog
 from tests import test_cli_interaction as interaction
+from tests.account_fixture import configured_application as create_application
 from tests.test_ui_controls import immediate
 from theme import ThemeService
 
@@ -145,7 +145,7 @@ def guarded(name,*args,**kwargs):
         raise AssertionError(name)
     return original(name,*args,**kwargs)
 builtins.__import__ = guarded
-from bootstrap import create_application
+from tests.account_fixture import configured_application as create_application
 with tempfile.TemporaryDirectory() as folder:
     api = create_application(Path(folder))
     api.runtime.close()

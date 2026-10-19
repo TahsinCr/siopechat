@@ -57,8 +57,10 @@ class SessionDialog:
         keys.add("up", filter=account_focus)(lambda _: self.move_account(-1))
         keys.add("down", filter=account_focus)(lambda _: self.move_account(1))
         keys.add("enter", filter=account_focus)(
-            lambda _: self.choose_account(
-                self.view.account_service.items()[self.account_index]["key"]
+            lambda _: (
+                self.choose_account(self.view.account_service.items()[self.account_index]["key"])
+                if self.view.account_service and self.view.account_service.items()
+                else None
             )
         )
         keys.add("escape")(lambda _: self.close())
@@ -331,6 +333,8 @@ class SessionDialog:
         )
 
     def remove(self):
+        if not self.view.account_key:
+            return
         if self.loading or self.view.background_jobs:
             return
         label = self.view.session_state.get("account", "")
@@ -340,6 +344,8 @@ class SessionDialog:
         )
 
     def logout(self):
+        if not self.view.account_key:
+            return
         if not self.confirm_logout:
             self.confirm_logout = True
             self.buttons["logout"].text = self.view.text(

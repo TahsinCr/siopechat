@@ -46,6 +46,8 @@ python -m pip install -e .
 
 Başlatıcılar, varsa proje dizinindeki `python/` ortamını kullanır; yeni bir ortam oluşturmaz.
 
+Yeni kurulum hesap eklenmeden başlar. İlk hesabınızı Ayarlar → Hesaplar bölümünden ekleyin; otomatik ChatGPT hesap kaydı oluşturulmaz.
+
 **Ayarlar → Hesaplar** bölümünde bir hesap ekleyin veya mevcut hesabınızı seçin; ardından **Profil ile doğrula** seçeneğine basın. Varsayılan tarayıcınızın son kullanılan profilinde sağlayıcı hesabına önceden giriş yapmış olmalısınız. SiopeChat bu oturumu tarayıcı başlatmadan aktarır ve doğrular. Sohbet, geçmiş, model ve proje işlemleri HTTP üzerinden yürür. Oturumun süresi dolarsa normal tarayıcınızda yeniden giriş yapıp **Profil ile doğrula** işlemini tekrarlayın.
 
 Hesap ekle, düzenle ve sil düğmeleri hesap listesinin altında yan yana durur. Düzenle yalnız seçili hesabın görünen adını değiştirir; oturumu ve geçmişi korunur. Profil doğrulama ve çıkış düğmeleri oturum bilgilerinin altındadır. Dar terminallerde düğme adları kısalır.

@@ -5,12 +5,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from bootstrap import create_application
 from providers import Capability, ConversationBound, ReplaceText, SendRequest
 from providers.claude import ClaudeProvider
 from providers.claude.records import conversation, project
 from providers.errors import FeatureUnavailable, ProviderError
 from providers.models import FeatureState
+from tests.account_fixture import configured_application as create_application
 
 CHAT = "12345678-abcd-1234-abcd-123456789abc"
 PROJECT = "87654321-abcd-1234-abcd-123456789abc"
