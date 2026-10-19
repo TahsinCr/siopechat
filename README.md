@@ -78,7 +78,7 @@ Closing a conversation tab keeps its running response in the background. In the 
 | F8 / F10 | Synchronize conversation / library |
 | F5 / F12 | Settings / accounts |
 
-Every binding is editable under **Settings → Keyboard** and in the local `config.json`. The command palette exposes the same actions, including extension actions.
+Shortcut changes take effect immediately throughout the interface. Every binding is editable under **Settings → Keyboard** and in the local `config.json`. The command palette exposes the same actions, including extension actions.
 
 ### Projects and split views
 

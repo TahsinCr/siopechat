@@ -18,6 +18,7 @@ from prompt_toolkit.application import Application
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import ANSI, FormattedText
+from prompt_toolkit.key_binding import DynamicKeyBindings
 from prompt_toolkit.layout import Layout, Window
 from prompt_toolkit.layout.dimension import D
 from prompt_toolkit.layout.margins import ConditionalMargin, ScrollbarMargin
@@ -318,7 +319,7 @@ class ChatView:
         self.bindings = key_bindings(self)
         self.app: Application[Any] = Application(
             layout=Layout(workspace_layout(self), focused_element=self.input),
-            key_bindings=self.bindings,
+            key_bindings=DynamicKeyBindings(lambda: self.bindings),
             full_screen=True,
             mouse_support=Condition(lambda: self.mouse_enabled),
             min_redraw_interval=0.05,
@@ -1375,7 +1376,6 @@ class ChatView:
         self.settings_dialog.search.prompt = self.tr(" Ara  ")
         self.keybindings = dict(DEFAULT_KEYBINDINGS) | config.get("keybindings", {})
         self.bindings = key_bindings(self)
-        self.app.key_bindings = self.bindings
         remembered = (
             self.account_service.preference(self.account_key)
             if self.account_service and hasattr(self.account_service, "preference")

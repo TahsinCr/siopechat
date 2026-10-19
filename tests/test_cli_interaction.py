@@ -43,6 +43,41 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
 
         await asyncio.wait_for(wait(), 1)
 
+    async def test_remapped_shortcuts_replace_cached_bindings_in_every_focus(self):
+        with terminal() as (view, pipe):
+            run = asyncio.create_task(view.app.run_async())
+            try:
+                await self.settle(lambda: view.app.is_running)
+                # Populate the combined key-binding cache in both layout states.
+                pipe.send_bytes(b"\x1b[18~")  # F7
+                await self.settle(lambda: not view.sidebar_visible)
+                pipe.send_bytes(b"\x1b[18~")
+                await self.settle(lambda: view.sidebar_visible)
+                view.apply_preferences(
+                    {"keybindings": {"ui.toggle_sidebar": "c-b", "chat.new": "f11"}}
+                )
+                for control in (view.input.control, view.transcript_control, view.sidebar_control):
+                    view.app.layout.focus(control)
+                    view.app.invalidate()
+                    await asyncio.sleep(0.03)
+                    pipe.send_bytes(b"\x1b[18~")
+                    await asyncio.sleep(0.04)
+                    self.assertTrue(view.sidebar_visible)
+                    pipe.send_bytes(b"\x02")  # Ctrl+B
+                    await self.settle(lambda: not view.sidebar_visible)
+                    pipe.send_bytes(b"\x02")
+                    await self.settle(lambda: view.sidebar_visible)
+                count = len(view.tabs)
+                view.app.layout.focus(view.input)
+                pipe.send_bytes(b"\x14")  # old Ctrl+T
+                await asyncio.sleep(0.04)
+                self.assertEqual(len(view.tabs), count)
+                pipe.send_bytes(b"\x1b[23~")  # new F11
+                await self.settle(lambda: len(view.tabs) == count + 1)
+            finally:
+                view.app.exit()
+                await run
+
     async def test_search_editing_backspace_delete_space_home_end_and_ctrl_d(self):
         with terminal() as (view, pipe):
             run = asyncio.create_task(view.app.run_async())

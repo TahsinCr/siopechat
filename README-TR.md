@@ -78,7 +78,7 @@ Sohbet sekmesini kapatmak, devam eden yanıtı durdurmaz. Sol listede yeşil **�
 | F8 / F10 | Sohbeti / kütüphaneyi eşitle |
 | F5 / F12 | Ayarlar / hesaplar |
 
-Bütün eşleşmeler **Ayarlar → Kısayollar** bölümünden veya yerel `config.json` dosyasından değiştirilebilir. Komut paleti, eklenti aksiyonları dahil aynı işlemleri sunar.
+Kısayol değişiklikleri arayüzün tamamında anında geçerli olur. Bütün eşleşmeler **Ayarlar → Kısayollar** bölümünden veya yerel `config.json` dosyasından değiştirilebilir. Komut paleti, eklenti aksiyonları dahil aynı işlemleri sunar.
 
 ### Projeler ve bölünmüş görünüm
 
