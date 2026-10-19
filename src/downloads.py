@@ -62,9 +62,8 @@ class Downloads:
 
     def _fetch(self, source, progress):
         url, headers = source.url, dict(source.headers)
-        with self.client_factory(
-            timeout=httpx.Timeout(120, connect=15), follow_redirects=False
-        ) as client:
+        factory = source.client_factory or self.client_factory
+        with factory(timeout=httpx.Timeout(120, connect=15), follow_redirects=False) as client:
             for _ in range(6):
                 origin = self._web_url(url)
                 with client.stream("GET", url, headers=headers) as response:
@@ -87,6 +86,9 @@ class Downloads:
                         and response.headers.get("content-type", "").startswith("text/html")
                     ):
                         return {"kind": "page", "url": url}
+                    if response.status_code == 206:
+                        # No Range was requested: some providers use 206 while generating media.
+                        raise ValueError("Dosya henüz hazır değil; biraz sonra yeniden deneyin")
                     if response.status_code >= 400:
                         raise ValueError("Dosya alınamadı (HTTP {0})".format(response.status_code))
                     media_type = response.headers.get("content-type", "").split(";", 1)[0].lower()

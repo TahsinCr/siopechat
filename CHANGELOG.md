@@ -39,6 +39,11 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 
 ### Fixed
 
+- Authenticate ChatGPT Estuary file downloads with the selected account instead of treating protected URLs as public CDN links, fixing HTTP 403 on generated files.
+- Use the native streaming HTTP transport for Gemini and Claude downloads, with scoped account cookies and no credential forwarding across origins.
+- Resolve Claude sandbox and computer file links through the owning conversation's file listing and download endpoint.
+- Keep incomplete HTTP 206 media responses out of the downloads folder while the provider is still generating the file.
+
 - Resolve Gemini image_generation_content placeholders from actual provider media records instead of opening placeholder URLs that return 404.
 - Make plain web URLs clickable without turning code examples into links; dragging across a link selects text without opening it.
 

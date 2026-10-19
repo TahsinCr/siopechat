@@ -291,6 +291,17 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
         from ..files import DownloadSource
 
         parsed = urlsplit(url)
+        if (
+            parsed.scheme == "https"
+            and parsed.netloc == "chatgpt.com"
+            and parsed.path == "/backend-api/estuary/content"
+        ):
+
+            def resolve_estuary():
+                with self._factory(self.session) as client:
+                    return DownloadSource(url, force_download=True, headers=dict(client.headers))
+
+            return await asyncio.to_thread(resolve_estuary)
         if parsed.scheme != "sandbox":
             return None
         if not conversation_id:
@@ -336,7 +347,9 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
                 target = result.get("download_url") if isinstance(result, dict) else None
                 if not target or urlsplit(target).scheme != "https":
                     raise ValueError("Sağlayıcı dosya indirme adresi döndürmedi")
-                return DownloadSource(target, sandbox_path.rsplit("/", 1)[-1], True)
+                # Estuary URLs remain authenticated ChatGPT endpoints, unlike signed CDN URLs.
+                headers = dict(client.headers) if urlsplit(target).netloc == "chatgpt.com" else {}
+                return DownloadSource(target, sandbox_path.rsplit("/", 1)[-1], True, headers)
 
         return await asyncio.to_thread(resolve)
 

@@ -639,5 +639,6 @@
   "ui.Sağlayıcı dosya indirme adresi döndürmedi": "The provider did not return a file download URL",
   "ui.Görselin gerçek dosya adresi sağlayıcıdan alınamadı; sohbeti eşitleyin": "The image file URL was not returned by the provider; synchronize the conversation",
   "ui.İndirme klasörü boş veya geçersiz": "The download folder is empty or invalid",
-  "ui.Dosya aktarımı kesildi; bağlantıyı kontrol edip yeniden deneyin": "File transfer interrupted; check your connection and try again"
+  "ui.Dosya aktarımı kesildi; bağlantıyı kontrol edip yeniden deneyin": "File transfer interrupted; check your connection and try again",
+  "ui.Dosya henüz hazır değil; biraz sonra yeniden deneyin": "The file is not ready yet; try again shortly"
 }

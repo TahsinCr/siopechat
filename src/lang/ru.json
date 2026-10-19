@@ -639,5 +639,6 @@
   "ui.Sağlayıcı dosya indirme adresi döndürmedi": "Провайдер не вернул адрес загрузки файла",
   "ui.Görselin gerçek dosya adresi sağlayıcıdan alınamadı; sohbeti eşitleyin": "Провайдер не вернул адрес изображения; синхронизируйте чат",
   "ui.İndirme klasörü boş veya geçersiz": "Папка загрузок не указана или недопустима",
-  "ui.Dosya aktarımı kesildi; bağlantıyı kontrol edip yeniden deneyin": "Передача файла прервана; проверьте соединение и повторите попытку"
+  "ui.Dosya aktarımı kesildi; bağlantıyı kontrol edip yeniden deneyin": "Передача файла прервана; проверьте соединение и повторите попытку",
+  "ui.Dosya henüz hazır değil; biraz sonra yeniden deneyin": "Файл ещё не готов; повторите попытку немного позже"
 }

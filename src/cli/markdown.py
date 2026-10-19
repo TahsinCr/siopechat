@@ -97,7 +97,7 @@ class ChatMarkdown(Markdown):
     def __init__(self, markup, **kwargs):
         super().__init__(markup, **kwargs)
         # Linkify prose only: code blocks and inline code retain their original text.
-        pattern = re.compile(r"(?:https?://|sandbox:/)[^\s<>\"]+")
+        pattern = re.compile(r"(?:https?://|sandbox:/|computer:///)[^\s<>\"]+")
         for block in self.parsed:
             if not block.children:
                 continue

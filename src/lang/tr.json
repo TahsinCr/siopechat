@@ -639,5 +639,6 @@
   "ui.Sağlayıcı dosya indirme adresi döndürmedi": "Sağlayıcı dosya indirme adresi döndürmedi",
   "ui.Görselin gerçek dosya adresi sağlayıcıdan alınamadı; sohbeti eşitleyin": "Görselin gerçek dosya adresi sağlayıcıdan alınamadı; sohbeti eşitleyin",
   "ui.İndirme klasörü boş veya geçersiz": "İndirme klasörü boş veya geçersiz",
-  "ui.Dosya aktarımı kesildi; bağlantıyı kontrol edip yeniden deneyin": "Dosya aktarımı kesildi; bağlantıyı kontrol edip yeniden deneyin"
+  "ui.Dosya aktarımı kesildi; bağlantıyı kontrol edip yeniden deneyin": "Dosya aktarımı kesildi; bağlantıyı kontrol edip yeniden deneyin",
+  "ui.Dosya henüz hazır değil; biraz sonra yeniden deneyin": "Dosya henüz hazır değil; biraz sonra yeniden deneyin"
 }

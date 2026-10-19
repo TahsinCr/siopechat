@@ -468,7 +468,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                 yield ConversationBound(chat.cid)
 
     async def resolve_download(self, url, conversation_id=None, message_id=None):
-        from ..files import DownloadSource
+        from ..files import DownloadSource, NativeDownloadClient, cookie_header
         from .media import PLACEHOLDER, valid_media_url
 
         if not PLACEHOLDER.fullmatch(url) and not valid_media_url(url):
@@ -487,9 +487,21 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
             raise ValueError(
                 "Görselin gerçek dosya adresi sağlayıcıdan alınamadı; sohbeti eşitleyin"
             )
-        return DownloadSource(
-            target["url"], target["name"], True, {"Referer": "https://gemini.google.com/"}
-        )
+        from urllib.parse import urlsplit
+
+        headers = {"Referer": "https://gemini.google.com/"}
+        # Generated media can require the owning account, just like SDK Image.save().
+        # Never attach Google cookies to arbitrary user-controlled CDN subdomains.
+        host = urlsplit(target["url"]).hostname
+        if host in {"lh3.googleusercontent.com", "lh3-gg.googleusercontent.com"}:
+            from ..session import read_session
+
+            values = self._saved_cookies or read_session(self.cookie_file)
+            client = self._client
+            if client is not None and hasattr(getattr(client, "cookies", None), "get_dict"):
+                values = client.cookies.get_dict()
+            headers["Cookie"] = cookie_header(values, ("__Secure-1PSID", "__Secure-1PSIDTS"))
+        return DownloadSource(target["url"], target["name"], True, headers, NativeDownloadClient)
 
     async def forget_temporary(self, remote_id):
         self._temporary.pop(remote_id, None)

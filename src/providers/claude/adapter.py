@@ -82,6 +82,56 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
             self.credential_file.is_file(),
         )
 
+    async def resolve_download(self, url, conversation_id=None, message_id=None):
+        from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
+
+        from ..files import DownloadSource, NativeDownloadClient, cookie_header
+        from ..session import read_session
+        from .transport import remote_id
+
+        parsed = urlsplit(url)
+        path = unquote(parsed.path)
+        direct = (
+            parsed.scheme == "https"
+            and parsed.netloc == "claude.ai"
+            and parsed.path.endswith("/wiggle/download-file")
+        )
+        if direct:
+            path = parse_qs(parsed.query).get("path", [""])[0]
+        elif parsed.scheme not in ("", "sandbox", "computer") or not path.startswith(
+            "/mnt/user-data/"
+        ):
+            return None
+        if (parsed.netloc and not direct) or any(part in (".", "..") for part in path.split("/")):
+            raise ValueError("Desteklenmeyen sohbet dosyası yolu")
+        if not conversation_id:
+            raise ValueError("Dosyanın sohbet kimliği henüz alınmadı")
+        base = await self.transport.base()
+        endpoint = base + "/conversations/" + remote_id(conversation_id) + "/wiggle"
+        listing = await self.transport.session.request("GET", endpoint + "/list-files?prefix=")
+        files = listing.get("files_metadata", []) if isinstance(listing, dict) else []
+        if not any(isinstance(item, dict) and item.get("path") == path for item in files):
+            raise ValueError("Dosya sohbet kaydında bulunamadı veya süresi doldu")
+        saved = read_session(self.credential_file)
+        cookies = saved.get("cookies", saved)
+        values = {key: cookies.get(key) for key in ("sessionKey", "lastActiveOrg")}
+        if not values["sessionKey"]:
+            raise AccountPaused("Claude oturumu doğrulanamadı")
+        headers = {
+            "Cookie": cookie_header(values, ("sessionKey", "lastActiveOrg")),
+            "Referer": "https://claude.ai/",
+        }
+        return DownloadSource(
+            "https://claude.ai"
+            + endpoint
+            + "/download-file?"
+            + urlencode({"path": path}, quote_via=quote),
+            path.rsplit("/", 1)[-1],
+            True,
+            headers,
+            NativeDownloadClient,
+        )
+
     async def forget_session(self):
         async with self._gate:
             await self.close()
