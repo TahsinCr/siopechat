@@ -609,5 +609,7 @@
   "ui.Son etkin hesap silinemez; önce başka bir hesap ekleyin": "Нельзя удалить последний активный аккаунт; сначала добавьте другой",
   "ui.Hesaplar · Hesabı sil": "Аккаунты · Удалить аккаунт",
   "ui.＋ Ekle": "＋ Добавить",
-  "ui.Unut": "Забыть"
+  "ui.Unut": "Забыть",
+  "ui.Yanıt tamamlandı: {0}": "Ответ готов: {0}",
+  "ui.Yanıt arka planda sürüyor": "Ответ продолжается в фоне"
 }

@@ -193,6 +193,57 @@ class WorkspaceTests(unittest.TestCase):
             self.assertEqual(v.messages[-1]["text"], "Answer 1")
             self.assertEqual(v.tabs[0]["messages"][-1]["text"], "Answer 0")
 
+    def test_closing_stream_keeps_sidebar_entry_and_reopens_same_state(self):
+        gate = threading.Event()
+        started = threading.Event()
+
+        def send(*args, **kwargs):
+            started.set()
+            if not gate.wait(2):
+                raise TimeoutError("test gate")
+            args[3]({"type": "replace", "text": "Background answer"})
+            return {"conversation_id": "background-result"}
+
+        with terminal() as (v, _):
+            v.send_prompt = send
+            v.input.text = "Background question"
+            v.submit_prompt()
+            self.assertTrue(started.wait(1))
+            original = v.tabs[0]
+            try:
+                v.close_tab()
+                self.assertIsNot(v.tabs[0], original)
+                self.assertTrue(v.busy)
+                self.assertFalse(v.active_busy())
+                self.assertIs(v.background_tabs[0], original)
+                v.render_sidebar()
+                row_index = next(
+                    i for i, row in enumerate(v.sidebar_rows) if row.get("live_tab") is original
+                )
+                self.assertIn("●", "".join(part[1] for part in v.render_sidebar()))
+                v.sidebar_index = row_index
+                v.activate_sidebar_item()
+                self.assertIs(v.tabs[v.active_tab], original)
+                self.assertTrue(v.active_busy())
+                # Detach again; its completion must not overwrite the replacement draft.
+                v.close_tab()
+                replacement = v.tabs[v.active_tab]
+                gate.set()
+                deadline = time.monotonic() + 1
+                while v.busy and time.monotonic() < deadline:
+                    time.sleep(0.005)
+                self.assertFalse(v.busy)
+                self.assertIs(v.tabs[v.active_tab], replacement)
+                self.assertEqual(v.messages, [])
+                self.assertEqual(original["messages"][-1]["text"], "Background answer")
+                self.assertEqual(original["conversation_id"], "background-result")
+                self.assertIn("✓", "".join(part[1] for part in v.render_sidebar()))
+                v.resume_conversation("background-result")
+                self.assertIs(v.tabs[v.active_tab], original)
+                self.assertEqual(v.messages[-1]["text"], "Background answer")
+            finally:
+                gate.set()
+
     def test_closed_temporary_tab_forgets_remote_context_locally(self):
         forgotten = Mock(return_value={"forgotten": True})
         with terminal(forget_temporary=forgotten) as (v, _):

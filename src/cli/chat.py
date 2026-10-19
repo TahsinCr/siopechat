@@ -191,6 +191,7 @@ class ChatView:
             visible = visible_chat_message(message)
             if visible is not None:
                 self.messages.append(visible)
+        self.background_tabs: list[dict[str, Any]] = []
         self.busy = False
         self.busy_tab_index: int | None = None
         self.background_jobs = 0
@@ -1570,6 +1571,12 @@ class ChatView:
                 suffix += " ⓘ"
             key, remote = origin(row.get("id"), self.account_key)
             state = states.get((key, "conversation" if kind == "chat" else "container", remote))
+            live_tab = row.get("live_tab")
+            if kind == "chat" and live_tab is not None and live_tab.get("busy"):
+                suffix += " ●"
+                style += " class:sidebar.running"
+            elif kind == "chat" and live_tab is not None and live_tab.get("completed_pending"):
+                suffix += " ✓"
             if state == "syncing":
                 suffix += " ↻"
             elif state == "error":
@@ -1622,11 +1629,32 @@ class ChatView:
             if self.account_service and hasattr(self.account_service, "items")
             else None
         )
+        live_items = {item.get("id"): dict(item) for item in self.sidebar_items}
+        for tab in self.tabs + self.background_tabs:
+            if not tab.get("busy") and not any(tab is item for item in self.background_tabs):
+                continue
+            key = tab.get("account_key", self.account_key)
+            identifier = tab.get("conversation_id") or "background:" + str(id(tab))
+            item = live_items.setdefault(identifier, {"id": identifier})
+            item.update(
+                title=tab.get("title") or self.tr("New conversation"),
+                provider_id=key.split("/")[0],
+                project_id=(tab.get("project") or {}).get("id"),
+                live_tab=tab,
+            )
         conversations = [
             item
-            for item in self.sidebar_items
+            for item in live_items.values()
             if item.get("kind") != "workspace"
-            and (active_keys is None or origin(item.get("id"), self.account_key)[0] in active_keys)
+            and (
+                active_keys is None
+                or (
+                    item["live_tab"].get("account_key", self.account_key)
+                    if item.get("live_tab") is not None
+                    else origin(item.get("id"), self.account_key)[0]
+                )
+                in active_keys
+            )
             and (
                 self.provider_filter is None
                 or item.get("provider_id", "chatgpt") in self.provider_filter
@@ -1810,6 +1838,7 @@ class ChatView:
             "title": str(item.get("title") or self.tr("Adsız sohbet")),
             "provider_id": item.get("provider_id") or origin(item.get("id"))[0].split("/")[0],
             "nested": nested,
+            "live_tab": item.get("live_tab"),
         }
 
     def toggle_sidebar(self) -> None:
@@ -2487,6 +2516,19 @@ class ChatView:
         if item["kind"] in ("section", "project"):
             self.toggle_sidebar_group()
         elif item["kind"] == "chat":
+            live_tab = item.get("live_tab")
+            if live_tab is not None:
+                self._save_active_tab()
+                index = next((i for i, tab in enumerate(self.tabs) if tab is live_tab), None)
+                if index is None:
+                    self.background_tabs = [
+                        tab for tab in self.background_tabs if tab is not live_tab
+                    ]
+                    self.tabs.append(live_tab)
+                    index = len(self.tabs) - 1
+                self.active_tab = index
+                self._restore_active_tab()
+                return
             conversation_id = item.get("id")
             if isinstance(conversation_id, str) and conversation_id:
                 if self.background_jobs or self.uploading_image:
@@ -2816,7 +2858,7 @@ class ChatView:
 
     def _sync_activity(self) -> None:
         running = [i for i, tab in enumerate(self.tabs) if tab.get("busy")]
-        self.busy = bool(running)
+        self.busy = bool(running) or any(tab.get("busy") for tab in self.background_tabs)
         self.busy_tab_index = (
             self.active_tab if self.active_tab in running else running[0] if running else None
         )
@@ -2950,16 +2992,23 @@ class ChatView:
     def close_tab(self) -> None:
         self.close_overlays()
         if (
-            self.busy
-            or (self.loading_conversation and not self.account_service)
+            (self.loading_conversation and not self.account_service)
             or self.uploading_image
             or self.background_jobs
         ):
             self.status = self.tr("Wait for active work to finish before closing a tab")
             self.app.invalidate()
             return
+        self._save_active_tab()
         closing = self.tabs[self.active_tab]
-        if closing.get("temporary") and closing.get("conversation_id") and self.forget_temporary:
+        if closing.get("busy"):
+            self.background_tabs.append(closing)
+        if (
+            not closing.get("busy")
+            and closing.get("temporary")
+            and closing.get("conversation_id")
+            and self.forget_temporary
+        ):
             remote_id = closing["conversation_id"]
             self._read_in_background(
                 lambda: self.forget_temporary(remote_id),
@@ -3058,6 +3107,8 @@ class ChatView:
         return f"{total // 60}m {total % 60:02d}s"
 
     def render_activity(self) -> FormattedText:
+        if self.busy and self.busy_tab_index is None:
+            return FormattedText([("class:sidebar.running", self.tr("Yanıt arka planda sürüyor"))])
         if self.busy and self.busy_tab_index != self.active_tab:
             running = (self.busy_tab_index or 0) + 1
             return FormattedText(
@@ -3488,7 +3539,10 @@ class ChatView:
             )
             self.app.invalidate()
             return
-        if self.active_busy() or sum(bool(tab.get("busy")) for tab in self.tabs) >= 4:
+        if (
+            self.active_busy()
+            or sum(bool(tab.get("busy")) for tab in self.tabs + self.background_tabs) >= 4
+        ):
             self.status = self.tr(
                 "Bu sohbetin yanıtını bekleyin · aynı anda en fazla 4 bekleyen istek"
             )
@@ -3556,6 +3610,8 @@ class ChatView:
         self.busy = True
         self.busy_tab_index = self.active_tab
         self.tabs[self.active_tab]["busy"] = True
+        if not self.conversation_id:
+            self.title = self.tabs[self.active_tab]["title"] = prompt[:60]
         self.tabs[self.active_tab]["completed_pending"] = False
         self.active_started = time.monotonic()
         self.tabs[self.active_tab]["started"] = self.active_started
@@ -3565,7 +3621,7 @@ class ChatView:
         self.scroll_bottom()
         threading.Thread(
             target=self.run_send,
-            kwargs={"send_callback": self.send_prompt},
+            kwargs={"send_callback": self.send_prompt, "target_tab": self.tabs[self.active_tab]},
             args=(
                 prompt,
                 attachments,
@@ -3995,6 +4051,17 @@ class ChatView:
         self.resume_conversation(conversation_id)
 
     def resume_conversation(self, conversation_id: str) -> None:
+        detached = next(
+            (tab for tab in self.background_tabs if tab.get("conversation_id") == conversation_id),
+            None,
+        )
+        if detached is not None:
+            self._save_active_tab()
+            self.background_tabs = [tab for tab in self.background_tabs if tab is not detached]
+            self.tabs.append(detached)
+            self.active_tab = len(self.tabs) - 1
+            self._restore_active_tab()
+            return
         if self.temporary:
             count = len(self.tabs)
             self.new_tab()
@@ -4229,10 +4296,16 @@ class ChatView:
         project_id: str | None = None,
         temporary: bool = False,
         send_callback=None,
+        target_tab=None,
     ) -> None:
+        target_tab = self.tabs[tab_index] if target_tab is None else target_tab
+
+        def is_active():
+            return target_tab is self.tabs[self.active_tab]
+
         rendered = ""
         stream_id = uuid.uuid4().hex
-        started = self.tabs[tab_index].get("started", self.active_started)
+        started = target_tab.get("started", self.active_started)
         final_message_id = None
         elapsed = None
         final_status = "Ready"
@@ -4241,8 +4314,8 @@ class ChatView:
         resolved_model: str | None = None
 
         def register_connection(connection: Any) -> None:
-            self.tabs[tab_index]["connection"] = connection
-            if tab_index == self.active_tab:
+            target_tab["connection"] = connection
+            if is_active():
                 self.cancel_connection = connection
 
         def on_event(event: dict[str, Any]) -> None:
@@ -4266,11 +4339,7 @@ class ChatView:
                         }
                         messages.insert(max(0, len(messages) - 1), item)
                     item["text"] = item["text"] + text if event_type == "delta" else text
-                self._dispatch_ui(
-                    lambda: (
-                        self.scroll_bottom(force=False) if self.active_tab == tab_index else None
-                    )
-                )
+                self._dispatch_ui(lambda: self.scroll_bottom(force=False) if is_active() else None)
                 return
             identity = event.get("message_id")
             if identity and final_message_id and identity != final_message_id:
@@ -4288,7 +4357,7 @@ class ChatView:
                 messages[-1]["text"] = rendered
 
             def update_active_view() -> None:
-                if tab_index == self.active_tab:
+                if is_active():
                     self.status = self.tr("Streaming response…")
                     self.scroll_bottom(force=False)
 
@@ -4355,16 +4424,13 @@ class ChatView:
                 with self.lock:
                     messages[-1]["text"] = "*" + self.tr("Request stopped: {0}").format(error) + "*"
             final_status = self.tr("Response stopped")
-            if tab_index < len(self.tabs):
-                self.tabs[tab_index]["pending_attachments"] = list(attachments)
+            target_tab["pending_attachments"] = list(attachments)
         finally:
             if started is not None:
                 elapsed = time.monotonic() - started
 
             def finish_turn() -> None:
-                if tab_index >= len(self.tabs):
-                    return
-                tab = self.tabs[tab_index]
+                tab = target_tab
                 tab["temporary"] = temporary
                 tab["conversation_id"] = resolved_id
                 tab["title"] = resolved_title or tab.get("title") or self.tr("New conversation")
@@ -4373,11 +4439,29 @@ class ChatView:
                 tab["response_model"] = resolved_model
                 tab["effort"] = effort
                 tab["busy"] = False
-                tab["completed_pending"] = tab_index != self.active_tab
+                tab["completed_pending"] = not is_active()
                 tab["started"] = None
                 tab["connection"] = None
+                if resolved_id and not temporary:
+                    record = next(
+                        (item for item in self.sidebar_items if item.get("id") == resolved_id), None
+                    )
+                    if record is None:
+                        record = {"id": resolved_id}
+                        self.sidebar_items.insert(0, record)
+                    record.update(
+                        title=tab["title"],
+                        provider_id=tab.get("account_key", self.account_key).split("/")[0],
+                        project_id=(tab.get("project") or {}).get("id"),
+                    )
+                completed = [item for item in self.background_tabs if not item.get("busy")]
+                if len(completed) > 16:
+                    expired = {id(item) for item in completed[:-16]}
+                    self.background_tabs = [
+                        item for item in self.background_tabs if id(item) not in expired
+                    ]
                 self._sync_activity()
-                if tab_index == self.active_tab:
+                if is_active():
                     self.conversation_id = resolved_id
                     self.title = tab["title"]
                     self.messages = messages
@@ -4392,7 +4476,7 @@ class ChatView:
                     self._save_active_tab()
                     self.scroll_bottom(force=False)
                 else:
-                    self.status = self.tr("Yanıt {0}. sekmede tamamlandı").format(tab_index + 1)
+                    self.status = self.tr("Yanıt tamamlandı: {0}").format(tab["title"])
                     self.app.invalidate()
 
             self._dispatch_ui(finish_turn)

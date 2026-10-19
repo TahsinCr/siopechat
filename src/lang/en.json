@@ -609,5 +609,7 @@
   "ui.Son etkin hesap silinemez; önce başka bir hesap ekleyin": "The last enabled account cannot be removed; add another account first",
   "ui.Hesaplar · Hesabı sil": "Accounts · Remove account",
   "ui.＋ Ekle": "＋ Add",
-  "ui.Unut": "Forget"
+  "ui.Unut": "Forget",
+  "ui.Yanıt tamamlandı: {0}": "Response completed: {0}",
+  "ui.Yanıt arka planda sürüyor": "Response continues in the background"
 }

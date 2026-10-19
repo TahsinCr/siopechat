@@ -24,6 +24,7 @@ DEFAULT_TERMINAL_STYLE = {
     "provider.gemini": "#8ecfff",
     "provider.claude": "#d99977",
     "sidebar.open": "bold #ffffff",
+    "sidebar.running": "bold #86d49b",
     "tab.open": "bold #ffffff",
     "sync": "#8ecfff",
     "sync.error": "#f0ad66",

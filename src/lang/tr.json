@@ -609,5 +609,7 @@
   "ui.Son etkin hesap silinemez; önce başka bir hesap ekleyin": "Son etkin hesap silinemez; önce başka bir hesap ekleyin",
   "ui.Hesaplar · Hesabı sil": "Hesaplar · Hesabı sil",
   "ui.＋ Ekle": "＋ Ekle",
-  "ui.Unut": "Unut"
+  "ui.Unut": "Unut",
+  "ui.Yanıt tamamlandı: {0}": "Yanıt tamamlandı: {0}",
+  "ui.Yanıt arka planda sürüyor": "Yanıt arka planda sürüyor"
 }

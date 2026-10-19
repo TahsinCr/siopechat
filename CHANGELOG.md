@@ -10,6 +10,8 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 
 ### Added
 
+- Close a streaming conversation tab without interrupting its response; the sidebar marks running chats in green and completed background replies with a check mark. Reopen them without restarting the request.
+
 - Zen profile import through the shared Firefox reader, including current XDG, legacy and Flatpak locations; Firefox Snap discovery and installs.ini profile selection.
 - Confirmed local account removal, credential/preference cleanup and automatic selection of another enabled account, with an account-settings action and Alt+Backspace shortcut.
 - Verify from profile in account settings: import the selected provider's session from the default browser's existing profile without launching a browser or enabling debugging flags.
@@ -28,6 +30,8 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 - Scope profile imports to provider authentication cookies, exclude Firefox containers, bound keyring work, and validate candidate sessions before replacing existing account credentials.
 
 ### Fixed
+
+- Route streaming updates to their original conversation state instead of a shifting tab index. Background responses count toward the concurrency limit.
 
 - Align account creation and removal beneath the account list with equal button widths and shared columns; keep profile verification and logout together below session details, with compact labels in narrow terminals.
 
