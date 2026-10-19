@@ -34,8 +34,8 @@ class TranscriptControl(UIControl):
             spans, message = rows[number]
             selected = self.view.message_selection and message == self.view.selected_message
             return [
-                (style + (" class:message.selected" if selected else ""), text)
-                for style, text in spans
+                (span[0] + (" class:message.selected" if selected else ""), *span[1:])
+                for span in spans
             ]
 
         return UIContent(
@@ -49,6 +49,12 @@ class TranscriptControl(UIControl):
         ):
             line = mouse_event.position.y
             if 0 <= line < len(self.rows):
+                position = 0
+                for span in self.rows[line][0]:
+                    end = position + len(span[1])
+                    if position <= mouse_event.position.x < end and len(span) > 2:
+                        return span[2](mouse_event)
+                    position = end
                 self.view.select_message(self.rows[line][1])
                 return None
         return NotImplemented

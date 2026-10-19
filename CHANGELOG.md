@@ -31,6 +31,8 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 
 ### Fixed
 
+- Make Markdown web links clickable in conversation messages, cached history and split panes; preserve link targets during ANSI rendering and scrolling.
+
 - Apply shortcut changes immediately across previously focused controls; replaced keys no longer remain active in cached layouts.
 
 - Allow opening other conversations and the history picker during response generation; keep synchronization independent of streaming.

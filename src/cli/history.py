@@ -3,12 +3,10 @@
 import threading
 from types import SimpleNamespace
 
-from prompt_toolkit.formatted_text import ANSI
-
 from accounts import origin
 from providers.history import merge_conversation
 
-from .markdown import MessageRenderer, index_transcript, visible_chat_message
+from .markdown import MessageRenderer, index_transcript, transcript_fragments, visible_chat_message
 
 _render_gate = threading.Semaphore(1)
 
@@ -20,7 +18,7 @@ def prepare_transcript(messages, width, tokens, reasoning, cancelled=None):
         renderer = MessageRenderer()
         renderer.configure(tokens)
         text, ranges = renderer.transcript(messages, width, reasoning, cancelled)
-        ansi = ANSI(text).__pt_formatted_text__()
+        ansi = transcript_fragments(text)
         return text, ranges, ansi, index_transcript(ansi, ranges)
 
 

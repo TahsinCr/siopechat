@@ -45,6 +45,7 @@ from .markdown import (
     MessageRenderer,
     index_transcript,
     render_chatgpt_annotations,
+    transcript_fragments,
     visible_chat_message,
 )
 from .projects import ProjectPanel
@@ -3402,7 +3403,7 @@ class ChatView:
             if rendered != getattr(self, "_ansi_render_key", None):
                 self._ansi_render_key, self._ansi_fragments = (
                     rendered,
-                    ANSI(rendered).__pt_formatted_text__(),
+                    transcript_fragments(rendered),
                 )
             self._transcript_lines = index_transcript(self._ansi_fragments, self.message_ranges)
             self._line_render_key = rendered

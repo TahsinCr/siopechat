@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
 from collections import OrderedDict
 from io import StringIO
 from typing import Any
+from urllib.parse import urlsplit
 
+from prompt_toolkit.formatted_text import ANSI
+from prompt_toolkit.mouse_events import MouseButton, MouseEventType
 from rich.console import Console
 from rich.markdown import BlockQuote, CodeBlock, Markdown
 from rich.padding import Padding
@@ -175,19 +180,98 @@ def visible_chat_message(message: dict[str, Any]) -> dict[str, str] | None:
     }
 
 
+OSC_LINK = re.compile(r"\x1b\]8;[^;]*;([^\x1b\x07]*)(?:\x1b\\|\x07)")
+
+
+def open_link(url):
+    """Open web links without a shell or child output touching the terminal UI."""
+    if any(ord(char) < 32 or ord(char) == 127 for char in url):
+        return
+    try:
+        parsed = urlsplit(url)
+        if parsed.scheme not in ("https", "http") or not parsed.hostname:
+            return
+    except ValueError:
+        return
+    try:
+        subprocess.Popen(
+            [sys.executable, "-m", "webbrowser", "-t", url],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        # An unavailable browser launcher must not crash the conversation view.
+        return
+
+
+def link_handler(url):
+    def click(event):
+        if event.event_type == MouseEventType.MOUSE_UP and event.button == MouseButton.LEFT:
+            open_link(url)
+            return None
+        return NotImplemented
+
+    return click
+
+
+def transcript_fragments(text):
+    """Preserve Rich OSC-8 link targets through Prompt Toolkit's ANSI conversion."""
+    if "\x1b]8;" not in text:
+        return ANSI(text).__pt_formatted_text__()
+    chunks, ranges = [], []
+    offset, cursor, target = 0, 0, None
+    for match in OSC_LINK.finditer(text):
+        chunk = text[cursor : match.start()]
+        chunks.append(chunk)
+        length = sum(len(part[1]) for part in ANSI(chunk).__pt_formatted_text__())
+        if target and length:
+            ranges.append((offset, offset + length, target))
+        offset += length
+        target = match.group(1) or None
+        cursor = match.end()
+    tail = text[cursor:]
+    chunks.append(tail)
+    if target:
+        length = sum(len(part[1]) for part in ANSI(tail).__pt_formatted_text__())
+        ranges.append((offset, offset + length, target))
+    fragments, offset, index = [], 0, 0
+    handlers = {}
+    for style, value in ANSI("".join(chunks)).__pt_formatted_text__():
+        while value:
+            while index < len(ranges) and offset >= ranges[index][1]:
+                index += 1
+            span = ranges[index] if index < len(ranges) else None
+            linked = span is not None and offset >= span[0]
+            stop = span[1] if linked else span[0] if span else offset + len(value)
+            size = min(len(value), stop - offset)
+            piece, value = value[:size], value[size:]
+            if linked:
+                url = span[2]
+                if url not in handlers:
+                    handlers[url] = link_handler(url)
+                handler = handlers[url]
+                fragments.append((style, piece, handler))
+            else:
+                fragments.append((style, piece))
+            offset += size
+    return fragments
+
+
 def index_transcript(ansi, ranges):
     """Coalesce styled spans once and index logical rows for lazy terminal paint."""
     rows = [[]]
-    for style, text in ansi:
+    for fragment in ansi:
+        style, text = fragment[:2]
+        handler = fragment[2] if len(fragment) > 2 else None
         for part in text.splitlines(keepends=True):
             newline = part.endswith("\n")
             value = part[:-1] if newline else part
             row = rows[-1]
             if value:
-                if row and row[-1][0] == style:
+                if row and row[-1][0] == style and row[-1][2] is handler:
                     row[-1][1].append(value)
                 else:
-                    row.append((style, [value]))
+                    row.append((style, [value], handler))
             if newline:
                 rows.append([])
     indexed, position = [], 0
@@ -195,7 +279,15 @@ def index_transcript(ansi, ranges):
         while position < len(ranges) and number >= ranges[position][1]:
             position += 1
         message = ranges[position][2] if position < len(ranges) else None
-        indexed.append((tuple((style, "".join(parts)) for style, parts in spans), message))
+        indexed.append(
+            (
+                tuple(
+                    (style, "".join(parts), handler) if handler else (style, "".join(parts))
+                    for style, parts, handler in spans
+                ),
+                message,
+            )
+        )
     return tuple(indexed)
 
 

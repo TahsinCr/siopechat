@@ -64,6 +64,8 @@ Write in the composer and press **Enter** to send. **Shift+Enter** inserts a new
 
 A new chat offers models from the selected accounts of enabled providers. An existing chat stays with its original account. Model and effort choices come from provider catalogs; unavailable or upgrade-only entries are filtered when that information is available. A listed model can still be refused by the server. Provider-published thinking summaries appear separately from answers; private reasoning is not available.
 
+Click a Markdown web link in a message to open it in your default browser. Clicking elsewhere in the message still selects it for copying.
+
 Closing a conversation tab keeps its running response in the background. In the sidebar, a green **●** marks a running conversation and **✓** marks a completed background reply. Select it to reopen the same conversation. You can open other conversations and synchronize history while a response is running. This continues only while SiopeChat is running.
 
 | Default shortcut | Action |

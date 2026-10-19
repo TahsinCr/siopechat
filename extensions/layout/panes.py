@@ -6,7 +6,7 @@ from prompt_toolkit.layout import DynamicContainer, HSplit, VSplit, Window
 from prompt_toolkit.layout.margins import ScrollbarMargin
 from prompt_toolkit.mouse_events import MouseButton, MouseEventType
 
-from cli.markdown import MessageRenderer
+from cli.markdown import MessageRenderer, transcript_fragments
 from cli.widgets import BoundedTextControl, TranscriptGutter, TranscriptWindow, fit_text, on_click
 
 
@@ -262,6 +262,6 @@ class _Pane:
                 values.append(value)
                 line = end
             self.line_count = line + 1
-            self.cached = ANSI("".join(values))
+            self.cached = transcript_fragments("".join(values))
             self.cache_key = key
         return self.cached
