@@ -114,15 +114,21 @@ class SessionDialog:
                 self.view.tr("Doğrula"),
                 self.view.tr("Unut") if self.confirm_logout else self.view.tr("Çıkış"),
             ]
-        if sum(get_cwidth(label) + 4 for label in labels) + 1 > width:
+        # Both rows share column widths so their second buttons line up.
+        full_labels = [
+            self.view.tr("＋ Hesap ekle"),
+            self.view.tr("Hesabı sil"),
+            self.view.text("verify_profile", "Profil ile doğrula"),
+            self.view.tr("Oturumu unut"),
+            self.view.tr("Çıkış yap"),
+        ]
+        preferred = max(get_cwidth(label) for label in full_labels) + 4
+        button_width = max(1, min(preferred, (width - 1) // 2))
+        if any(get_cwidth(label) + 2 > button_width for label in labels):
             labels = compact
-        sizes = [get_cwidth(label) + 2 for label in labels]
-        spare = max(0, width - sum(sizes) - 1)
-        for index, button in enumerate(buttons):
-            padding = min(2, spare)
-            spare -= padding
-            button.text = labels[index]
-            button.width = button.window.width = sizes[index] + padding
+        for button, label in zip(buttons, labels):
+            button.text = label
+            button.width = button.window.width = button_width
         return self.account_actions if accounts else self.actions
 
     def render_accounts(self):

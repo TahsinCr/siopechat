@@ -29,7 +29,7 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 
 ### Fixed
 
-- Align account creation and removal beneath the account list; keep profile verification and logout together below session details, with compact labels in narrow terminals.
+- Align account creation and removal beneath the account list with equal button widths and shared columns; keep profile verification and logout together below session details, with compact labels in narrow terminals.
 
 - Clear obsolete account/provider filters after local account removal so the remaining history stays visible.
 - Request extended terminal key reporting so Shift+Enter inserts a newline and Enter sends, preserve modified Ctrl/Alt shortcuts, and reset keyboard modes on exit. Modified Enter no longer cancels text forms through its Escape prefix.
