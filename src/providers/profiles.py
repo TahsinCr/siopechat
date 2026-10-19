@@ -147,6 +147,7 @@ def default_profile():
                 ("brave-origin", "brave-origin"),
                 ("brave.origin", "brave-origin"),
                 ("brave", "brave"),
+                ("zen", "zen"),
                 ("firefox", "firefox"),
                 ("msedge", "edge"),
                 ("microsoft-edge", "edge"),
@@ -174,6 +175,7 @@ def default_profile():
             "vivaldi": local / "Vivaldi/User Data",
             "firefox": Path(os.environ.get("APPDATA", home / "AppData/Roaming"))
             / "Mozilla/Firefox",
+            "zen": Path(os.environ.get("APPDATA", home / "AppData/Roaming")) / "zen",
         }
     elif sys.platform == "darwin":
         base = home / "Library/Application Support"
@@ -187,6 +189,7 @@ def default_profile():
                 "edge": "Microsoft Edge",
                 "vivaldi": "Vivaldi",
                 "firefox": "Firefox",
+                "zen": "zen",
             }.items()
         }
     else:
@@ -203,36 +206,27 @@ def default_profile():
             }.items()
         }
         paths["firefox"] = home / ".mozilla/firefox"
+        firefox_roots = [paths["firefox"], home / "snap/firefox/common/.mozilla/firefox"]
+        flatpak = home / ".var/app/org.mozilla.firefox/.mozilla/firefox"
         if "flatpak" in name or name.startswith("org.mozilla."):
-            flatpak = home / ".var/app/org.mozilla.firefox/.mozilla/firefox"
-            if flatpak.is_dir():
-                paths["firefox"] = flatpak
+            firefox_roots.insert(0, flatpak)
+        if "firefox_firefox" in name:
+            firefox_roots.reverse()
+        paths["firefox"] = next(
+            (root for root in firefox_roots if (root / "profiles.ini").is_file()), paths["firefox"]
+        )
+        zen_roots = [base / "zen", home / ".zen"]
+        if "app.zen_browser" in name:
+            sandbox = home / ".var/app/app.zen_browser.zen"
+            zen_roots = [sandbox / "config/zen", sandbox / ".zen", sandbox / "zen"]
+        paths["zen"] = next(
+            (root for root in zen_roots if (root / "profiles.ini").is_file()), zen_roots[0]
+        )
         if name.startswith("com.google.chrome"):
             paths["chrome"] = home / ".var/app/com.google.Chrome/config/google-chrome"
     root = paths[browser]
-    if browser == "firefox":
-        parser = configparser.ConfigParser(interpolation=None)
-        try:
-            parser.read(root / "profiles.ini", encoding="utf-8")
-            defaults = {
-                parser[s]["Default"]
-                for s in parser.sections()
-                if s.startswith("Install") and parser[s].get("Default")
-            }
-            if not defaults:
-                defaults = {
-                    parser[s]["Path"]
-                    for s in parser.sections()
-                    if s.startswith("Profile") and parser[s].get("Default") == "1"
-                }
-            if len(defaults) != 1:
-                raise ProfileError(
-                    "Varsayılan profil belirlenemedi; tarayıcıda varsayılan profil seçin"
-                )
-            profile = root / defaults.pop()
-        except (OSError, configparser.Error, KeyError):
-            raise ProfileError("Varsayılan tarayıcı profili bulunamadı") from None
-        cookies, key = profile / "cookies.sqlite", None
+    if browser in ("firefox", "zen"):
+        cookies, key = _firefox_profile(root) / "cookies.sqlite", None
     else:
         state = _read_json(root / "Local State")
         if (root / "Local State").is_file() and not state:
@@ -254,6 +248,42 @@ def default_profile():
     if not cookies.is_file():
         raise ProfileError("Varsayılan tarayıcı profili bulunamadı")
     return BrowserProfile(browser, cookies, key)
+
+
+def _firefox_profile(root):
+    parser = configparser.ConfigParser(interpolation=None)
+    installs = configparser.ConfigParser(interpolation=None)
+    try:
+        parser.read(root / "profiles.ini", encoding="utf-8")
+        installs.read(root / "installs.ini", encoding="utf-8")
+        defaults = {
+            parser[s]["Default"]
+            for s in parser.sections()
+            if s.startswith("Install") and parser[s].get("Default")
+        }
+        if not defaults:
+            defaults = {
+                installs[s]["Default"] for s in installs.sections() if installs[s].get("Default")
+            }
+        if not defaults:
+            defaults = {
+                parser[s]["Path"]
+                for s in parser.sections()
+                if s.startswith("Profile") and parser[s].get("Default") == "1"
+            }
+        if not defaults:
+            defaults = {
+                parser[s]["Path"]
+                for s in parser.sections()
+                if s.startswith("Profile") and parser[s].get("Path")
+            }
+        if len(defaults) != 1:
+            raise ProfileError(
+                "Varsayılan profil belirlenemedi; tarayıcıda varsayılan profil seçin"
+            )
+        return root / defaults.pop()
+    except (OSError, configparser.Error, KeyError):
+        raise ProfileError("Varsayılan tarayıcı profili bulunamadı") from None
 
 
 def select_cookies(jar, provider):
@@ -340,7 +370,7 @@ def _main():
 
         data = json.load(sys.stdin)
         browser = "brave" if data["browser"] == "brave-origin" else data["browser"]
-        if browser == "firefox":
+        if browser in ("firefox", "zen"):
             # Firefox containers can contain other signed-in accounts. Read only
             # the default container; the upstream loader merges container rows.
             from http.cookiejar import CookieJar

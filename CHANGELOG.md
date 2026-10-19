@@ -10,6 +10,7 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 
 ### Added
 
+- Zen profile import through the shared Firefox reader, including current XDG, legacy and Flatpak locations; Firefox Snap discovery and installs.ini profile selection.
 - Confirmed local account removal, credential/preference cleanup and automatic selection of another enabled account, with an account-settings action and Alt+Backspace shortcut.
 - Verify from profile in account settings: import the selected provider's session from the default browser's existing profile without launching a browser or enabling debugging flags.
 - Default-profile discovery for Chrome, Chromium, Brave/Brave Origin, Edge, Vivaldi and Firefox standard locations, with localized import status and errors.

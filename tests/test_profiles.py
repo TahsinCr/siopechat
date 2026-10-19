@@ -108,6 +108,41 @@ class ProfileTests(unittest.TestCase):
         with self.assertRaises(ProfileError):
             select_cookies([cookie("sessionKey", domain=".claude.ai")], "gemini")
 
+    def test_zen_and_firefox_profile_registry_locations(self):
+        cases = [
+            ("zen.desktop", ".config/zen"),
+            ("zen-browser.desktop", ".zen"),
+            ("app.zen_browser.zen.desktop", ".var/app/app.zen_browser.zen/config/zen"),
+            ("firefox_firefox.desktop", "snap/firefox/common/.mozilla/firefox"),
+        ]
+        for name, relative in cases:
+            with self.subTest(browser=name), tempfile.TemporaryDirectory() as folder:
+                home = Path(folder)
+                root = home / relative
+                root.mkdir(parents=True)
+                (root / "profiles.ini").write_text(
+                    "[Profile0]\nName=Personal\nIsRelative=1\nPath=chosen\n"
+                )
+                (root / "installs.ini").write_text("[installation]\nDefault=chosen\n")
+                (root / "chosen").mkdir()
+                (root / "chosen/cookies.sqlite").touch()
+                with (
+                    patch("providers.profiles._default_id", return_value=name),
+                    patch("providers.profiles.sys.platform", "linux"),
+                    patch("providers.profiles.Path.home", return_value=home),
+                    patch.dict(os.environ, {"XDG_CONFIG_HOME": str(home / ".config")}),
+                ):
+                    self.assertEqual(default_profile().cookies, root / "chosen/cookies.sqlite")
+
+    def test_firefox_does_not_guess_between_multiple_unselected_profiles(self):
+        from providers.profiles import _firefox_profile
+
+        root = self.home / "firefox"
+        root.mkdir()
+        (root / "profiles.ini").write_text("[Profile0]\nPath=first\n[Profile1]\nPath=second\n")
+        with self.assertRaisesRegex(ProfileError, "Varsayılan profil belirlenemedi"):
+            _firefox_profile(root)
+
     def test_chunked_chatgpt_session_cookie(self):
         values = select_cookies(
             [
@@ -206,6 +241,10 @@ class ProfileTests(unittest.TestCase):
             "providers.profiles.default_profile", return_value=BrowserProfile("firefox", path)
         ):
             browser, values = import_cookies("claude")
+        with patch("providers.profiles.default_profile", return_value=BrowserProfile("zen", path)):
+            zen_browser, zen_values = import_cookies("claude")
+        self.assertEqual(zen_browser, "zen")
+        self.assertEqual(zen_values, values)
         self.assertEqual(browser, "firefox")
         self.assertEqual(values, {"sessionKey": "default-session"})
         self.assertEqual(before, path.read_bytes())
@@ -306,7 +345,9 @@ class ProfileUiTests(unittest.IsolatedAsyncioTestCase):
             )
             view.refresh_sidebar = Mock()
             view.refresh_provider_catalog = Mock()
-            self.assertEqual(set(view.session_dialog.buttons), {"verify_profile", "logout", "remove"})
+            self.assertEqual(
+                set(view.session_dialog.buttons), {"verify_profile", "logout", "remove"}
+            )
             view.session_dialog.buttons["verify_profile"].handler()
             self.assertTrue(view.session_dialog.loading)
             read, success = pending.pop()
