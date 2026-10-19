@@ -33,6 +33,8 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 
 ### Fixed
 
+- Open message links with the native desktop URL launcher, ignoring a stale BROWSER override that could silently select a removed browser. Add a terminal mouse-protocol regression for rendered links.
+
 - Make Markdown web links clickable in conversation messages, cached history and split panes; preserve link targets during ANSI rendering and scrolling.
 
 - Apply shortcut changes immediately across previously focused controls; replaced keys no longer remain active in cached layouts.

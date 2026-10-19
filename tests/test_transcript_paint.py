@@ -77,6 +77,72 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
         with patch("cli.markdown.subprocess.Popen", side_effect=OSError):
             open_link("https://example.com")
 
+    async def test_terminal_mouse_event_reaches_rendered_markdown_link(self):
+        from tests.test_terminal_responsiveness import ResizableOutput
+
+        output = ResizableOutput()
+        with terminal(
+            output=output,
+            initial_messages=[
+                {"role": "assistant", "text": "Click [Example](https://example.com/target) here."}
+            ],
+        ) as (view, pipe):
+            run = asyncio.create_task(view.app.run_async())
+            try:
+                for _ in range(100):
+                    screen = view.app.renderer._last_screen
+                    if screen:
+                        hit = next(
+                            (
+                                (x, y)
+                                for y in range(output.rows)
+                                for x in range(output.columns - 7)
+                                if "".join(screen.data_buffer[y][x + i].char for i in range(7))
+                                == "Example"
+                            ),
+                            None,
+                        )
+                        if hit:
+                            break
+                    await asyncio.sleep(0.01)
+                else:
+                    self.fail("Link did not render")
+                x, y = hit
+                with patch("cli.markdown.subprocess.Popen") as launch:
+                    pipe.send_bytes(f"\x1b[<0;{x + 1};{y + 1}M\x1b[<0;{x + 1};{y + 1}m".encode())
+                    for _ in range(100):
+                        if launch.called:
+                            break
+                        await asyncio.sleep(0.01)
+                    launch.assert_called_once()
+                    self.assertEqual(launch.call_args.args[0][-1], "https://example.com/target")
+            finally:
+                view.app.exit()
+                await run
+
+    def test_native_browser_opener_ignores_stale_browser_environment(self):
+        with (
+            patch.dict("os.environ", {"BROWSER": "missing-firefox"}),
+            patch("cli.markdown.sys.platform", "linux"),
+            patch("cli.markdown.shutil.which", return_value="/usr/bin/xdg-open"),
+            patch("cli.markdown.subprocess.Popen") as launch,
+        ):
+            open_link("https://example.com")
+            self.assertEqual(launch.call_args.args[0], ["xdg-open", "https://example.com"])
+            self.assertNotIn("BROWSER", launch.call_args.kwargs["env"])
+        with (
+            patch("cli.markdown.sys.platform", "darwin"),
+            patch("cli.markdown.subprocess.Popen") as launch,
+        ):
+            open_link("https://example.com")
+            self.assertEqual(launch.call_args.args[0], ["/usr/bin/open", "https://example.com"])
+        with (
+            patch("cli.markdown.sys.platform", "win32"),
+            patch("cli.markdown.os.startfile", create=True) as launch,
+        ):
+            open_link("https://example.com")
+            launch.assert_called_once_with("https://example.com")
+
     def test_row_index_coalesces_styles_and_preserves_message_identity(self):
         rows = index_transcript([("s", "a"), ("s", "b\n"), ("t", "c")], [(0, 1, 0), (1, 2, 1)])
         self.assertEqual(rows[0][0], (("s", "ab"),))

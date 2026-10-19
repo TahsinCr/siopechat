@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
 import subprocess
 import sys
 from collections import OrderedDict
@@ -194,8 +196,23 @@ def open_link(url):
     except ValueError:
         return
     try:
+        if sys.platform == "win32":
+            os.startfile(url)
+            return
+        if sys.platform == "darwin":
+            command = ["/usr/bin/open", url]
+        elif shutil.which("xdg-open"):
+            command = ["xdg-open", url]
+        elif shutil.which("gio"):
+            command = ["gio", "open", url]
+        else:
+            command = [sys.executable, "-m", "webbrowser", "-t", url]
+        # BROWSER may point to a removed browser and override the desktop default.
+        environment = dict(os.environ)
+        environment.pop("BROWSER", None)
         subprocess.Popen(
-            [sys.executable, "-m", "webbrowser", "-t", url],
+            command,
+            env=environment,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
