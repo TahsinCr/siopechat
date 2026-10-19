@@ -32,6 +32,11 @@ class SessionDialog:
             "verify": Button(
                 self.view.tr("Doğrula"), width=24, handler=lambda: self.perform("verify")
             ),
+            "verify_profile": Button(
+                self.view.text("verify_profile", "Profil ile doğrula"),
+                width=24,
+                handler=lambda: self.perform("verify_profile"),
+            ),
             "default_browser": Button(
                 self.view.tr("Tarayıcıda aç"),
                 width=24,
@@ -47,11 +52,14 @@ class SessionDialog:
         self.wide_actions = HSplit(
             [
                 VSplit(
-                    [self.buttons["verify"], self.buttons["default_browser"]], padding=2, height=1
+                    [self.buttons["verify"], self.buttons["verify_profile"]], padding=2, height=1
                 ),
                 VSplit(
-                    [self.buttons["connect_browser"], self.buttons["logout"]], padding=2, height=1
+                    [self.buttons["connect_browser"], self.buttons["default_browser"]],
+                    padding=2,
+                    height=1,
                 ),
+                self.buttons["logout"],
             ]
         )
         self.stacked_actions = HSplit(list(self.buttons.values()))
@@ -165,6 +173,7 @@ class SessionDialog:
         self.confirm_logout = False
         for key, button in self.buttons.items():
             label = {
+                "verify_profile": ("verify_profile", "Profil ile doğrula"),
                 "verify": ("verify_session", self.view.tr("Oturumu doğrula")),
                 "default_browser": ("open_browser", self.view.tr("Tarayıcıda aç")),
                 "connect_browser": ("connect_browser", self.view.tr("Bağlı tarayıcı")),
@@ -201,7 +210,7 @@ class SessionDialog:
         return self.view.text(
             "login_help",
             self.view.tr(
-                "Kayıtlı oturum: tarayıcı açmadan doğrulayın.\nİlk giriş: Bağlı tarayıcı → giriş → Doğrula.\nVarsayılan tarayıcı, oturumu otomatik aktarmaz.\nÇıkış yalnız uygulamadaki oturumu unutur."
+                "Kayıtlı oturum: tarayıcı açmadan doğrulayın.\nProfil: varsayılan tarayıcının son kullanılan profilinden aktarın.\nİlk giriş: Bağlı tarayıcı → giriş → Doğrula.\nÇıkış yalnız uygulamadaki oturumu unutur."
             ),
         )
 
@@ -219,7 +228,7 @@ class SessionDialog:
         account_busy = any(
             tab.get("busy") and tab.get("account_key", key) == key for tab in self.view.tabs
         )
-        if action in ("logout", "verify", "connect_browser") and (
+        if action in ("logout", "verify", "verify_profile", "connect_browser") and (
             account_busy
             or self.view.loading_conversation
             or self.view.uploading_image
@@ -245,11 +254,17 @@ class SessionDialog:
                 self.message = self.view.text(
                     "logged_out", self.view.tr("Uygulamadaki oturum kapatıldı")
                 )
-            elif action == "verify":
+            elif action in ("verify", "verify_profile"):
                 self.view.session_state["authenticated"] = True
                 self.view.refresh_sidebar()
                 self.view.refresh_provider_catalog()
-                self.message = self.view.text("verified", self.view.tr("Oturum doğrulandı"))
+                self.message = (
+                    self.view.text("profile_verified", "Profil doğrulandı: {browser}").format(
+                        browser=result.get("imported_browser", "")
+                    )
+                    if action == "verify_profile"
+                    else self.view.text("verified", self.view.tr("Oturum doğrulandı"))
+                )
             elif action == "default_browser":
                 self.message = self.view.text(
                     "default_opened",
@@ -270,7 +285,7 @@ class SessionDialog:
             if action == "verify" and self.view.account_key == key:
                 self.view.session_state["authenticated"] = False
             self.loading = False
-            self.message = str(reason)
+            self.message = self.view.tr(str(reason))
             self.view.app.invalidate()
 
         self.view._read_in_background(

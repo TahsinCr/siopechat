@@ -95,6 +95,55 @@ class BrowserSession:
             if temporary.exists():
                 temporary.unlink()
 
+    def import_cookies(self, cookies: dict[str, str]) -> None:
+        """Bootstrap a profile's web session without CDP or a running browser."""
+        import re
+
+        from curl_cffi.requests import Session
+        from curl_cffi.requests.impersonate import DEFAULT_CHROME
+
+        # Follow the maintained HTTP transport's browser version, not a frozen
+        # application-specific Chrome version or the Python HTTP client UA.
+        version = re.search(r"\d+", DEFAULT_CHROME).group()
+        platform = (
+            "Windows NT 10.0; Win64; x64"
+            if sys.platform == "win32"
+            else "Macintosh; Intel Mac OS X 10_15_7"
+            if sys.platform == "darwin"
+            else "X11; Linux x86_64"
+        )
+        headers = {
+            "accept": "application/json",
+            "origin": "https://chatgpt.com",
+            "referer": "https://chatgpt.com/",
+            "user-agent": f"Mozilla/5.0 ({platform}) AppleWebKit/537.36 "
+            f"(KHTML, like Gecko) Chrome/{version}.0.0.0 Safari/537.36",
+        }
+        if cookies.get("oai-did"):
+            headers["oai-device-id"] = cookies["oai-did"]
+        with Session(impersonate="chrome", cookies=cookies, timeout=30) as client:
+            response = client.get(
+                "https://chatgpt.com/api/auth/session", headers=headers, allow_redirects=False
+            )
+            if response.status_code != 200:
+                raise ChatGPTWebError(
+                    f"ChatGPT profile verification returned HTTP {response.status_code}"
+                )
+            try:
+                token = response.json().get("accessToken")
+            except (ValueError, AttributeError):
+                token = None
+            if not isinstance(token, str) or not token:
+                raise ChatGPTWebError("Oturum doğrulanamadı")
+            values = dict(cookies)
+            for cookie in client.cookies.jar:
+                domain = (cookie.domain or "").lstrip(".")
+                if domain == "chatgpt.com" and cookie.path == "/":
+                    values[cookie.name] = cookie.value
+        headers["authorization"] = "Bearer " + token
+        headers["cookie"] = "; ".join(f"{name}={value}" for name, value in values.items())
+        self.save("https://chatgpt.com/backend-api/conversations", headers)
+
     def load(self) -> tuple[str, dict[str, str]]:
         path = self.paths.session_file
         try:

@@ -48,6 +48,8 @@ Başlatıcılar, varsa proje dizinindeki `python/` ortamını kullanır; yeni bi
 
 **Ayarlar → Hesaplar** bölümünde hesap ekleyip **Bağlı tarayıcı** seçeneğini açın. Sağlayıcının sitesinde giriş yaptıktan sonra uygulamaya dönüp **Doğrula** seçeneğine basın. Oturum kaydedildiğinde giriş tarayıcısını, işlemiyle birlikte kapatabilirsiniz; sohbet, geçmiş, model ve proje işlemleri HTTP üzerinden yürür. Süresi dolan veya iptal edilen oturum yeniden doğrulanmalıdır. Yalnız varsayılan tarayıcıyı açmak, oturumu uygulamaya aktarmaz.
 
+**Profil ile doğrula**, varsayılan tarayıcının son kullanılan profilinden seçili sağlayıcının açık oturumunu aktarır; tarayıcı başlatmaz ve hata ayıklama bayrağı gerektirmez. Chrome, Chromium, Brave/Brave Origin, Edge, Vivaldi ve Firefox’un standart profil konumları desteklenir. Yalnız seçili sağlayıcının kimlik doğrulama çerezleri alınır; Firefox’ta varsayılan kapsayıcı kullanılır. Yeni oturum, kayıtlı oturumun yerine yazılmadan önce sağlayıcıda doğrulanır. Sistem anahtarlığı erişim izni isteyebilir. Kilitli veritabanı, özel/yalıtılmış profil konumu veya desteklenmeyen şifreleme (bazı Windows Chromium yapılandırmaları dahil) aktarımı engelleyebilir; kayıtlı oturum silinmeden hata gösterilir. Bu aktarım seçeneği Safari’yi desteklemez. Bağlı tarayıcı yöntemi de kullanılabilir.
+
 Birden fazla hesap eklenebilir. Her sağlayıcıda gönderim için bir hesap seçilir; başka bir hesabın geçmişine bakmak bu seçimi değiştirmez. Varsayılan olarak ayrı giriş profilleri kullanılır. Başka sağlayıcı için aynı profili kullanmak, hesap eklerken yapılan açık bir seçimdir.
 
 ## Kullanım

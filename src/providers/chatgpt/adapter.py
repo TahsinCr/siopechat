@@ -91,9 +91,9 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
             "complete_login_in_browser_then_authenticate",
         )
 
-    async def authenticate(self) -> SessionStatus:
+    async def authenticate(self, *, capture_browser: bool = True) -> SessionStatus:
         def verify():
-            if self.session.is_ready():
+            if capture_browser and self.session.is_ready():
                 url, headers = self.session.capture_auth()
                 self.session.save(url, headers)
             with self._factory(self.session) as client:

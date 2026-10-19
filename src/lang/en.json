@@ -34,7 +34,7 @@
   "saved": "Saved",
   "no_results": "No results",
   "settings_help": "Search → select setting → edit → Save. Tab to move · Esc to close",
-  "login_help": "Saved session: verify without opening a browser.\nFirst login: Connected browser → sign in → Verify.\nDefault browser does not import its session.\nLogout forgets only the application session.",
+  "login_help": "Saved session: verify without opening a browser.\nProfile: import from the default browser’s last-used profile.\nFirst login: Connected browser → sign in → Verify.\nLogout forgets only the application session.",
   "show_reasoning": "Show reasoning summaries",
   "category_application": "General",
   "category_providers": "Providers",
@@ -596,5 +596,18 @@
   "ui.Sohbet · Son mesaja git": "Chat · Go to last message",
   "ui.Düşünme özeti": "Thinking summary",
   "ui.Yanıt hazırlanıyor…": "Preparing response…",
-  "ui.Kopyalandı": "Copied"
+  "ui.Kopyalandı": "Copied",
+  "verify_profile": "Verify from profile",
+  "profile_verified": "Profile verified: {browser}",
+  "ui.Profil ile doğrula": "Verify from profile",
+  "ui.Varsayılan tarayıcı belirlenemedi": "Could not detect the default browser",
+  "ui.Varsayılan tarayıcının profili desteklenmiyor": "The default browser profile is not supported",
+  "ui.Varsayılan profil belirlenemedi; tarayıcıda varsayılan profil seçin": "Could not identify one default profile; select a default profile in your browser",
+  "ui.Varsayılan tarayıcı profili bulunamadı": "Default browser profile was not found",
+  "ui.Bu profilde sağlayıcıya ait açık oturum bulunamadı": "No signed-in session for this provider was found in this profile",
+  "ui.Profil okuma zaman aşımına uğradı; sistem anahtarlığının kilidini açın": "Profile reading timed out; unlock the system keyring",
+  "ui.Profil okunamadı; tarayıcıyı kapatıp sistem anahtarlığının kilidini açın. Tarayıcının şifrelemesi desteklenmiyor olabilir": "Could not read the profile; close the browser and unlock the system keyring. The browser encryption may not be supported",
+  "ui.Profil okuma sonucu geçersiz": "Invalid profile reading result",
+  "ui.Profil doğrulaması tamamlanana kadar bekleyin": "Wait for profile verification to finish",
+  "ui.Kayıtlı oturum: tarayıcı açmadan doğrulayın.\nProfil: varsayılan tarayıcının son kullanılan profilinden aktarın.\nİlk giriş: Bağlı tarayıcı → giriş → Doğrula.\nÇıkış yalnız uygulamadaki oturumu unutur.": "Saved session: verify without opening a browser.\nProfile: import from the default browser’s last-used profile.\nFirst login: Connected browser → sign in → Verify.\nLogout forgets only the application session."
 }

@@ -34,7 +34,7 @@
   "saved": "Kaydedildi",
   "no_results": "Sonuç yok",
   "settings_help": "Ara → ayarı seç → düzenle → Kaydet. Tab ile gezin · Esc kapat",
-  "login_help": "Kayıtlı oturum: tarayıcı açmadan doğrulayın.\nİlk giriş: Bağlı tarayıcı → giriş → Doğrula.\nVarsayılan tarayıcı, oturumu otomatik aktarmaz.\nÇıkış yalnız uygulamadaki oturumu unutur.",
+  "login_help": "Kayıtlı oturum: tarayıcı açmadan doğrulayın.\nProfil: varsayılan tarayıcının son kullanılan profilinden aktarın.\nİlk giriş: Bağlı tarayıcı → giriş → Doğrula.\nÇıkış yalnız uygulamadaki oturumu unutur.",
   "show_reasoning": "Düşünme özetlerini göster",
   "category_application": "Genel",
   "category_providers": "Sağlayıcılar",
@@ -596,5 +596,18 @@
   "ui.Sohbet · Son mesaja git": "Sohbet · Son mesaja git",
   "ui.Düşünme özeti": "Düşünme özeti",
   "ui.Yanıt hazırlanıyor…": "Yanıt hazırlanıyor…",
-  "ui.Kopyalandı": "Kopyalandı"
+  "ui.Kopyalandı": "Kopyalandı",
+  "verify_profile": "Profil ile doğrula",
+  "profile_verified": "Profil doğrulandı: {browser}",
+  "ui.Profil ile doğrula": "Profil ile doğrula",
+  "ui.Varsayılan tarayıcı belirlenemedi": "Varsayılan tarayıcı belirlenemedi",
+  "ui.Varsayılan tarayıcının profili desteklenmiyor": "Varsayılan tarayıcının profili desteklenmiyor",
+  "ui.Varsayılan profil belirlenemedi; tarayıcıda varsayılan profil seçin": "Varsayılan profil belirlenemedi; tarayıcıda varsayılan profil seçin",
+  "ui.Varsayılan tarayıcı profili bulunamadı": "Varsayılan tarayıcı profili bulunamadı",
+  "ui.Bu profilde sağlayıcıya ait açık oturum bulunamadı": "Bu profilde sağlayıcıya ait açık oturum bulunamadı",
+  "ui.Profil okuma zaman aşımına uğradı; sistem anahtarlığının kilidini açın": "Profil okuma zaman aşımına uğradı; sistem anahtarlığının kilidini açın",
+  "ui.Profil okunamadı; tarayıcıyı kapatıp sistem anahtarlığının kilidini açın. Tarayıcının şifrelemesi desteklenmiyor olabilir": "Profil okunamadı; tarayıcıyı kapatıp sistem anahtarlığının kilidini açın. Tarayıcının şifrelemesi desteklenmiyor olabilir",
+  "ui.Profil okuma sonucu geçersiz": "Profil okuma sonucu geçersiz",
+  "ui.Profil doğrulaması tamamlanana kadar bekleyin": "Profil doğrulaması tamamlanana kadar bekleyin",
+  "ui.Kayıtlı oturum: tarayıcı açmadan doğrulayın.\nProfil: varsayılan tarayıcının son kullanılan profilinden aktarın.\nİlk giriş: Bağlı tarayıcı → giriş → Doğrula.\nÇıkış yalnız uygulamadaki oturumu unutur.": "Kayıtlı oturum: tarayıcı açmadan doğrulayın.\nProfil: varsayılan tarayıcının son kullanılan profilinden aktarın.\nİlk giriş: Bağlı tarayıcı → giriş → Doğrula.\nÇıkış yalnız uygulamadaki oturumu unutur."
 }

@@ -48,6 +48,8 @@ Launchers reuse a `python/` environment in the checkout when present; they do no
 
 Open **Settings → Accounts**, add an account and choose **Connected browser**. Sign in on the provider website, return to SiopeChat and select **Verify**. Once the session is saved, you can close the login browser and its process: chat, history, model and project operations use HTTP. An expired or revoked session requires verification again. Opening the default browser alone does not import its session.
 
+**Verify from profile** imports the selected provider’s signed-in session from the default browser’s last-used profile, without starting a browser or enabling debugging flags. Supported standard profile locations include Chrome, Chromium, Brave/Brave Origin, Edge, Vivaldi and Firefox. Only the selected provider’s authentication cookies are retained; Firefox uses the default container. The candidate session is checked with the provider before replacing a saved session. Your OS keyring may request access. Locked databases, custom/sandboxed profile locations and unsupported encryption (including some Windows Chromium configurations) can prevent import; the error is shown without deleting the saved session. Safari is not supported by this import option. The connected-browser flow remains available.
+
 You can add several accounts. One account per provider is selected for sending; browsing another account's history does not silently change that selection. Separate login profiles are the default. Reusing a profile for another provider is an explicit choice when adding an account.
 
 ## Everyday use

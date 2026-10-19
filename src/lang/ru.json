@@ -34,7 +34,7 @@
   "saved": "Сохранено",
   "no_results": "Нет результатов",
   "settings_help": "Поиск, выбор настройки, изменение, сохранение. Tab: переход · Esc: закрыть",
-  "login_help": "Сохранённый сеанс: проверка без запуска браузера.\nПервый вход: Подключённый браузер → вход → Проверить.\nСеанс браузера по умолчанию не импортируется.\nВыход удаляет только сеанс приложения.",
+  "login_help": "Сохранённый сеанс: проверка без запуска браузера.\nПрофиль: импорт из последнего профиля браузера по умолчанию.\nПервый вход: Подключённый браузер → вход → Проверить.\nВыход удаляет только сеанс приложения.",
   "show_reasoning": "Показывать сводки размышлений",
   "category_application": "Общие",
   "category_providers": "Провайдеры",
@@ -596,5 +596,18 @@
   "ui.Sohbet · Son mesaja git": "Чат · Перейти к последнему сообщению",
   "ui.Düşünme özeti": "Сводка размышлений",
   "ui.Yanıt hazırlanıyor…": "Подготовка ответа…",
-  "ui.Kopyalandı": "Скопировано"
+  "ui.Kopyalandı": "Скопировано",
+  "verify_profile": "Из профиля",
+  "profile_verified": "Профиль проверен: {browser}",
+  "ui.Profil ile doğrula": "Проверить из профиля",
+  "ui.Varsayılan tarayıcı belirlenemedi": "Не удалось определить браузер по умолчанию",
+  "ui.Varsayılan tarayıcının profili desteklenmiyor": "Профиль браузера по умолчанию не поддерживается",
+  "ui.Varsayılan profil belirlenemedi; tarayıcıda varsayılan profil seçin": "Не удалось определить единственный профиль; выберите профиль по умолчанию в браузере",
+  "ui.Varsayılan tarayıcı profili bulunamadı": "Профиль браузера по умолчанию не найден",
+  "ui.Bu profilde sağlayıcıya ait açık oturum bulunamadı": "В этом профиле не найден сеанс выбранного провайдера",
+  "ui.Profil okuma zaman aşımına uğradı; sistem anahtarlığının kilidini açın": "Время чтения профиля истекло; разблокируйте системное хранилище ключей",
+  "ui.Profil okunamadı; tarayıcıyı kapatıp sistem anahtarlığının kilidini açın. Tarayıcının şifrelemesi desteklenmiyor olabilir": "Не удалось прочитать профиль; закройте браузер и разблокируйте хранилище ключей. Шифрование браузера может не поддерживаться",
+  "ui.Profil okuma sonucu geçersiz": "Недопустимый результат чтения профиля",
+  "ui.Profil doğrulaması tamamlanana kadar bekleyin": "Дождитесь завершения проверки профиля",
+  "ui.Kayıtlı oturum: tarayıcı açmadan doğrulayın.\nProfil: varsayılan tarayıcının son kullanılan profilinden aktarın.\nİlk giriş: Bağlı tarayıcı → giriş → Doğrula.\nÇıkış yalnız uygulamadaki oturumu unutur.": "Сохранённый сеанс: проверка без запуска браузера.\nПрофиль: импорт из последнего профиля браузера по умолчанию.\nПервый вход: Подключённый браузер → вход → Проверить.\nВыход удаляет только сеанс приложения."
 }

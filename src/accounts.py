@@ -8,6 +8,7 @@ import mimetypes
 import os
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -23,7 +24,9 @@ from providers.claude import ClaudeProvider
 from providers.errors import AccountPaused, ProviderError, RemoteNotFound
 from providers.gemini import GeminiProvider
 from providers.models import FeatureState, ModelCatalog, SessionState
+from providers.profiles import import_cookies
 from providers.registry import PROVIDERS
+from providers.session import read_session, save_session
 
 CATALOG_SCHEMA = 2
 MODEL_TIMEOUT = 30
@@ -56,6 +59,7 @@ class Accounts:
         self._catalog_versions = {}
         self._catalog_io_lock = threading.Lock()
         self._sending = {}
+        self._session_changes = set()
         self._attachment_paths = {}
         self._loop = None
         self._thread = None
@@ -422,10 +426,69 @@ class Accounts:
             "provider": key.split("/")[0],
         }
 
+    def _verify_profile(self, key):
+        # The worker resolves/decrypts a single default profile off the UI loop.
+        with self._lock:
+            if self._sending.get(key, 0) or key in self._session_changes:
+                raise RuntimeError("Önce devam eden işlemi tamamlayın veya durdurun")
+            self._session_changes.add(key)
+        try:
+            browser, cookies = import_cookies(self.item(key)["provider"])
+
+            async def verify_candidate():
+                # Validate independently before replacing any working session.
+                with tempfile.TemporaryDirectory(prefix="siope-profile-") as folder:
+                    path = Path(folder) / "session.json"
+                    kind = self.item(key)["provider"]
+                    if kind == "chatgpt":
+                        session = BrowserSession(
+                            replace(self.session(key).paths, session_file=path)
+                        )
+                        await asyncio.to_thread(session.import_cookies, cookies)
+                        candidate = ChatGPTProvider(session, self.item(key)["id"])
+                    else:
+                        save_session(path, cookies)
+                        factory = GeminiProvider if kind == "gemini" else ClaudeProvider
+                        candidate = factory(path, self.item(key)["id"])
+                    try:
+                        state = await (
+                            candidate.authenticate(capture_browser=False)
+                            if kind == "chatgpt"
+                            else candidate.authenticate()
+                        )
+                        if state.state != SessionState.AUTHENTICATED:
+                            raise RuntimeError("Oturum doğrulanamadı")
+                    finally:
+                        await candidate.close()
+                    value = read_session(path)
+                    task = self._catalog_tasks.get(key)
+                    if task:
+                        task.cancel()
+                        await asyncio.gather(task, return_exceptions=True)
+                    previous = self._providers.get(key)
+                    if previous:
+                        await previous.close()
+                    # No background catalog may persist the old account snapshot.
+                    with self._catalog_io_lock:
+                        save_session(self.credential_path(key), value)
+                        self._providers.pop(key, None)
+                        self._catalog_versions[key] = self._catalog_versions.get(key, 0) + 1
+                        self._catalogs.pop(key, None)
+                        (self.directory(key) / "models.json").unlink(missing_ok=True)
+                    self._remember_verification(key)
+
+            self.call(verify_candidate(), timeout=90)
+            return dict(self.status(key), imported_browser=browser)
+        finally:
+            with self._lock:
+                self._session_changes.discard(key)
+
     def session_action(self, key, action):
         item = self.item(key)
         if action == "status":
             return self.status(key)
+        if action == "verify_profile":
+            return self._verify_profile(key)
         if action == "default_browser":
             # Browser stderr can contain Chromium diagnostics. Launch the
             # stdlib browser handler in a quiet child so it cannot corrupt the
@@ -947,7 +1010,15 @@ class Accounts:
                 raise
 
         self._start()
-        future = asyncio.run_coroutine_threadsafe(consume(), self._loop)
+        with self._lock:
+            if key in self._session_changes:
+                raise RuntimeError("Profil doğrulaması tamamlanana kadar bekleyin")
+            self._sending[key] = self._sending.get(key, 0) + 1
+            try:
+                future = asyncio.run_coroutine_threadsafe(consume(), self._loop)
+            except BaseException:
+                self._sending[key] -= 1
+                raise
 
         class Cancellation:
             def shutdown(self, *_):
@@ -956,8 +1027,6 @@ class Accounts:
             def close(self):
                 future.cancel()
 
-        with self._lock:
-            self._sending[key] = self._sending.get(key, 0) + 1
         try:
             on_connection(Cancellation())
             return future.result()
