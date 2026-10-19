@@ -58,7 +58,7 @@ Hesap satırına tıklayarak seçim yapın; ok işareti yönetilen hesabı göst
 
 ## Kullanım
 
-Mesaj alanına yazıp **Enter** ile gönderin. **Alt+Enter** veya **Ctrl+J** yeni satır ekler; terminal ayrı bildirdiğinde Shift+Enter da desteklenir. Yazma alanı ayarlanan yüksekliğe kadar büyür, ardından kaydırılır. Ctrl+A metni seçer, Ctrl+C seçimi kopyalar, Ctrl+V yapıştırır. Bir mesaja tıklayarak içeriğini seçip kopyalayabilirsiniz.
+Mesaj alanına yazıp **Enter** ile gönderin. Destekleyen terminallerde **Shift+Enter** yeni satır ekler; uygulama açıkken genişletilmiş tuş bildirimi istenir. Terminal Enter ve Shift+Enter’ı ayırt etmiyorsa **Alt+Enter** veya **Ctrl+J** kullanın. Yazma alanı ayarlanan yüksekliğe kadar büyür, ardından kaydırılır. Ctrl+A metni seçer, Ctrl+C seçimi kopyalar, Ctrl+V yapıştırır. Bir mesaja tıklayarak içeriğini seçip kopyalayabilirsiniz.
 
 Yeni sohbette, etkin sağlayıcıların seçili hesaplarına ait modeller gösterilir. Mevcut sohbet kendi hesabına bağlı kalır. Model ve efor seçenekleri sağlayıcının kataloğundan alınır; erişilemeyen veya üst paket gerektiren modeller, bu bilgi mevcutsa elenir. Sunucu yine de listelenen bir modeli reddedebilir. Sağlayıcının yayımladığı düşünme özetleri yanıttan ayrı gösterilir; gizli düşünme verilerine erişilmez.
 

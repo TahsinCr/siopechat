@@ -29,6 +29,7 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 
 ### Fixed
 
+- Request extended terminal key reporting so Shift+Enter inserts a newline and Enter sends, preserve modified Ctrl/Alt shortcuts, and reset keyboard modes on exit. Modified Enter no longer cancels text forms through its Escape prefix.
 - Account-row clicks now update the selected row, keyboard focus and managed account together; full row width is clickable.
 - Distinguish missing profile-reader dependencies, filesystem permissions, cookie database failures, keyring access and decryption errors without exposing cookie values or raw exceptions.
 - Keep default-browser diagnostics out of the terminal UI while reporting launch failures.

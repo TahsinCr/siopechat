@@ -88,6 +88,23 @@ def paste(view):
 
 
 def bind_editing(bindings, view):
+    def modified_enter(event):
+        buffer = active_buffer(view)
+        if buffer is not None and buffer.multiline():
+            buffer.insert_text("\n")
+
+    # Do not let the Escape prefix of a modified Enter close a text form.
+    bindings.add(
+        "escape",
+        "c-j",
+        is_global=True,
+        filter=Condition(
+            lambda: (
+                active_buffer(view) is not None
+                and view.app.layout.current_control is not view.input.control
+            )
+        ),
+    )(modified_enter)
     # Ctrl+C keeps the existing interrupt binding when there is no selection.
     for action, callback in [
         ("edit.select_all", lambda: select_all(view)),

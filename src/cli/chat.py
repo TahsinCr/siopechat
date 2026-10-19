@@ -115,7 +115,7 @@ class ChatView:
         account_service=None,
         action_host=None,
     ) -> None:
-        from .widgets import register_modified_enter
+        from .widgets import install_keyboard_protocol, register_modified_enter
 
         register_modified_enter()
         self.account_service = account_service
@@ -325,6 +325,7 @@ class ChatView:
             style=Style.from_dict(DEFAULT_TERMINAL_STYLE),
         )
 
+        install_keyboard_protocol(self.app)
         if self.account_service:
             self.bind_account(self.account_key)
             self.restore_account_preference()

@@ -231,12 +231,61 @@ class TranscriptGutter(Margin):
 
 
 def register_modified_enter():
-    """Keep modified Enter distinct from plain CR in xterm/CSI-u terminals."""
+    """Decode modified Enter and preserve shortcuts under extended keyboard modes."""
     from prompt_toolkit.input.ansi_escape_sequences import ANSI_SEQUENCES
     from prompt_toolkit.keys import Keys
 
-    for sequence in ("\x1b[13;2u", "\x1b[27;2;13~", "\x1b[13;2~"):
-        ANSI_SEQUENCES[sequence] = (Keys.Escape, Keys.ControlJ)
+    for code in (9, 13, 27, 127):
+        ANSI_SEQUENCES[f"\x1b[{code}u"] = ANSI_SEQUENCES[chr(code)]
+        ANSI_SEQUENCES[f"\x1b[{code};1u"] = ANSI_SEQUENCES[chr(code)]
+    for code in (*range(32, 127), 9, 13, 27, 127):
+        for modifier in range(2, 9):
+            flags = modifier - 1
+            key = ANSI_SEQUENCES.get(chr(code), chr(code))
+            if flags & 4 and (65 <= code <= 95 or 97 <= code <= 122 or code == 32):
+                key = ANSI_SEQUENCES[chr(code & 31)]
+            elif flags & 1 and 97 <= code <= 122:
+                key = chr(code).upper()
+            if code == 13 and flags & 1:
+                key = (Keys.Escape, Keys.ControlJ)
+            elif code == 9 and flags & 1:
+                key = Keys.BackTab
+            elif flags & 2:
+                key = (Keys.Escape, key)
+            for sequence in (f"\x1b[{code};{modifier}u", f"\x1b[27;{modifier};{code}~"):
+                ANSI_SEQUENCES[sequence] = key
+    ANSI_SEQUENCES["\x1b[13;2~"] = (Keys.Escape, Keys.ControlJ)
+
+
+def install_keyboard_protocol(app):
+    """Negotiate after entering the alternate screen; restore before renderer reset.
+
+    Application has no exit event for run_async users. The renderer reset hook
+    also covers resize, cancellation and exceptions, not just ChatView.run().
+    """
+    output = app.output
+    if type(output).__name__ == "Win32Output":
+        return  # The legacy Windows console cannot negotiate ANSI keyboard modes.
+    enabled = False
+    reset = app.renderer.reset
+
+    def stop(*args, **kwargs):
+        nonlocal enabled
+        if enabled:
+            output.write_raw("\x1b[<u\x1b[>4;0m")
+            output.flush()
+            enabled = False
+        return reset(*args, **kwargs)
+
+    def start(_app):
+        nonlocal enabled
+        if not enabled:
+            output.write_raw("\x1b[>4;2m\x1b[>1u")
+            output.flush()
+            enabled = True
+
+    app.renderer.reset = stop
+    app.after_render += start
 
 
 class SelectionWindow(Window):

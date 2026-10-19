@@ -58,7 +58,7 @@ Click an account row to select it; the arrow marks the account currently being m
 
 ## Everyday use
 
-Write in the composer and press **Enter** to send. **Alt+Enter** or **Ctrl+J** inserts a newline; Shift+Enter also works when the terminal reports it distinctly. The composer grows to its configured height, then scrolls. Ctrl+A selects text, Ctrl+C copies a selection, and Ctrl+V pastes. Click a message to select and copy its contents.
+Write in the composer and press **Enter** to send. **Shift+Enter** inserts a newline on terminals with extended keyboard reporting, which SiopeChat requests while active. If your terminal sends the same code for Enter and Shift+Enter, use **Alt+Enter** or **Ctrl+J**. The composer grows to its configured height, then scrolls. Ctrl+A selects text, Ctrl+C copies a selection, and Ctrl+V pastes. Click a message to select and copy its contents.
 
 A new chat offers models from the selected accounts of enabled providers. An existing chat stays with its original account. Model and effort choices come from provider catalogs; unavailable or upgrade-only entries are filtered when that information is available. A listed model can still be refused by the server. Provider-published thinking summaries appear separately from answers; private reasoning is not available.
 
