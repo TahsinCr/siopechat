@@ -244,6 +244,62 @@ class WorkspaceTests(unittest.TestCase):
             finally:
                 gate.set()
 
+    def test_sidebar_opens_another_chat_during_a_response(self):
+        gate, started = threading.Event(), threading.Event()
+
+        def send(*args, **kwargs):
+            started.set()
+            gate.wait(2)
+            args[3]({"type": "replace", "text": "Original answer"})
+            return {"conversation_id": "original"}
+
+        with terminal() as (v, _):
+            v.send_prompt = send
+            v.load_conversation = lambda _: {
+                "title": "Other chat",
+                "messages": [{"role": "assistant", "text": "History"}],
+            }
+            v.input.text = "Question"
+            v.submit_prompt()
+            self.assertTrue(started.wait(1))
+            original = v.tabs[0]
+            try:
+                v.sidebar_items = [{"id": "other", "title": "Other chat"}]
+                v._build_sidebar_rows()
+                v.sidebar_index = next(
+                    i for i, row in enumerate(v.sidebar_rows) if row.get("id") == "other"
+                )
+                v.activate_sidebar_item()
+                deadline = time.monotonic() + 1
+                while v.loading_conversation and time.monotonic() < deadline:
+                    time.sleep(0.005)
+                self.assertEqual(v.conversation_id, "other")
+                self.assertTrue(original["busy"])
+                self.assertEqual(v.messages[-1]["text"], "History")
+                gate.set()
+                deadline = time.monotonic() + 1
+                while v.busy and time.monotonic() < deadline:
+                    time.sleep(0.005)
+                self.assertEqual(v.messages[-1]["text"], "History")
+                self.assertEqual(original["messages"][-1]["text"], "Original answer")
+            finally:
+                gate.set()
+
+    def test_sync_is_allowed_while_a_response_is_running(self):
+        with terminal() as (v, _):
+            v.account_service = Mock()
+            v._read_in_background = immediate
+            v.refresh_sidebar = Mock()
+            v.refresh_provider_catalog = Mock()
+            v.busy = True
+            v.tabs[0]["busy"] = True
+            v.synchronize("conversation")
+            v.account_service.synchronize.assert_called_once_with(
+                "conversation", v.account_key, v.conversation_id
+            )
+            self.assertTrue(v.tabs[0]["busy"])
+            self.assertFalse(v._synchronize_pending)
+
     def test_closed_temporary_tab_forgets_remote_context_locally(self):
         forgotten = Mock(return_value={"forgotten": True})
         with terminal(forget_temporary=forgotten) as (v, _):

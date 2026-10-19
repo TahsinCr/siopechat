@@ -64,7 +64,7 @@ Mesaj alanına yazıp **Enter** ile gönderin. Destekleyen terminallerde **Shift
 
 Yeni sohbette, etkin sağlayıcıların seçili hesaplarına ait modeller gösterilir. Mevcut sohbet kendi hesabına bağlı kalır. Model ve efor seçenekleri sağlayıcının kataloğundan alınır; erişilemeyen veya üst paket gerektiren modeller, bu bilgi mevcutsa elenir. Sunucu yine de listelenen bir modeli reddedebilir. Sağlayıcının yayımladığı düşünme özetleri yanıttan ayrı gösterilir; gizli düşünme verilerine erişilmez.
 
-Sohbet sekmesini kapatmak, devam eden yanıtı durdurmaz. Sol listede yeşil **●** çalışan sohbeti, **✓** arka planda tamamlanan yanıtı gösterir. Sohbete tıklayarak aynı yanıtı yeniden açabilirsiniz. İşlem yalnız SiopeChat açıkken sürer.
+Sohbet sekmesini kapatmak, devam eden yanıtı durdurmaz. Sol listede yeşil **●** çalışan sohbeti, **✓** arka planda tamamlanan yanıtı gösterir. Sohbete tıklayarak aynı yanıtı yeniden açabilirsiniz. Yanıt sürerken diğer sohbetleri açabilir ve geçmişi eşitleyebilirsiniz. İşlem yalnız SiopeChat açıkken sürer.
 
 | Varsayılan kısayol | İşlev |
 | --- | --- |

@@ -31,6 +31,8 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 
 ### Fixed
 
+- Allow opening other conversations and the history picker during response generation; keep synchronization independent of streaming.
+
 - Route streaming updates to their original conversation state instead of a shifting tab index. Background responses count toward the concurrency limit.
 
 - Align account creation and removal beneath the account list with equal button widths and shared columns; keep profile verification and logout together below session details, with compact labels in narrow terminals.

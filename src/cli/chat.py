@@ -2543,17 +2543,8 @@ class ChatView:
                     ),
                     None,
                 )
-                if self.busy:
-                    if existing_tab is not None:
-                        self.active_tab = existing_tab
-                        self._restore_active_tab()
-                    else:
-                        self.status = self.tr(
-                            "Yanıt bitince bu sohbeti açabilirsiniz; açık sekmeler arasında geçiş serbest"
-                        )
-                        self.app.invalidate()
-                    return
                 if existing_tab is not None:
+                    self._save_active_tab()
                     self.active_tab = existing_tab
                     self._restore_active_tab()
                     if self.layout_controller:
@@ -3974,10 +3965,6 @@ class ChatView:
     def open_resume(self) -> None:
         if self.palette_visible:
             self.close_overlays()
-        if self.active_busy() or (self.busy and not self.account_service):
-            self.status = self.tr("Bu sohbetin işlemi tamamlanınca başka bir sohbet yükleyin")
-            self.app.invalidate()
-            return
         if self.loading_conversation or self.resume_visible:
             return
         self.resume_visible = True
@@ -4071,10 +4058,11 @@ class ChatView:
             self.status = self.tr("Yükleme tamamlanınca başka bir sohbet açabilirsiniz")
             self.app.invalidate()
             return
-        if self.active_busy() or (self.busy and not self.account_service):
-            self.status = self.tr("Bu sohbetin işlemi tamamlanınca başka bir sohbet yükleyin")
-            self.app.invalidate()
-            return
+        if self.active_busy():
+            # Hydrate another chat in a fresh state; the streaming state stays intact.
+            self.new_tab()
+            if self.active_busy():
+                return
         target_tab = self.tabs[self.active_tab]
         if self.account_service:
             key, remote = origin(conversation_id, self.account_key)
