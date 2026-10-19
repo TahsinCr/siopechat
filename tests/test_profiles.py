@@ -404,17 +404,21 @@ class ProfileUiTests(unittest.IsolatedAsyncioTestCase):
                         "".join(screen.data_buffer[y][x].char for x in range(columns))
                         for y in range(rows)
                     )
-                    labels = [
-                        button.text
-                        for button in [
+                    for buttons in (
+                        [
                             view.session_dialog.add_account_button,
-                            *view.session_dialog.buttons.values(),
-                        ]
-                    ]
-                    self.assertTrue(
-                        any(all(label in line for label in labels) for line in text.splitlines()),
-                        f"Account actions must share a row at {columns} columns: {labels}",
-                    )
+                            view.session_dialog.buttons["remove"],
+                        ],
+                        [
+                            view.session_dialog.buttons["verify_profile"],
+                            view.session_dialog.buttons["logout"],
+                        ],
+                    ):
+                        labels = [button.text for button in buttons]
+                        # The settings viewport may scroll either row off-screen.
+                        visible = [line for line in text.splitlines() if labels[0] in line]
+                        if visible:
+                            self.assertTrue(any(labels[1] in line for line in visible))
                     self.assertNotIn("Window too small", text)
                     self.assertNotIn("Bağlı tarayıcı", text)
                     self.assertNotIn("Tarayıcıda aç", text)

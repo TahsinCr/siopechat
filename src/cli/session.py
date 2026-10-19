@@ -38,8 +38,11 @@ class SessionDialog:
             "logout": Button(self.view.tr("Çıkış"), width=24, handler=self.logout),
             "remove": Button(self.view.tr("Hesabı sil"), width=24, handler=self.remove),
         }
+        self.account_actions = VSplit(
+            [self.add_account_button, self.buttons["remove"]], padding=1, height=1
+        )
         self.actions = VSplit(
-            [self.add_account_button, *self.buttons.values()], padding=1, height=1
+            [self.buttons["verify_profile"], self.buttons["logout"]], padding=1, height=1
         )
         self.close_button = Button(self.view.tr("Kapat"), handler=self.close)
         keys = KeyBindings()
@@ -67,6 +70,7 @@ class SessionDialog:
                                     right_margins=[ScrollbarMargin(display_arrows=True)],
                                     height=D(min=1, preferred=6, max=6),
                                 ),
+                                DynamicContainer(lambda: self.action_layout(accounts=True)),
                                 Window(height=1, char="─", style="class:separator"),
                             ]
                         ),
@@ -94,32 +98,32 @@ class SessionDialog:
             title=lambda: self.view.text("session", self.view.tr("Hesap ve oturum")),
         )
 
-    def action_layout(self):
-        # Keep every account action in one anchored row, including at 40 columns.
+    def action_layout(self, accounts=False):
         width = max(1, self.view.settings_dialog.content_width() - 4)
-        buttons = [self.add_account_button, *self.buttons.values()]
-        labels = [
-            self.view.tr("＋ Hesap ekle"),
-            self.view.text("verify_profile", "Profil ile doğrula"),
-            self.view.tr("Oturumu unut") if self.confirm_logout else self.view.tr("Çıkış yap"),
-            self.view.tr("Hesabı sil"),
-        ]
-        if sum(get_cwidth(label) + 4 for label in labels) + 3 > width:
-            labels[0] = self.view.tr("＋ Ekle")
-            labels[2] = self.view.tr("Unut") if self.confirm_logout else self.view.tr("Çıkış")
-            labels[3] = self.view.tr("Sil")
-        if sum(get_cwidth(label) + 2 for label in labels) + 3 > width:
-            labels[1] = self.view.tr("Doğrula")
-        if sum(get_cwidth(label) + 2 for label in labels) + 3 > width:
-            labels = ["＋", "✓", "⏻", "×"]
+        if accounts:
+            buttons = [self.add_account_button, self.buttons["remove"]]
+            labels = [self.view.tr("＋ Hesap ekle"), self.view.tr("Hesabı sil")]
+            compact = [self.view.tr("＋ Ekle"), self.view.tr("Sil")]
+        else:
+            buttons = [self.buttons["verify_profile"], self.buttons["logout"]]
+            labels = [
+                self.view.text("verify_profile", "Profil ile doğrula"),
+                self.view.tr("Oturumu unut") if self.confirm_logout else self.view.tr("Çıkış yap"),
+            ]
+            compact = [
+                self.view.tr("Doğrula"),
+                self.view.tr("Unut") if self.confirm_logout else self.view.tr("Çıkış"),
+            ]
+        if sum(get_cwidth(label) + 4 for label in labels) + 1 > width:
+            labels = compact
         sizes = [get_cwidth(label) + 2 for label in labels]
-        spare = max(0, width - sum(sizes) - 3)
+        spare = max(0, width - sum(sizes) - 1)
         for index, button in enumerate(buttons):
             padding = min(2, spare)
             spare -= padding
             button.text = labels[index]
             button.width = button.window.width = sizes[index] + padding
-        return self.actions
+        return self.account_actions if accounts else self.actions
 
     def render_accounts(self):
         if self.view.account_service is None:
