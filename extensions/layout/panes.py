@@ -28,19 +28,19 @@ class SplitLayout:
     def begin(self, axis="columns"):
         v = self.view
         if not v.layout_enabled or v.tab_kind != "chat":
-            v.status = "Bölünmüş görünüm için layout eklentisini ve bir sohbeti açın"
+            v.status = self.view.tr("Bölünmüş görünüm için layout eklentisini ve bir sohbeti açın")
             return
         if v.loading_conversation or v.uploading_image:
-            v.status = "Yükleme tamamlanınca bölün"
+            v.status = self.view.tr("Yükleme tamamlanınca bölün")
             return
         v._save_active_tab()
         group = self.active_group()
         if group and len(group["tabs"]) >= 4:
-            v.status = "Bir grupta en fazla dört panel açılabilir"
+            v.status = self.view.tr("Bir grupta en fazla dört panel açılabilir")
             return
         self.pending = (v.tabs[v.active_tab]["tab_id"], axis)
         v.focus_sidebar()
-        v.status = "Bölmek için soldan bir sohbet seçin · Esc iptal"
+        v.status = self.view.tr("Bölmek için soldan bir sohbet seçin · Esc iptal")
         v.app.invalidate()
 
     def attach(self):
@@ -49,7 +49,7 @@ class SplitLayout:
         source, axis = self.pending
         target = self.view.tabs[self.view.active_tab]["tab_id"]
         if source == target:
-            self.view.status = "Bölmek için farklı bir sohbet seçin"
+            self.view.status = self.view.tr("Bölmek için farklı bir sohbet seçin")
             return
         group = next((g for g in self.groups if source in g["tabs"]), None)
         # A tab belongs to one group. Preserve other members when moving it.
@@ -62,7 +62,7 @@ class SplitLayout:
         if target not in group["tabs"]:
             group["tabs"].append(target)
         self.pending = None
-        self.view.status = "Bölünmüş görünüm · panele tıklayarak odaklanın"
+        self.view.status = self.view.tr("Bölünmüş görünüm · panele tıklayarak odaklanın")
         self.view.app.invalidate()
 
     def unsplit(self):
@@ -75,7 +75,7 @@ class SplitLayout:
     def focus_pane(self, offset):
         group = self.active_group()
         if not group:
-            self.view.status = "Önce bölünmüş bir sohbet grubu açın"
+            self.view.status = self.view.tr("Önce bölünmüş bir sohbet grubu açın")
             self.view.app.invalidate()
             return
         current = self.view.tabs[self.view.active_tab]["tab_id"]
@@ -221,7 +221,7 @@ class _Pane:
         return [
             (
                 "class:tab.active" if active else "class:tab",
-                fit_text(" ● " + tab.get("title", "Sohbet"), self.view.main_width()),
+                fit_text(" ● " + tab.get("title", self.view.tr("Sohbet")), self.view.main_width()),
                 on_click(self.activate),
             )
         ]

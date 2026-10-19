@@ -18,6 +18,9 @@ class SessionDialog:
         self.visible = False
         self.loading = False
         self.confirm_logout = False
+        self.add_account_button = Button(
+            self.view.tr("＋ Hesap ekle"), handler=self.view.add_account
+        )
         self.message = ""
         self.account_index = 0
         self.account_control = BoundedTextControl(
@@ -26,14 +29,20 @@ class SessionDialog:
             get_cursor_position=lambda: Point(0, self.account_index),
         )
         self.buttons = {
-            "verify": Button("Doğrula", width=24, handler=lambda: self.perform("verify")),
+            "verify": Button(
+                self.view.tr("Doğrula"), width=24, handler=lambda: self.perform("verify")
+            ),
             "default_browser": Button(
-                "Tarayıcıda aç", width=24, handler=lambda: self.perform("default_browser")
+                self.view.tr("Tarayıcıda aç"),
+                width=24,
+                handler=lambda: self.perform("default_browser"),
             ),
             "connect_browser": Button(
-                "Bağlı tarayıcı", width=24, handler=lambda: self.perform("connect_browser")
+                self.view.tr("Bağlı tarayıcı"),
+                width=24,
+                handler=lambda: self.perform("connect_browser"),
             ),
-            "logout": Button("Çıkış", width=24, handler=self.logout),
+            "logout": Button(self.view.tr("Çıkış"), width=24, handler=self.logout),
         }
         self.wide_actions = HSplit(
             [
@@ -46,7 +55,7 @@ class SessionDialog:
             ]
         )
         self.stacked_actions = HSplit(list(self.buttons.values()))
-        self.close_button = Button("Kapat", handler=self.close)
+        self.close_button = Button(self.view.tr("Kapat"), handler=self.close)
         keys = KeyBindings()
         account_focus = Condition(
             lambda: self.view.app.layout.current_control is self.account_control
@@ -72,7 +81,7 @@ class SessionDialog:
                                     right_margins=[ScrollbarMargin(display_arrows=True)],
                                     height=D(min=1, preferred=6, max=6),
                                 ),
-                                Button("＋ Hesap ekle", handler=self.view.add_account),
+                                self.add_account_button,
                                 Window(height=1, char="─", style="class:separator"),
                             ]
                         ),
@@ -97,7 +106,7 @@ class SessionDialog:
                 key_bindings=keys,
                 padding=0,
             ),
-            title=lambda: self.view.text("session", "Hesap ve oturum"),
+            title=lambda: self.view.text("session", self.view.tr("Hesap ve oturum")),
         )
 
     def action_layout(self):
@@ -125,8 +134,8 @@ class SessionDialog:
                 if item["key"] in active_keys
                 else "class:button",
                 f" {item['icon']} {item['label']} · {item['provider']}"
-                + (" · etkin" if item["key"] in active_keys else "")
-                + (" · kapalı" if not item.get("enabled", True) else "")
+                + (self.view.tr(" · etkin") if item["key"] in active_keys else "")
+                + (self.view.tr(" · kapalı") if not item.get("enabled", True) else "")
                 + "\n",
                 on_click(lambda key=item["key"]: self.choose_account(key)),
             )
@@ -151,14 +160,15 @@ class SessionDialog:
         self.view.settings_dialog.open("accounts")
 
     def activate(self, focus=True):
+        self.add_account_button.text = self.view.tr("＋ Hesap ekle")
         self.visible = True
         self.confirm_logout = False
         for key, button in self.buttons.items():
             label = {
-                "verify": ("verify_session", "Oturumu doğrula"),
-                "default_browser": ("open_browser", "Tarayıcıda aç"),
-                "connect_browser": ("connect_browser", "Bağlı tarayıcı"),
-                "logout": ("logout", "Çıkış yap"),
+                "verify": ("verify_session", self.view.tr("Oturumu doğrula")),
+                "default_browser": ("open_browser", self.view.tr("Tarayıcıda aç")),
+                "connect_browser": ("connect_browser", self.view.tr("Bağlı tarayıcı")),
+                "logout": ("logout", self.view.tr("Çıkış yap")),
             }[key]
             button.text = self.view.text(*label)
         width = max(12, min(24, (self.view.terminal_width() - 26) // 2))
@@ -166,8 +176,8 @@ class SessionDialog:
             button.width = width
             button.window.width = width
         if width < 22:
-            self.buttons["default_browser"].text = "Tarayıcıda aç"
-        self.close_button.text = self.view.text("close", "Kapat")
+            self.buttons["default_browser"].text = self.view.tr("Tarayıcıda aç")
+        self.close_button.text = self.view.text("close", self.view.tr("Kapat"))
         if focus:
             self.view.app.layout.focus(self.buttons["verify"])
         self.perform("status")
@@ -175,29 +185,33 @@ class SessionDialog:
     def render_state(self):
         state = self.view.session_state
         verified = (
-            self.view.text("verified", "Doğrulandı")
+            self.view.text("verified", self.view.tr("Doğrulandı"))
             if state.get("authenticated")
-            else self.view.text("not_verified", "Doğrulanmadı")
+            else self.view.text("not_verified", self.view.tr("Doğrulanmadı"))
         )
         saved = (
-            self.view.text("yes", "var")
+            self.view.text("yes", self.view.tr("var"))
             if state.get("saved_snapshot")
-            else self.view.text("no", "yok")
+            else self.view.text("no", self.view.tr("yok"))
         )
-        transport = "Bağlantı: kayıtlı web oturumu"
-        return f"{self.view.session_state.get('account', 'ChatGPT')} · {verified}\n{self.view.text('saved_session', 'Kayıtlı oturum')}: {saved}\n{transport}"
+        transport = self.view.tr("Bağlantı: kayıtlı web oturumu")
+        return f"{self.view.session_state.get('account', 'ChatGPT')} · {verified}\n{self.view.text('saved_session', self.view.tr('Kayıtlı oturum'))}: {saved}\n{transport}"
 
     def render_help(self):
         return self.view.text(
             "login_help",
-            "Kayıtlı oturum: tarayıcı açmadan doğrulayın.\nİlk giriş: Bağlı tarayıcı → giriş → Doğrula.\nVarsayılan tarayıcı, oturumu otomatik aktarmaz.\nÇıkış yalnız uygulamadaki oturumu unutur.",
+            self.view.tr(
+                "Kayıtlı oturum: tarayıcı açmadan doğrulayın.\nİlk giriş: Bağlı tarayıcı → giriş → Doğrula.\nVarsayılan tarayıcı, oturumu otomatik aktarmaz.\nÇıkış yalnız uygulamadaki oturumu unutur."
+            ),
         )
 
     def perform(self, action):
         if self.loading:
             return
         if self.view.session_action is None:
-            self.message = self.view.text("session_unavailable", "Oturum bağlantısı kurulmamış")
+            self.message = self.view.text(
+                "session_unavailable", self.view.tr("Oturum bağlantısı kurulmamış")
+            )
             self.view.app.invalidate()
             return
         key = self.view.account_key
@@ -212,36 +226,41 @@ class SessionDialog:
             or self.view.background_jobs
         ):
             self.message = self.view.text(
-                "wait_operation", "Önce devam eden işlemi tamamlayın veya durdurun"
+                "wait_operation", self.view.tr("Önce devam eden işlemi tamamlayın veya durdurun")
             )
             self.view.app.invalidate()
             return
         self.loading = True
-        self.message = self.view.text("working", "İşlem sürüyor…")
+        self.message = self.view.text("working", self.view.tr("İşlem sürüyor…"))
 
         def success(result):
             self.loading = False
             if self.view.account_key != key:
-                self.message = "Hesap işlemi tamamlandı"
+                self.message = self.view.tr("Hesap işlemi tamamlandı")
                 self.view.app.invalidate()
                 return
             self.view.session_state.update(result)
             if action == "logout":
                 self.view.after_logout()
-                self.message = self.view.text("logged_out", "Uygulamadaki oturum kapatıldı")
+                self.message = self.view.text(
+                    "logged_out", self.view.tr("Uygulamadaki oturum kapatıldı")
+                )
             elif action == "verify":
                 self.view.session_state["authenticated"] = True
                 self.view.refresh_sidebar()
                 self.view.refresh_provider_catalog()
-                self.message = self.view.text("verified", "Oturum doğrulandı")
+                self.message = self.view.text("verified", self.view.tr("Oturum doğrulandı"))
             elif action == "default_browser":
                 self.message = self.view.text(
                     "default_opened",
-                    "Varsayılan tarayıcı açıldı. Oturumu uygulamaya bağlamak için bağlı tarayıcı akışını kullanın.",
+                    self.view.tr(
+                        "Varsayılan tarayıcı açıldı. Oturumu uygulamaya bağlamak için bağlı tarayıcı akışını kullanın."
+                    ),
                 )
             elif action == "connect_browser":
                 self.message = self.view.text(
-                    "finish_login", "Açılan tarayıcıda giriş yapın, sonra Oturumu doğrula'ya basın."
+                    "finish_login",
+                    self.view.tr("Açılan tarayıcıda giriş yapın, sonra Oturumu doğrula'ya basın."),
                 )
             else:
                 self.message = ""
@@ -261,10 +280,14 @@ class SessionDialog:
     def logout(self):
         if not self.confirm_logout:
             self.confirm_logout = True
-            self.buttons["logout"].text = self.view.text("confirm_logout", "Oturumu unut")
+            self.buttons["logout"].text = self.view.text(
+                "confirm_logout", self.view.tr("Oturumu unut")
+            )
             self.message = self.view.text(
                 "logout_confirmation",
-                "Kayıtlı uygulama oturumu unutulacak. Onaylamak için Oturumu unut'a basın.",
+                self.view.tr(
+                    "Kayıtlı uygulama oturumu unutulacak. Onaylamak için Oturumu unut'a basın."
+                ),
             )
             self.view.app.invalidate()
         else:

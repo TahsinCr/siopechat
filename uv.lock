@@ -590,7 +590,7 @@ wheels = [
 
 [[package]]
 name = "siopechat"
-version = "0.0.0"
+version = "1.0b0"
 source = { editable = "." }
 dependencies = [
     { name = "backports-strenum", marker = "python_full_version < '3.11'" },

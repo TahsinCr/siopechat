@@ -52,13 +52,13 @@ def copy_selection(view, cut=False):
         if not native:
             view.app.output.write_raw(clipboard.terminal_sequence(text))
             view.app.output.flush()
-        view.status = "Kopyalandı"
+        view.status = view.tr("Kopyalandı")
         view.app.invalidate()
 
     view._read_in_background(
         lambda: clipboard.copy_text(text), copied, lambda _: copied(False), session_bound=False
     )
-    view.status = "Kopyalandı"
+    view.status = view.tr("Kopyalandı")
     view.app.invalidate()
     return True
 

@@ -1,4 +1,5 @@
-include LICENSE README.md CHANGELOG.md
+include LICENSE README.md README-TR.md README-RU.md CHANGELOG.md
 include siopechat.py siopechat.sh siopechat.command siopechat.bat siopechat.ps1
 recursive-include assets *.png
 recursive-include tests *.py *.cjs
+exclude config.json MEMORY.md README-TR.example.md

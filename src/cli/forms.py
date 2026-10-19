@@ -96,8 +96,13 @@ class Forms:
             ),
         )
         buttons = [
-            Button("Kaydet" if inline_project else "Uygula", handler=save),
-            Button("Vazgeç" if inline_project else "İptal", handler=self.close),
+            Button(
+                self.view.tr("Kaydet") if inline_project else self.view.tr("Uygula"), handler=save
+            ),
+            Button(
+                self.view.tr("Vazgeç") if inline_project else self.view.tr("İptal"),
+                handler=self.close,
+            ),
         ]
         self.container = (
             HSplit(
@@ -130,13 +135,21 @@ class Forms:
             self.close()
             submit()
 
-        self.confirm_buttons = [Button("Evet", handler=accept), Button("Hayır", handler=self.close)]
+        self.confirm_buttons = [
+            Button(self.view.tr("Evet"), handler=accept),
+            Button(self.view.tr("Hayır"), handler=self.close),
+        ]
         keys = KeyBindings()
         keys.add("escape", is_global=True)(lambda _: self.close())
         self.container = Dialog(
             title=title,
             body=HSplit(
-                [Window(content=FormattedTextControl("Kalıcı olarak silinsin mi?"), height=1)],
+                [
+                    Window(
+                        content=FormattedTextControl(self.view.tr("Kalıcı olarak silinsin mi?")),
+                        height=1,
+                    )
+                ],
                 key_bindings=keys,
             ),
             buttons=self.confirm_buttons,

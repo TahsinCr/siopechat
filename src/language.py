@@ -38,3 +38,13 @@ class Catalog:
 
     def translate(self, key: str, locale: str) -> str:
         return self.merged(locale).get(key, key)
+
+
+def literal(messages: dict[str, str], source: str) -> str:
+    """Translate a UI source string while retaining its layout whitespace."""
+    key = source.strip()
+    if not key:
+        return source
+    start = len(source) - len(source.lstrip())
+    end = len(source.rstrip())
+    return source[:start] + messages.get("application.ui." + key, key) + source[end:]

@@ -42,7 +42,7 @@ def workspace_layout(view):
                             width=3,
                         ),
                         text_window(
-                            lambda: view.text("library", "Sohbetler ve projeler"),
+                            lambda: view.text("library", view.tr("Sohbetler ve projeler")),
                             1,
                             "class:sidebar.header",
                         ),
@@ -90,7 +90,7 @@ def workspace_layout(view):
                         lambda: [
                             (
                                 "class:button",
-                                " ↻ Eşitle",
+                                view.tr(" ↻ Eşitle"),
                                 on_click(lambda: view.synchronize("conversation")),
                             )
                         ],
@@ -177,11 +177,13 @@ def workspace_layout(view):
                 view.resume_search,
                 view.resume_list_window,
                 text_window(
-                    lambda: view.text("list_help", "Tıkla veya ↑/↓ ile seç · Enter aç · Esc kapat")
+                    lambda: view.text(
+                        "list_help", view.tr("Tıkla veya ↑/↓ ile seç · Enter aç · Esc kapat")
+                    )
                 ),
             ]
         ),
-        title=lambda: view.text("resume", "Sohbet aç"),
+        title=lambda: view.text("resume", view.tr("Sohbet aç")),
     )
     palette = Frame(
         HSplit(
@@ -189,11 +191,13 @@ def workspace_layout(view):
                 view.palette_search,
                 view.palette_window,
                 text_window(
-                    lambda: view.text("list_help", "Tıkla veya ↑/↓ ile seç · Enter aç · Esc kapat")
+                    lambda: view.text(
+                        "list_help", view.tr("Tıkla veya ↑/↓ ile seç · Enter aç · Esc kapat")
+                    )
                 ),
             ]
         ),
-        title=lambda: view.text(view.palette_mode, "Komutlar · modeller · efor"),
+        title=lambda: view.text(view.palette_mode, view.tr("Komutlar · modeller · efor")),
     )
     return FloatContainer(
         content=content,

@@ -282,7 +282,7 @@ class MessageRenderer:
         if role == "reasoning":
             console.print(
                 Text(
-                    "Düşünme özeti",
+                    self.tokens.get("reasoning_label", "Düşünme özeti"),
                     style=f"{self.tokens.get('reasoning_marker', '#75b5ef')} on {background}",
                 )
             )
@@ -298,7 +298,9 @@ class MessageRenderer:
         elif active:
             console.print(
                 Padding(
-                    Text("Yanıt hazırlanıyor…", style="dim italic"),
+                    Text(
+                        self.tokens.get("waiting_label", "Yanıt hazırlanıyor…"), style="dim italic"
+                    ),
                     (0, 1),
                     style=f"on {background}",
                 )

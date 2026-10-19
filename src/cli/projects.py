@@ -25,7 +25,7 @@ class ProjectPanel:
     def work(self, title, read, success):
         v = self.view
         if self.pending:
-            v.status = "Proje işlemi sürüyor"
+            v.status = self.view.tr("Proje işlemi sürüyor")
             v.app.invalidate()
             return
         self.pending = True
@@ -39,7 +39,7 @@ class ProjectPanel:
 
         def failed(reason):
             self.pending = False
-            v.status = "Proje işlemi: " + str(reason)
+            v.status = self.view.tr("Proje işlemi: ") + str(reason)
             v.app.invalidate()
 
         v._read_in_background(read, completed, failed, session_bound=False)
@@ -52,29 +52,32 @@ class ProjectPanel:
     def create(self):
         accounts = self.accounts()
         if not accounts:
-            self.view.status = "Etkin hesaplarda proje oluşturma desteklenmiyor"
+            self.view.status = self.view.tr("Etkin hesaplarda proje oluşturma desteklenmiyor")
             return
         choices = [(i["key"], self.label(i["key"])) for i in accounts]
         selected = next((key for key, _ in choices if key == self.view.account_key), choices[0][0])
         self.view.forms.open(
-            "Yeni proje · sağlayıcı seçin",
-            [("account", "Sağlayıcı / hesap", selected, choices)],
+            self.view.tr("Yeni proje · sağlayıcı seçin"),
+            [("account", self.view.tr("Sağlayıcı / hesap"), selected, choices)],
             lambda values: lambda: self.create_form(values["account"]),
         )
 
     def create_form(self, key):
         def show(options):
-            fields = [("name", "Proje adı", "", None)]
-            for name, title in (("memory", "Bellek"), ("visibility", "Gizlilik")):
+            fields = [("name", self.view.tr("Proje adı"), "", None)]
+            for name, title in (
+                ("memory", self.view.tr("Bellek")),
+                ("visibility", self.view.tr("Gizlilik")),
+            ):
                 choices = getattr(options, name)
                 if len(choices) > 1:
                     fields.append((name, title, choices[0].id, [(c.id, c.title) for c in choices]))
 
             def submit(values):
                 if not values["name"].strip():
-                    raise ValueError("Proje adı gerekir")
+                    raise ValueError(self.view.tr("Proje adı gerekir"))
                 return lambda: self.work(
-                    "Proje oluşturuluyor…",
+                    self.view.tr("Proje oluşturuluyor…"),
                     lambda: self.view.account_service.create_project(
                         key,
                         values["name"].strip(),
@@ -84,10 +87,10 @@ class ProjectPanel:
                     self.updated,
                 )
 
-            self.view.forms.open("Yeni proje · " + self.label(key), fields, submit)
+            self.view.forms.open(self.view.tr("Yeni proje · ") + self.label(key), fields, submit)
 
         self.work(
-            "Proje seçenekleri okunuyor…",
+            self.view.tr("Proje seçenekleri okunuyor…"),
             lambda: self.view.account_service.project_options(key),
             show,
         )
@@ -108,7 +111,7 @@ class ProjectPanel:
         v = self.view
         value = value or self.selected()
         if not v.account_service or not value:
-            v.status = "Önce bir proje seçin"
+            v.status = self.view.tr("Önce bir proje seçin")
             v.app.invalidate()
             return
         key, _ = origin(value, v.account_key)
@@ -117,7 +120,11 @@ class ProjectPanel:
             service = v.account_service
             return service.project_details(key, value), service.project_options(key, value)
 
-        self.work("Proje seçenekleri okunuyor…", read, lambda result: callback(key, value, *result))
+        self.work(
+            self.view.tr("Proje seçenekleri okunuyor…"),
+            read,
+            lambda result: callback(key, value, *result),
+        )
 
     def edit(self, value=None):
         if value is None:
@@ -127,28 +134,36 @@ class ProjectPanel:
 
         def show(key, value, project, options):
             if self.view.tab_kind != "project" or self.view.current_project.get("id") != value:
-                self.view.status = "Proje bilgileri hazır · düzenlemek için proje sekmesini açın"
+                self.view.status = self.view.tr(
+                    "Proje bilgileri hazır · düzenlemek için proje sekmesini açın"
+                )
                 return
             fields = [
                 (name, title, project.get(name) or "", None)
-                for name, title in (("name", "Proje adı"), ("instructions", "Talimatlar"))
+                for name, title in (
+                    ("name", self.view.tr("Proje adı")),
+                    ("instructions", self.view.tr("Talimatlar")),
+                )
                 if name in options.fields
             ]
             if not fields:
-                self.view.status = "Bu projenin bilgileri bu hesapta düzenlenemiyor"
+                self.view.status = self.view.tr("Bu projenin bilgileri bu hesapta düzenlenemiyor")
                 return
 
             def submit(values):
                 if "name" in values and not values["name"].strip():
-                    raise ValueError("Proje adı gerekir")
+                    raise ValueError(self.view.tr("Proje adı gerekir"))
                 return lambda: self.work(
-                    "Proje kaydediliyor…",
+                    self.view.tr("Proje kaydediliyor…"),
                     lambda: self.view.account_service.change_project(key, value, **values),
                     self.updated,
                 )
 
             self.view.forms.open(
-                "Projeyi düzenle · " + self.label(key), fields, submit, inline_project=value
+                self.view.tr("Projeyi düzenle · ") + self.label(key),
+                fields,
+                submit,
+                inline_project=value,
             )
 
         self.context(show, value)
@@ -156,8 +171,8 @@ class ProjectPanel:
     def add_source(self):
         def show(key, value, project, options):
             if not options.sources:
-                self.view.status = (
-                    options.source_error or "Bu projede eklenebilir kaynak türü bulunamadı"
+                self.view.status = options.source_error or self.view.tr(
+                    "Bu projede eklenebilir kaynak türü bulunamadı"
                 )
                 return
             choices = [(s["id"], s["title"]) for s in options.sources]
@@ -172,35 +187,41 @@ class ProjectPanel:
                     [
                         (
                             "path",
-                            "Dosya yolu · " + (source.get("accept") or "Türü sağlayıcı doğrular"),
+                            self.view.tr("Dosya yolu · ")
+                            + (source.get("accept") or self.view.tr("Türü sağlayıcı doğrular")),
                             "",
                             None,
                         )
                     ]
                     if kind == "file"
                     else (
-                        [("name", "Kaynak adı", "", None), ("text", "Metin", "", None)]
+                        [
+                            ("name", self.view.tr("Kaynak adı"), "", None),
+                            ("text", self.view.tr("Metin"), "", None),
+                        ]
                         if kind == "text"
-                        else [("url", "Kaynak bağlantısı", "", None)]
+                        else [("url", self.view.tr("Kaynak bağlantısı"), "", None)]
                     )
                 )
 
                 def submit(values):
                     if any(not str(v).strip() for v in values.values()):
-                        raise ValueError("Kaynak alanları boş olamaz")
+                        raise ValueError(self.view.tr("Kaynak alanları boş olamaz"))
                     return lambda: self.work(
-                        "Kaynak ekleniyor…",
+                        self.view.tr("Kaynak ekleniyor…"),
                         lambda: self.view.account_service.change_project(
                             key, value, "add_source", kind=kind, **values
                         ),
                         self.updated,
                     )
 
-                self.view.forms.open("Kaynak ekle · " + self.label(key), fields, submit)
+                self.view.forms.open(
+                    self.view.tr("Kaynak ekle · ") + self.label(key), fields, submit
+                )
 
             self.view.forms.open(
-                "Kaynak türü · " + self.label(key),
-                [("kind", "Desteklenen kaynaklar", choices[0][0], choices)],
+                self.view.tr("Kaynak türü · ") + self.label(key),
+                [("kind", self.view.tr("Desteklenen kaynaklar"), choices[0][0], choices)],
                 chosen,
             )
 
@@ -210,7 +231,7 @@ class ProjectPanel:
         def show(key, value, project, options):
             resources = project.get("resources", [])
             if not options.remove_sources or not resources:
-                self.view.status = "Silinebilecek proje kaynağı yok"
+                self.view.status = self.view.tr("Silinebilecek proje kaynağı yok")
                 return
             choices = [(r["id"], r.get("name") or r["id"]) for r in resources]
 
@@ -218,7 +239,7 @@ class ProjectPanel:
                 if values["confirm"] != "remove":
                     return
                 return lambda: self.work(
-                    "Kaynak kaldırılıyor…",
+                    self.view.tr("Kaynak kaldırılıyor…"),
                     lambda: self.view.account_service.change_project(
                         key, value, "remove_source", resource_id=values["resource"]
                     ),
@@ -226,14 +247,17 @@ class ProjectPanel:
                 )
 
             self.view.forms.open(
-                "Kaynak kaldır · " + self.label(key),
+                self.view.tr("Kaynak kaldır · ") + self.label(key),
                 [
-                    ("resource", "Proje kaynağı", choices[0][0], choices),
+                    ("resource", self.view.tr("Proje kaynağı"), choices[0][0], choices),
                     (
                         "confirm",
-                        "Kaynak sağlayıcıdaki projeden de kaldırılır.",
+                        self.view.tr("Kaynak sağlayıcıdaki projeden de kaldırılır."),
                         "cancel",
-                        [("cancel", "İptal"), ("remove", "Kaynağı kaldır")],
+                        [
+                            ("cancel", self.view.tr("İptal")),
+                            ("remove", self.view.tr("Kaynağı kaldır")),
+                        ],
                     ),
                 ],
                 submit,
@@ -256,4 +280,6 @@ class ProjectPanel:
             if v.tab_kind == "project":
                 v.title, v.messages = project["name"], v.project_messages(project)
         v.filter_sidebar()
-        v.status = project.get("cache_warning") or "Proje güncellendi · " + project["name"]
+        v.status = (
+            project.get("cache_warning") or self.view.tr("Proje güncellendi · ") + project["name"]
+        )

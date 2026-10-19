@@ -35,11 +35,11 @@ class SettingsDialog:
         self.message = ""
         self.category = "application"
         self.categories = [
-            ("application", "Genel"),
-            ("providers", "Sağlayıcılar"),
-            ("accounts", "Hesaplar"),
-            ("extensions", "Eklentiler"),
-            ("keybindings", "Kısayollar"),
+            ("application", self.view.tr("Genel")),
+            ("providers", self.view.tr("Sağlayıcılar")),
+            ("accounts", self.view.tr("Hesaplar")),
+            ("extensions", self.view.tr("Eklentiler")),
+            ("keybindings", self.view.tr("Kısayollar")),
         ]
         self.category_index = 0
         self.category_control = BoundedTextControl(
@@ -48,7 +48,7 @@ class SettingsDialog:
             get_cursor_position=lambda: Point(0, 0 if self.compact() else self.category_index * 2),
         )
         self.search = TextArea(
-            height=1, prompt=" Ara  ", multiline=False, style="class:settings.search"
+            height=1, prompt=self.view.tr(" Ara  "), multiline=False, style="class:settings.search"
         )
         self.search.control.focus_on_click = Condition(lambda: True)
         self.search.buffer.on_text_changed += lambda _: self.filter()
@@ -65,8 +65,8 @@ class SettingsDialog:
         )
         self.editor = TextArea(height=1, multiline=False, style="class:settings.editor")
         self.editor.control.focus_on_click = Condition(lambda: True)
-        self.save_button = Button("Kaydet", handler=self.save)
-        self.cancel_button = Button("Kapat", handler=self.close)
+        self.save_button = Button(self.view.tr("Kaydet"), handler=self.save)
+        self.cancel_button = Button(self.view.tr("Kapat"), handler=self.close)
         self.view.session_dialog.close_button = self.cancel_button
         self.keys = KeyBindings()
         self.keys.add("escape")(lambda _: self.close())
@@ -239,13 +239,13 @@ class SettingsDialog:
                 if len(self.view.tabs) == count:
                     return
                 self.view.tab_kind = "settings"
-                self.view.title = self.view.text("settings", "Ayarlar")
+                self.view.title = self.view.text("settings", self.view.tr("Ayarlar"))
                 self.view._save_active_tab()
         self.view.palette_visible = self.view.resume_visible = False
         self.visible = True
-        self.message = self.view.text("loading", "Yükleniyor…")
-        self.save_button.text = self.view.text("save", "Kaydet")
-        self.cancel_button.text = self.view.text("close", "Kapat")
+        self.message = self.view.text("loading", self.view.tr("Yükleniyor…"))
+        self.save_button.text = self.view.text("save", self.view.tr("Kaydet"))
+        self.cancel_button.text = self.view.text("close", self.view.tr("Kapat"))
         self.choose_category(category)
         self.reload()
 
@@ -326,9 +326,9 @@ class SettingsDialog:
                         (
                             "class:settings.enabled" if row["value"] else "class:sidebar.muted",
                             (
-                                " ● " + self.view.text("enabled", "Etkin")
+                                " ● " + self.view.text("enabled", self.view.tr("Etkin"))
                                 if row["value"]
-                                else " ○ " + self.view.text("disabled", "Kapalı")
+                                else " ○ " + self.view.text("disabled", self.view.tr("Kapalı"))
                             )
                             + "\n",
                             on_click(lambda i=i: self.toggle(i)),
@@ -350,23 +350,25 @@ class SettingsDialog:
                         ),
                     ]
                 )
-        return rows or [("class:sidebar.muted", self.view.text("no_results", "Sonuç yok"))]
+        return rows or [
+            ("class:sidebar.muted", self.view.text("no_results", self.view.tr("Sonuç yok")))
+        ]
 
     def render_detail(self):
         row = self.current
         if not row:
             return ""
         descriptions = {
-            "model": "Yeni sohbetlerin varsayılan modeli.",
-            "effort": "Seçili modelin sunduğu düşünme seviyesi.",
-            "language": "Arayüz dili.",
-            "theme": "Arayüz görünümü.",
-            "mouse": "Tıklama ve fare etkileşimi.",
-            "show_reasoning": "Sağlayıcının sunduğu düşünme özetlerini göster.",
-            "enabled": "Eklentinin özelliklerini etkinleştir veya kapat.",
+            "model": self.view.tr("Yeni sohbetlerin varsayılan modeli."),
+            "effort": self.view.tr("Seçili modelin sunduğu düşünme seviyesi."),
+            "language": self.view.tr("Arayüz dili."),
+            "theme": self.view.tr("Arayüz görünümü."),
+            "mouse": self.view.tr("Tıklama ve fare etkileşimi."),
+            "show_reasoning": self.view.tr("Sağlayıcının sunduğu düşünme özetlerini göster."),
+            "enabled": self.view.tr("Eklentinin özelliklerini etkinleştir veya kapat."),
         }
         description = (
-            "Tuş dizisini düzenleyin."
+            self.view.tr("Tuş dizisini düzenleyin.")
             if row["section"] == "keybindings"
             else descriptions.get(row["key"], "")
         )
@@ -395,11 +397,16 @@ class SettingsDialog:
         width = max(8, self.view.terminal_width() - 22)
         value = values[index]
         label = (
-            (self.view.text("enabled", "Etkin") if value else self.view.text("disabled", "Kapalı"))
+            (
+                self.view.text("enabled", self.view.tr("Etkin"))
+                if value
+                else self.view.text("disabled", self.view.tr("Kapalı"))
+            )
             if type(value) is bool
             else labels.get(
                 str(value),
-                str(value) or self.view.text("provider_default", "Sağlayıcı varsayılanı"),
+                str(value)
+                or self.view.text("provider_default", self.view.tr("Sağlayıcı varsayılanı")),
             )
         )
         return [
@@ -446,7 +453,9 @@ class SettingsDialog:
             )
             if row.get("choices") and value not in row["choices"]:
                 raise ValueError(
-                    self.view.text("choose_listed", "Listelenen değerlerden birini seçin")
+                    self.view.text(
+                        "choose_listed", self.view.tr("Listelenen değerlerden birini seçin")
+                    )
                 )
         except ValueError as error:
             self.error(str(error))

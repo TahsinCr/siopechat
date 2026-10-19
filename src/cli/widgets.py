@@ -145,6 +145,9 @@ class SlashCommandCompleter(Completer):
         ("/quit", "quit SiopeChat"),
     )
 
+    def __init__(self, translate=lambda source: source):
+        self.translate = translate
+
     def get_completions(self, document: Any, complete_event: Any) -> Any:
         token = document.text_before_cursor
         if not token.startswith("/") or any(char.isspace() for char in token):
@@ -156,17 +159,20 @@ class SlashCommandCompleter(Completer):
                     command,
                     start_position=-len(token),
                     display=command,
-                    display_meta=description,
+                    display_meta=self.translate(description),
                 )
 
 
 class ComposerPlaceholderProcessor(Processor):
+    def __init__(self, translate=lambda source: source):
+        self.translate = translate
+
     def apply_transformation(self, transformation_input: Any) -> Transformation:
         fragments = transformation_input.fragments
         if transformation_input.document.text or transformation_input.lineno != 0:
             return Transformation(fragments)
         return Transformation(
-            fragments + [("class:placeholder", "Mesaj yazın…")],
+            fragments + [("class:placeholder", self.translate("Mesaj yazın…"))],
             source_to_display=lambda position: position,
             display_to_source=lambda position: 0,
         )

@@ -343,6 +343,7 @@ class SettingsCatalog:
     def rows(self) -> list[dict]:
         config = self.settings.snapshot()
         locale = config["application"]["language"]
+        messages = self.languages.merged(locale)
         rows = [
             {
                 "section": "application",
@@ -357,7 +358,7 @@ class SettingsCatalog:
             {
                 "section": "keybindings",
                 "key": key,
-                "title": self.title(key),
+                "title": messages.get("application.ui." + self.title(key), self.title(key)),
                 "value": value,
             }
             for key, value in sorted(

@@ -135,7 +135,7 @@ def key_bindings(view) -> KeyBindings:
         ):
             control.buffer.reset()
         elif view.active_busy():
-            view.status = "Stopping response…"
+            view.status = view.tr("Stopping response…")
             connection = view.cancel_connection
             if connection is not None:
                 try:
@@ -148,9 +148,9 @@ def key_bindings(view) -> KeyBindings:
                     pass
         elif view.input.text and control is view.input.control:
             view.input.buffer.reset()
-            view.status = "Prompt cleared"
+            view.status = view.tr("Prompt cleared")
         else:
-            view.status = "Use the command palette to quit"
+            view.status = view.tr("Use the command palette to quit")
         view.app.invalidate()
 
     def quit_app(event: Any) -> None:

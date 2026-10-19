@@ -36,11 +36,9 @@ class Workspaces:
 
 def activate(context: ExtensionContext) -> None:
     context.settings(SettingField("enabled", bool, True, "layout.enabled"))
-    for locale in ("en", "tr"):
-        messages = json.loads(
-            (Path(__file__).parent / "languages" / f"{locale}.json").read_text(encoding="utf-8")
-        )
-        context.translations(locale, messages)
+    for bundle in sorted((Path(__file__).parent / "languages").glob("*.json")):
+        messages = json.loads(bundle.read_text(encoding="utf-8"))
+        context.translations(bundle.stem, messages)
     root = context.api.get("paths")
     service = Workspaces(root / "data" / "workspaces.sqlite3")
     context.provide("workspaces", service)

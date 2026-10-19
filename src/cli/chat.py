@@ -253,9 +253,9 @@ class ChatView:
             wrap_lines=True,
             prompt=self.render_prompt,
             dont_extend_height=True,
-            completer=SlashCommandCompleter(),
+            completer=SlashCommandCompleter(self.tr),
             complete_while_typing=True,
-            input_processors=[ComposerPlaceholderProcessor()],
+            input_processors=[ComposerPlaceholderProcessor(self.tr)],
             read_only=Condition(self.editing_project),
             style="class:composer",
             scrollbar=False,
@@ -270,10 +270,12 @@ class ChatView:
         self.resume_search = TextArea(
             height=1,
             multiline=False,
-            prompt="Search: ",
+            prompt=self.tr("Search: "),
         )
         self.resume_search.buffer.on_text_changed += lambda _buffer: self.filter_resume()
-        self.sidebar_search = TextArea(height=1, prompt=" Ara ", style="class:sidebar.search")
+        self.sidebar_search = TextArea(
+            height=1, prompt=self.tr(" Ara "), style="class:sidebar.search"
+        )
         self.sidebar_search.buffer.on_text_changed += lambda _buffer: self.filter_sidebar()
         self.sidebar_control = BoundedTextControl(
             text=self.render_sidebar,
@@ -367,7 +369,7 @@ class ChatView:
 
     def synchronize(self, scope="all"):
         if getattr(self, "_synchronize_pending", False):
-            self.status = "Eşitleme zaten sürüyor"
+            self.status = self.tr("Eşitleme zaten sürüyor")
             return
         if not self.account_service or not hasattr(self.account_service, "synchronize"):
             self.refresh_sidebar()
@@ -375,11 +377,13 @@ class ChatView:
             return
         self._synchronize_pending = True
         key, cid = self.account_key, self.conversation_id
-        self.status = "Eşitleniyor…"
+        self.status = self.tr("Eşitleniyor…")
 
         def finish(error=None):
             self._synchronize_pending = False
-            self.status = "Eşitleme başlatıldı" if error is None else "Eşitleme: " + error
+            self.status = (
+                self.tr("Eşitleme başlatıldı") if error is None else self.tr("Eşitleme: ") + error
+            )
             self.refresh_sidebar()
             if scope == "all":
                 self.refresh_provider_catalog()
@@ -401,7 +405,9 @@ class ChatView:
         self._read_in_background(
             lambda: self.account_service.load(conversation_id, key),
             lambda _: None,
-            lambda reason: setattr(self, "status", "Sohbet senkronize edilemedi: " + reason),
+            lambda reason: setattr(
+                self, "status", self.tr("Sohbet senkronize edilemedi: ") + reason
+            ),
             session_bound=False,
         )
 
@@ -458,7 +464,7 @@ class ChatView:
 
             def failed(reason):
                 self._archive_read_pending = False
-                self.status = "Arşiv okunamadı: " + str(reason)
+                self.status = self.tr("Arşiv okunamadı: ") + str(reason)
                 self.app.invalidate()
 
             self._read_in_background(read, completed, failed, session_bound=False)
@@ -511,9 +517,9 @@ class ChatView:
             key, remote = origin(tab["conversation_id"], tab.get("account_key", self.account_key))
             if archive.deleted(key, "conversation", remote):
                 tab["syncing"] = False
-                tab["load_error"] = "Sağlayıcıdan silinmiş sohbet"
+                tab["load_error"] = self.tr("Sağlayıcıdan silinmiş sohbet")
                 if i == self.active_tab:
-                    self.status = "Bu sohbet sağlayıcıdan silinmiş · yeni sohbet açın"
+                    self.status = self.tr("Bu sohbet sağlayıcıdan silinmiş · yeni sohbet açın")
                 continue
             state = states.get((key, "conversation", remote))
             tab["syncing"] = bool(state and state["state"] == "syncing")
@@ -603,7 +609,7 @@ class ChatView:
             and hasattr(self.account_service, "enabled")
             and not self.account_service.enabled(key.split("/")[0])
         ):
-            self.status = "Sağlayıcı devre dışı · Ayarlar → Sağlayıcılar"
+            self.status = self.tr("Sağlayıcı devre dışı · Ayarlar → Sağlayıcılar")
             self.app.invalidate()
             return
         if (
@@ -639,22 +645,22 @@ class ChatView:
             self.settings_dialog.open("accounts")
 
         self.forms.open(
-            "Hesap ekle",
+            self.tr("Hesap ekle"),
             [
                 (
                     "provider",
-                    "Sağlayıcı",
+                    self.tr("Sağlayıcı"),
                     "chatgpt",
                     [(key, item[0]) for key, item in PROVIDERS.items()],
                 ),
-                ("label", "Hesap adı", "", None),
+                ("label", self.tr("Hesap adı"), "", None),
                 (
                     "browser_account",
-                    "Tarayıcı profili",
+                    self.tr("Tarayıcı profili"),
                     "",
-                    [("", "Ayrı profil (önerilen)")]
+                    [("", self.tr("Ayrı profil (önerilen)"))]
                     + [
-                        (x["key"], "Paylaş: " + x["label"])
+                        (x["key"], self.tr("Paylaş: ") + x["label"])
                         for x in self.account_service.items()
                         if not x.get("browser_account")
                     ],
@@ -672,7 +678,7 @@ class ChatView:
 
         def apply(values):
             if not values["accounts"]:
-                raise ValueError("En az bir hesap seçin")
+                raise ValueError(self.tr("En az bir hesap seçin"))
             self.account_filter = set(values["accounts"])
             self.provider_filter = {
                 a["provider"] for a in accounts if a["key"] in self.account_filter
@@ -681,11 +687,11 @@ class ChatView:
             self.refresh_sidebar()
 
         self.forms.open(
-            "Kütüphane filtresi ve sıralama",
+            self.tr("Kütüphane filtresi ve sıralama"),
             [
                 (
                     "accounts",
-                    "Gösterilecek hesaplar",
+                    self.tr("Gösterilecek hesaplar"),
                     (
                         [
                             (a["key"], f"{a['label']} · {PROVIDERS[a['provider']][0]}")
@@ -699,14 +705,19 @@ class ChatView:
                     ),
                     None,
                 ),
-                ("sort", "Sohbet ve proje sıralaması", self.library_sort, SORT_OPTIONS),
+                (
+                    "sort",
+                    self.tr("Sohbet ve proje sıralaması"),
+                    self.library_sort,
+                    [(key, self.tr(title)) for key, title in SORT_OPTIONS],
+                ),
             ],
             apply,
         )
 
     def delete_record(self, kind="conversation", value=None):
         if not self.account_service:
-            self.status = "Silme için sağlayıcı hesabı gerekli"
+            self.status = self.tr("Silme için sağlayıcı hesabı gerekli")
             return
         if value is None and self.app.layout.current_control is self.sidebar_control:
             self._build_sidebar_rows()
@@ -723,17 +734,21 @@ class ChatView:
                 else self.conversation_id
             )
         if not value:
-            self.status = "Önce silinecek sohbeti veya projeyi seçin"
+            self.status = self.tr("Önce silinecek sohbeti veya projeyi seçin")
             return
         key, _ = origin(value, self.account_key)
         capability = Capability.DELETE if kind == "conversation" else Capability.PROJECT_DELETE
         if capability not in self.account_service.capabilities(key):
-            self.status = "Sağlayıcı bu silme işlemini desteklemiyor"
+            self.status = self.tr("Sağlayıcı bu silme işlemini desteklemiyor")
             return
-        title = "Projeyi ve içindeki sohbetleri sil" if kind == "container" else "Sohbeti sil"
+        title = (
+            self.tr("Projeyi ve içindeki sohbetleri sil")
+            if kind == "container"
+            else self.tr("Sohbeti sil")
+        )
 
         def submit():
-            self.status = "Sağlayıcıdan siliniyor…"
+            self.status = self.tr("Sağlayıcıdan siliniyor…")
 
             def success(result):
                 removed = set(result["removed"])
@@ -758,18 +773,18 @@ class ChatView:
                             conversation_id=None,
                             messages=[],
                             project={},
-                            title="Yeni sohbet",
+                            title=self.tr("Yeni sohbet"),
                             syncing=False,
                         )
                 self._restore_active_tab(focus=False)
                 self.filter_sidebar()
-                self.status = "Sağlayıcıdan silindi"
+                self.status = self.tr("Sağlayıcıdan silindi")
                 self.app.invalidate()
 
             self._read_in_background(
                 lambda: self.account_service.delete(value, key, kind),
                 success,
-                lambda reason: setattr(self, "status", "Silme işlemi: " + reason),
+                lambda reason: setattr(self, "status", self.tr("Silme işlemi: ") + reason),
                 session_bound=False,
             )
 
@@ -780,23 +795,23 @@ class ChatView:
 
     def open_attachment(self):
         if self.attach_file_callback is None:
-            self.status = "Bu sağlayıcıda dosya ekleme kullanılamıyor"
+            self.status = self.tr("Bu sağlayıcıda dosya ekleme kullanılamıyor")
             self.app.invalidate()
             return
         callback = self.attach_file_callback
 
         def submit(values):
             if self.uploading_image or self.loading_conversation or self.busy:
-                raise ValueError("Devam eden işlem tamamlanınca dosya ekleyin")
+                raise ValueError(self.tr("Devam eden işlem tamamlanınca dosya ekleyin"))
             self.uploading_image = True
             self.background_jobs += 1
-            self.status = "Dosya hazırlanıyor…"
+            self.status = self.tr("Dosya hazırlanıyor…")
 
             def success(attachment):
                 self.uploading_image = False
                 self.background_jobs -= 1
                 self.pending_attachments.append(attachment)
-                self.status = "Dosya eklendi · " + attachment.get("name", "")
+                self.status = self.tr("Dosya eklendi · ") + attachment.get("name", "")
                 self.app.invalidate()
 
             def failure(reason):
@@ -808,8 +823,8 @@ class ChatView:
             self._read_in_background(lambda: callback(values["path"]), success, failure)
 
         self.forms.open(
-            "Dosya ekle",
-            [("path", "Dosya yolu · Tab ile tamamla · en fazla 20 MiB", "", None)],
+            self.tr("Dosya ekle"),
+            [("path", self.tr("Dosya yolu · Tab ile tamamla · en fazla 20 MiB"), "", None)],
             submit,
         )
 
@@ -839,6 +854,11 @@ class ChatView:
             "loading_started": self.loading_started,
         }
 
+    def tr(self, source):
+        from language import literal
+
+        return literal(self.translations, source)
+
     def text(self, key, fallback):
         return self.translations.get(f"application.{key}", fallback)
 
@@ -859,7 +879,9 @@ class ChatView:
                     continue
                 representative = self.active_tab if self.active_tab in members else members[0]
                 group_titles[representative] = " ◫ ".join(
-                    self.title if i == self.active_tab else self.tabs[i].get("title", "Sohbet")
+                    self.title
+                    if i == self.active_tab
+                    else self.tabs[i].get("title", self.tr("Sohbet"))
                     for i in members
                 )
                 entries = [i for i in entries if i not in members or i == representative]
@@ -873,7 +895,7 @@ class ChatView:
             )
             tab = self.tabs[i]
             title = group_titles.get(i) or (
-                self.title if i == self.active_tab else tab.get("title", "Sohbet")
+                self.title if i == self.active_tab else tab.get("title", self.tr("Sohbet"))
             )
             marker = (
                 "● "
@@ -935,21 +957,21 @@ class ChatView:
             [
                 (
                     "class:button",
-                    " ✎ Düzenle ",
+                    self.tr(" ✎ Düzenle "),
                     on_click(lambda: self.project_panel.edit(self.current_project.get("id"))),
                 ),
-                ("class:button", " ＋ Kaynak ", on_click(self.project_panel.add_source)),
-                ("class:button", " − Kaynak ", on_click(self.project_panel.remove_source)),
+                ("class:button", self.tr(" ＋ Kaynak "), on_click(self.project_panel.add_source)),
+                ("class:button", self.tr(" − Kaynak "), on_click(self.project_panel.remove_source)),
                 (
                     "class:button",
-                    " Sil ",
+                    self.tr(" Sil "),
                     on_click(
                         lambda: self.delete_record("container", self.current_project.get("id"))
                     ),
                 ),
                 (
                     "class:button",
-                    " ↻ Eşitle ",
+                    self.tr(" ↻ Eşitle "),
                     on_click(self.show_project_details),
                 ),
             ]
@@ -957,41 +979,44 @@ class ChatView:
 
     def render_chat_header(self):
         if self.tab_kind == "settings":
-            return FormattedText([("class:settings.title", " Ayarlar")])
+            return FormattedText([("class:settings.title", self.tr(" Ayarlar"))])
         if self.editing_project():
             return FormattedText([])
         selected = next((m for m in self.catalog.chat_models if m.id == self.model), None)
         model = (
             (selected.chat_title or selected.title)
             if selected
-            else self.model or ("Yükleniyor…" if self.catalog_loading else "Seçilmedi")
+            else self.model
+            or (self.tr("Yükleniyor…") if self.catalog_loading else self.tr("Seçilmedi"))
         )
         effort = (
             next(
                 (choice.title for choice in selected.efforts if choice.id == self.effort),
-                self.effort or "Sağlayıcı varsayılanı",
+                self.effort or self.tr("Sağlayıcı varsayılanı"),
             )
             if selected
-            else self.effort or "Sağlayıcı varsayılanı"
+            else self.effort or self.tr("Sağlayıcı varsayılanı")
         )
         if selected and not selected.efforts:
             effort = (
-                "Okunamadı · varsayılan"
+                self.tr("Okunamadı · varsayılan")
                 if selected.metadata.get("effort_error")
-                else "Desteklenmiyor"
+                else self.tr("Desteklenmiyor")
             )
-        model_text = f" Model: {model} ▾ "
-        effort_text = f" Efor: {effort} ▾ "
+        model_text = self.tr(" Model: {0} ▾ ").format(model)
+        effort_text = self.tr(" Efor: {0} ▾ ").format(effort)
         project_text = (
-            " Proje: " + fit_text(self.current_project.get("name") or "Projesiz", 22) + " ▾ "
+            self.tr(" Proje: ")
+            + fit_text(self.current_project.get("name") or self.tr("Projesiz"), 22)
+            + " ▾ "
         )
         temporary_supported = Capability.TEMPORARY in self.provider_features
         temporary_text = (
-            " Geçici: "
+            self.tr(" Geçici: ")
             + (
-                ("Açık ●" if self.temporary else "Kapalı ○")
+                (self.tr("Açık ●") if self.temporary else self.tr("Kapalı ○"))
                 if temporary_supported
-                else "Desteklenmiyor"
+                else self.tr("Desteklenmiyor")
             )
             + " "
         )
@@ -1027,25 +1052,29 @@ class ChatView:
 
     def toggle_temporary_chat(self):
         if not self.temporary and Capability.TEMPORARY not in self.provider_features:
-            self.status = "Bu sağlayıcı geçici sohbeti desteklemiyor"
+            self.status = self.tr("Bu sağlayıcı geçici sohbeti desteklemiyor")
         elif self.busy or self.loading_conversation or self.background_jobs:
-            self.status = "Devam eden işlem tamamlandıktan sonra geçici modu değiştirin"
+            self.status = self.tr("Devam eden işlem tamamlandıktan sonra geçici modu değiştirin")
         elif self.conversation_id or self.messages:
-            self.status = "Geçici mod yalnız ilk mesajdan önce değiştirilebilir · yeni sohbet açın"
+            self.status = self.tr(
+                "Geçici mod yalnız ilk mesajdan önce değiştirilebilir · yeni sohbet açın"
+            )
         else:
             self.temporary = not self.temporary
             if self.temporary:
                 self.current_project = {}
-            self.title = "Geçici sohbet" if self.temporary else "Yeni sohbet"
+            self.title = self.tr("Geçici sohbet") if self.temporary else self.tr("Yeni sohbet")
             self.status = (
-                "Geçici sohbet · yerel kayıt kapalı" if self.temporary else "Normal sohbet"
+                self.tr("Geçici sohbet · yerel kayıt kapalı")
+                if self.temporary
+                else self.tr("Normal sohbet")
             )
             self._save_active_tab()
         self.app.invalidate()
 
     def new_temporary_chat(self):
         if self.account_service and Capability.TEMPORARY not in self.provider_features:
-            self.status = "Bu sağlayıcı geçici sohbeti desteklemiyor"
+            self.status = self.tr("Bu sağlayıcı geçici sohbeti desteklemiyor")
             self.app.invalidate()
             return
         count = len(self.tabs)
@@ -1054,8 +1083,8 @@ class ChatView:
             return
         self.temporary = True
         self.current_project = {}
-        self.title = "Geçici sohbet"
-        self.status = "Geçici sohbet · yerel kayıt kapalı"
+        self.title = self.tr("Geçici sohbet")
+        self.status = self.tr("Geçici sohbet · yerel kayıt kapalı")
         self._save_active_tab()
         self.app.invalidate()
 
@@ -1070,8 +1099,8 @@ class ChatView:
         self.palette_items = [
             {
                 "id": "project.select:",
-                "title": "Projesiz sohbet",
-                "detail": "Projeden çıkar / projesiz başlat",
+                "title": self.tr("Projesiz sohbet"),
+                "detail": self.tr("Projeden çıkar / projesiz başlat"),
             }
         ] + [
             {
@@ -1084,18 +1113,22 @@ class ChatView:
                 "title": item.get("name") or project_id,
                 "detail": origin(project_id, self.account_key)[0]
                 if purpose in ("edit", "delete")
-                else "Sohbeti taşı / yeni sohbete bağla",
+                else self.tr("Sohbeti taşı / yeni sohbete bağla"),
             }
             for project_id, item in self.project_items.items()
             if purpose in ("edit", "delete")
             or origin(project_id, self.account_key)[0] == self.account_key
         ]
         self.palette_items.append(
-            {"id": "command.temporary", "title": "Yeni geçici sohbet", "detail": "Yerel kayıt yok"}
+            {
+                "id": "command.temporary",
+                "title": self.tr("Yeni geçici sohbet"),
+                "detail": self.tr("Yerel kayıt yok"),
+            }
         )
         if self.project_cursor:
             self.palette_items.append(
-                {"id": "project.more", "title": "Daha fazla proje…", "detail": ""}
+                {"id": "project.more", "title": self.tr("Daha fazla proje…"), "detail": ""}
             )
         if purpose in ("edit", "delete"):
             self.palette_items = [
@@ -1110,45 +1143,51 @@ class ChatView:
 
     def choose_project(self, project_id):
         if project_id and project_id not in self.project_items:
-            self.status = "Listeden erişilebilir bir proje seçin"
+            self.status = self.tr("Listeden erişilebilir bir proje seçin")
             self.app.invalidate()
             return
         if self.temporary:
-            self.status = "Geçici sohbet bir projeye bağlanamaz"
+            self.status = self.tr("Geçici sohbet bir projeye bağlanamaz")
             self.app.invalidate()
             return
         if self.busy or self.loading_conversation or self.background_jobs:
-            self.status = "Devam eden işlem tamamlandıktan sonra proje değiştirin"
+            self.status = self.tr("Devam eden işlem tamamlandıktan sonra proje değiştirin")
             self.app.invalidate()
             return
         if self.tab_kind != "chat":
-            self.status = "Önce bir sohbet sekmesi seçin"
+            self.status = self.tr("Önce bir sohbet sekmesi seçin")
             self.app.invalidate()
             return
         project = dict(self.project_items[project_id]) if project_id else {}
         if project_id and origin(project_id, self.account_key)[0] != self.account_key:
-            self.status = "Proje başka bir sağlayıcı hesabına ait; önce o hesapta sohbet açın"
+            self.status = self.tr(
+                "Proje başka bir sağlayıcı hesabına ait; önce o hesapta sohbet açın"
+            )
             self.app.invalidate()
             return
         if project.get("metadata", {}).get("read_only") and not (
             project.get("metadata", {}).get("supports_chat")
             or (self.provider_id == "gemini" and project.get("kind") == "notebook")
         ):
-            self.status = "Gemini defteri şu anda salt okunur · F9 ile ayrıntıları açın"
+            self.status = self.tr("Gemini defteri şu anda salt okunur · F9 ile ayrıntıları açın")
             self.app.invalidate()
             return
         if not self.conversation_id:
             self.current_project = project
             self._save_active_tab()
-            self.status = "Yeni sohbet · " + (project.get("name") or "Projesiz")
+            self.status = self.tr("Yeni sohbet · ") + (project.get("name") or self.tr("Projesiz"))
             self.app.invalidate()
             return
         if project_id == (self.current_project or {}).get("id"):
-            self.status = "Sohbet zaten bu projede" if project_id else "Sohbet zaten projesiz"
+            self.status = (
+                self.tr("Sohbet zaten bu projede")
+                if project_id
+                else self.tr("Sohbet zaten projesiz")
+            )
             self.app.invalidate()
             return
         if self.move_conversation is None:
-            self.status = "Sağlayıcı bu sohbeti taşımayı desteklemiyor"
+            self.status = self.tr("Sağlayıcı bu sohbeti taşımayı desteklemiyor")
             self.app.invalidate()
             return
         remote_id = self.conversation_id
@@ -1156,7 +1195,7 @@ class ChatView:
         target_tab["project_changing"] = True
         move = self.move_conversation
         self.background_jobs += 1
-        self.status = "Proje değiştiriliyor…"
+        self.status = self.tr("Proje değiştiriliyor…")
         self.app.invalidate()
 
         def completed(_result):
@@ -1176,13 +1215,13 @@ class ChatView:
                         project=dict(project),
                     )
             self.filter_sidebar()
-            self.status = "Sohbet · " + (project.get("name") or "Projesiz")
+            self.status = self.tr("Sohbet · ") + (project.get("name") or self.tr("Projesiz"))
             self.app.invalidate()
 
         def failed(reason):
             self.background_jobs -= 1
             target_tab["project_changing"] = False
-            self.status = "Proje değiştirilemedi: " + str(reason)
+            self.status = self.tr("Proje değiştirilemedi: ") + str(reason)
             self.app.invalidate()
 
         self._read_in_background(
@@ -1204,13 +1243,23 @@ class ChatView:
     def render_scrollbar(self):
         return FormattedText(
             [
-                ("class:button", " ↑ Önceki ", on_click(lambda: self.scroll_transcript(-1))),
-                ("class:button", " ↓ Sonraki ", on_click(lambda: self.scroll_transcript(1))),
-                ("class:button", " ⇣ Son mesaja git ", on_click(self.scroll_bottom)),
+                (
+                    "class:button",
+                    self.tr(" ↑ Önceki "),
+                    on_click(lambda: self.scroll_transcript(-1)),
+                ),
+                (
+                    "class:button",
+                    self.tr(" ↓ Sonraki "),
+                    on_click(lambda: self.scroll_transcript(1)),
+                ),
+                ("class:button", self.tr(" ⇣ Son mesaja git "), on_click(self.scroll_bottom)),
                 (
                     "class:help",
-                    " · Tekerlek / PgUp / PgDn · "
-                    + ("Canlı takip" if self.follow_output else "Geçmiş okunuyor"),
+                    self.tr(" · Tekerlek / PgUp / PgDn · ")
+                    + (
+                        self.tr("Canlı takip") if self.follow_output else self.tr("Geçmiş okunuyor")
+                    ),
                 ),
             ]
         )
@@ -1220,7 +1269,7 @@ class ChatView:
         controls = [
             (
                 "class:button" if self.conversation_id else "class:sidebar.muted",
-                " × " if compact else " Sil ",
+                " × " if compact else self.tr(" Sil "),
                 on_click(
                     lambda: (
                         self.delete_record(value=self.conversation_id)
@@ -1234,7 +1283,7 @@ class ChatView:
             controls.append(
                 (
                     "class:button",
-                    " ＋ " if compact else " ＋ Dosya ",
+                    " ＋ " if compact else self.tr(" ＋ Dosya "),
                     on_click(self.open_attachment),
                 )
             )
@@ -1248,22 +1297,35 @@ class ChatView:
             )
         if self.layout_enabled:
             controls.append(
-                ("class:button", " ◫ " if compact else " ◫ Böl ", on_click(self.begin_split))
+                (
+                    "class:button",
+                    " ◫ " if compact else self.tr(" ◫ Böl "),
+                    on_click(self.begin_split),
+                )
             )
         if not self.follow_output:
             controls.append(("class:button", " ↓ ", on_click(self.scroll_bottom)))
         controls.append(
-            ("class:button", " ↑ " if compact else " Gönder ↑ ", on_click(self.submit_prompt))
+            (
+                "class:button",
+                " ↑ " if compact else self.tr(" Gönder ↑ "),
+                on_click(self.submit_prompt),
+            )
         )
         used = sum(get_cwidth(f[1]) for f in controls)
         return FormattedText([("", " " * max(0, self.main_width() - used))] + controls)
 
     def render_footer(self):
         controls = [
-            (f" {self.shortcut('command.help')} Yardım ", lambda: self.handle_command("/help")),
-            (" ⚙ " + self.text("settings", "Ayarlar") + " ", self.settings_dialog.open),
             (
-                " ● Hesaplar " if self.session_state.get("authenticated") else " ○ Hesaplar ",
+                self.tr(" {0} Yardım ").format(self.shortcut("command.help")),
+                lambda: self.handle_command("/help"),
+            ),
+            (" ⚙ " + self.text("settings", self.tr("Ayarlar")) + " ", self.settings_dialog.open),
+            (
+                self.tr(" ● Hesaplar ")
+                if self.session_state.get("authenticated")
+                else self.tr(" ○ Hesaplar "),
                 self.session_dialog.open,
             ),
         ]
@@ -1291,7 +1353,7 @@ class ChatView:
 
     def settings_rows(self):
         if self.settings_rows_callback is None:
-            raise ValueError("Ayar bağlantısı kurulmamış")
+            raise ValueError(self.tr("Ayar bağlantısı kurulmamış"))
         rows = self.settings_rows_callback()
         for row in rows:
             if row["section"] == "application" and row["key"] == "model":
@@ -1314,6 +1376,9 @@ class ChatView:
         if self.layout_enabled and self.layout_controller is None and self.layout_factory:
             self.layout_controller = self.layout_factory(self)
         self.translations = preferences.get("translations", self.translations)
+        self.resume_search.prompt = self.tr("Search: ")
+        self.sidebar_search.prompt = self.tr(" Ara ")
+        self.settings_dialog.search.prompt = self.tr(" Ara  ")
         self.keybindings = dict(DEFAULT_KEYBINDINGS) | config.get("keybindings", {})
         self.bindings = key_bindings(self)
         self.app.key_bindings = self.bindings
@@ -1328,6 +1393,8 @@ class ChatView:
             else application.get("effort", self.effort_preference)
         )
         previous = getattr(self, "application_preferences", {})
+        if not previous and not self.conversation_id and self.title == "New conversation":
+            self.title = self.tr("New conversation")
         self.application_preferences = dict(application)
         self.default_model_preference = application.get("model", "")
         requested = (
@@ -1347,16 +1414,20 @@ class ChatView:
             self.effort = self.catalog.effort(self.model, self.effort_preference)
             self._save_active_tab()
         tokens = preferences.get("tokens", {})
+        render_labels = {
+            "reasoning_label": self.tr("Düşünme özeti"),
+            "waiting_label": self.tr("Yanıt hazırlanıyor…"),
+        }
         try:
             self.app.style = terminal_style(tokens)
-            self.renderer.configure(tokens)
+            self.renderer.configure(dict(tokens, **render_labels))
             self.theme_options = tokens.get("options", {})
             self._transcript_signature = None
         except Exception:
             self.app.style = Style.from_dict(DEFAULT_TERMINAL_STYLE)
-            self.renderer.configure({})
+            self.renderer.configure(render_labels)
             self.theme_options = {}
-            self.status = "Tema stilleri geçersiz; varsayılan görünüm kullanılıyor"
+            self.status = self.tr("Tema stilleri geçersiz; varsayılan görünüm kullanılıyor")
         if (
             self.account_service
             and hasattr(self.account_service, "enabled")
@@ -1369,8 +1440,8 @@ class ChatView:
                 self.restore_account_preference()
                 self._save_active_tab()
             self.refresh_sidebar()
-        self.settings_dialog.save_button.text = self.text("save", "Kaydet")
-        self.settings_dialog.cancel_button.text = self.text("close", "Kapat")
+        self.settings_dialog.save_button.text = self.text("save", self.tr("Kaydet"))
+        self.settings_dialog.cancel_button.text = self.text("close", self.tr("Kapat"))
         self.app.invalidate()
 
     def after_logout(self):
@@ -1399,7 +1470,9 @@ class ChatView:
         self.project_chat_errors.clear()
         self.history_cursor = self.project_cursor = None
         self.history_loading = False
+        render_tokens = dict(self.renderer.tokens)
         self.renderer = MessageRenderer()
+        self.renderer.configure(render_tokens)
         self._selection_render_key = None
         self.message_selection = False
         self.selected_message = 0
@@ -1413,7 +1486,7 @@ class ChatView:
         self.resume_loading = False
         self.sidebar_rows = []
         self.conversation_id = None
-        self.title = "New conversation"
+        self.title = self.tr("New conversation")
         self.messages = []
         self.current_project = {}
         self.temporary = False
@@ -1421,11 +1494,11 @@ class ChatView:
         self.input.text = ""
         settings_open = self.settings_dialog.visible
         self.tab_kind = "settings" if settings_open else "chat"
-        self.title = "Ayarlar" if settings_open else "New conversation"
+        self.title = self.tr("Ayarlar") if settings_open else self.tr("New conversation")
         self.tabs = retained_tabs + [dict(self._new_tab_state(), tab_id=uuid.uuid4().hex)]
         self.active_tab = len(self.tabs) - 1
         self.session_state = {"authenticated": False, "saved_snapshot": False}
-        self.status = "Oturum kapatıldı · F12 ile giriş yapın"
+        self.status = self.tr("Oturum kapatıldı · F12 ile giriş yapın")
         self.app.invalidate()
 
     def shortcut(self, action_id: str) -> str:
@@ -1451,7 +1524,9 @@ class ChatView:
             [
                 (
                     "class:help",
-                    f" ↑↓ gezin · Enter aç · Space ±\n {self.shortcut('ui.search')} ara · {self.shortcut('ui.toggle_sidebar')} gizle",
+                    self.tr(" ↑↓ gezin · Enter aç · Space ±\n {0} ara · {1} gizle").format(
+                        self.shortcut("ui.search"), self.shortcut("ui.toggle_sidebar")
+                    ),
                 )
             ]
         )
@@ -1594,7 +1669,7 @@ class ChatView:
             {
                 "kind": "section",
                 "id": "projects",
-                "title": "Projeler",
+                "title": self.tr("Projeler"),
                 "count": len(projects),
                 "collapsed": "section:projects" in self.sidebar_collapsed,
             }
@@ -1614,7 +1689,7 @@ class ChatView:
                     remote.get("name")
                     or (items[0].get("project_name") if items else None)
                     or project_meta.get("name")
-                    or "Proje"
+                    or self.tr("Proje")
                 )
                 visible_items = [item for item in items if matches(item)]
                 if query and query in project_name.casefold():
@@ -1635,7 +1710,7 @@ class ChatView:
                 )
                 if not collapsed:
                     if project_id in self.project_chats_loading:
-                        rows.append({"kind": "message", "title": "Sohbetler yükleniyor…"})
+                        rows.append({"kind": "message", "title": self.tr("Sohbetler yükleniyor…")})
                     if project_id in self.project_chat_errors:
                         rows.append(
                             {"kind": "message", "title": self.project_chat_errors[project_id]}
@@ -1646,22 +1721,24 @@ class ChatView:
                             {
                                 "kind": "project_more",
                                 "id": project_id,
-                                "title": "Daha fazla sohbet…",
+                                "title": self.tr("Daha fazla sohbet…"),
                             }
                         )
             if not projects:
                 rows.append(
                     {
                         "kind": "message",
-                        "title": "Projeler yükleniyor…"
+                        "title": self.tr("Projeler yükleniyor…")
                         if self.projects_loading
-                        else self.project_error or "Henüz proje yok",
+                        else self.project_error or self.tr("Henüz proje yok"),
                     }
                 )
             elif self.project_error:
-                rows.append({"kind": "message", "title": f"Hata: {self.project_error}"})
+                rows.append(
+                    {"kind": "message", "title": self.tr("Hata: {0}").format(self.project_error)}
+                )
             if self.project_cursor:
-                rows.append({"kind": "projects_more", "title": "Daha fazla proje…"})
+                rows.append({"kind": "projects_more", "title": self.tr("Daha fazla proje…")})
 
         visible_chats = sort_records(
             [item for item in unassigned if matches(item)], self.library_sort
@@ -1670,7 +1747,7 @@ class ChatView:
             {
                 "kind": "section",
                 "id": "chats",
-                "title": "Sohbetler",
+                "title": self.tr("Sohbetler"),
                 "count": len(unassigned),
                 "collapsed": "section:chats" in self.sidebar_collapsed,
             }
@@ -1680,7 +1757,7 @@ class ChatView:
                 rows.append(
                     {
                         "kind": "message",
-                        "title": f"Hata: {self.sidebar_error[:80]}",
+                        "title": self.tr("Hata: {0}").format(self.sidebar_error[:80]),
                     }
                 )
             rows.extend(self._chat_row(item) for item in visible_chats)
@@ -1688,13 +1765,13 @@ class ChatView:
                 rows.append(
                     {
                         "kind": "history_more",
-                        "title": "Yükleniyor…"
+                        "title": self.tr("Yükleniyor…")
                         if self.history_loading
-                        else "Daha eski sohbetleri yükle…",
+                        else self.tr("Daha eski sohbetleri yükle…"),
                     }
                 )
             if not visible_chats and unassigned:
-                rows.append({"kind": "message", "title": "Aramayla eşleşen sohbet yok"})
+                rows.append({"kind": "message", "title": self.tr("Aramayla eşleşen sohbet yok")})
 
         layout_start = len(rows)
         visible_workspaces = [item for item in workspaces if matches(item)]
@@ -1702,7 +1779,7 @@ class ChatView:
             {
                 "kind": "section",
                 "id": "layouts",
-                "title": "Düzenler",
+                "title": self.tr("Düzenler"),
                 "count": len(workspaces),
                 "collapsed": "section:layouts" in self.sidebar_collapsed,
             }
@@ -1712,14 +1789,14 @@ class ChatView:
                 {
                     "kind": "workspace",
                     "id": item.get("id"),
-                    "title": str(item.get("name") or "Adsız çalışma alanı"),
+                    "title": str(item.get("name") or self.tr("Adsız çalışma alanı")),
                 }
                 for item in visible_workspaces
             )
             if self.workspace_error:
-                rows.append({"kind": "message", "title": "Düzen eklentisi kullanılamıyor"})
+                rows.append({"kind": "message", "title": self.tr("Düzen eklentisi kullanılamıyor")})
             elif not workspaces:
-                rows.append({"kind": "message", "title": "Henüz düzen yok"})
+                rows.append({"kind": "message", "title": self.tr("Henüz düzen yok")})
         if not getattr(self, "layout_enabled", True):
             rows = rows[:layout_start]
         if self.account_service and not projects and self.provider_id == "gemini":
@@ -1732,13 +1809,12 @@ class ChatView:
         self.sidebar_index = min(max(0, self.sidebar_index), max(0, len(rows) - 1))
         self.sidebar_index = min(self.sidebar_index, max(0, len(rows) - 1))
 
-    @staticmethod
-    def _chat_row(item: dict[str, Any], nested: bool = False) -> dict[str, Any]:
+    def _chat_row(self, item: dict[str, Any], nested: bool = False) -> dict[str, Any]:
         return {
             "kind": "chat",
             "id": item.get("id"),
             "project_id": item.get("project_id"),
-            "title": str(item.get("title") or "Adsız sohbet"),
+            "title": str(item.get("title") or self.tr("Adsız sohbet")),
             "provider_id": item.get("provider_id") or origin(item.get("id"))[0].split("/")[0],
             "nested": nested,
         }
@@ -1754,7 +1830,7 @@ class ChatView:
         if not self.sidebar_visible:
             self.sidebar_visible = True
         self.app.layout.focus(self.sidebar_control)
-        self.status = "Sohbetler"
+        self.status = self.tr("Sohbetler")
         self.app.invalidate()
 
     def toggle_sidebar_group(self) -> None:
@@ -1835,7 +1911,7 @@ class ChatView:
                 ]
                 cursor = page.get("cursor") if page is not None else None
                 if page and page.get("errors"):
-                    partial_error = "Yenilenemeyen hesaplar: " + ", ".join(page["errors"])
+                    partial_error = self.tr("Yenilenemeyen hesaplar: ") + ", ".join(page["errors"])
                     failed = set(page.get("failed_accounts", []))
                     conversations.extend(
                         item
@@ -1878,7 +1954,9 @@ class ChatView:
                 self.workspace_error = workspace_error
                 self.sidebar_loading = False
                 if sidebar_error or workspace_error or partial_error:
-                    self.status = partial_error or "Sol panel yenilenemedi; son kayıtlar korunuyor"
+                    self.status = partial_error or self.tr(
+                        "Sol panel yenilenemedi; son kayıtlar korunuyor"
+                    )
                 self.filter_sidebar()
                 if getattr(self, "sidebar_refresh_pending", False):
                     self.sidebar_refresh_pending = False
@@ -1945,7 +2023,7 @@ class ChatView:
             if epoch != self.session_epoch:
                 return
             if not isinstance(catalog, ModelCatalog):
-                failure("Sağlayıcı model kataloğu geçersiz")
+                failure(self.tr("Sağlayıcı model kataloğu geçersiz"))
                 return
             self._account_catalogs[key] = catalog
             if self.account_key == key:
@@ -1977,7 +2055,7 @@ class ChatView:
             self.effort = tab.get("effort")
             self.last_response_model = tab.get("response_model")
             if not self.active_busy():
-                self.status = f"{len(catalog.chat_models)} model · hazır"
+                self.status = self.tr("{0} model · hazır").format(len(catalog.chat_models))
             if self.palette_visible and self.palette_mode in ("models", "effort"):
                 query = self.palette_search.text
                 self.open_palette(self.palette_mode)
@@ -1988,7 +2066,9 @@ class ChatView:
             finish()
             if epoch == self.session_epoch and self.account_key == key:
                 self.catalog_error = reason
-                self.status = f"Model kataloğu alınamadı: {reason} · F10 yeniden dene"
+                self.status = self.tr("Model kataloğu alınamadı: {0} · F10 yeniden dene").format(
+                    reason
+                )
             self.app.invalidate()
 
         self._read_in_background(callback, success, failure, session_bound=False)
@@ -2016,12 +2096,14 @@ class ChatView:
 
     def select_model(self, model_id: str) -> None:
         if self.tabs[self.active_tab].get("busy"):
-            self.status = "Yanıt tamamlanınca bu sohbetin modelini değiştirebilirsiniz"
+            self.status = self.tr("Yanıt tamamlanınca bu sohbetin modelini değiştirebilirsiniz")
             self.app.invalidate()
             return
         selected = next((m for m in self.catalog.chat_models if m.id == model_id), None)
         if selected is None:
-            self.status = "Bu model normal sohbet kataloğunda yok · F10 yenile · /model ile seçin"
+            self.status = self.tr(
+                "Bu model normal sohbet kataloğunda yok · F10 yenile · /model ile seçin"
+            )
         else:
             self.model = selected.id
             self.effort = (
@@ -2031,25 +2113,30 @@ class ChatView:
             )
             self.remember_selection()
             self._save_active_tab()
-            self.status = f"Model: {selected.chat_title or selected.title} · efor: {self.effort or 'sağlayıcı varsayılanı'}"
+            self.status = self.tr("Model: {0} · efor: {1}").format(
+                selected.chat_title or selected.title,
+                self.effort or self.tr("sağlayıcı varsayılanı"),
+            )
         self.app.invalidate()
 
     def select_effort(self, effort: str | None) -> None:
         if self.tabs[self.active_tab].get("busy"):
-            self.status = "Yanıt tamamlanınca bu sohbetin eforunu değiştirebilirsiniz"
+            self.status = self.tr("Yanıt tamamlanınca bu sohbetin eforunu değiştirebilirsiniz")
             self.app.invalidate()
             return
         selected = next((m for m in self.catalog.chat_models if m.id == self.model), None)
         if effort is not None and (
             selected is None or effort not in {e.id for e in selected.efforts}
         ):
-            self.status = "Bu efor seçili modelin kataloğunda yok · /effort ile seçenekleri görün"
+            self.status = self.tr(
+                "Bu efor seçili modelin kataloğunda yok · /effort ile seçenekleri görün"
+            )
         else:
             self.effort = effort
             self.effort_preference = effort or ""
             self.remember_selection()
             self._save_active_tab()
-            self.status = f"Efor: {effort or 'sağlayıcı varsayılanı'}"
+            self.status = self.tr("Efor: {0}").format(effort or self.tr("sağlayıcı varsayılanı"))
         self.app.invalidate()
 
     def refresh_projects(self, more: bool = False) -> None:
@@ -2084,11 +2171,11 @@ class ChatView:
             if epoch != self.session_epoch or self.account_key != account_key:
                 return
             if not isinstance(result, dict) or not isinstance(result.get("items"), list):
-                failure("Proje listesi geçersiz")
+                failure(self.tr("Proje listesi geçersiz"))
                 return
             next_cursor = result.get("cursor")
             if cursor and next_cursor == cursor:
-                failure("Sağlayıcı aynı proje sayfasını döndürdü")
+                failure(self.tr("Sağlayıcı aynı proje sayfasını döndürdü"))
                 return
             failed = set(result.get("failed_accounts", []))
             projects = (
@@ -2102,11 +2189,11 @@ class ChatView:
             )
             for item in result["items"]:
                 if not isinstance(item, dict) or not item.get("id"):
-                    failure("Proje kimliği eksik")
+                    failure(self.tr("Proje kimliği eksik"))
                     return
                 if item["id"] not in self.project_items:
                     self.sidebar_collapsed.add(f"project:{item['id']}")
-                projects[item["id"]] = dict(item, name=item.get("name") or "Proje")
+                projects[item["id"]] = dict(item, name=item.get("name") or self.tr("Proje"))
             self.project_items = projects
             self._save_active_tab()
             for tab in self.tabs:
@@ -2119,7 +2206,7 @@ class ChatView:
             self.projects_loaded = True
             self.projects_loading = False
             self.project_error = (
-                ("Yenilenemeyen hesaplar: " + ", ".join(result["errors"]))
+                (self.tr("Yenilenemeyen hesaplar: ") + ", ".join(result["errors"]))
                 if result.get("errors")
                 else None
             )
@@ -2132,7 +2219,7 @@ class ChatView:
             if epoch != self.session_epoch or self.account_key != account_key:
                 return
             self.project_error = reason
-            self.status = f"Proje listesi alınamadı: {reason}"
+            self.status = self.tr("Proje listesi alınamadı: {0}").format(reason)
             self.filter_sidebar()
 
         self._read_in_background(lambda: callback(cursor), success, failure, session_bound=False)
@@ -2145,16 +2232,16 @@ class ChatView:
 
         def success(result):
             if not isinstance(result, dict) or not isinstance(result.get("items"), list):
-                failure("Proje sohbetleri geçersiz")
+                failure(self.tr("Proje sohbetleri geçersiz"))
                 return
             next_cursor = result.get("cursor")
             if cursor and next_cursor == cursor:
-                failure("Sağlayıcı aynı sohbet sayfasını döndürdü")
+                failure(self.tr("Sağlayıcı aynı sohbet sayfasını döndürdü"))
                 return
             items = {item["id"]: item for item in self.sidebar_items if item.get("id")}
             for item in result["items"]:
                 if not isinstance(item, dict) or not item.get("id"):
-                    failure("Proje sohbet kimliği eksik")
+                    failure(self.tr("Proje sohbet kimliği eksik"))
                     return
                 items[item["id"]] = dict(
                     item,
@@ -2177,17 +2264,26 @@ class ChatView:
             lambda: self.list_project_chats_callback(project_id, cursor), success, failure
         )
 
-    @staticmethod
-    def project_messages(project):
+    def project_messages(self, project):
         resources = project.get("resources") or []
-        text = f"# {project.get('name') or 'Proje'}\n\n{project.get('description') or ''}\n\n## Talimatlar\n\n{project.get('instructions') or 'Talimat yok.'}\n\n## Kaynaklar\n\n"
-        text += (
-            "\n".join(
-                f"- {r.get('name') or r.get('id')} ({r.get('media_type') or r.get('type') or 'kaynak'})"
-                for r in resources
+        name = project.get("name") or self.tr("Proje")
+        instructions = project.get("instructions") or self.tr("Talimat yok.")
+        text = (
+            "\n\n".join(
+                [
+                    "# " + name,
+                    project.get("description") or "",
+                    self.tr("## Talimatlar"),
+                    instructions,
+                    self.tr("## Kaynaklar"),
+                ]
             )
-            or "Kaynak yok."
+            + "\n\n"
         )
+        text += "\n".join(
+            f"- {r.get('name') or r.get('id')} ({r.get('media_type') or r.get('type') or self.tr('kaynak')})"
+            for r in resources
+        ) or self.tr("Kaynak yok.")
         return [{"role": "system", "text": text}]
 
     def show_project_details(self, project_id: str | None = None) -> None:
@@ -2201,11 +2297,11 @@ class ChatView:
             project_id = row.get("id") if row["kind"] == "project" else row.get("project_id")
         project_id = project_id or self.current_project.get("id")
         if not project_id:
-            self.status = "Sol panelde bir proje seçip F9'a basın"
+            self.status = self.tr("Sol panelde bir proje seçip F9'a basın")
             self.app.invalidate()
             return
         if self.get_project_callback is None:
-            self.status = "Sağlayıcının proje ayrıntısı bağlantısı kurulmamış"
+            self.status = self.tr("Sağlayıcının proje ayrıntısı bağlantısı kurulmamış")
             self.app.invalidate()
             return
         existing = next(
@@ -2228,8 +2324,8 @@ class ChatView:
             self.restore_account_preference()
         self.tab_kind = "project"
         self.current_project = dict(self.project_items.get(project_id, {"id": project_id}))
-        self.title = self.current_project.get("name") or "Proje"
-        self.messages = [{"role": "system", "text": "Proje bilgileri yükleniyor…"}]
+        self.title = self.current_project.get("name") or self.tr("Proje")
+        self.messages = [{"role": "system", "text": self.tr("Proje bilgileri yükleniyor…")}]
         self._save_active_tab()
         self.scroll_bottom()
 
@@ -2245,7 +2341,7 @@ class ChatView:
                     tab.update(
                         messages=[{"role": "system", "text": text}],
                         project=project,
-                        title=project.get("name") or "Proje",
+                        title=project.get("name") or self.tr("Proje"),
                     )
                     if index == self.active_tab:
                         self._restore_active_tab(focus=False)
@@ -2258,7 +2354,8 @@ class ChatView:
             lambda: read_project(project_id),
             success,
             lambda reason: update(
-                f"Proje bilgileri alınamadı: {reason}\n\nF9 ile yeniden deneyin.", project_snapshot
+                self.tr("Proje bilgileri alınamadı: {0}\n\nF9 ile yeniden deneyin.").format(reason),
+                project_snapshot,
             ),
         )
 
@@ -2294,13 +2391,13 @@ class ChatView:
         self.sidebar_search.text = ""
         self.refresh_sidebar()
         self.app.layout.focus(self.sidebar_control)
-        self.status = "Projeler"
+        self.status = self.tr("Projeler")
         self.app.invalidate()
 
     def dispatch_action(self, action_id):
         handler = self.action_handlers.get(action_id)
         if handler is None:
-            raise ValueError("Bilinmeyen arayüz aksiyonu")
+            raise ValueError(self.tr("Bilinmeyen arayüz aksiyonu"))
         handler(SimpleNamespace(app=self.app))
 
     def run_action(self, action_id: str, arguments: dict[str, Any] | None = None) -> None:
@@ -2308,7 +2405,7 @@ class ChatView:
             self.dispatch_action(action_id)
             return
         if self.invoke_action is None:
-            self.status = f"Action {action_id} is unavailable"
+            self.status = self.tr("Action {0} is unavailable").format(action_id)
             self.app.invalidate()
             return
 
@@ -2324,7 +2421,7 @@ class ChatView:
                         field.get("required") and not str(values.get(field["key"], "")).strip()
                         for field in fields
                     ):
-                        raise ValueError("Zorunlu alanları doldurun")
+                        raise ValueError(self.tr("Zorunlu alanları doldurun"))
                     self.run_action(action_id, values)
 
                 self.forms.open(
@@ -2376,13 +2473,13 @@ class ChatView:
                 if target_tab == self.active_tab:
                     self.messages = target_messages
                     self.status = (
-                        f"Action failed: {error_text}"
+                        self.tr("Action failed: {0}").format(error_text)
                         if error_text
-                        else f"Action completed: {action_id}"
+                        else self.tr("Action completed: {0}").format(action_id)
                     )
                     self.scroll_bottom()
                 else:
-                    self.status = f"Action completed in tab {target_tab + 1}"
+                    self.status = self.tr("Action completed in tab {0}").format(target_tab + 1)
                     self.app.invalidate()
 
             self._dispatch_ui(show_result)
@@ -2400,7 +2497,7 @@ class ChatView:
             conversation_id = item.get("id")
             if isinstance(conversation_id, str) and conversation_id:
                 if self.background_jobs or self.uploading_image:
-                    self.status = "Finish the active operation before loading another chat"
+                    self.status = self.tr("Finish the active operation before loading another chat")
                     self.app.invalidate()
                     return
                 existing_tab = next(
@@ -2416,7 +2513,9 @@ class ChatView:
                         self.active_tab = existing_tab
                         self._restore_active_tab()
                     else:
-                        self.status = "Yanıt bitince bu sohbeti açabilirsiniz; açık sekmeler arasında geçiş serbest"
+                        self.status = self.tr(
+                            "Yanıt bitince bu sohbeti açabilirsiniz; açık sekmeler arasında geçiş serbest"
+                        )
                         self.app.invalidate()
                     return
                 if existing_tab is not None:
@@ -2451,7 +2550,7 @@ class ChatView:
         self.close_overlays()
         self.palette_mode = mode
         self.palette_items = [
-            {"id": key, "title": action_title(key), "detail": self.shortcut(key)}
+            {"id": key, "title": self.tr(action_title(key)), "detail": self.shortcut(key)}
             for key in sorted(self.action_handlers, key=action_order)
         ]
         if mode != "actions":
@@ -2488,7 +2587,7 @@ class ChatView:
 
                         def failed(reason, key=key):
                             self._model_picker_requests.discard(key)
-                            self.status = "Model kataloğu alınamadı: " + key
+                            self.status = self.tr("Model kataloğu alınamadı: ") + key
 
                         self._read_in_background(
                             lambda key=key: self.account_service.models(key),
@@ -2503,7 +2602,7 @@ class ChatView:
                             "id": f"model.select:{model.id}"
                             if key == self.account_key
                             else f"model.account:{key}:{model.id}",
-                            "title": f"Model · {model.chat_title or model.title}"
+                            "title": self.tr("Model · {0}").format(model.chat_title or model.title)
                             + (" ✓" if key == self.account_key and model.id == self.model else ""),
                             "detail": key.split("/")[0] + " · " + model.id,
                         }
@@ -2513,7 +2612,8 @@ class ChatView:
             self.palette_items.extend(
                 {
                     "id": f"effort.select:{choice.id}",
-                    "title": f"Efor · {choice.title}" + (" ✓" if choice.id == self.effort else ""),
+                    "title": self.tr("Efor · {0}").format(choice.title)
+                    + (" ✓" if choice.id == self.effort else ""),
                     "detail": f"{choice.id} · {selected.chat_title or selected.title}",
                 }
                 for choice in selected.efforts
@@ -2521,13 +2621,15 @@ class ChatView:
             self.palette_items.append(
                 {
                     "id": "effort.default",
-                    "title": "Efor · sağlayıcı varsayılanı",
-                    "detail": "Ek efor tercihi gönderme",
+                    "title": self.tr("Efor · sağlayıcı varsayılanı"),
+                    "detail": self.tr("Ek efor tercihi gönderme"),
                 }
             )
         try:
             if mode == "actions":
-                self.palette_items.extend(self.list_actions())
+                self.palette_items.extend(
+                    dict(item, title=self.tr(item["title"])) for item in self.list_actions()
+                )
         except Exception:
             pass
         unique = {}
@@ -2554,15 +2656,19 @@ class ChatView:
                 (style, fit_text(f" {'›' if selected else ' '} {title} {detail}", width) + "\n")
             )
         if not rows:
-            message = "Eşleşen komut yok"
+            message = self.tr("Eşleşen komut yok")
             if self.palette_mode == "models":
                 message = (
-                    "Model kataloğu yükleniyor…"
+                    self.tr("Model kataloğu yükleniyor…")
                     if self.catalog_loading
-                    else f"Model kataloğu boş veya alınamadı: {self.catalog_error or 'F10 ile yenileyin'}"
+                    else self.tr("Model kataloğu boş veya alınamadı: {0}").format(
+                        self.catalog_error or "F10 ile yenileyin"
+                    )
                 )
             elif self.palette_mode == "effort":
-                message = "Önce /model ile model seçin; efor seçenekleri seçili modele bağlıdır"
+                message = self.tr(
+                    "Önce /model ile model seçin; efor seçenekleri seçili modele bağlıdır"
+                )
             rows.append(("class:sidebar.muted", f"  {message}\n"))
         return FormattedText(
             [
@@ -2623,7 +2729,9 @@ class ChatView:
         if action_id.startswith("model.account:"):
             key, model_id = action_id[len("model.account:") :].split(":", 1)
             if self.conversation_id or self.messages:
-                self.status = "Mevcut sohbetin sağlayıcısı değiştirilemez; yeni sohbet açın"
+                self.status = self.tr(
+                    "Mevcut sohbetin sağlayıcısı değiştirilemez; yeni sohbet açın"
+                )
                 return
             self.account_service.select(key)
             self.bind_account(key)
@@ -2676,7 +2784,7 @@ class ChatView:
             self.toggle_sidebar()
             return
         if self.invoke_action is None:
-            self.status = f"Action {action_id} cannot be invoked from this view"
+            self.status = self.tr("Action {0} cannot be invoked from this view").format(action_id)
             self.app.invalidate()
             return
         self.run_action(action_id)
@@ -2699,7 +2807,7 @@ class ChatView:
         dirty = bool(self.input.text) or any(tab.get("draft") for tab in self.tabs)
         if (dirty or self.busy) and time.monotonic() > getattr(self, "quit_armed_until", 0):
             self.quit_armed_until = time.monotonic() + 3
-            self.status = (
+            self.status = self.tr(
                 "Çıkmak için 3 saniye içinde Ctrl+D veya Ctrl+Q'ya tekrar basın · taslak/yanıt açık"
             )
             self.app.invalidate()
@@ -2732,7 +2840,7 @@ class ChatView:
     def new_tab(self) -> None:
         self.close_overlays()
         if (self.loading_conversation and not self.account_service) or self.uploading_image:
-            self.status = "Wait for the current load or upload before creating a tab"
+            self.status = self.tr("Wait for the current load or upload before creating a tab")
             self.app.invalidate()
             return
         self._save_active_tab()
@@ -2742,7 +2850,7 @@ class ChatView:
                 "catalog": self.catalog,
                 "effort_preference": self.effort_preference,
                 "conversation_id": None,
-                "title": "New conversation",
+                "title": self.tr("New conversation"),
                 "messages": [],
                 "model": self.model,
                 "effort": self.effort,
@@ -2779,7 +2887,7 @@ class ChatView:
             or len(self.tabs) < 2
         ):
             if self.loading_conversation or self.uploading_image:
-                self.status = "Wait for the current load or upload before switching tabs"
+                self.status = self.tr("Wait for the current load or upload before switching tabs")
                 self.app.invalidate()
             return
         self._save_active_tab()
@@ -2825,15 +2933,15 @@ class ChatView:
         if self.set_active_conversation is not None:
             self.set_active_conversation(None if self.temporary else self.conversation_id)
         if tab.get("loading"):
-            self.status = "Loading conversation…"
+            self.status = self.tr("Loading conversation…")
         elif tab.get("busy"):
-            self.status = "Streaming response…"
+            self.status = self.tr("Streaming response…")
         elif self.busy and self.busy_tab_index is not None:
-            self.status = f"Yanıt {self.busy_tab_index + 1}. sekmede sürüyor"
+            self.status = self.tr("Yanıt {0}. sekmede sürüyor").format(self.busy_tab_index + 1)
         elif completed_pending:
-            self.status = "Yanıt bu sekmede tamamlandı"
+            self.status = self.tr("Yanıt bu sekmede tamamlandı")
         else:
-            self.status = f"Sekme {self.active_tab + 1}/{len(self.tabs)}"
+            self.status = self.tr("Sekme {0}/{1}").format(self.active_tab + 1, len(self.tabs))
         self.follow_output = tab.get("follow_output", True)
         self.transcript_window.vertical_scroll = (
             10**9 if self.follow_output else tab.get("scroll", 0)
@@ -2854,7 +2962,7 @@ class ChatView:
             or self.uploading_image
             or self.background_jobs
         ):
-            self.status = "Wait for active work to finish before closing a tab"
+            self.status = self.tr("Wait for active work to finish before closing a tab")
             self.app.invalidate()
             return
         closing = self.tabs[self.active_tab]
@@ -2869,7 +2977,7 @@ class ChatView:
         if len(self.tabs) == 1:
             self.tabs[0] = {
                 "conversation_id": None,
-                "title": "New conversation",
+                "title": self.tr("New conversation"),
                 "messages": [],
                 "model": self.model,
                 "effort": self.effort,
@@ -2893,7 +3001,9 @@ class ChatView:
             or self.background_jobs
             or any(tab.get("busy") or tab.get("loading") for tab in self.tabs)
         ):
-            self.status = "Sekmeleri kapatmadan önce devam eden işlemin tamamlanmasını bekleyin"
+            self.status = self.tr(
+                "Sekmeleri kapatmadan önce devam eden işlemin tamamlanmasını bekleyin"
+            )
             self.app.invalidate()
             return
         cleanup = []
@@ -2913,7 +3023,7 @@ class ChatView:
             {
                 "account_key": self.account_key,
                 "conversation_id": None,
-                "title": "Yeni sohbet",
+                "title": self.tr("Yeni sohbet"),
                 "messages": [],
                 "model": self.model,
                 "effort": self.effort,
@@ -2929,13 +3039,15 @@ class ChatView:
             self._read_in_background(
                 lambda callback=callback, remote_id=remote_id: callback(remote_id),
                 lambda _: None,
-                lambda reason: setattr(self, "status", "Geçici sohbet temizlenemedi: " + reason),
+                lambda reason: setattr(
+                    self, "status", self.tr("Geçici sohbet temizlenemedi: ") + reason
+                ),
                 session_bound=False,
             )
         if self.layout_controller:
             self.layout_controller.pending = None
             self.layout_controller.active_group()
-        self.status = "Sekmeler kapatıldı"
+        self.status = self.tr("Sekmeler kapatıldı")
         self.app.invalidate()
 
     def viewport_height(self) -> D:
@@ -2956,7 +3068,14 @@ class ChatView:
         if self.busy and self.busy_tab_index != self.active_tab:
             running = (self.busy_tab_index or 0) + 1
             return FormattedText(
-                [("", f" ● Yanıt {running}. sekmede sürüyor · diğer sekmelere geçebilirsiniz ")]
+                [
+                    (
+                        "",
+                        self.tr(
+                            " ● Yanıt {0}. sekmede sürüyor · diğer sekmelere geçebilirsiniz "
+                        ).format(running),
+                    )
+                ]
             )
         started = (
             self.active_started
@@ -2970,11 +3089,11 @@ class ChatView:
             frame = frames[int((time.monotonic() - started) * 10) % len(frames)]
             elapsed = self.format_elapsed(time.monotonic() - started)
             phase = (
-                "Yanıt üretiliyor"
+                self.tr("Yanıt üretiliyor")
                 if self.busy
-                else "Sohbet yükleniyor"
+                else self.tr("Sohbet yükleniyor")
                 if self.loading_conversation
-                else "Dosya yükleniyor"
+                else self.tr("Dosya yükleniyor")
             )
             return FormattedText([("", f" {frame} {phase} · {elapsed} · {self.status} ")])
         archive = self.archive_service()
@@ -2987,7 +3106,9 @@ class ChatView:
                     [
                         (
                             "class:sync",
-                            f" ↻ Senkronizasyon · {len(pending_sync)} kayıt · {self.status} ",
+                            self.tr(" ↻ Senkronizasyon · {0} kayıt · {1} ").format(
+                                len(pending_sync), self.status
+                            ),
                         )
                     ]
                 )
@@ -2996,22 +3117,26 @@ class ChatView:
                     [
                         (
                             "class:sync.error",
-                            f" ! {len(failures)} kayıt senkronize edilemedi · önbellek korunuyor ",
+                            self.tr(
+                                " ! {0} kayıt senkronize edilemedi · önbellek korunuyor "
+                            ).format(len(failures)),
                         )
                     ]
                 )
         pending = [
             label
             for label, active in (
-                ("Modeller", self.catalog_loading),
-                ("Sohbetler", self.sidebar_loading),
-                ("Projeler", self.projects_loading),
+                (self.tr("Modeller"), self.catalog_loading),
+                (self.tr("Sohbetler"), self.sidebar_loading),
+                (self.tr("Projeler"), self.projects_loading),
             )
             if active
         ]
         if pending:
-            status = self.status if self.status not in ("Ready", "") else "Hazır"
-            return FormattedText([("", f" • {status} · {', '.join(pending)} yenileniyor")])
+            status = self.status if self.status not in ("Ready", "") else self.tr("Hazır")
+            return FormattedText(
+                [("", self.tr(" • {0} · {1} yenileniyor").format(status, ", ".join(pending)))]
+            )
         if self.status not in ("Ready", ""):
             return FormattedText([("", f" • {self.status} ")])
         if self.pending_attachments:
@@ -3020,10 +3145,15 @@ class ChatView:
         if self.last_elapsed is not None:
             return FormattedText(
                 [
-                    ("", f" — Worked for {self.format_elapsed(self.last_elapsed)} "),
+                    (
+                        "",
+                        self.tr(" — Worked for {0} ").format(
+                            self.format_elapsed(self.last_elapsed)
+                        ),
+                    ),
                 ]
             )
-        return FormattedText([("", " Hazır")])
+        return FormattedText([("", self.tr(" Hazır"))])
 
     def remember_transcript(
         self, tab, messages, width, tokens, reasoning, text, ranges, ansi, lines=None
@@ -3131,7 +3261,7 @@ class ChatView:
                 return snapshot["text"]
             self.message_ranges = []
             self.transcript_line_count = 1
-            return "Sohbet görünümü hazırlanıyor…"
+            return self.tr("Sohbet görünümü hazırlanıyor…")
         if not messages:
             self.message_ranges = []
             buffer = StringIO()
@@ -3145,7 +3275,7 @@ class ChatView:
             )
             console.print(
                 Text(
-                    "SiopeChat\n\nYeni bir sohbet başlatın.",
+                    self.tr("SiopeChat\n\nYeni bir sohbet başlatın."),
                     style="dim",
                 )
             )
@@ -3216,7 +3346,7 @@ class ChatView:
         if self.layout_controller:
             self.layout_controller.begin(axis)
         else:
-            self.status = "Layout eklentisi kullanılamıyor"
+            self.status = self.tr("Layout eklentisi kullanılamıyor")
             self.app.invalidate()
 
     def transcript_width(self) -> int:
@@ -3277,12 +3407,12 @@ class ChatView:
 
     def render_resume_list(self) -> FormattedText:
         if self.resume_loading:
-            return FormattedText([("class:resume.time", " Loading conversations…")])
+            return FormattedText([("class:resume.time", self.tr(" Loading conversations…"))])
         if not self.resume_filtered:
-            return FormattedText([("class:resume.time", " No matching conversations")])
+            return FormattedText([("class:resume.time", self.tr(" No matching conversations"))])
         fragments: list[tuple[str, str]] = []
         for index, item in enumerate(self.resume_filtered):
-            title = item.get("title") or "Untitled"
+            title = item.get("title") or self.tr("Untitled")
             updated = item.get("update_time")
             stamp = ""
             if isinstance(updated, (int, float)):
@@ -3333,12 +3463,12 @@ class ChatView:
             and hasattr(self.account_service, "enabled")
             and not self.account_service.enabled(self.provider_id)
         ):
-            self.status = "Sağlayıcı devre dışı · taslak korundu · Ayarlar → Sağlayıcılar"
+            self.status = self.tr("Sağlayıcı devre dışı · taslak korundu · Ayarlar → Sağlayıcılar")
             self.app.invalidate()
             return
         self.normalize_model_selection()
         if self.editing_project():
-            self.status = "Önce proje düzenlemesini kaydedin veya iptal edin"
+            self.status = self.tr("Önce proje düzenlemesini kaydedin veya iptal edin")
             self.app.invalidate()
             return
         if not self.input.text.lstrip().startswith("/") and (
@@ -3348,23 +3478,27 @@ class ChatView:
                 and not any(model.id == self.model for model in self.catalog.chat_models)
             )
         ):
-            self.status = "Önce /model ile normal bir sohbet modeli seçin · taslak korundu"
+            self.status = self.tr("Önce /model ile normal bir sohbet modeli seçin · taslak korundu")
             self.app.invalidate()
             return
         if self.loading_conversation or self.uploading_image:
-            self.status = "Conversation or image still loading · draft kept"
+            self.status = self.tr("Conversation or image still loading · draft kept")
             self.app.invalidate()
             return
         if self.tabs[self.active_tab].get("project_changing"):
-            self.status = "Proje değiştiriliyor · taslak korundu"
+            self.status = self.tr("Proje değiştiriliyor · taslak korundu")
             self.app.invalidate()
             return
         if self.temporary and Capability.TEMPORARY not in self.provider_features:
-            self.status = "Bu sağlayıcı geçici sohbeti desteklemiyor · yeni normal sohbet açın"
+            self.status = self.tr(
+                "Bu sağlayıcı geçici sohbeti desteklemiyor · yeni normal sohbet açın"
+            )
             self.app.invalidate()
             return
         if self.active_busy() or sum(bool(tab.get("busy")) for tab in self.tabs) >= 4:
-            self.status = "Bu sohbetin yanıtını bekleyin · aynı anda en fazla 4 bekleyen istek"
+            self.status = self.tr(
+                "Bu sohbetin yanıtını bekleyin · aynı anda en fazla 4 bekleyen istek"
+            )
             self.app.invalidate()
             return
         if (
@@ -3374,7 +3508,7 @@ class ChatView:
             and self.account_key
             not in {item["key"] for item in self.account_service.active_accounts()}
         ):
-            self.status = (
+            self.status = self.tr(
                 "Bu sağlayıcıda başka hesap etkin · Hesaplar’dan bu hesabı seçin · taslak korundu"
             )
             self.app.invalidate()
@@ -3387,7 +3521,9 @@ class ChatView:
             )
             and not self.input.text.lstrip().startswith("/")
         ):
-            self.status = "Bu Gemini defteri salt okunur · defter bağlamında gönderim henüz desteklenmiyor · taslak korundu"
+            self.status = self.tr(
+                "Bu Gemini defteri salt okunur · defter bağlamında gönderim henüz desteklenmiyor · taslak korundu"
+            )
             self.app.invalidate()
             return
         prompt = self.input.text.strip()
@@ -3415,7 +3551,7 @@ class ChatView:
             self.handle_command(prompt)
             return
         self.pending_attachments.clear()
-        prompt = prompt or "Describe the attached image."
+        prompt = prompt or self.tr("Describe the attached image.")
         display_prompt = prompt
         if attachments:
             labels = " ".join(f"[📎 {item['name']}]" for item in attachments)
@@ -3432,7 +3568,7 @@ class ChatView:
         self.tabs[self.active_tab]["started"] = self.active_started
         self.tabs[self.active_tab]["connection"] = None
         self.last_elapsed = None
-        self.status = "Yanıt bekleniyor…"
+        self.status = self.tr("Yanıt bekleniyor…")
         self.scroll_bottom()
         threading.Thread(
             target=self.run_send,
@@ -3539,14 +3675,14 @@ class ChatView:
                         raise ValueError("action arguments must be a JSON object")
                     self.run_action(action_id, arguments)
                 except (json.JSONDecodeError, ValueError) as error:
-                    self.status = f"Usage: /action ID [JSON_OBJECT] · {error}"
+                    self.status = self.tr("Usage: /action ID [JSON_OBJECT] · {0}").format(error)
                     self.app.invalidate()
             else:
                 self.open_palette()
         elif name == "/clear":
             with self.lock:
                 self.messages.clear()
-            self.status = "Transcript cleared"
+            self.status = self.tr("Transcript cleared")
             self.scroll_bottom()
         elif name == "/resume":
             if argument.strip():
@@ -3555,13 +3691,13 @@ class ChatView:
                 self.open_resume()
         elif name == "/history":
             if self.temporary:
-                self.status = "Geçici sohbet yalnız açık oturumda tutulur"
+                self.status = self.tr("Geçici sohbet yalnız açık oturumda tutulur")
                 self.app.invalidate()
                 return
             if self.conversation_id:
                 self.resume_conversation(self.conversation_id)
             else:
-                self.status = "No saved conversation yet"
+                self.status = self.tr("No saved conversation yet")
                 self.app.invalidate()
         elif name == "/rename":
             self.rename_current_conversation(argument)
@@ -3570,9 +3706,9 @@ class ChatView:
         elif name == "/remove":
             if self.pending_attachments:
                 removed = self.pending_attachments.pop()
-                self.status = f"Removed {removed['name']}"
+                self.status = self.tr("Removed {0}").format(removed["name"])
             else:
-                self.status = "No pending image to remove"
+                self.status = self.tr("No pending image to remove")
             self.app.invalidate()
         elif name == "/help":
             existing = next(
@@ -3591,114 +3727,94 @@ class ChatView:
                 self.transcript_window.vertical_scroll,
             )
             labels = {
-                "ui.command_palette": "Komut ve eylem paletini aç",
-                "ui.search": "Yüklenmiş sohbet listesini ara",
-                "navigation.focus_sidebar": "Sol paneli göster ve odağı al",
-                "ui.toggle_sidebar": "Sol paneli göster veya gizle",
-                "chat.new": "Yeni sekme aç",
-                "chat.close_tab": "Etkin sekmeyi kapat",
-                "chat.next_tab": "Sonraki sekmeye geç",
-                "chat.previous_tab": "Önceki sekmeye geç",
-                "chat.resume": "Son sohbetleri ara ve aç",
-                "chat.send": "Mesajı gönder",
-                "chat.newline": "Mesaja yeni satır ekle",
-                "chat.paste_image": "Metin veya görsel yapıştır",
-                "edit.select_all": "Metnin veya odaktaki mesajın tümünü seç",
-                "edit.cut": "Seçili metni kes",
-                "chat.temporary": "Yeni geçici sohbet",
-                "chat.interrupt": "Yanıtı durdur veya taslağı temizle",
-                "chat.clear_transcript": "Görünen konuşmayı temizle",
-                "chat.reload": "Sohbeti eşitle",
-                "chat.copy_response": "Son yanıtı kopyala",
-                "chat.remove_attachment": "Son eklenen görseli kaldır",
-                "command.help": "Kısayol ve komut yardımını göster",
-                "command.rename": "Etkin sohbeti yeniden adlandır",
-                "command.projects": "Proje bölümünü göster",
-                "command.project": "Seçili projenin bilgilerini aç",
-                "command.refresh": "Verileri eşitle",
-                "command.settings": "Ayarları göster",
-                "app.quit": "Uygulamadan çık",
-                "app.quit_eof": "Boş girişte uygulamadan çık",
-                "navigation.sidebar_up": "Sol panelde yukarı gezin",
-                "navigation.sidebar_down": "Sol panelde aşağı gezin",
-                "navigation.sidebar_toggle_group": "Seçili proje/bölümü daralt veya genişlet",
-                "navigation.close_overlay": "Açık pencereyi kapat",
-                "navigation.composer_next": "Komut tamamlamasını seç",
-                "navigation.focus_composer": "Mesaj girişine odaklan",
-                "navigation.transcript_up": "Konuşmada yukarı kaydır",
-                "navigation.transcript_down": "Konuşmada aşağı kaydır",
-                "navigation.transcript_start": "Konuşmanın başına git",
-                "navigation.transcript_end": "Konuşmanın sonuna git",
+                "ui.command_palette": self.tr("Komut ve eylem paletini aç"),
+                "ui.search": self.tr("Yüklenmiş sohbet listesini ara"),
+                "navigation.focus_sidebar": self.tr("Sol paneli göster ve odağı al"),
+                "ui.toggle_sidebar": self.tr("Sol paneli göster veya gizle"),
+                "chat.new": self.tr("Yeni sekme aç"),
+                "chat.close_tab": self.tr("Etkin sekmeyi kapat"),
+                "chat.next_tab": self.tr("Sonraki sekmeye geç"),
+                "chat.previous_tab": self.tr("Önceki sekmeye geç"),
+                "chat.resume": self.tr("Son sohbetleri ara ve aç"),
+                "chat.send": self.tr("Mesajı gönder"),
+                "chat.newline": self.tr("Mesaja yeni satır ekle"),
+                "chat.paste_image": self.tr("Metin veya görsel yapıştır"),
+                "edit.select_all": self.tr("Metnin veya odaktaki mesajın tümünü seç"),
+                "edit.cut": self.tr("Seçili metni kes"),
+                "chat.temporary": self.tr("Yeni geçici sohbet"),
+                "chat.interrupt": self.tr("Yanıtı durdur veya taslağı temizle"),
+                "chat.clear_transcript": self.tr("Görünen konuşmayı temizle"),
+                "chat.reload": self.tr("Sohbeti eşitle"),
+                "chat.copy_response": self.tr("Son yanıtı kopyala"),
+                "chat.remove_attachment": self.tr("Son eklenen görseli kaldır"),
+                "command.help": self.tr("Kısayol ve komut yardımını göster"),
+                "command.rename": self.tr("Etkin sohbeti yeniden adlandır"),
+                "command.projects": self.tr("Proje bölümünü göster"),
+                "command.project": self.tr("Seçili projenin bilgilerini aç"),
+                "command.refresh": self.tr("Verileri eşitle"),
+                "command.settings": self.tr("Ayarları göster"),
+                "app.quit": self.tr("Uygulamadan çık"),
+                "app.quit_eof": self.tr("Boş girişte uygulamadan çık"),
+                "navigation.sidebar_up": self.tr("Sol panelde yukarı gezin"),
+                "navigation.sidebar_down": self.tr("Sol panelde aşağı gezin"),
+                "navigation.sidebar_toggle_group": self.tr(
+                    "Seçili proje/bölümü daralt veya genişlet"
+                ),
+                "navigation.close_overlay": self.tr("Açık pencereyi kapat"),
+                "navigation.composer_next": self.tr("Komut tamamlamasını seç"),
+                "navigation.focus_composer": self.tr("Mesaj girişine odaklan"),
+                "navigation.transcript_up": self.tr("Konuşmada yukarı kaydır"),
+                "navigation.transcript_down": self.tr("Konuşmada aşağı kaydır"),
+                "navigation.transcript_start": self.tr("Konuşmanın başına git"),
+                "navigation.transcript_end": self.tr("Konuşmanın sonuna git"),
             }
             shortcut_lines = "\n".join(
                 f"- `{self.shortcut(action_id)}` — {labels.get(action_id, action_id)} (`{action_id}`)"
                 for action_id, _key in sorted(self.keybindings.items())
             )
-            navigation_help = (
-                f"- `{self.shortcut('navigation.focus_sidebar')}`: Sol paneli aç ve odağı al\n"
-                f"- `{self.shortcut('navigation.sidebar_up')}` / `{self.shortcut('navigation.sidebar_down')}`: proje ve sohbetlerde gezin; `Enter` sohbeti açar veya grubu değiştirir\n"
-                f"- `{self.shortcut('navigation.sidebar_toggle_group')}`: seçili proje/bölümü daralt veya genişlet\n"
-                f"- `{self.shortcut('ui.search')}`: yüklenmiş sohbetleri ara; `Enter` seçili sohbeti açar\n"
-                f"- `{self.shortcut('ui.toggle_sidebar')}`: sol paneli gizle/göster\n"
-                f"- `{self.shortcut('chat.resume')}`: son 50 sohbeti ara; `Enter` seçileni sekmede açar\n"
-                f"- `{self.shortcut('chat.new')}` yeni sekme; `{self.shortcut('chat.previous_tab')}` / "
-                f"`{self.shortcut('chat.next_tab')}` sekme değiştirir; `{self.shortcut('chat.close_tab')}` sekmeyi kapatır\n"
-                "- Sekmede `●` yanıtın sürdüğünü, `✓` yanıtın tamamlandığını gösterir\n"
-                "- Yanıt sürerken açık sekmelere geçilebilir; uyumluluk daemon'ı seri çalıştığı için başka sohbet yükleme/gönderme bekler\n"
+            navigation_help = self.tr(
+                "- `{0}`: Sol paneli aç ve odağı al\n- `{1}` / `{2}`: proje ve sohbetlerde gezin; `Enter` sohbeti açar veya grubu değiştirir\n- `{3}`: seçili proje/bölümü daralt veya genişlet\n- `{4}`: yüklenmiş sohbetleri ara; `Enter` seçili sohbeti açar\n- `{5}`: sol paneli gizle/göster\n- `{6}`: son 50 sohbeti ara; `Enter` seçileni sekmede açar\n- `{7}` yeni sekme; `{8}` / `{9}` sekme değiştirir; `{10}` sekmeyi kapatır\n- Sekmede `●` yanıtın sürdüğünü, `✓` yanıtın tamamlandığını gösterir\n- Yanıt sürerken açık sekmelere geçilebilir; uyumluluk daemon'ı seri çalıştığı için başka sohbet yükleme/gönderme bekler\n"
+            ).format(
+                self.shortcut("navigation.focus_sidebar"),
+                self.shortcut("navigation.sidebar_up"),
+                self.shortcut("navigation.sidebar_down"),
+                self.shortcut("navigation.sidebar_toggle_group"),
+                self.shortcut("ui.search"),
+                self.shortcut("ui.toggle_sidebar"),
+                self.shortcut("chat.resume"),
+                self.shortcut("chat.new"),
+                self.shortcut("chat.previous_tab"),
+                self.shortcut("chat.next_tab"),
+                self.shortcut("chat.close_tab"),
             )
             self.append_system(
-                "**Commands**\n\n"
-                "- `/new` start a conversation\n"
-                "- `/tab-next` or `/tab-prev` switch tabs\n"
-                "- `/tab-close` close the current tab\n"
-                "- `/search` search saved conversations\n"
-                "- `/projects` list projects; `/proje` or `/project [ID]` move this chat or choose its project; `/project info` opens details\n"
-                "- `/temporary` or `/private` starts a temporary chat without local conversation files\n"
-                "- `/model [MODEL_ID]` choose from the account's model catalog\n"
-                "- `/effort [ID|default]` choose an effort offered by the selected model\n"
-                "- `/refresh` refresh models, projects and chats (F10 by default)\n"
-                "- `/actions` open searchable actions and commands\n"
-                "- `/settings` opens categorized settings and accounts in a workspace tab\n"
-                "- `/action ID` run an application action\n"
-                "- `/resume` search recent conversations\n"
-                "- `/resume ID` open a conversation directly\n"
-                "- `/history` reload this conversation\n"
-                "- `/rename TITLE` rename this conversation\n"
-                "- `/delete [ID]` delete a chat; `/project-delete [ID]` delete a project and its contents (confirmation required)\n"
-                "- `/copy` copy the latest assistant response\n"
-                "- `/remove` remove the latest pending image\n"
-                "- `/clear` clear the displayed transcript\n"
-                "- `/exit` or `/quit` quit"
-                "\n\n**Text editing**\n\n"
-                "Ctrl+A selects composer text; Ctrl+C copies a selection; Ctrl+V pastes. Click a message, then Ctrl+A / Ctrl+C to copy that message.\n"
-                "Temporary chat uses the provider history-disabled request; provider retention rules still apply.\n"
-                "\n\n**Navigation**\n\n"
-                f"{navigation_help}"
-                "\n**Configured shortcuts**\n\n"
-                f"{shortcut_lines}"
+                self.text(
+                    "help_body",
+                    f"**Commands**\n\n- `/new` start a conversation\n- `/tab-next` or `/tab-prev` switch tabs\n- `/tab-close` close the current tab\n- `/search` search saved conversations\n- `/projects` list projects; `/proje` or `/project [ID]` move this chat or choose its project; `/project info` opens details\n- `/temporary` or `/private` starts a temporary chat without local conversation files\n- `/model [MODEL_ID]` choose from the account's model catalog\n- `/effort [ID|default]` choose an effort offered by the selected model\n- `/refresh` refresh models, projects and chats (F10 by default)\n- `/actions` open searchable actions and commands\n- `/settings` opens categorized settings and accounts in a workspace tab\n- `/action ID` run an application action\n- `/resume` search recent conversations\n- `/resume ID` open a conversation directly\n- `/history` reload this conversation\n- `/rename TITLE` rename this conversation\n- `/delete [ID]` delete a chat; `/project-delete [ID]` delete a project and its contents (confirmation required)\n- `/copy` copy the latest assistant response\n- `/remove` remove the latest pending image\n- `/clear` clear the displayed transcript\n- `/exit` or `/quit` quit\n\n**Text editing**\n\nCtrl+A selects composer text; Ctrl+C copies a selection; Ctrl+V pastes. Click a message, then Ctrl+A / Ctrl+C to copy that message.\nTemporary chat uses the provider history-disabled request; provider retention rules still apply.\n\n\n**Navigation**\n\n{navigation_help}\n**Configured shortcuts**\n\n{shortcut_lines}",
+                ).format(navigation=navigation_help, shortcuts=shortcut_lines)
             )
             self.messages[-1]["local_help"] = True
         else:
-            self.status = f"Unknown command: {name}"
+            self.status = self.tr("Unknown command: {0}").format(name)
             self.app.invalidate()
 
     def rename_current_conversation(self, title: str) -> None:
         title = title.strip()
         if self.conversation_id is None:
-            self.status = "Save the conversation before renaming it"
+            self.status = self.tr("Save the conversation before renaming it")
             self.app.invalidate()
             return
         if not title:
-            self.status = "Usage: /rename TITLE"
+            self.status = self.tr("Usage: /rename TITLE")
             self.app.invalidate()
             return
         if self.rename_conversation is None:
-            self.status = "Conversation rename is unavailable"
+            self.status = self.tr("Conversation rename is unavailable")
             self.app.invalidate()
             return
         conversation_id = self.conversation_id
         target_tab = self.active_tab
-        self.status = "Renaming conversation…"
+        self.status = self.tr("Renaming conversation…")
         self.background_jobs += 1
         self.app.invalidate()
 
@@ -3717,14 +3833,14 @@ class ChatView:
                     if error_text is None:
                         self.title = title
                         self._save_active_tab()
-                        self.status = "Conversation renamed"
+                        self.status = self.tr("Conversation renamed")
                     else:
-                        self.status = f"Rename failed: {error_text}"
+                        self.status = self.tr("Rename failed: {0}").format(error_text)
                 else:
                     self.status = (
-                        f"Rename failed in tab {target_tab + 1}: {error_text}"
+                        self.tr("Rename failed in tab {0}: {1}").format(target_tab + 1, error_text)
                         if error_text
-                        else f"Rename completed in tab {target_tab + 1}"
+                        else self.tr("Rename completed in tab {0}").format(target_tab + 1)
                     )
                 self.app.invalidate()
 
@@ -3734,17 +3850,17 @@ class ChatView:
 
     def paste_clipboard_image(self) -> None:
         if self.uploading_image:
-            self.status = "An image upload is already in progress"
+            self.status = self.tr("An image upload is already in progress")
             self.app.invalidate()
             return
         if self.upload_image is None:
-            self.status = "Image upload is unavailable"
+            self.status = self.tr("Image upload is unavailable")
             self.app.invalidate()
             return
         self.uploading_image = True
         self.background_jobs += 1
         self.upload_started = time.monotonic()
-        self.status = "Reading image from clipboard…"
+        self.status = self.tr("Reading image from clipboard…")
         self.app.invalidate()
 
         def upload() -> None:
@@ -3774,7 +3890,7 @@ class ChatView:
                         self.pending_attachments.append(attachment)
                         self.status = "Ready"
                     else:
-                        self.status = f"Image paste failed: {message}"
+                        self.status = self.tr("Image paste failed: {0}").format(message)
                     self.app.invalidate()
 
                 self._dispatch_ui(finish_upload)
@@ -3792,25 +3908,25 @@ class ChatView:
                 "",
             )
         if not response:
-            self.status = "No assistant response to copy"
+            self.status = self.tr("No assistant response to copy")
             self.app.invalidate()
             return
 
         response = render_chatgpt_annotations(response)
         if clipboard.copy_text(response):
-            self.status = "Copied latest response"
+            self.status = self.tr("Copied latest response")
             self.app.invalidate()
             return
         self.app.output.write_raw(clipboard.terminal_sequence(response))
         self.app.output.flush()
-        self.status = "Sent latest response to the terminal clipboard"
+        self.status = self.tr("Sent latest response to the terminal clipboard")
         self.app.invalidate()
 
     def open_resume(self) -> None:
         if self.palette_visible:
             self.close_overlays()
         if self.active_busy() or (self.busy and not self.account_service):
-            self.status = "Bu sohbetin işlemi tamamlanınca başka bir sohbet yükleyin"
+            self.status = self.tr("Bu sohbetin işlemi tamamlanınca başka bir sohbet yükleyin")
             self.app.invalidate()
             return
         if self.loading_conversation or self.resume_visible:
@@ -3821,7 +3937,7 @@ class ChatView:
         self.resume_filtered = []
         self.resume_index = 0
         self.resume_search.text = ""
-        self.status = "Loading recent conversations…"
+        self.status = self.tr("Loading recent conversations…")
         self.app.layout.focus(self.resume_search)
         self.app.invalidate()
 
@@ -3848,7 +3964,7 @@ class ChatView:
                     if epoch != self.session_epoch:
                         return
                     self.resume_loading = False
-                    self.status = f"Conversation list failed: {message}"
+                    self.status = self.tr("Conversation list failed: {0}").format(message)
                     self.app.invalidate()
 
                 self._dispatch_ui(show_error)
@@ -3860,7 +3976,7 @@ class ChatView:
         self.resume_filtered = [
             item
             for item in self.resume_items
-            if query in str(item.get("title") or "Untitled").casefold()
+            if query in str(item.get("title") or self.tr("Untitled")).casefold()
             or query in str(item.get("id") or "").casefold()
         ]
         self.resume_index = min(self.resume_index, max(0, len(self.resume_filtered) - 1))
@@ -3892,11 +4008,11 @@ class ChatView:
             if len(self.tabs) == count:
                 return
         if self.loading_conversation or self.uploading_image:
-            self.status = "Yükleme tamamlanınca başka bir sohbet açabilirsiniz"
+            self.status = self.tr("Yükleme tamamlanınca başka bir sohbet açabilirsiniz")
             self.app.invalidate()
             return
         if self.active_busy() or (self.busy and not self.account_service):
-            self.status = "Bu sohbetin işlemi tamamlanınca başka bir sohbet yükleyin"
+            self.status = self.tr("Bu sohbetin işlemi tamamlanınca başka bir sohbet yükleyin")
             self.app.invalidate()
             return
         target_tab = self.tabs[self.active_tab]
@@ -3920,7 +4036,7 @@ class ChatView:
         token = uuid.uuid4().hex
         self.loading_conversation = True
         self.loading_started = time.monotonic()
-        self.status = "Loading conversation…"
+        self.status = self.tr("Loading conversation…")
         target_tab.update(loading=True, loading_started=self.loading_started, load_token=token)
         if self.account_service:
             # The provider resolves its remote parent/context itself. UI history
@@ -3933,13 +4049,15 @@ class ChatView:
             target_tab.update(
                 conversation_id=conversation_id,
                 messages=target_tab["messages"] if cached is not None else [],
-                title=target_tab["title"] if cached is not None else row.get("title") or "Sohbet",
+                title=target_tab["title"]
+                if cached is not None
+                else row.get("title") or self.tr("Sohbet"),
                 project=target_tab.get("project", {}) if cached is not None else project,
                 loading=False,
                 syncing=True,
             )
             self._restore_active_tab(focus=False)
-            self.status = "Geçmiş arka planda yükleniyor · mesaj yazabilirsiniz"
+            self.status = self.tr("Geçmiş arka planda yükleniyor · mesaj yazabilirsiniz")
         self.app.layout.focus(self.input)
         self.app.invalidate()
 
@@ -4014,7 +4132,7 @@ class ChatView:
                     target_tab.update(
                         messages=visible_messages,
                         conversation_id=conversation_id,
-                        title=conversation.get("title") or "Untitled",
+                        title=conversation.get("title") or self.tr("Untitled"),
                         project=project,
                         loading=False,
                         loading_started=None,
@@ -4064,7 +4182,7 @@ class ChatView:
                                 prepared_lines,
                             )
                         self.status = (
-                            "Kayıtlı geçmiş · arka planda eşitleniyor"
+                            self.tr("Kayıtlı geçmiş · arka planda eşitleniyor")
                             if cached is not None
                             else "Ready"
                         )
@@ -4077,7 +4195,9 @@ class ChatView:
                     self._read_in_background(
                         lambda: load_callback(conversation_id),
                         lambda _: self.apply_archive_updates(),
-                        lambda reason: setattr(self, "status", "Senkronizasyon: " + reason),
+                        lambda reason: setattr(
+                            self, "status", self.tr("Senkronizasyon: ") + reason
+                        ),
                         session_bound=False,
                     )
                 elif cached is not None:
@@ -4097,7 +4217,7 @@ class ChatView:
                     if target_tab is self.tabs[self.active_tab]:
                         self.loading_conversation = False
                         self.loading_started = None
-                        self.status = f"Load failed: {message}"
+                        self.status = self.tr("Load failed: {0}").format(message)
                     self.app.invalidate()
 
                 self._dispatch_ui(show_error)
@@ -4176,7 +4296,7 @@ class ChatView:
 
             def update_active_view() -> None:
                 if tab_index == self.active_tab:
-                    self.status = "Streaming response…"
+                    self.status = self.tr("Streaming response…")
                     self.scroll_bottom(force=False)
 
             self._dispatch_ui(update_active_view)
@@ -4240,8 +4360,8 @@ class ChatView:
         except Exception as error:
             if not rendered:
                 with self.lock:
-                    messages[-1]["text"] = f"*Request stopped: {error}*"
-            final_status = "Response stopped"
+                    messages[-1]["text"] = "*" + self.tr("Request stopped: {0}").format(error) + "*"
+            final_status = self.tr("Response stopped")
             if tab_index < len(self.tabs):
                 self.tabs[tab_index]["pending_attachments"] = list(attachments)
         finally:
@@ -4254,7 +4374,7 @@ class ChatView:
                 tab = self.tabs[tab_index]
                 tab["temporary"] = temporary
                 tab["conversation_id"] = resolved_id
-                tab["title"] = resolved_title or tab.get("title") or "New conversation"
+                tab["title"] = resolved_title or tab.get("title") or self.tr("New conversation")
                 tab["messages"] = messages
                 tab["model"] = model or resolved_model or ""
                 tab["response_model"] = resolved_model
@@ -4279,7 +4399,7 @@ class ChatView:
                     self._save_active_tab()
                     self.scroll_bottom(force=False)
                 else:
-                    self.status = f"Yanıt {tab_index + 1}. sekmede tamamlandı"
+                    self.status = self.tr("Yanıt {0}. sekmede tamamlandı").format(tab_index + 1)
                     self.app.invalidate()
 
             self._dispatch_ui(finish_turn)

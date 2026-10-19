@@ -33,6 +33,7 @@ def create_application(root: Path | None = None):
     from actions import Action
     from backend import BackendService
     from extension import ExtensionAPI, ExtensionManager
+    from extensions import __file__ as extensions_file
     from extensions.layout.plugin import SPEC
     from lang import __file__ as language_file
     from providers.chatgpt import ChatGPTProvider
@@ -66,8 +67,8 @@ def create_application(root: Path | None = None):
     api.actions.register(
         "application", Action("accounts.synchronize", "Verileri eşitle", accounts.synchronize)
     )
-    for locale in ("en", "tr"):
-        api.languages.load("application", locale, Path(language_file).parent / f"{locale}.json")
+    for bundle in sorted(Path(language_file).parent.glob("*.json")):
+        api.languages.load("application", bundle.stem, bundle)
     from themes import __file__ as themes_file
 
     api.themes.load_directory(Path(themes_file).parent)
@@ -88,8 +89,9 @@ def create_application(root: Path | None = None):
     api.actions.register("application", Action("settings.change", "Change setting", panel.change))
     manager.register(SPEC)
     manager.activate("layout")
-    manager.load_directory(checkout / "extensions")
-    if (root / "extensions").resolve() != (checkout / "extensions").resolve():
+    bundled_extensions = Path(extensions_file).parent
+    manager.load_directory(bundled_extensions)
+    if (root / "extensions").resolve() != bundled_extensions.resolve():
         manager.load_directory(root / "extensions")
     (root / "data").mkdir(parents=True, exist_ok=True)
     if not settings.path.exists():
