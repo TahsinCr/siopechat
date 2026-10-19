@@ -13,6 +13,14 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 - Verify from profile in account settings: import the selected provider's session from the default browser's existing profile without launching a browser or enabling debugging flags.
 - Default-profile discovery for Chrome, Chromium, Brave/Brave Origin, Edge, Vivaldi and Firefox standard locations, with localized import status and errors.
 
+### Changed
+
+- Simplify account settings to profile verification and logout, and remove the unused login-profile sharing selector from account creation.
+
+### Removed
+
+- Browser-launch and separate browser-verification controls from account settings; profile import is now the account login flow.
+
 ### Security
 
 - Scope profile imports to provider authentication cookies, exclude Firefox containers, bound keyring work, and validate candidate sessions before replacing existing account credentials.

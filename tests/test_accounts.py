@@ -179,12 +179,12 @@ class AccountTests(unittest.TestCase):
         with terminal(session_action=lambda action: {"action": action}) as (view, _):
             pending = []
             view._read_in_background = lambda *args, **kw: pending.append(args)
-            view.session_dialog.perform("verify")
+            view.session_dialog.perform("verify_profile")
             read, success, _ = pending.pop()
             view.account_key = self.gemini
             view.session_state = {"account": "Gemini", "authenticated": False}
             view.session_action = lambda _: self.fail("must keep captured callback")
-            self.assertEqual(read(), {"action": "verify"})
+            self.assertEqual(read(), {"action": "verify_profile"})
             success({"authenticated": True})
             self.assertFalse(view.session_state["authenticated"])
             self.assertFalse(view.session_dialog.loading)

@@ -260,6 +260,7 @@ class ProfileUiTests(unittest.IsolatedAsyncioTestCase):
             )
             view.refresh_sidebar = Mock()
             view.refresh_provider_catalog = Mock()
+            self.assertEqual(set(view.session_dialog.buttons), {"verify_profile", "logout"})
             view.session_dialog.buttons["verify_profile"].handler()
             self.assertTrue(view.session_dialog.loading)
             read, success = pending.pop()
@@ -318,6 +319,8 @@ class ProfileUiTests(unittest.IsolatedAsyncioTestCase):
                     )
                     self.assertIn("Profil ile doğrula", text)
                     self.assertNotIn("Window too small", text)
+                    self.assertNotIn("Bağlı tarayıcı", text)
+                    self.assertNotIn("Tarayıcıda aç", text)
             finally:
                 view.app.exit()
                 await run

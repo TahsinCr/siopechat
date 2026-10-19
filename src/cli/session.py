@@ -29,39 +29,14 @@ class SessionDialog:
             get_cursor_position=lambda: Point(0, self.account_index),
         )
         self.buttons = {
-            "verify": Button(
-                self.view.tr("Doğrula"), width=24, handler=lambda: self.perform("verify")
-            ),
             "verify_profile": Button(
                 self.view.text("verify_profile", "Profil ile doğrula"),
                 width=24,
                 handler=lambda: self.perform("verify_profile"),
             ),
-            "default_browser": Button(
-                self.view.tr("Tarayıcıda aç"),
-                width=24,
-                handler=lambda: self.perform("default_browser"),
-            ),
-            "connect_browser": Button(
-                self.view.tr("Bağlı tarayıcı"),
-                width=24,
-                handler=lambda: self.perform("connect_browser"),
-            ),
             "logout": Button(self.view.tr("Çıkış"), width=24, handler=self.logout),
         }
-        self.wide_actions = HSplit(
-            [
-                VSplit(
-                    [self.buttons["verify"], self.buttons["verify_profile"]], padding=2, height=1
-                ),
-                VSplit(
-                    [self.buttons["connect_browser"], self.buttons["default_browser"]],
-                    padding=2,
-                    height=1,
-                ),
-                self.buttons["logout"],
-            ]
-        )
+        self.wide_actions = VSplit(list(self.buttons.values()), padding=2, height=1)
         self.stacked_actions = HSplit(list(self.buttons.values()))
         self.close_button = Button(self.view.tr("Kapat"), handler=self.close)
         keys = KeyBindings()
@@ -174,9 +149,6 @@ class SessionDialog:
         for key, button in self.buttons.items():
             label = {
                 "verify_profile": ("verify_profile", "Profil ile doğrula"),
-                "verify": ("verify_session", self.view.tr("Oturumu doğrula")),
-                "default_browser": ("open_browser", self.view.tr("Tarayıcıda aç")),
-                "connect_browser": ("connect_browser", self.view.tr("Bağlı tarayıcı")),
                 "logout": ("logout", self.view.tr("Çıkış yap")),
             }[key]
             button.text = self.view.text(*label)
@@ -184,11 +156,9 @@ class SessionDialog:
         for button in self.buttons.values():
             button.width = width
             button.window.width = width
-        if width < 22:
-            self.buttons["default_browser"].text = self.view.tr("Tarayıcıda aç")
         self.close_button.text = self.view.text("close", self.view.tr("Kapat"))
         if focus:
-            self.view.app.layout.focus(self.buttons["verify"])
+            self.view.app.layout.focus(self.buttons["verify_profile"])
         self.perform("status")
 
     def render_state(self):
@@ -210,7 +180,7 @@ class SessionDialog:
         return self.view.text(
             "login_help",
             self.view.tr(
-                "Kayıtlı oturum: tarayıcı açmadan doğrulayın.\nProfil: varsayılan tarayıcının son kullanılan profilinden aktarın.\nİlk giriş: Bağlı tarayıcı → giriş → Doğrula.\nÇıkış yalnız uygulamadaki oturumu unutur."
+                "Profil ile doğrula, varsayılan tarayıcının son kullanılan profilini okur.\nHesabınıza bu profilde önceden giriş yapmış olmalısınız.\nDoğrulama sırasında tarayıcı açılmaz.\nÇıkış yalnız uygulamadaki oturumu unutur."
             ),
         )
 
@@ -228,7 +198,7 @@ class SessionDialog:
         account_busy = any(
             tab.get("busy") and tab.get("account_key", key) == key for tab in self.view.tabs
         )
-        if action in ("logout", "verify", "verify_profile", "connect_browser") and (
+        if action in ("logout", "verify_profile") and (
             account_busy
             or self.view.loading_conversation
             or self.view.uploading_image
@@ -254,36 +224,18 @@ class SessionDialog:
                 self.message = self.view.text(
                     "logged_out", self.view.tr("Uygulamadaki oturum kapatıldı")
                 )
-            elif action in ("verify", "verify_profile"):
+            elif action == "verify_profile":
                 self.view.session_state["authenticated"] = True
                 self.view.refresh_sidebar()
                 self.view.refresh_provider_catalog()
-                self.message = (
-                    self.view.text("profile_verified", "Profil doğrulandı: {browser}").format(
-                        browser=result.get("imported_browser", "")
-                    )
-                    if action == "verify_profile"
-                    else self.view.text("verified", self.view.tr("Oturum doğrulandı"))
-                )
-            elif action == "default_browser":
                 self.message = self.view.text(
-                    "default_opened",
-                    self.view.tr(
-                        "Varsayılan tarayıcı açıldı. Oturumu uygulamaya bağlamak için bağlı tarayıcı akışını kullanın."
-                    ),
-                )
-            elif action == "connect_browser":
-                self.message = self.view.text(
-                    "finish_login",
-                    self.view.tr("Açılan tarayıcıda giriş yapın, sonra Oturumu doğrula'ya basın."),
-                )
+                    "profile_verified", "Profil doğrulandı: {browser}"
+                ).format(browser=result.get("imported_browser", ""))
             else:
                 self.message = ""
             self.view.app.invalidate()
 
         def failure(reason):
-            if action == "verify" and self.view.account_key == key:
-                self.view.session_state["authenticated"] = False
             self.loading = False
             self.message = self.view.tr(str(reason))
             self.view.app.invalidate()

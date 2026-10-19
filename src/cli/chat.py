@@ -638,9 +638,7 @@ class ChatView:
             return
 
         def submit(values):
-            key = self.account_service.add(
-                values["provider"], values["label"], values.get("browser_account") or None
-            )
+            key = self.account_service.add(values["provider"], values["label"])
             self.select_account(key)
             self.settings_dialog.open("accounts")
 
@@ -654,17 +652,6 @@ class ChatView:
                     [(key, item[0]) for key, item in PROVIDERS.items()],
                 ),
                 ("label", self.tr("Hesap adı"), "", None),
-                (
-                    "browser_account",
-                    self.tr("Tarayıcı profili"),
-                    "",
-                    [("", self.tr("Ayrı profil (önerilen)"))]
-                    + [
-                        (x["key"], self.tr("Paylaş: ") + x["label"])
-                        for x in self.account_service.items()
-                        if not x.get("browser_account")
-                    ],
-                ),
             ],
             submit,
         )
