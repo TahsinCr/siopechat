@@ -600,5 +600,12 @@
   "ui.Profil dosyasına erişim reddedildi; uygulamayı profilin sahibi olan kullanıcıyla çalıştırın": "Profile access was denied; run the application as the user who owns the profile",
   "ui.Çerez veritabanı okunamadı; tarayıcıyı kapatıp yeniden deneyin": "Could not read the cookie database; close the browser and retry",
   "ui.Sistem anahtarlığına erişilemedi; masaüstü oturumunu ve anahtarlık kilidini kontrol edin": "Could not access the system keyring; check the desktop session and keyring lock",
-  "ui.Tarayıcı çerezleri çözülemedi; anahtarlık erişimi veya tarayıcı şifrelemesi uyumsuz olabilir": "Could not decrypt browser cookies; keyring access or browser encryption may be incompatible"
+  "ui.Tarayıcı çerezleri çözülemedi; anahtarlık erişimi veya tarayıcı şifrelemesi uyumsuz olabilir": "Could not decrypt browser cookies; keyring access or browser encryption may be incompatible",
+  "remove_account": "Remove account",
+  "ui.Hesabı sil": "Remove account",
+  "ui.Yerel hesabı sil: {0}": "Remove local account: {0}",
+  "ui.Yerel hesap silindi": "Local account removed",
+  "ui.Hesap bulunamadı": "Account was not found",
+  "ui.Son etkin hesap silinemez; önce başka bir hesap ekleyin": "The last enabled account cannot be removed; add another account first",
+  "ui.Hesaplar · Hesabı sil": "Accounts · Remove account"
 }

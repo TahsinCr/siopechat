@@ -346,7 +346,11 @@ class ChatView:
             if self.account_service and now - last_account_check >= 5:
                 last_account_check = now
                 key = self.account_key
-                state = await asyncio.to_thread(self.account_service.status, key)
+                try:
+                    state = await asyncio.to_thread(self.account_service.status, key)
+                except ValueError:
+                    # A local account can be removed between the timer and UI callback.
+                    continue
                 if key == self.account_key and state != self.session_state:
                     self.session_state = state
                     self.app.invalidate()
@@ -611,14 +615,14 @@ class ChatView:
         ):
             self.status = self.tr("Sağlayıcı devre dışı · Ayarlar → Sağlayıcılar")
             self.app.invalidate()
-            return
+            return False
         if (
             self.account_service is None
             or self.loading_conversation
             or self.uploading_image
             or self.session_dialog.loading
         ):
-            return
+            return False
         if self.tab_kind == "chat" and (self.messages or self.conversation_id or self.input.text):
             self.new_tab()
         self.bind_account(key)
@@ -632,6 +636,7 @@ class ChatView:
         self.refresh_sidebar()
         self.refresh_provider_catalog()
         self.app.invalidate()
+        return True
 
     def add_account(self):
         if not self.account_service:

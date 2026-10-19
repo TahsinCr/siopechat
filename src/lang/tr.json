@@ -600,5 +600,12 @@
   "ui.Profil dosyasına erişim reddedildi; uygulamayı profilin sahibi olan kullanıcıyla çalıştırın": "Profil dosyasına erişim reddedildi; uygulamayı profilin sahibi olan kullanıcıyla çalıştırın",
   "ui.Çerez veritabanı okunamadı; tarayıcıyı kapatıp yeniden deneyin": "Çerez veritabanı okunamadı; tarayıcıyı kapatıp yeniden deneyin",
   "ui.Sistem anahtarlığına erişilemedi; masaüstü oturumunu ve anahtarlık kilidini kontrol edin": "Sistem anahtarlığına erişilemedi; masaüstü oturumunu ve anahtarlık kilidini kontrol edin",
-  "ui.Tarayıcı çerezleri çözülemedi; anahtarlık erişimi veya tarayıcı şifrelemesi uyumsuz olabilir": "Tarayıcı çerezleri çözülemedi; anahtarlık erişimi veya tarayıcı şifrelemesi uyumsuz olabilir"
+  "ui.Tarayıcı çerezleri çözülemedi; anahtarlık erişimi veya tarayıcı şifrelemesi uyumsuz olabilir": "Tarayıcı çerezleri çözülemedi; anahtarlık erişimi veya tarayıcı şifrelemesi uyumsuz olabilir",
+  "remove_account": "Hesabı sil",
+  "ui.Hesabı sil": "Hesabı sil",
+  "ui.Yerel hesabı sil: {0}": "Yerel hesabı sil: {0}",
+  "ui.Yerel hesap silindi": "Yerel hesap silindi",
+  "ui.Hesap bulunamadı": "Hesap bulunamadı",
+  "ui.Son etkin hesap silinemez; önce başka bir hesap ekleyin": "Son etkin hesap silinemez; önce başka bir hesap ekleyin",
+  "ui.Hesaplar · Hesabı sil": "Hesaplar · Hesabı sil"
 }

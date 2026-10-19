@@ -306,7 +306,7 @@ class ProfileUiTests(unittest.IsolatedAsyncioTestCase):
             )
             view.refresh_sidebar = Mock()
             view.refresh_provider_catalog = Mock()
-            self.assertEqual(set(view.session_dialog.buttons), {"verify_profile", "logout"})
+            self.assertEqual(set(view.session_dialog.buttons), {"verify_profile", "logout", "remove"})
             view.session_dialog.buttons["verify_profile"].handler()
             self.assertTrue(view.session_dialog.loading)
             read, success = pending.pop()

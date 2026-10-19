@@ -29,6 +29,7 @@ DEFAULT_KEYBINDINGS = {
     "chat.attach": "escape a",
     "ui.filter": "escape f",
     "accounts.add": "escape n",
+    "accounts.remove": "escape backspace",
     "chat.new": "c-t",
     "chat.close_tab": "c-w",
     "chat.close_all_tabs": "escape w",
@@ -290,6 +291,37 @@ class Settings:
                 )
             self._commit(data)
         self._notify("providers", {provider_id: {"enabled": enabled}})
+
+    def remove_account(self, key):
+        """Remove metadata atomically, choosing another enabled account."""
+        with self._lock:
+            data = self.snapshot()
+            accounts = data["accounts"]
+            if not any(x["provider"] + "/" + x["id"] == key for x in accounts["items"]):
+                raise ValueError("Hesap bulunamadı")
+            remaining = [x for x in accounts["items"] if x["provider"] + "/" + x["id"] != key]
+            candidates = [
+                x["provider"] + "/" + x["id"]
+                for x in remaining
+                if data["providers"].get(x["provider"], {}).get("enabled", False)
+            ]
+            if not candidates:
+                raise ValueError("Son etkin hesap silinemez; önce başka bir hesap ekleyin")
+            accounts["items"] = remaining
+            for item in remaining:
+                if item.get("browser_account") == key:
+                    item.pop("browser_account")
+            accounts["selected"] = {
+                provider: value
+                for provider, value in accounts.get("selected", {}).items()
+                if value != key
+            }
+            accounts.get("preferences", {}).pop(key, None)
+            if accounts["active"] == key:
+                accounts["active"] = candidates[0]
+            self._commit(data)
+        self._notify("accounts", accounts)
+        return accounts["active"]
 
     def update(self, section: str, values: dict) -> None:
         if section not in ("application", "keybindings", "providers", "accounts"):

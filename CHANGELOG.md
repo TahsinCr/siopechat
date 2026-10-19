@@ -10,6 +10,7 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 
 ### Added
 
+- Confirmed local account removal, credential/preference cleanup and automatic selection of another enabled account, with an account-settings action and Alt+Backspace shortcut.
 - Verify from profile in account settings: import the selected provider's session from the default browser's existing profile without launching a browser or enabling debugging flags.
 - Default-profile discovery for Chrome, Chromium, Brave/Brave Origin, Edge, Vivaldi and Firefox standard locations, with localized import status and errors.
 
@@ -27,6 +28,7 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 
 ### Fixed
 
+- Account-row clicks now update the selected row, keyboard focus and managed account together; full row width is clickable.
 - Distinguish missing profile-reader dependencies, filesystem permissions, cookie database failures, keyring access and decryption errors without exposing cookie values or raw exceptions.
 - Keep default-browser diagnostics out of the terminal UI while reporting launch failures.
 

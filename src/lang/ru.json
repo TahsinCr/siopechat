@@ -600,5 +600,12 @@
   "ui.Profil dosyasına erişim reddedildi; uygulamayı profilin sahibi olan kullanıcıyla çalıştırın": "Доступ к профилю запрещён; запустите приложение от имени владельца профиля",
   "ui.Çerez veritabanı okunamadı; tarayıcıyı kapatıp yeniden deneyin": "Не удалось прочитать базу cookie; закройте браузер и повторите попытку",
   "ui.Sistem anahtarlığına erişilemedi; masaüstü oturumunu ve anahtarlık kilidini kontrol edin": "Нет доступа к системному хранилищу ключей; проверьте сеанс рабочего стола и блокировку хранилища",
-  "ui.Tarayıcı çerezleri çözülemedi; anahtarlık erişimi veya tarayıcı şifrelemesi uyumsuz olabilir": "Не удалось расшифровать cookie; возможна проблема доступа к ключам или несовместимое шифрование браузера"
+  "ui.Tarayıcı çerezleri çözülemedi; anahtarlık erişimi veya tarayıcı şifrelemesi uyumsuz olabilir": "Не удалось расшифровать cookie; возможна проблема доступа к ключам или несовместимое шифрование браузера",
+  "remove_account": "Удалить аккаунт",
+  "ui.Hesabı sil": "Удалить аккаунт",
+  "ui.Yerel hesabı sil: {0}": "Удалить локальный аккаунт: {0}",
+  "ui.Yerel hesap silindi": "Локальный аккаунт удалён",
+  "ui.Hesap bulunamadı": "Аккаунт не найден",
+  "ui.Son etkin hesap silinemez; önce başka bir hesap ekleyin": "Нельзя удалить последний активный аккаунт; сначала добавьте другой",
+  "ui.Hesaplar · Hesabı sil": "Аккаунты · Удалить аккаунт"
 }

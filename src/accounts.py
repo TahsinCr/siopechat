@@ -143,7 +143,10 @@ class Accounts:
         return self.active_accounts()[0]["key"]
 
     def item(self, key):
-        return next(item for item in self.items() if item["key"] == key)
+        item = next((item for item in self.items() if item["key"] == key), None)
+        if item is None:
+            raise ValueError("Hesap bulunamadı")
+        return item
 
     def add(self, provider, label, browser_account=None):
         if (
@@ -158,7 +161,11 @@ class Accounts:
             "provider": provider,
             "id": uuid.uuid4().hex,
             "label": label.strip(),
-            "port": 9230 + len(data["items"]),
+            "port": next(
+                port
+                for port in range(9230, 65536)
+                if port not in {x["port"] for x in data["items"]}
+            ),
         }
         if browser_account:
             linked = self.item(browser_account)
@@ -176,6 +183,51 @@ class Accounts:
         selected = {item["provider"]: item["key"] for item in self.active_accounts()}
         selected[key.split("/")[0]] = key
         self.settings.update("accounts", {"active": key, "selected": selected})
+
+    def remove(self, key):
+        """Forget a local account; never delete the remote account or archived conversations."""
+        self.item(key)
+        with self._lock:
+            if self._sending.get(key, 0) or key in self._session_changes:
+                raise RuntimeError("Önce devam eden işlemi tamamlayın veya durdurun")
+            self._session_changes.add(key)
+        try:
+            # Reject before closing clients or touching credentials.
+            if not any(item["key"] != key and item["enabled"] for item in self.items()):
+                raise ValueError("Son etkin hesap silinemez; önce başka bir hesap ekleyin")
+            files = [
+                self.credential_path(key),
+                self._verification_path(key),
+                self.directory(key) / "models.json",
+            ]
+
+            async def release():
+                task = self._catalog_tasks.get(key)
+                if task:
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+                provider = self._providers.get(key)
+                if provider:
+                    await provider.close()
+
+            self.call(release())
+            # A failed credential removal must not report successful deletion.
+            for path in files:
+                path.unlink(missing_ok=True)
+            active = self.settings.remove_account(key)
+            with self._catalog_io_lock:
+                self._catalog_versions[key] = self._catalog_versions.get(key, 0) + 1
+                self._catalogs.pop(key, None)
+            self._providers.pop(key, None)
+            self._verified.discard(key)
+            with self._lock:
+                self._active_pending.pop(key, None)
+                self._active_values.pop(key, None)
+            self._chat_projects = {k: v for k, v in self._chat_projects.items() if k[0] != key}
+            return {"removed": key, "active_account": active}
+        finally:
+            with self._lock:
+                self._session_changes.discard(key)
 
     def directory(self, key):
         self.item(key)
@@ -487,6 +539,8 @@ class Accounts:
         item = self.item(key)
         if action == "status":
             return self.status(key)
+        if action == "remove":
+            return self.remove(key)
         if action == "verify_profile":
             return self._verify_profile(key)
         if action == "default_browser":

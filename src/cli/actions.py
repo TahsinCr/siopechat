@@ -36,6 +36,7 @@ _ACTION_NAMES = {
     "layout.split_down": "Alt alta böl",
     "layout.unsplit": "Bölmeyi kaldır",
     "accounts.add": "Hesap ekle",
+    "accounts.remove": "Hesabı sil",
     "command.session": "Hesap ve oturum yönetimi",
     "ui.search": "Sohbetlerde ara",
     "ui.filter": "Sağlayıcı filtresi",

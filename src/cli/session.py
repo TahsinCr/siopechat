@@ -7,9 +7,10 @@ from prompt_toolkit.layout import DynamicContainer, HSplit, VSplit, Window
 from prompt_toolkit.layout.containers import ConditionalContainer
 from prompt_toolkit.layout.dimension import D
 from prompt_toolkit.layout.margins import ScrollbarMargin
+from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Button, Frame
 
-from .widgets import BoundedTextControl, on_click
+from .widgets import BoundedTextControl, fit_text, on_click
 
 
 class SessionDialog:
@@ -35,8 +36,16 @@ class SessionDialog:
                 handler=lambda: self.perform("verify_profile"),
             ),
             "logout": Button(self.view.tr("Çıkış"), width=24, handler=self.logout),
+            "remove": Button(self.view.tr("Hesabı sil"), width=24, handler=self.remove),
         }
-        self.wide_actions = VSplit(list(self.buttons.values()), padding=2, height=1)
+        self.wide_actions = HSplit(
+            [
+                VSplit(
+                    [self.buttons["verify_profile"], self.buttons["logout"]], padding=2, height=1
+                ),
+                self.buttons["remove"],
+            ]
+        )
         self.stacked_actions = HSplit(list(self.buttons.values()))
         self.close_button = Button(self.view.tr("Kapat"), handler=self.close)
         keys = KeyBindings()
@@ -116,14 +125,22 @@ class SessionDialog:
                 else "class:tab.active"
                 if item["key"] in active_keys
                 else "class:button",
-                f" {item['icon']} {item['label']} · {item['provider']}"
-                + (self.view.tr(" · etkin") if item["key"] in active_keys else "")
-                + (self.view.tr(" · kapalı") if not item.get("enabled", True) else "")
-                + "\n",
+                self.account_line(item, active_keys),
                 on_click(lambda key=item["key"]: self.choose_account(key)),
             )
             for index, item in enumerate(self.view.account_service.items())
         ]
+
+    def account_line(self, item, active_keys):
+        width = max(1, self.view.settings_dialog.content_width() - 5)
+        label = (
+            ("› " if item["key"] == self.view.account_key else "  ")
+            + f"{item['icon']} {item['label']} · {item['provider']}"
+            + (self.view.tr(" · etkin") if item["key"] in active_keys else "")
+            + (self.view.tr(" · kapalı") if not item.get("enabled", True) else "")
+        )
+        label = fit_text(label, width)
+        return label + " " * max(0, width - get_cwidth(label)) + "\n"
 
     def move_account(self, delta):
         if self.view.account_service:
@@ -135,9 +152,11 @@ class SessionDialog:
     def choose_account(self, key):
         if self.loading or self.view.background_jobs:
             return
-        self.view.select_account(key)
+        if self.view.select_account(key) is False:
+            return
         self.confirm_logout = False
-        self.activate()
+        self.activate(focus=False)
+        self.view.app.layout.focus(self.account_control)
 
     def open(self):
         self.view.settings_dialog.open("accounts")
@@ -146,10 +165,20 @@ class SessionDialog:
         self.add_account_button.text = self.view.tr("＋ Hesap ekle")
         self.visible = True
         self.confirm_logout = False
+        if self.view.account_service:
+            self.account_index = next(
+                (
+                    i
+                    for i, item in enumerate(self.view.account_service.items())
+                    if item["key"] == self.view.account_key
+                ),
+                0,
+            )
         for key, button in self.buttons.items():
             label = {
                 "verify_profile": ("verify_profile", "Profil ile doğrula"),
                 "logout": ("logout", self.view.tr("Çıkış yap")),
+                "remove": ("remove_account", self.view.tr("Hesabı sil")),
             }[key]
             button.text = self.view.text(*label)
         width = max(12, min(24, (self.view.terminal_width() - 26) // 2))
@@ -198,7 +227,7 @@ class SessionDialog:
         account_busy = any(
             tab.get("busy") and tab.get("account_key", key) == key for tab in self.view.tabs
         )
-        if action in ("logout", "verify_profile") and (
+        if action in ("logout", "verify_profile", "remove") and (
             account_busy
             or self.view.loading_conversation
             or self.view.uploading_image
@@ -219,7 +248,21 @@ class SessionDialog:
                 self.view.app.invalidate()
                 return
             self.view.session_state.update(result)
-            if action == "logout":
+            if action == "remove":
+                self.view.after_logout()
+                self.view.bind_account(result["active_account"])
+                self.view.restore_account_preference()
+                self.view._account_projects.pop(key, None)
+                if self.view.account_filter is not None:
+                    self.view.account_filter.discard(key)
+                    if not self.view.account_filter:
+                        self.view.account_filter = None
+                self.view._save_active_tab()
+                self.activate(focus=False)
+                self.view.refresh_sidebar()
+                self.view.refresh_provider_catalog()
+                self.message = self.view.tr("Yerel hesap silindi")
+            elif action == "logout":
                 self.view.after_logout()
                 self.message = self.view.text(
                     "logged_out", self.view.tr("Uygulamadaki oturum kapatıldı")
@@ -242,6 +285,15 @@ class SessionDialog:
 
         self.view._read_in_background(
             lambda: callback(action), success, failure, session_bound=False
+        )
+
+    def remove(self):
+        if self.loading or self.view.background_jobs:
+            return
+        label = self.view.session_state.get("account", "")
+        self.view.forms.confirm(
+            self.view.tr("Yerel hesabı sil: {0}").format(label),
+            lambda: self.perform("remove"),
         )
 
     def logout(self):

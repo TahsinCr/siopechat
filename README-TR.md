@@ -52,6 +52,8 @@ Başlatıcılar, varsa proje dizinindeki `python/` ortamını kullanır; yeni bi
 
 Birden fazla hesap ekleyebilirsiniz. Gönderim için her sağlayıcıda bir hesap seçilidir; başka hesabın geçmişini görüntülemek bu seçimi değiştirmez. Farklı bir hesabı doğrulamak için önce varsayılan tarayıcınızda o hesabın açık olduğu profili seçin, ardından SiopeChat’te ilgili hesapta **Profil ile doğrula** seçeneğini kullanın.
 
+Hesap satırına tıklayarak seçim yapın; ok işareti yönetilen hesabı gösterir. **Hesabı sil** (Hesaplar ekranında Alt+Backspace), onay aldıktan sonra yerel hesap kaydını, kayıtlı oturumu ve model tercihlerini kaldırır. Sağlayıcıdaki hesap ve arşivlenmiş sohbetler korunur. Silinen hesabın sekmeleri kapatılıp başka etkin hesap seçilir. Son etkin hesabı silmeden önce başka hesap ekleyin.
+
 ## Kullanım
 
 Mesaj alanına yazıp **Enter** ile gönderin. **Alt+Enter** veya **Ctrl+J** yeni satır ekler; terminal ayrı bildirdiğinde Shift+Enter da desteklenir. Yazma alanı ayarlanan yüksekliğe kadar büyür, ardından kaydırılır. Ctrl+A metni seçer, Ctrl+C seçimi kopyalar, Ctrl+V yapıştırır. Bir mesaja tıklayarak içeriğini seçip kopyalayabilirsiniz.
