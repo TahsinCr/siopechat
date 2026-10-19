@@ -75,7 +75,7 @@ Every default shortcut is listed under `keybindings` in `config.json` and can be
 
 ## Settings and local data
 
-`config.json` is created in the project root. Set `SIOPECHAT_HOME` to use another configuration and data directory.
+`config.json` is created locally in the project root and is excluded from Git. Defaults live in `src/settings.py`; personal settings and account preferences must not be committed. Set `SIOPECHAT_HOME` to use another configuration and data directory.
 
 Settings has General, Providers, Accounts, Extensions and Keyboard categories. Save and Close stay at the bottom right. Categories collapse into a horizontal selector on narrow terminals, and the page scrolls to focused controls on short screens.
 

@@ -1,4 +1,5 @@
 import json
+import tempfile
 import threading
 import unittest
 from unittest.mock import Mock, patch
@@ -230,8 +231,8 @@ class CliComponentTests(unittest.TestCase):
     def test_config_lists_every_default_shortcut_and_rejects_collisions(self):
         from pathlib import Path
 
-        root = Path(__file__).resolve().parents[1]
-        config = json.loads((root / "config.json").read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as directory:
+            config = Settings(Path(directory) / "config.json").snapshot()
         self.assertEqual(config["keybindings"], DEFAULT_KEYBINDINGS)
         Settings._validate_document(config)
         collided = json.loads(json.dumps(config))

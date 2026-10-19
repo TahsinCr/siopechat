@@ -89,6 +89,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Fixed
 
+- Remove personal `config.json` from every historical commit, exclude it from version control, and validate default settings in an isolated temporary directory. Existing commits are retained and re-signed with the configured SSH signing key.
+
 - F1 toggles help off on a second press, preserving conversation content and restoring its previous reading position.
 
 - Background project-detail loading preserves prompts and attachments entered while the request was pending.
