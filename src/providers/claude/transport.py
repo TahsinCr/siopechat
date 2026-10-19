@@ -8,6 +8,7 @@ from urllib.parse import quote
 from ..errors import AccountPaused, ProviderError
 from ..projects import ProjectOptions
 from ..session import WebSession, read_session
+from .catalog import selector_catalog
 
 
 def remote_id(value):
@@ -17,7 +18,7 @@ def remote_id(value):
         raise ValueError("Invalid Claude identity") from None
 
 
-def catalog_from_bootstrap(data, selected):
+def organization_from_bootstrap(data, selected):
     account = data.get("account")
     if not isinstance(account, dict):
         raise AccountPaused("Claude oturumu doğrulanamadı")
@@ -29,40 +30,7 @@ def catalog_from_bootstrap(data, selected):
             org = available[0]
         else:
             raise ProviderError("Claude çalışma alanı seçimi geçersiz; hesabı tekrar doğrulayın")
-    configs = org.get("claude_ai_bootstrap_models_config")
-    if not isinstance(configs, list):
-        raise ProviderError("Claude model kataloğu sözleşmesi değişmiş")
-    models = []
-    for item in configs:
-        if (
-            item.get("inactive")
-            or item.get("disabled")
-            or item.get("upgrade_required")
-            or not isinstance(item.get("model"), str)
-        ):
-            continue
-        efforts = [
-            {"id": x["id"], "title": x.get("selection_title") or x.get("title") or x["id"]}
-            for x in item.get("thinking_modes", [])
-            if isinstance(x.get("id"), str)
-        ]
-        models.append(
-            {
-                "id": item["model"],
-                "title": item.get("name") or item["model"],
-                "efforts": efforts,
-                "native": item,
-            }
-        )
-    if not models:
-        raise ProviderError("Claude bu hesap için model sunmadı")
-    preferred = account.get("settings", {}).get("default_model")
-    return org["uuid"], {
-        "models": models,
-        "default_model": preferred
-        if any(x["id"] == preferred for x in models)
-        else models[0]["id"],
-    }
+    return org["uuid"]
 
 
 class ClaudeTransport:
@@ -74,9 +42,13 @@ class ClaudeTransport:
     async def discover(self):
         data = await self.session.request("GET", "/api/bootstrap")
         values = read_session(self.path)
-        self.organization, self.catalog = catalog_from_bootstrap(
+        self.organization = organization_from_bootstrap(
             data, values.get("cookies", values).get("lastActiveOrg")
         )
+        selected = await self.session.request(
+            "GET", "/api/organizations/" + remote_id(self.organization) + "/model_selector/chat"
+        )
+        self.catalog = selector_catalog(selected)
         self.authenticated = True
         return self.catalog
 
@@ -194,7 +166,10 @@ class ClaudeTransport:
             body["parent_message_uuid"] = parent
         effort = v.get("effort")
         if effort:
-            body["thinking_mode"] = effort
+            if "selections" in choice:
+                body.update(choice["selections"][effort])
+            else:
+                body["thinking_mode"] = effort
         completed, text, thinking, blocks = False, "", "", {}
         async with self.session.connect().stream(
             "POST",

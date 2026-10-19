@@ -99,6 +99,15 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(fresh.cached_models(self.gemini), catalog)
         self.assertIsNone(fresh.cached_models("chatgpt/default"))
 
+    def test_old_catalog_snapshot_is_not_restored_after_entitlement_schema_changes(self):
+        from dataclasses import asdict
+
+        catalog = ModelCatalog(FeatureState.AVAILABLE, (Model("old-locked", "Old"),))
+        path = self.accounts.directory(self.gemini) / "models.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"account_key": self.gemini, "catalog": asdict(catalog)}))
+        self.assertIsNone(Accounts(self.api).cached_models(self.gemini))
+
     def test_failed_refresh_preserves_last_usable_model_catalog(self):
         good = ModelCatalog(FeatureState.AVAILABLE, (Model("m", "Model"),))
         provider = Mock()

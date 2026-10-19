@@ -82,6 +82,9 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Fixed
 
+- Use Claude’s account-entitled model selector instead of global bootstrap definitions, excluding plan-locked models and retaining dynamic effort/mode settings.
+- Invalidate catalog snapshots from before entitlement-aware discovery instead of restoring unavailable model choices after an upgrade.
+
 - Restore visible filter, project-provider and deletion choices by giving shared form viewports a bounded preferred height; preserve checkbox account IDs on submission.
 - Keep active tab and split-group colors from being overridden by the generic open-tab text style.
 

@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import httpx
 
 from backend import BackendService
-from providers.claude.transport import ClaudeTransport, catalog_from_bootstrap
+from providers.claude.transport import ClaudeTransport, organization_from_bootstrap
 from providers.errors import AccountPaused, ProviderError, RateLimited, RemoteNotFound
 from providers.gemini.rpc import NotebookEditor, NotebookRPC
 from providers.gemini.transport import NotebookTransport
@@ -174,12 +174,10 @@ class ClaudeHTTPTests(unittest.IsolatedAsyncioTestCase):
                 ],
             }
         }
-        org, catalog = catalog_from_bootstrap(data, "workspace")
+        org = organization_from_bootstrap(data, "workspace")
         self.assertEqual(org, "workspace")
-        self.assertEqual([m["id"] for m in catalog["models"]], ["live"])
-        self.assertEqual(catalog["default_model"], "live")
         with self.assertRaises(ProviderError):
-            catalog_from_bootstrap(data, "other")
+            organization_from_bootstrap(data, "other")
 
     async def test_http_stream_preserves_published_thinking_and_end_marker(self):
         cid = "11111111-1111-1111-1111-111111111111"

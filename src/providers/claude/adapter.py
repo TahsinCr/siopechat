@@ -116,7 +116,9 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
                         default_effort=default,
                         chat_selectable=not bool(item.get("selection_error")),
                         metadata={
-                            k: item[k] for k in ("effort_error", "selection_error") if item.get(k)
+                            k: item[k]
+                            for k in ("effort_error", "selection_error", "native", "selections")
+                            if item.get(k)
                         },
                     )
                 )

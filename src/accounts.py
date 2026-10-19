@@ -25,6 +25,7 @@ from providers.gemini import GeminiProvider
 from providers.models import FeatureState, ModelCatalog, SessionState
 from providers.registry import PROVIDERS
 
+CATALOG_SCHEMA = 2
 MODEL_TIMEOUT = 30
 HISTORY_TIMEOUT = 20
 
@@ -261,7 +262,7 @@ class Accounts:
             if path.stat().st_size > 256 * 1024:
                 return None
             record = json.loads(path.read_text(encoding="utf-8"))
-            if record.get("account_key") != key:
+            if record.get("account_key") != key or record.get("schema") != CATALOG_SCHEMA:
                 return None
             catalog = ModelCatalog.from_dict(record["catalog"])
             if catalog.state != FeatureState.AVAILABLE:
@@ -314,7 +315,7 @@ class Accounts:
                                 try:
                                     self.api.get("backend").atomic_json_write(
                                         self.directory(key) / "models.json",
-                                        {"account_key": key, "catalog": asdict(value)},
+                                        {"schema": CATALOG_SCHEMA, "account_key": key, "catalog": asdict(value)},
                                     )
                                 except OSError:
                                     pass
