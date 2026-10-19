@@ -38,6 +38,7 @@ class ArchitectureTests(unittest.TestCase):
             "providers",
             "__future__",
             "gemini_webapi",
+            "curl_cffi",
         }
         for path in files:
             for node in ast.walk(ast.parse(path.read_text())):

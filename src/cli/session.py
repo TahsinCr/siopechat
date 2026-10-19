@@ -184,11 +184,7 @@ class SessionDialog:
             if state.get("saved_snapshot")
             else self.view.text("no", "yok")
         )
-        transport = (
-            "Tarayıcı: çalışıyor"
-            if state.get("browser_connected")
-            else "Tarayıcı: kapalı · gerektiğinde otomatik açılır"
-        )
+        transport = "Bağlantı: kayıtlı web oturumu"
         return f"{self.view.session_state.get('account', 'ChatGPT')} · {verified}\n{self.view.text('saved_session', 'Kayıtlı oturum')}: {saved}\n{transport}"
 
     def render_help(self):

@@ -12,9 +12,9 @@ Keep conversations in tabs, select one account per provider without mixing their
 
 Requirements:
 
-- Python **3.10+** for ChatGPT/Claude, **3.11+** for the optional standalone Gemini SDK transport.
-- Node.js **22+** for browser-session helpers.
-- Chrome or Chromium for login and the current native web transports. Browser-free generation is not implemented.
+- Python **3.10+** for ChatGPT/Claude, **3.11+** for Gemini.
+- Node.js **22+** for first-login helpers and the ChatGPT request signer.
+- Chrome or Chromium for the explicit initial sign-in only. Conversation, model, history and project requests use saved web sessions over HTTP; they do not start or require a browser process.
 - A terminal with Unicode support; true color and mouse reporting improve the experience.
 
 Install from the checkout using your Python environment:
@@ -34,7 +34,7 @@ The launchers reuse the checkout's `python/` environment when present. They do n
 | Windows PowerShell | `./siopechat.ps1` |
 | Installed console command | `siopechat` |
 
-Open **Settings → Accounts**, add or select an account, then choose **Connected browser**. Sign in on the provider website and return to **Verify**. A valid saved session can be reused without signing in again. Opening the default browser does not import its login session into SiopeChat. When adding an account, **Browser profile** can explicitly reuse an existing account’s connected profile for a different provider. Separate profiles remain the default. Shared profiles retain independent account records and verification markers, but share the browser’s website logins.
+Open **Settings → Accounts**, add or select an account, then choose **Connected browser**. Sign in on the provider website and return to **Verify**. Verification saves a private account session. You can then close the login browser, including its process. A valid saved session is reused without signing in again; an expired or revoked session requires explicit verification. Opening the default browser does not import its login session into SiopeChat. When adding an account, **Browser profile** can explicitly reuse an existing account’s connected profile for a different provider. Separate profiles remain the default. Shared profiles retain independent account records and verification markers, but share the browser’s website logins.
 
 This project uses unofficial web-session transports. It requires your own provider accounts and remains subject to their access and usage limits. It does not provide unlimited access or guarantee compatibility with future website changes.
 
@@ -43,7 +43,7 @@ This project uses unofficial web-session transports. It requires your own provid
 - **Tabs:** keep drafts, scroll positions and conversation state separate. Active replies and replies completed in another tab have distinct indicators.
 - **Sidebar:** search loaded chats, expand projects and load older pages when needed. ChatGPT uses a white ring (`◎`), Gemini a light-blue star (`✦`), and Claude a terracotta asterisk (`✳`). Chat titles use the same text color. Open conversations are bold white in the sidebar and tab labels are pure white. Projects display their names rather than qualified internal IDs. The sidebar lists projects and notebooks across providers independently of the selected model. Only the conversation project picker beside the effort selector follows the current model account: ChatGPT projects for GPT, Gemini notebooks for Gemini, and Claude projects for Claude. All three providers have distinct conversation icons; a multi-select filter appears when multiple providers are configured.
 - **Models and effort:** a new chat lists models from the selected account of each enabled provider. Choosing a model routes that draft to its provider/account; an existing chat remains tied to its original account. Lists come from the accounts, rather than a hardcoded version list. The last model and effort selection is remembered per account and reused in new chats, including an explicit provider-default effort choice. An obsolete choice falls back to an available model.
-- **Projects:** ChatGPT project chats, instructions and resource metadata are available in the sidebar. `/project` moves the current chat or assigns a new draft; **Unassigned** removes membership. `/project-new` first selects the provider/account, then shows its native creation fields. Unsupported memory/privacy choices are hidden. Open project details to use **Edit**, **Add source** or **Remove source**; the same actions are available as `/project-edit`, `/project-source-add` and `/project-source-remove` (Alt+R, Alt+I, Alt+O). `/project-edit` opens the shared project picker across providers and opens the selected project tab. **Edit** on that tab uses the same inline editor, rather than a second popup. Instructions support multiple lines; Ctrl+S saves. Long forms scroll and keep their buttons accessible. Source types and file filters come from the selected provider's native controls. File uploads are limited locally to 20 MiB; the provider may enforce stricter limits. Explicit project editing may bring its owned browser tab to the foreground.
+- **Projects:** ChatGPT project chats, instructions and resource metadata are available in the sidebar. `/project` moves the current chat or assigns a new draft; **Unassigned** removes membership. `/project-new` first selects the provider/account, then shows its native creation fields. Unsupported memory/privacy choices are hidden. Open project details to use **Edit**, **Add source** or **Remove source**; the same actions are available as `/project-edit`, `/project-source-add` and `/project-source-remove` (Alt+R, Alt+I, Alt+O). `/project-edit` opens the shared project picker across providers and opens the selected project tab. **Edit** on that tab uses the same inline editor, rather than a second popup. Instructions support multiple lines; Ctrl+S saves. Long forms scroll and keep their buttons accessible. Source types and file filters come from the selected provider's transport capabilities. File uploads are limited locally to 20 MiB; the provider may enforce stricter limits.
 - **Files:** use the attachment command or button to choose a file. This client limits each file to 20 MiB; provider restrictions still apply.
 - **Temporary chats:** click **Geçici: Kapalı / Açık** beside the project selector to change a draft before its first message, or use `/temporary` to open a separate temporary chat. Enabling temporary mode clears the draft's project assignment and keeps its typed text. Existing conversations cannot change mode. Unsupported providers show **Desteklenmiyor**. Temporary requests do not write local conversation snapshots; provider retention policies still apply.
 
@@ -93,7 +93,7 @@ Providers has independent enabled switches. At least one provider with a configu
 }
 ```
 
-One selected account per provider is stored in `accounts.selected`; selecting Gemini does not deselect the ChatGPT account. Disabled providers are excluded from new-chat model discovery and navigation. Already open tabs from another account remain readable; activate that account again before sending. Account preferences live under `accounts.preferences`. Credentials are kept separately from configuration. New accounts use isolated directories under `data/accounts/`; the original ChatGPT account retains its legacy login paths. Conversation cache fallback is restricted to that original account, so an empty Gemini workspace cannot reopen a ChatGPT record.
+One selected account per provider is stored in `accounts.selected`; selecting Gemini does not deselect the ChatGPT account. Disabled providers are excluded from new-chat model discovery and navigation. Already open tabs from another account remain readable; activate that account again before sending. Account preferences live under `accounts.preferences`. Credentials are kept separately from configuration. New accounts use isolated directories under `data/accounts/`; the original ChatGPT account retains its legacy login paths when using the normal application root. An alternate application root keeps its session and login profile inside that root, including in tests. Conversation cache fallback is restricted to that original account, so an empty Gemini workspace cannot reopen a ChatGPT record.
 
 Local logout forgets the selected application session. It does not sign out the provider website or delete saved conversation files. `data/`, login profiles, environments and local agent memory are excluded from Git.
 
@@ -124,13 +124,13 @@ resources = archive.resources("chatgpt/default", "conversation", "remote-chat-id
 
 ## Gemini notebooks
 
-Gemini's native notebooks appear beside ChatGPT projects, with their own `notebook` type and provider/account identity. Their names, instructions, resource metadata and chat lists use the existing Gemini account's connected browser. No separate NotebookLM login is required. This follows [Gemini's notebook workflow](https://support.google.com/gemini/answer/16972047?hl=en).
+Gemini notebooks appear beside ChatGPT and Claude projects, with their own `notebook` type and provider/account identity. Their names, instructions, resource metadata and chat lists use the saved Gemini session over HTTP. No separate NotebookLM login is required. This follows [Gemini's notebook workflow](https://support.google.com/gemini/answer/16972047?hl=en).
 
-Open Gemini through **Settings → Accounts → Connected browser** and keep that signed-in Gemini page available while refreshing notebooks. The notebook bridge uses read operations observed in Gemini's own frontend; it never exports browser credentials to the application. To start a conversation in a notebook, choose a Gemini model, select the notebook with `/project`, and send your message. Keep the connected browser running for model discovery and sending.
+Choose a Gemini model, select a notebook beside the effort selector or through `/project`, and send a message. Notebook context is sent as native notebook metadata; source text is not silently copied into an ordinary prompt. Earlier saved notebook URL identities remain compatible. Creation, deletion, renaming, instructions and text-source addition/removal have direct HTTP implementations. File/URL notebook source import is not currently offered by this transport. Moving an existing conversation into a notebook remains unsupported.
 
-SiopeChat owns a managed tab in that account browser and closes only tabs it created; temporary conversations keep separate tabs until closed so their context survives tab switches. The application sends through Gemini's native browser composer, including the selected model, thinking level and notebook. It does not replay a prompt through the legacy SDK generation endpoint if native sending fails.
+Models come from the signed-in account's SDK catalog. The HTTP transport exposes Standard/Extended thinking, rather than inventing equivalents for every website-only control. Accessible published thinking summaries remain separate from answer text. A request stops after 120 seconds without an event or 10 minutes overall. After an ambiguous failure, synchronize the conversation before resending; SiopeChat does not automatically submit the prompt again.
 
-Earlier saved Gemini notebook URL identities remain compatible. Model names and thinking choices are read from native menus, including the current account's low/medium/high options. Use **Accounts → Connected browser**, sign in and verify the session if the browser is unavailable. Refresh with F10 after upgrading to replace old model/effort snapshots. A stalled Gemini stream is cancelled after 120 seconds without an event (10 minutes maximum per request); check the browser conversation before resending after a timeout. Gemini Notebook (formerly NotebookLM) notebooks exposed inside Gemini use the common project model, including names, instructions, source metadata and conversation membership. Continuing an archived conversation retains its notebook association. Notebook creation, renaming, instructions and native source editing are supported. Moving existing chats into notebooks remains unsupported and is reported explicitly.
+Gemini credentials are read from the selected account's private file. SDK-wide cookie discovery and guest fallback are disabled. Rotated cookies are saved atomically to that same account. Temporary conversation context lives in memory and is discarded when forgotten.
 
 ## Adding an extension
 
@@ -208,7 +208,7 @@ Invalid optional themes are recorded as failures; invalid frontend styles fall b
 
 ```text
 src/
-  providers/     independent provider contracts, adapters and browser helpers
+  providers/     independent provider contracts, HTTP adapters and login helpers
   accounts.py    provider/account routing, preferences and archive integration
   actions.py     interface-neutral action registry
   views.py       interface-neutral view registry
@@ -239,19 +239,19 @@ Development currently stays under **Unreleased**. [CHANGELOG.md](CHANGELOG.md) f
 
 ### Current limits
 
-Web endpoints can change independently of this project. Gemini discovery and a temporary Flash-Lite request have been checked against a real account through controlled terminal input; that does not validate every model or desktop terminal. ChatGPT project creation/deletion and Gemini notebook deletion have been checked with disposable empty projects; file compatibility and Windows/macOS execution still need live platform checks. Project sharing is rejected before creation when the native form does not offer it. Native Gemini browser sending has been checked against a signed-in account: a normal Flash/medium notebook conversation returned text and appeared in that notebook, and a temporary conversation accepted a follow-up and a small text attachment. The earlier SDK notebook check (~119 seconds) did not establish a healthy streaming path; protocol tracing found the browser using `processSession` while that SDK still used `StreamGenerate`. The managed-browser check returned its first text in about 21 seconds including navigation/model selection; a direct browser control returned in about 5 seconds. These are observations, not response-time guarantees. Source-grounding quality and all file/media formats are not separately verified. Moving existing Gemini chats into notebooks, bulk remote file downloads, archive transfer and complete localization remain unfinished. Project deletion uses the provider’s native confirmation UI in an owned browser tab and may briefly activate that tab.
+Web endpoints can change independently of this project. Direct generation has been checked with real ChatGPT, Gemini and Claude sessions; Gemini notebook source context and project CRUD/text-source operations have also been checked with disposable records. These checks do not validate every model, account tier, file format or Windows/macOS execution. A model advertised by an account catalog can still be rejected by the generation service; that failure is reported and the prompt is not silently sent to another model. Gemini file/URL notebook source import, moving existing Gemini chats into notebooks, bulk remote file downloads, archive transfer and complete localization remain unfinished.
 
 ## License and credits
 
 Copyright (C) 2026 **TahsinCr**. SiopeChat is licensed under [GNU GPL version 3](LICENSE), SPDX `GPL-3.0-only`.
 
-ChatGPT transport work originates from [tritao/chatgpt-web](https://github.com/tritao/chatgpt-web). Gemini uses its native connected browser for sending/model menus and [gemini-webapi](https://github.com/HanaokaYuzu/Gemini-API). The container and event modules are vendored from [vehicle-autonomy-core](https://github.com/TahsinCr/vehicle-autonomy-core/tree/2bac9cd5b1cbeae82b7d3beef670a37d7ee5caa2); their original notices and license remain in `src/utils/NOTICE` and `src/utils/LICENSE`. Third-party authors retain their copyrights.
+ChatGPT transport work originates from [tritao/chatgpt-web](https://github.com/tritao/chatgpt-web). Gemini uses [gemini-webapi](https://github.com/HanaokaYuzu/Gemini-API). The container and event modules are vendored from [vehicle-autonomy-core](https://github.com/TahsinCr/vehicle-autonomy-core/tree/2bac9cd5b1cbeae82b7d3beef670a37d7ee5caa2); their original notices and license remain in `src/utils/NOTICE` and `src/utils/LICENSE`. Third-party authors retain their copyrights.
 
 ### Delete chats and projects
 
-Use **Chat: Delete** or **Projects: Delete** in the command palette, or `/delete [ID]` and `/delete-project [ID]`. The default shortcuts are Alt+D and Alt+Delete. Both operations ask for confirmation, with **Cancel** selected initially. ChatGPT project deletion targets the confirmed native button directly so a late browser focus change cannot redirect Enter. Project deletion follows the provider’s behavior for its contained chats. Only delete projects you own and no longer need.
+Use **Chat: Delete** or **Projects: Delete** in the command palette, or `/delete [ID]` and `/delete-project [ID]`. The default shortcuts are Alt+D and Alt+Delete. Both operations ask for confirmation, with **Cancel** selected initially. Project deletion follows the provider’s behavior for its contained chats. Only delete projects you own and no longer need.
 
-Configured Gemini accounts delete conversations through the signed-in browser session; standalone adapters can use the SDK transport. This does not require exporting the browser session again. Deletion happens on the provider first. Successful deletion removes cached list references and normalized archive rows and stores a persistent tombstone, preventing an older in-flight sync from restoring the record. Provider failures preserve the archive. Shared content-addressed files are retained rather than removed blindly. Unsupported or unauthorized operations return an explicit error.
+All configured providers use their authenticated HTTP sessions for deletion. Deletion happens on the provider first. Successful deletion removes cached list references and normalized archive rows and stores a persistent tombstone, preventing an older in-flight sync from restoring the record. Provider failures preserve the archive. Shared content-addressed files are retained rather than removed blindly. Unsupported or unauthorized operations return an explicit error.
 
 ### Open saved conversations immediately
 
@@ -267,38 +267,17 @@ Sends from one account are queued through the local save to preserve message ord
 
 The hot cache stores immutable JSON snapshots within its byte budget; returned records remain independent mutable copies. These limits bound local work and do not change provider quotas or guarantee remote response times.
 
-### Browser transport requirement
-
-Account verification and a live browser connection are separate states. Closing
-Chrome preserves saved verification and cached conversations. Sending, model
-refreshes and synchronization do **not** launch Chrome implicitly; an unavailable
-native connection produces an explicit error. Opening the login browser is an
-explicit Accounts → Connected browser action.
-
-The current native Gemini, Claude and ChatGPT web paths still depend on a live
-browser engine. This is not a browser-free transport, and closing its process can
-interrupt an in-flight reply. Supporting login once followed by generation with
-no browser process requires a different session transport; that requirement
-remains open. Prompts are never automatically replayed after a connection failure.
-A network outage does not revoke verification; local logout or an explicit
-provider authentication rejection does.
-
 ### Synchronization controls
 
-**F10**, `/refresh` and `/sync` use one synchronization operation. The sidebar `↻` refreshes the library (projects, notebooks and chats); `↻ Eşitle` above the transcript refreshes that conversation. `/sync library` and `/sync conversation` select the same scopes. Startup restores cached models and records without opening a browser. These commands revalidate through an available native connection; a closed browser is not automatically reopened. Verification and the browser connection remain separate states.
-
-Configured Gemini accounts read both conversation lists and histories through the same signed-in browser session used for generation. They no longer depend on the SDK's exported cookie snapshot for those reads. Published thinking summaries and raw provider media metadata remain in the archive. `!` means the last background revalidation failed; the last saved content remains visible. A successful synchronization clears that state.
+**F10**, `/refresh` and `/sync` use one synchronization operation. The sidebar `↻` refreshes the library; `↻ Eşitle` above the transcript refreshes that conversation. `/sync library` and `/sync conversation` select those scopes. Startup restores cached models and records, then revalidates through saved HTTP sessions. `!` means the last background check failed; saved content remains visible and a successful synchronization clears the indicator.
 
 ### Claude
 
-Add **Claude** in Settings → Accounts and select a separate browser profile, or explicitly reuse a connected profile that already has your Claude login. Click **Connected browser**, sign in if needed, and **Verify**. Verification is stored as an account marker; Claude cookies are not copied into configuration. Closing the browser keeps this verification record. Native sending and synchronization still require a live connection, but do not reopen the browser automatically.
+Add **Claude** in Settings → Accounts, sign in through **Connected browser**, then choose **Verify**. The account session is saved privately, outside configuration. Generation, history and projects then use HTTPS directly.
 
-Claude library requests use the workspace selected on the Claude website (`lastActiveOrg`). An inaccessible selected workspace or an ambiguous account produces an explicit error rather than silently selecting another workspace.
+Requests retain the selected website workspace (`lastActiveOrg`). An inaccessible selection or ambiguous account produces an explicit error. Model/thinking choices come from that workspace's bootstrap catalog; inactive, disabled and upgrade-required entries are excluded. The server can still reject a listed model. Published thinking blocks remain separate from final answers, and an incomplete stream is an error. Requests are never automatically resubmitted. Chat attachments, temporary Claude chats and privacy/memory overrides beyond private/default remain unsupported.
 
-The Claude adapter supports chat/history, rename/delete, projects and their instruction/source metadata, private project creation/deletion, moving chats into or out of projects, and generation in project context. Model and effort choices come from native menus, including available entries under More models. Upgrade-only entries are excluded. Legacy binary thinking switches retain their on/off choices. A failed effort component is marked unavailable for that model rather than blocking the complete catalog. Published thinking summaries are separate from final answers; final content is checked against the server’s completed message. Requests are never automatically resubmitted. File uploads and temporary Claude chats are currently unsupported and are reported explicitly. Project privacy/memory overrides beyond the native private/default setup are also rejected before writing.
-
-The shared browser transport and Markdown renderer live under `providers`; Claude’s catalog, composer and record mapping are separate provider components. No terminal or archive code is imported by the adapter. Claude chat, project and normal/follow-up generation were checked with disposable records, including project membership, rename and deletion; this does not validate every account tier, source format or model.
-
+The provider supports chat/history, rename/delete, projects and instruction/source metadata, private project creation/deletion and project membership changes. HTTP project CRUD, text sources and project file upload/removal have been checked with disposable records. No terminal or archive modules are imported by the adapter.
 
 ### Project editing API
 
@@ -316,7 +295,6 @@ loading and sending continue through the provider; enabling the extension again
 creates a fresh synchronization service. Local archive failures after an accepted
 remote response or project edit are reported separately from the remote result.
 
-ChatGPT authentication keeps a successfully captured session when Chrome reports a late socket error during intentional debugger shutdown. This does not hide failures before authentication succeeds.
 
 
 ### Synchronization while replying
@@ -329,21 +307,9 @@ Disabling the archive uses the same display reconciliation without importing the
 extension into the UI.
 
 
-### Provider browser lifecycle
+### Published thinking
 
-Gemini uses separate owned tabs for native history/notebook reads and composing.
-Reads drain their helper process before releasing the reader lock and may recover
-once from a disconnected debugger. Prompt submission is never automatically
-replayed. Native model/effort controls are checked by selected identity, not by
-whether the model button happens to display an effort label. Explicit interactive
-actions can activate the browser tab; passive cached startup does not open it.
-
-Only provider-published thinking text is displayed; hidden messages and tool-directed protocol nodes are excluded from completion summaries. ChatGPT completion snapshots
-supply summaries that may be absent from stream deltas; Gemini keeps the last
-nonempty summary across temporary DOM updates; Claude can show published thinking
-blocks while streaming and reconcile them with its completed response. Models
-that do not publish a summary will have no thinking block.
-
+Only provider-published thinking text is displayed. Hidden messages and tool-directed protocol nodes are excluded. ChatGPT snapshots can provide summaries absent from stream deltas; Gemini history retains published summaries and native message IDs; Claude streams explicit thinking blocks. A model that does not publish a summary has no thinking block.
 
 ### Opening saved conversations
 

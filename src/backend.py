@@ -40,11 +40,26 @@ class BackendService:
         self._daemon_start_lock = threading.Lock()
 
     def auth_store_path(self) -> Path:
-        return state_dir() / "session.json"
+        return (
+            state_dir()
+            if self.root.resolve() == project_root().resolve()
+            else self.root / "data" / "session"
+        ) / "session.json"
 
     def create_session(self, cdp_url: str = DEFAULT_CDP_URL) -> BrowserSession:
         return BrowserSession(
-            SessionPaths(self.auth_store_path(), cache_dir(), legacy_data_dir() / "chrome-profile"),
+            SessionPaths(
+                self.auth_store_path(),
+                cache_dir()
+                if self.root.resolve() == project_root().resolve()
+                else self.root / "data" / "session" / "cache",
+                (
+                    legacy_data_dir()
+                    if self.root.resolve() == project_root().resolve()
+                    else self.root / "data" / "session"
+                )
+                / "chrome-profile",
+            ),
             cdp_url,
         )
 

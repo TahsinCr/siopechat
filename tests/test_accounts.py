@@ -25,20 +25,16 @@ class AccountTests(unittest.TestCase):
         self.accounts = self.api.get("accounts")
         self.gemini = self.accounts.add("gemini", "Personal Gemini")
 
-    def test_native_operations_never_launch_a_browser_implicitly(self):
-        session = Mock()
-        session.is_ready.return_value = False
-        with patch.object(self.accounts, "session", return_value=session):
-            with self.assertRaisesRegex(RuntimeError, "oturumu yok"):
-                self.accounts.ensure_browser(self.gemini)
-            path = self.accounts.directory(self.gemini) / "cookies.json"
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text("{}")
-            with self.assertRaisesRegex(RuntimeError, "tarayıcısız gönderim"):
-                self.accounts.ensure_browser(self.gemini)
-            session.is_ready.return_value = True
-            self.accounts.ensure_browser(self.gemini)
-            session.launch.assert_not_called()
+    def test_account_status_does_not_require_a_browser_process(self):
+        with (
+            patch.object(self.accounts, "browser_connected", side_effect=AssertionError("browser")),
+            patch(
+                "providers.chatgpt.session.BrowserSession.launch",
+                side_effect=AssertionError("browser"),
+            ),
+        ):
+            self.assertEqual(self.accounts.status(self.gemini)["transport"], "http")
+            self.assertFalse(self.accounts.status(self.gemini)["authenticated"])
 
     def test_verification_survives_closed_browser_and_account_service_restart(self):
         path = self.accounts.directory(self.gemini) / "cookies.json"
@@ -49,7 +45,7 @@ class AccountTests(unittest.TestCase):
         with patch.object(restarted, "browser_connected", return_value=False):
             state = restarted.status(self.gemini)
             self.assertTrue(state["authenticated"])
-            self.assertFalse(state["browser_connected"])
+            self.assertEqual(state["transport"], "http")
         path.unlink()
         self.assertFalse(restarted.status(self.gemini)["authenticated"])
 
@@ -78,7 +74,7 @@ class AccountTests(unittest.TestCase):
         with patch.object(self.accounts, "browser_connected", return_value=True):
             state = self.accounts.status(self.gemini)
             self.assertFalse(state["authenticated"])
-            self.assertTrue(state["browser_connected"])
+            self.assertEqual(state["transport"], "http")
 
     def test_catalog_single_flight_cache_and_account_local_disk_snapshot(self):
         catalog = ModelCatalog(FeatureState.AVAILABLE, (Model("gemini-test", "Gemini"),))

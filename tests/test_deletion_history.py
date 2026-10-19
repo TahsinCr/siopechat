@@ -324,6 +324,7 @@ class GeminiHistoryTests(unittest.IsolatedAsyncioTestCase):
                 SimpleNamespace(cid="c_" + str(i), title=str(i), timestamp=i) for i in range(5)
             ],
         )
+        provider._factory = lambda *_: client
         provider._connect = AsyncMock(return_value=client)
         first = await provider.list_chats(limit=2)
         second = await provider.list_chats(first.next_cursor, limit=2)
@@ -341,6 +342,7 @@ class GeminiHistoryTests(unittest.IsolatedAsyncioTestCase):
             read_chat=AsyncMock(return_value=SimpleNamespace(turns=[assistant, user])),
             list_chats=lambda: [],
         )
+        provider._factory = lambda *_: client
         provider._connect = AsyncMock(return_value=client)
         first = await provider.get_chat("c_abc")
         old_output = SimpleNamespace(thoughts=None, metadata=["c_abc", "r_old"])
@@ -393,9 +395,8 @@ class NotebookDeleteVerificationTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
         provider = GeminiProvider(Path("unused"), notebooks=notebooks)
-        provider.browser.authenticated = True
         with (
-            patch("providers.management.delete_project", new_callable=AsyncMock) as delete,
+            patch.object(provider.editor, "write", new_callable=AsyncMock) as delete,
             patch("providers.gemini.adapter.asyncio.sleep", new_callable=AsyncMock) as wait,
         ):
             await provider.delete_project("notebooks/abcdef")

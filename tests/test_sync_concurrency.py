@@ -178,7 +178,6 @@ class AccountConcurrencyTests(unittest.TestCase):
         self.addCleanup(self.api.runtime.close)
         self.accounts = self.api.get("accounts")
         self.gemini = self.accounts.add("gemini", "Concurrency fixture")
-        self.accounts.ensure_browser = Mock()
         self.entered = {key: threading.Event() for key in (self.gemini, "chatgpt/default")}
         for key in self.entered:
 
@@ -330,41 +329,29 @@ class AccountConcurrencyTests(unittest.TestCase):
                 release.set()
             self.assertEqual(discovering.result(2).models[0].id, "fixture")
 
-    def test_browser_availability_for_one_account_does_not_block_another(self):
+    def test_http_discovery_for_one_account_does_not_block_another(self):
+        from providers.models import FeatureState, Model, ModelCatalog
+
         release = threading.Event()
-        sessions = {}
+        catalog = ModelCatalog(FeatureState.AVAILABLE, (Model("fixture", "Fixture"),))
         for key in self.entered:
-            path = self.accounts.directory(key) / "cookies.json"
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text("{}")
 
-            def ready(key=key):
+            async def models(key=key):
                 self.entered[key].set()
-                if not release.wait(3):
-                    raise TimeoutError("test barrier")
-                return True
+                await asyncio.to_thread(release.wait, 3)
+                return catalog
 
-            sessions[key] = SimpleNamespace(
-                paths=SimpleNamespace(session_file=path), is_ready=ready
-            )
-        with patch.object(
-            self.accounts,
-            "ensure_browser",
-            wraps=type(self.accounts).ensure_browser.__get__(self.accounts),
-        ):
-            with (
-                patch.object(self.accounts, "session", side_effect=sessions.__getitem__),
-                ThreadPoolExecutor(2) as pool,
-            ):
-                first = pool.submit(self.accounts.ensure_browser, self.gemini)
-                try:
-                    self.assertTrue(self.entered[self.gemini].wait(1))
-                    second = pool.submit(self.accounts.ensure_browser, "chatgpt/default")
-                    self.assertTrue(self.entered["chatgpt/default"].wait(1))
-                finally:
-                    release.set()
-                first.result(2)
-                second.result(2)
+            self.accounts._providers[key] = SimpleNamespace(models=models, close=AsyncMock())
+        with ThreadPoolExecutor(2) as pool:
+            first = pool.submit(self.accounts.models, self.gemini, True)
+            try:
+                self.assertTrue(self.entered[self.gemini].wait(1))
+                second = pool.submit(self.accounts.models, "chatgpt/default", True)
+                self.assertTrue(self.entered["chatgpt/default"].wait(1))
+            finally:
+                release.set()
+            self.assertEqual(first.result(2).models[0].id, "fixture")
+            self.assertEqual(second.result(2).models[0].id, "fixture")
 
     def test_closed_account_service_cannot_restart_its_background_loop(self):
         self.accounts.close()

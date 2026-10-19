@@ -1,10 +1,9 @@
-"""Claude web adapter. Authentication stays inside the selected browser profile."""
+"""Independent Claude adapter using a saved web session over HTTPS."""
 
 import asyncio
 from pathlib import Path
 
 from ..api import Capability, ConversationBound, ReplaceText
-from ..browser import BrowserTransport
 from ..contracts import OptionalFeatures
 from ..errors import AccountPaused, FeatureUnavailable, ProviderError
 from ..models import (
@@ -19,8 +18,9 @@ from ..models import (
     SessionState,
     SessionStatus,
 )
-from ..projects import ProjectEditing, ProjectEditor
+from ..projects import ProjectEditing
 from .records import conversation, project
+from .transport import ClaudeProjectEditor, ClaudeTransport
 
 
 class ClaudeProvider(ProjectEditing, OptionalFeatures):
@@ -53,24 +53,20 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
     ):
         self.credential_file = Path(credential_file)
         self.account_id = account_id
-        self.browser = BrowserTransport(
-            Path(__file__).parent / "scripts" / "browser.cjs", cdp_url, ensure_ready
-        )
+        self.transport = ClaudeTransport(self.credential_file)
         self._gate = asyncio.Lock()
-        self.editor = ProjectEditor(
-            Path(__file__).parent / "scripts" / "projects.cjs", cdp_url, ensure_ready
-        )
+        self.editor = ClaudeProjectEditor(self.transport)
 
     async def close(self):
         await self.editor.close()
-        await self.browser.close()
+        await self.transport.close()
 
     def _origin(self, remote):
         return Origin(self.id, self.account_id, remote)
 
     async def authenticate(self):
         async with self._gate:
-            await self.browser.request("status")
+            await self.transport.request("status")
         return SessionStatus(SessionState.AUTHENTICATED, True)
 
     async def login(self):
@@ -79,7 +75,7 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
     async def session_status(self):
         return SessionStatus(
             SessionState.AUTHENTICATED
-            if self.browser.authenticated
+            if self.transport.authenticated
             else SessionState.UNKNOWN
             if self.credential_file.is_file()
             else SessionState.LOGIN_REQUIRED,
@@ -90,7 +86,7 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
         async with self._gate:
             await self.close()
             self.credential_file.unlink(missing_ok=True)
-            self.browser.authenticated = False
+            self.transport.authenticated = False
         return SessionStatus(SessionState.LOGIN_REQUIRED)
 
     async def describe(self):
@@ -107,7 +103,7 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
 
     async def models(self):
         async with self._gate:
-            data = await self.browser.request("models")
+            data = await self.transport.request("models")
             models = []
             for item in data["models"]:
                 efforts = tuple(Choice(x["id"], x["title"]) for x in item["efforts"])
@@ -127,42 +123,39 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
             return ModelCatalog(FeatureState.AVAILABLE, tuple(models), data.get("default_model"))
 
     async def list_chats(self, cursor=None, limit=50):
-        async with self._gate:
-            values = await self.browser.request("chats", cursor=cursor, limit=limit)
-            if not isinstance(values, list):
-                raise ProviderError("Claude conversation list contract changed")
-            return Page(
-                tuple(conversation(x, self.account_id) for x in values),
-                str(int(cursor or 0) + limit) if len(values) == limit else None,
-            )
+        values = await self.transport.request("chats", cursor=cursor, limit=limit)
+        if not isinstance(values, list):
+            raise ProviderError("Claude conversation list contract changed")
+        return Page(
+            tuple(conversation(x, self.account_id) for x in values),
+            str(int(cursor or 0) + limit) if len(values) == limit else None,
+        )
 
     async def get_chat(self, conversation_id):
-        async with self._gate:
-            return conversation(
-                await self.browser.request("history", conversation_id=conversation_id),
-                self.account_id,
-            )
+        return conversation(
+            await self.transport.request("history", conversation_id=conversation_id),
+            self.account_id,
+        )
 
     async def list_projects(self, cursor=None):
         if cursor:
             raise ValueError("Claude project listing does not use a cursor")
         async with self._gate:
-            values = await self.browser.request("projects")
+            values = await self.transport.request("projects")
             if not isinstance(values, list):
                 raise ProviderError("Claude project list contract changed")
             return Page(tuple(project(x, self.account_id) for x in values))
 
     async def get_project(self, project_id):
-        async with self._gate:
-            return project(
-                await self.browser.request("project", project_id=project_id), self.account_id
-            )
+        return project(
+            await self.transport.request("project", project_id=project_id), self.account_id
+        )
 
     async def list_project_chats(self, project_id, cursor=None):
         if cursor:
             raise ValueError("Claude project conversation listing does not use a cursor")
         async with self._gate:
-            values = await self.browser.request("project_chats", project_id=project_id)
+            values = await self.transport.request("project_chats", project_id=project_id)
             if not isinstance(values, list):
                 raise ProviderError("Claude project conversation contract changed")
             return Page(
@@ -182,7 +175,7 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
             raise ValueError("Project name must contain 1–200 characters")
         async with self._gate:
             return project(
-                await self.browser.request(
+                await self.transport.request(
                     "create_project", name=name.strip(), instructions=instructions
                 ),
                 self.account_id,
@@ -192,21 +185,21 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
         if not isinstance(title, str) or not 1 <= len(title.strip()) <= 200:
             raise ValueError("Chat title must contain 1–200 characters")
         async with self._gate:
-            await self.browser.request(
+            await self.transport.request(
                 "rename_chat", conversation_id=conversation_id, title=title.strip()
             )
 
     async def delete_chat(self, conversation_id):
         async with self._gate:
-            await self.browser.request("delete_chat", conversation_id=conversation_id)
+            await self.transport.request("delete_chat", conversation_id=conversation_id)
 
     async def delete_project(self, project_id):
         async with self._gate:
-            await self.browser.request("delete_project", project_id=project_id)
+            await self.transport.request("delete_project", project_id=project_id)
 
     async def move_chat(self, conversation_id, project_id):
         async with self._gate:
-            await self.browser.request(
+            await self.transport.request(
                 "move_chat", conversation_id=conversation_id, project_id=project_id
             )
 
@@ -216,11 +209,11 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
                 Capability.TEMPORARY if request.temporary else Capability.ATTACHMENTS,
                 "not_available",
             )
-        if not self.credential_file.is_file() and not self.browser.authenticated:
+        if not self.credential_file.is_file() and not self.transport.authenticated:
             raise AccountPaused("Claude hesabını Hesaplar bölümünden doğrulayın")
         async with self._gate:
             completed = False
-            async for event in self.browser.events(
+            async for event in self.transport.events(
                 "send",
                 prompt=request.prompt,
                 conversation_id=request.conversation_id,

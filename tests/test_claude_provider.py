@@ -108,11 +108,11 @@ class ClaudeRecordsTests(unittest.TestCase):
 class ClaudeProviderTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.provider = ClaudeProvider(Path("unused"), "account")
-        self.provider.browser.authenticated = True
-        self.provider.browser.request = AsyncMock()
+        self.provider.transport.authenticated = True
+        self.provider.transport.request = AsyncMock()
 
     async def test_dynamic_models_keep_only_discovered_efforts_and_default(self):
-        self.provider.browser.request.return_value = {
+        self.provider.transport.request.return_value = {
             "models": [
                 {
                     "id": "claude-future",
@@ -128,7 +128,7 @@ class ClaudeProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.models[0].id, "claude-future")
 
     async def test_one_model_feature_failure_does_not_remove_working_models(self):
-        self.provider.browser.request.return_value = {
+        self.provider.transport.request.return_value = {
             "models": [
                 {"id": "claude-main", "title": "Main", "efforts": [], "effort_error": "changed"},
                 {
@@ -144,31 +144,35 @@ class ClaudeProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(catalog.chat_models[0].metadata["effort_error"], "changed")
 
     async def test_chat_and_project_queries_use_scoped_transport(self):
-        self.provider.browser.request.return_value = [{"uuid": CHAT, "name": "Chat"}]
+        self.provider.transport.request.return_value = [{"uuid": CHAT, "name": "Chat"}]
         result = await self.provider.list_project_chats(PROJECT)
         self.assertEqual(result.items[0].project_id, PROJECT)
-        self.provider.browser.request.assert_awaited_once_with("project_chats", project_id=PROJECT)
+        self.provider.transport.request.assert_awaited_once_with(
+            "project_chats", project_id=PROJECT
+        )
 
     async def test_unsupported_creation_options_fail_before_remote_write(self):
         with self.assertRaises(FeatureUnavailable):
             await self.provider.create_project("Name", visibility="shared")
-        self.provider.browser.request.assert_not_awaited()
+        self.provider.transport.request.assert_not_awaited()
 
     async def test_delete_and_move_do_not_retry_mutations(self):
         await self.provider.delete_chat(CHAT)
-        self.provider.browser.request.assert_awaited_once_with("delete_chat", conversation_id=CHAT)
-        self.provider.browser.request.reset_mock()
-        self.provider.browser.request.side_effect = ProviderError("network")
+        self.provider.transport.request.assert_awaited_once_with(
+            "delete_chat", conversation_id=CHAT
+        )
+        self.provider.transport.request.reset_mock()
+        self.provider.transport.request.side_effect = ProviderError("network")
         with self.assertRaises(ProviderError):
             await self.provider.move_chat(CHAT, PROJECT)
-        self.provider.browser.request.assert_awaited_once()
+        self.provider.transport.request.assert_awaited_once()
 
     async def test_truncated_stream_is_not_success(self):
         async def events(*args, **kwargs):
             yield {"type": "bound", "id": CHAT}
             yield {"type": "replace", "text": "Partial", "channel": "final"}
 
-        self.provider.browser.events = events
+        self.provider.transport.events = events
         with self.assertRaises(ProviderError):
             _ = [
                 x
@@ -184,7 +188,7 @@ class ClaudeProviderTests(unittest.IsolatedAsyncioTestCase):
             yield {"type": "replace", "text": "Answer", "channel": "final"}
             yield {"type": "done"}
 
-        self.provider.browser.events = events
+        self.provider.transport.events = events
         result = [
             x
             async for x in self.provider.stream(
@@ -249,13 +253,7 @@ class ClaudeAccountsTests(unittest.TestCase):
                 gpt_file = accounts.credential_path("chatgpt/default")
                 gpt_file.parent.mkdir(parents=True, exist_ok=True)
                 gpt_file.write_text("{}")
-                with (
-                    patch("providers.chatgpt.session.BrowserSession.launch") as launch,
-                    patch("providers.chatgpt.session.BrowserSession.is_ready", return_value=True),
-                ):
-                    accounts.ensure_browser("chatgpt/default")
-                    accounts.ensure_browser(key)
-                    launch.assert_not_called()
+                self.assertNotEqual(accounts.credential_path(key), gpt_file)
                 with self.assertRaises(ValueError):
                     accounts.add("claude", "Wrong", browser_account=key)
             finally:

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
 from bootstrap import create_application
 from providers.gemini import GeminiProvider
@@ -32,28 +32,21 @@ class NativeHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(drained, [True])
         self.assertEqual((browser.tab_id, browser.read_tab_id), ("composer", "reader"))
 
-    async def test_native_history_read_does_not_wait_for_the_composer_gate(self):
+    async def test_http_history_read_does_not_wait_for_the_composer_gate(self):
         import asyncio
 
-        provider = GeminiProvider(
-            Path("unused"), notebooks=SimpleNamespace(cdp_url="http://127.0.0.1:9231")
-        )
-        provider.browser.authenticated = True
-        provider.browser.read = AsyncMock(return_value=[[]])
+        provider = GeminiProvider(Path("unused"))
+        provider.rpc.call = AsyncMock(return_value=[[[]]])
         async with provider._gate:
             result = await asyncio.wait_for(provider.get_chat("c_abc"), 0.2)
         self.assertEqual(result.messages, ())
 
-    async def test_native_notebooks_share_the_dedicated_reader(self):
-        from providers.gemini.notebooks import Notebooks
-
-        notebooks = Notebooks("http://127.0.0.1:9231", "personal")
-        provider = GeminiProvider(Path("unused"), notebooks=notebooks)
-        provider.browser.read = AsyncMock(return_value=[])
-        notebooks.reader = provider.browser.read
-        self.assertEqual((await notebooks.list()).items, ())
-        provider.browser.read.assert_awaited_once_with(
-            "notebooks", remote=None, operation="list", cursor=None
+    async def test_notebooks_share_the_account_http_reader(self):
+        provider = GeminiProvider(Path("unused"), "personal")
+        provider.rpc.call = AsyncMock(return_value=[])
+        self.assertEqual((await provider.notebooks.list()).items, ())
+        provider.rpc.call.assert_awaited_once_with(
+            "CNgdBe", [2, ["en"], 0, None, [2]], "/notebooks/view"
         )
 
     async def test_read_reconnects_once_without_replaying_a_send(self):
@@ -69,18 +62,17 @@ class NativeHistoryTests(unittest.IsolatedAsyncioTestCase):
             await browser.read("history")
         self.assertEqual(browser._read_once.await_count, 1)
 
-    async def test_configured_reads_never_initialize_an_independent_cookie_session(self):
-        provider = GeminiProvider(
-            Path("unused"), notebooks=SimpleNamespace(cdp_url="http://127.0.0.1:9231")
+    async def test_history_uses_only_the_owned_account_http_session(self):
+        provider = GeminiProvider(Path("unused"))
+        client = SimpleNamespace(
+            _batch_execute=AsyncMock(
+                return_value=SimpleNamespace(text='[["wrb.fr","hNvQHb","[[]]"]]')
+            )
         )
-        provider.browser.authenticated = True
-        provider._connect = AsyncMock(side_effect=AssertionError("stale SDK session"))
-        provider.browser.read = AsyncMock(
-            side_effect=[[[], [None, None, [["c_abc", "Title"]]]], [[]]]
-        )
-        self.assertEqual((await provider.list_chats()).items[0].title, "Title")
-        self.assertEqual((await provider.get_chat("c_abc")).messages, ())
-        provider._connect.assert_not_awaited()
+        provider.rpc.connect = AsyncMock(return_value=client)
+        with patch("asyncio.create_subprocess_exec", side_effect=AssertionError("browser")):
+            self.assertEqual((await provider.get_chat("c_abc")).messages, ())
+        self.assertEqual(client._batch_execute.call_args.kwargs["current_retry"], 0)
 
     def test_empty_pinned_page_is_valid_and_contract_errors_are_explicit(self):
         def origin(cid):
@@ -100,29 +92,21 @@ class NativeHistoryTests(unittest.IsolatedAsyncioTestCase):
 
 
 class PassiveStartupTests(unittest.TestCase):
-    def test_saved_accounts_do_not_open_browser_for_background_cache_reads(self):
+    def test_saved_accounts_use_cached_data_without_a_browser_probe(self):
+        import time
+
         with tempfile.TemporaryDirectory() as folder:
             api = create_application(Path(folder))
             try:
                 a = api.get("accounts")
                 key = a.add("gemini", "Gemini")
-                cookie = a.directory(key) / "cookies.json"
-                cookie.parent.mkdir(parents=True)
-                cookie.write_text("{}")
                 catalog = ModelCatalog(FeatureState.AVAILABLE, (Model("m", "Model"),))
-                a._catalogs[key] = (0, catalog)
+                a._catalogs[key] = (time.monotonic(), catalog)
                 a.archive().put(key, "conversation", "c_abc", {"messages": [], "title": "Cached"})
-                fetch = Mock(side_effect=AssertionError("network"))
-                with (
-                    patch.object(a, "browser_connected", return_value=False),
-                    patch.object(a, "ensure_browser") as launch,
+                with patch.object(
+                    a, "browser_connected", side_effect=AssertionError("browser probe")
                 ):
                     self.assertIs(a.models(key), catalog)
-                    self.assertEqual(
-                        a.read_record(key, "conversation", "c_abc", fetch)["title"], "Cached"
-                    )
-                    self.assertEqual(a.read_record(key, "chats", "", fetch)["items"], [])
-                    launch.assert_not_called()
-                    fetch.assert_not_called()
+                    self.assertEqual(a.cached(key, "c_abc")["title"], "Cached")
             finally:
                 api.runtime.close()

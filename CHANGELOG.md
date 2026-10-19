@@ -10,6 +10,10 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Added
 
+- Account-scoped HTTPS transports for Claude and Gemini, with reusable connections, private atomic session persistence and no browser dependency after explicit login verification.
+- Direct HTTP project creation, editing and source management for ChatGPT and Claude; Gemini notebook CRUD, instructions and text sources through account-owned RPCs.
+- Regression tests for origin restrictions, authentication versus access errors, mutation non-replay, session rotation, guest rejection and notebook request mappings.
+
 - Sidebar account filters labeled with provider names, plus newest/oldest and ascending/descending name ordering shared by projects and conversations. Browsing another configured account does not change the active sending account.
 
 - Provider-scoped project creation and editing forms, multiline instructions and dynamically discovered native source types for ChatGPT, Claude and Gemini notebooks.
@@ -19,8 +23,6 @@ The project is currently unreleased; no release dates or tags have been assigned
 - Add a temporary-chat toggle beside the project selector, with explicit on/off and unsupported states. Toggle a draft in place before its first message, preserving typed text and clearing incompatible project membership.
 
 - Independent Claude web-session provider with native model/effort discovery, chat history and generation, published thinking summaries, chat rename/deletion, projects, instruction/source metadata, private project creation/deletion and verified project membership changes.
-- Explicit cross-provider browser-profile sharing with independent account/verification/archive records and a shared launch lock.
-- Shared bounded browser transport, page handling and Markdown renderer; isolated Claude catalog, composer and record components.
 
 - One synchronization operation with conversation/library scopes, clickable controls, F10 and `/sync` (alias of `/refresh`).
 
@@ -29,7 +31,6 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 - Deterministic synchronization/concurrency regressions covering slow storage, stale reads, bounded work queues, independent accounts and shutdown during accepted-response persistence.
 
-- Isolated Gemini native-browser sending component with owned-tab lifecycle, attachment upload, incremental Markdown extraction and bounded cancellation.
 
 - Gemini notebook-context chat requests, including compatibility with earlier saved Gemini notebook URL identities.
 
@@ -38,10 +39,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 - Bounded hot cache, single-flight background revalidation, explicit refresh and synchronization indicators.
 - One selected account per provider and a combined model picker for new chats across enabled providers.
 
-- Native Gemini notebook listing, details, instruction/resource metadata and notebook chat lists through the same account browser; retain notebook-specific metadata separately from ChatGPT projects.
 
 - Independent ChatGPT and Gemini web-session adapters with account-scoped model discovery, history and streaming.
-- Multiple accounts, isolated browser profiles, session verification, local logout and mixed-provider sidebar filtering.
 - Tabbed conversations, visible background reply status, project navigation and command/action search.
 - Optional layout extension with side-by-side or stacked panes, grouped tabs and workspace metadata storage.
 - Account-specific remembered model and effort selections across new tabs and restarts.
@@ -53,6 +52,11 @@ The project is currently unreleased; no release dates or tags have been assigned
 - GPL-3.0-only license, usage and extension/theme documentation, and an actual terminal screenshot using sample data.
 
 ### Changed
+
+- Use the existing direct ChatGPT HTTP/signing path for generation; remove browser prerequisites and automatic browser/recipe fallbacks from normal account operations.
+- Bootstrap Gemini exclusively from its selected account file, without global SDK cookie discovery or guest fallback. Preserve Standard/Extended HTTP thinking choices and published summaries.
+- Read Gemini history over the account HTTP session independently of the generation lock; preserve native message IDs and metadata.
+- Require explicit re-verification only for expired/revoked sessions, not a closed login window or a transient transport error.
 
 - Open project name/instruction editing inline on the existing project tab; use the shared project picker for `/project-edit`, retain the creation popup, and avoid focusing editors after switching to another tab.
 
@@ -78,10 +82,19 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Fixed
 
+- Delete Claude project files using their native file identities and the file-deletion endpoint, while keeping document deletion separate.
+
+- Send Claude thinking choices through `thinking_mode` rather than the rejected `paprika_mode` field. Keep model selection on completion requests rather than the empty-conversation creation call.
+- Bind Gemini conversation identities as soon as streaming exposes them, retaining the correct remote identity if a later response fails.
+
+- Isolate alternate application roots from the real ChatGPT credential/profile paths, preventing temporary application tests from touching a user's session.
+- Include existing display and memory fields when editing ChatGPT projects, avoiding HTTP 422 responses.
+- Use Gemini's notebook write-settings envelope rather than its display-icon metadata when saving instructions.
+- Keep successful remote operations successful when only local rotated-session persistence fails.
+
 - Exclude disabled providers from both cached sidebar project and conversation rows, and limit each synchronization request to its target account.
 
 - Honor Claude’s selected native workspace for chat and project requests; reject ambiguous or inaccessible workspace selection instead of silently reading the first organization.
-- Stop implicit browser launches from sends, catalog discovery and synchronization. Preserve saved verification and report the current native transport’s live-browser requirement explicitly; browser-free generation remains unimplemented.
 - Observe shared model-discovery task failures after a tab cancels its waiter, preventing unhandled background task errors.
 
 - Keep message selection attached to its original message when older history is inserted, remove the obsolete full-fragment painter, and retain a single oversized prepared transcript instead of repeatedly displaying its loading placeholder.
@@ -96,9 +109,8 @@ The project is currently unreleased; no release dates or tags have been assigned
 - Exclude hidden/tool-directed ChatGPT completion blocks and scan prior message identities once, keeping summary reconciliation linear for large histories.
 
 - Separate Gemini composer and history/notebook reader tabs and locks; drain read/catalog helpers, recover disconnected reads once, and keep transient transport errors separate from authentication loss.
-- Verify Gemini effort by native selected identity instead of model-button text; avoid duplicate navigation and tolerate execution-context replacement while waiting for page readiness.
 - Reject pending CDP operations promptly on disconnect and bound debugger connection startup.
-- Publish ChatGPT completion thinking summaries, preserve Gemini summaries across empty DOM reads, and stream available Claude thinking blocks separately.
+- Publish ChatGPT completion thinking summaries, preserve nonempty Gemini summaries, and stream available Claude thinking blocks separately.
 
 - Reconcile late history snapshots with accepted visible turns instead of replacing the transcript; retain message identity, pending replies and published thinking during synchronization.
 - Atomically save accepted turns alongside history hydrated during persistence; share provider-neutral history reconciliation between UI and optional archive.
@@ -117,34 +129,21 @@ The project is currently unreleased; no release dates or tags have been assigned
 - Hydrate cached histories even with the archive disabled; publish the completed synchronization state after applying the history and recognize replacement archive instances after re-enabling the extension.
 
 - Preserve legacy Claude binary thinking controls alongside current effort-level menus, with failures isolated to the affected model feature.
-- Open the requested provider login page when reusing an already running connected browser.
-- Wait for the new Claude document and fully closed menus before reading model/effort controls; ignore fading choices and use native submenu keyboard navigation.
 
-- Gemini history/list synchronization falsely requiring login because reads used a stale SDK cookie session while sends used the authenticated browser.
-- Passive startup opening account browsers to refresh cached catalogs and histories; closed profiles now remain closed until sending or explicit synchronization.
 
 - Display cached conversation bodies immediately and hydrate cold histories without blocking drafts or replacing a running response.
 - Merge missing remote history with locally accepted turns, preserving attachment paths and published thinking summaries without duplicating confirmed messages.
 - Refresh Gemini conversation metadata from the server instead of reusing the SDK's initial in-memory list; paginate recent conversations.
-- Use the connected Gemini browser session for chat deletion and allow for notebook-list propagation after native deletion without repeating the destructive request.
 - Reconcile complete sidebar snapshots and distinguish confirmed missing records from transport failures.
 
 - Prevent stale cold reads from replacing newer local records or returning an obsolete remote result after a completed send.
 - Move transcript/attachment persistence, model snapshot writes and manual archive refresh away from provider/UI event loops.
-- Serialize sends through persistence per account, while letting different accounts start browsers and stream independently.
 - Throttle failed revalidation, preserve worker/queue bounds during refresh bursts, and close repositories only after running reads finish.
 - Drain accepted-response writes before shutting down archive extensions; prevent closed account services from restarting their background loop.
 
-- Keep verified account links across browser closure and application restart; display browser connectivity separately and revoke verification only on local logout or an explicit authentication rejection.
 - Preserve archived notebook/project association when continuing a chat without repeating its project option, and accept reselecting the current project without attempting an unsupported move.
 
-- Recover closed account browsers from their saved profiles before sending; Gemini model and notebook reads share the same serialized startup. Never replay a submitted prompt.
-- Account indicators check the live local browser connection instead of treating cached model lists as authentication. Clarify disconnected Gemini transport errors.
 
-- Gemini generation hanging on the legacy `StreamGenerate` endpoint after the native frontend switched this account to `processSession`; application sends now use the native browser composer with no automatic SDK resend.
-- Gemini model/thinking choices being taken from the SDK's older boolean option: IDs and labels now come from native menus, with selection checked before sending.
-- Native composer input being submitted before its send button was ready, background-page rendering, and model verification failing when the header also shows an effort label.
-- Temporary Gemini context now remains in its own managed browser tab, supports follow-ups, and closes that tab when the application forgets the conversation.
 
 - Sidebar projects disappearing when switching model accounts: the sidebar lists providers together; only the conversation project picker is scoped to the model account.
 
@@ -187,8 +186,6 @@ The project is currently unreleased; no release dates or tags have been assigned
 
 ### Security
 
-- Keep credentials out of configuration and isolate account caches and browser profiles.
-- Restrict browser helpers to local debugging endpoints and the expected provider origin.
 - Avoid local conversation snapshots for temporary chats and reject unsupported temporary transport fallbacks.
 - Fail unsupported public project creation before submission and validate native project writes by reading them back.
 - Preserve third-party copyright notices and treat local Python themes/extensions as trusted executable code.

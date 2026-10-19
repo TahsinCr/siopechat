@@ -78,15 +78,13 @@ class DiscoveryTests(unittest.TestCase):
 
         self.client.http = httpx.Client(transport=httpx.MockTransport(respond))
 
-    def test_native_project_create_requires_readback_memory_confirmation(self):
-        import subprocess
-        from unittest.mock import Mock, patch
+    def test_http_project_create_reads_back_and_never_launches_a_process(self):
+        from unittest.mock import Mock
 
-        from providers.chatgpt.resources import Script, script_path
-
-        self.client.session.is_ready = Mock(return_value=True)
-        self.client.list_projects = Mock(
-            side_effect=[{"items": []}, {"items": [{"id": "g-p-created", "name": "Demo"}]}]
+        self.client.request = Mock(
+            return_value=httpx.Response(
+                200, json={"resource": {"id": "g-p-created", "display": {"name": "Demo"}}}
+            )
         )
         self.client.get_project = Mock(
             return_value={
@@ -96,24 +94,16 @@ class DiscoveryTests(unittest.TestCase):
             }
         )
         with patch(
-            "providers.chatgpt.client.subprocess.run",
-            return_value=subprocess.CompletedProcess([], 0, '{"submitted":true}', ""),
-        ) as run:
+            "providers.chatgpt.client.subprocess.run", side_effect=AssertionError("browser")
+        ):
             value = self.client.create_project("Demo", memory="project_only")
         self.assertEqual(value["id"], "g-p-created")
-        self.assertEqual(run.call_args.args[0][1], str(script_path(Script.PROJECT)))
-        self.assertFalse(run.call_args.kwargs.get("shell", False))
-        self.client.list_projects.side_effect = [
-            {"items": []},
-            {"items": [{"id": "g-p-created", "name": "Demo"}]},
-        ]
-        self.client.get_project.return_value["metadata"]["gizmo"]["memory_scope"] = "global"
-        with patch(
-            "providers.chatgpt.client.subprocess.run",
-            return_value=subprocess.CompletedProcess([], 0, "{}", ""),
-        ):
-            with self.assertRaisesRegex(ChatGPTWebError, "bellek"):
-                self.client.create_project("Demo", memory="project_only")
+        self.assertEqual(self.client.request.call_args.kwargs["json"]["memory_scope"], "project_v2")
+        self.client.get_project.assert_called_once_with("g-p-created")
+        self.client.request.reset_mock()
+        with self.assertRaises(ValueError):
+            self.client.create_project("Demo", visibility="public")
+        self.client.request.assert_not_called()
 
     def test_catalog_is_account_data_cached_and_roundtrips_through_ipc(self):
         backend = BackendService()

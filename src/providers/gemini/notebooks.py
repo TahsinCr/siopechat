@@ -1,14 +1,6 @@
-"""Read-only Gemini notebook transport using the same connected account browser.
+"""Gemini notebook mappings over the account-owned HTTP RPC reader."""
 
-RPC names and response fields were observed on Gemini's native notebook pages.
-All provider-specific mappings live here; unknown native fields remain metadata.
-The bridge reads within the signed-in Gemini origin and never exports credentials.
-"""
-
-import asyncio
-import json
 import re
-from pathlib import Path
 from urllib.parse import urlparse
 
 from ..errors import ProviderError
@@ -67,7 +59,7 @@ def project_from_native(row, account_id):
             "native": row,
             "notebook_type": field(settings, 4),
             "description": field(detail, 1),
-            "read_only": True,
+            "read_only": False,
             "supports_chat": True,
         },
     )
@@ -87,40 +79,7 @@ class Notebooks:
                 operation=mode or "list",
                 cursor=cursor,
             )
-        if self.ensure_ready is not None:
-            await asyncio.to_thread(self.ensure_ready)
-        if remote:
-            remote = notebook_id(remote)
-        script = Path(__file__).parent.parent / "scripts" / "notebooks.cjs"
-        process = await asyncio.create_subprocess_exec(
-            "node",
-            str(script),
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            stdout, _ = await asyncio.wait_for(
-                process.communicate(
-                    json.dumps(
-                        {"cdp_url": self.cdp_url, "remote": remote, "mode": mode, "cursor": cursor}
-                    ).encode()
-                ),
-                45,
-            )
-        except BaseException:
-            if process.returncode is None:
-                process.kill()
-                await process.wait()
-            raise
-        if process.returncode:
-            raise ProviderError(
-                "Gemini defterleri okunamadı; bu hesabın bağlı tarayıcısında Gemini oturumunu doğrulayın"
-            )
-        data = json.loads(stdout)
-        if not isinstance(data, dict) or not isinstance(data.get("parts"), list):
-            raise ProviderError("Gemini defter yanıtı değişmiş")
-        return data["parts"]
+        raise ProviderError("Gemini defter HTTP okuyucusu yapılandırılmamış")
 
     async def list(self, cursor=None):
         if cursor:

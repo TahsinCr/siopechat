@@ -22,33 +22,15 @@ class NativeBrowserTests(unittest.IsolatedAsyncioTestCase):
             spawn.assert_not_awaited()
         ready.assert_called_once_with()
 
-    async def test_configured_browser_bypasses_legacy_sdk_generation_and_models(self):
-        p = GeminiProvider(
-            Path("unused"), "test", notebooks=SimpleNamespace(cdp_url="http://127.0.0.1:9231")
+    async def test_normal_provider_never_has_a_runtime_browser(self):
+        p = GeminiProvider(Path("unused"), "test")
+        self.assertFalse(hasattr(p, "browser"))
+        p.rpc.call = AsyncMock(return_value=[[[]]])
+        result = await p.get_chat("c_abcdef")
+        self.assertEqual(result.messages, ())
+        p.rpc.call.assert_awaited_once_with(
+            "hNvQHb", ["c_abcdef", 1000, None, 1, [1], [4], None, 1], "/app"
         )
-        p.browser.authenticated = True
-        p._connect = AsyncMock(side_effect=AssertionError("legacy SDK must not send"))
-
-        async def stream(request):
-            self.assertEqual(request.project_id, "notebooks/abcdef")
-            yield ConversationBound("c_abcdef")
-            yield ReplaceText("Answer", "final")
-
-        p.browser.stream = stream
-        p.browser.models = AsyncMock(return_value="native catalog")
-        self.assertEqual(await p.models(), "native catalog")
-        request = SendRequest(
-            "gemini",
-            "test",
-            "local",
-            "Question",
-            model="gemini-flash",
-            effort="native:4",
-            project_id="notebooks/abcdef",
-        )
-        events = [e async for e in p.stream(request)]
-        self.assertEqual(events[-1].text, "Answer")
-        p._connect.assert_not_awaited()
 
     async def test_native_catalog_keeps_discovered_model_and_effort_identities(self):
         b = NativeBrowser("local")
@@ -158,22 +140,18 @@ class NativeBrowserTests(unittest.IsolatedAsyncioTestCase):
         process.terminate.assert_called_once()
         process.wait.assert_awaited_once()
 
-    async def test_local_logout_cannot_be_bypassed_by_an_open_browser(self):
+    async def test_local_logout_requires_saved_credentials(self):
         import tempfile
 
         from providers.errors import AccountPaused
 
         with tempfile.TemporaryDirectory() as folder:
-            p = GeminiProvider(
-                Path(folder) / "cookies.json",
-                notebooks=SimpleNamespace(cdp_url="http://127.0.0.1:9231"),
-            )
-            p.browser.models = AsyncMock()
-            with self.assertRaises(AccountPaused):
-                await p.models()
-            p.browser.models.assert_not_awaited()
-            await p.authenticate()
-            p.browser.models.assert_awaited_once()
+            p = GeminiProvider(Path(folder) / "cookies.json")
+            with patch("asyncio.create_subprocess_exec", side_effect=AssertionError("browser")):
+                with self.assertRaises(AccountPaused):
+                    await p.models()
+                with self.assertRaises(AccountPaused):
+                    await p.authenticate()
 
 
 class AccountNativeTests(unittest.TestCase):
@@ -193,7 +171,6 @@ class AccountNativeTests(unittest.TestCase):
                     key.split("/")[1],
                     notebooks=SimpleNamespace(cdp_url="http://127.0.0.1:9231"),
                 )
-                provider.browser.authenticated = True
                 provider._connect = AsyncMock(side_effect=AssertionError("SDK must not send"))
 
                 async def stream(request):
@@ -203,8 +180,8 @@ class AccountNativeTests(unittest.TestCase):
                     yield ReplaceText("Reasoning summary", "analysis")
                     yield ReplaceText("Answer", "final")
 
-                provider.browser.stream = stream
-                provider.browser.close_temporary = AsyncMock()
+                provider._stream = stream
+                provider._temporary["temporary_fixture"] = ["temporary_fixture"]
                 accounts._providers[key] = provider
                 delivered = []
                 result = accounts.send(
@@ -215,7 +192,7 @@ class AccountNativeTests(unittest.TestCase):
                     delivered.append,
                     lambda _: None,
                     model="gemini-flash",
-                    effort="native:4",
+                    effort="standard",
                     project_id=identity(key, "notebooks/abcdef"),
                 )
                 self.assertIsNone(result["cache_warning"])
@@ -234,13 +211,13 @@ class AccountNativeTests(unittest.TestCase):
                     delivered.append,
                     lambda _: None,
                     model="gemini-flash",
-                    effort="native:4",
+                    effort="standard",
                 )
                 continued = accounts.cached(key, "c_abcdef")
                 self.assertEqual(continued["project_id"], identity(key, "notebooks/abcdef"))
                 self.assertEqual(len(continued["messages"]), 6)
                 provider._connect.assert_not_awaited()
                 accounts.callbacks(key)["forget_temporary"](identity(key, "temporary_fixture"))
-                provider.browser.close_temporary.assert_awaited_once_with("temporary_fixture")
+                self.assertNotIn("temporary_fixture", provider._temporary)
             finally:
                 api.runtime.close()

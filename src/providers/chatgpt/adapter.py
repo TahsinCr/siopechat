@@ -4,12 +4,11 @@ import asyncio
 import concurrent.futures
 import threading
 from collections import OrderedDict
-from pathlib import Path
 from typing import Callable
 
 from ..api import Capability, ConversationBound, ReplaceText, SendRequest, TextDelta
 from ..contracts import OptionalFeatures
-from ..errors import AccountPaused, CompatibilityError, ProviderError, RateLimited, RemoteNotFound
+from ..errors import AccountPaused, CompatibilityError, RateLimited
 from ..models import (
     Content,
     Conversation,
@@ -25,10 +24,11 @@ from ..models import (
     SessionState,
     SessionStatus,
 )
-from ..projects import ProjectEditing, ProjectEditor
+from ..projects import ProjectEditing
 from .client import ChatGPTClient
 from .discovery import project_id
 from .errors import SentinelCompatibilityError
+from .projects import ChatGPTProjectEditor
 from .session import BrowserSession
 
 
@@ -69,9 +69,7 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
         self._factory = client_factory
         self._temporary_conversations = OrderedDict()
         self._gate = asyncio.Lock()
-        self.editor = ProjectEditor(
-            Path(__file__).parent / "scripts" / "browser" / "projects.cjs", session.cdp_url
-        )
+        self.editor = ChatGPTProjectEditor(self.session, self._factory)
 
     async def close(self):
         await self.editor.close()
@@ -95,6 +93,9 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
 
     async def authenticate(self) -> SessionStatus:
         def verify():
+            if self.session.is_ready():
+                url, headers = self.session.capture_auth()
+                self.session.save(url, headers)
             with self._factory(self.session) as client:
                 client.verify()
 
@@ -156,33 +157,16 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
             await asyncio.to_thread(remove)
 
     async def delete_project(self, project_id):
-        from ..management import delete_project
+        from urllib.parse import quote
+
+        def remove():
+            with self._factory(self.session) as client:
+                client.request(
+                    "DELETE", "https://chatgpt.com/backend-api/gizmos/" + quote(project_id, safe="")
+                )
 
         async with self._gate:
-            await asyncio.to_thread(self.session.launch)
-
-            def read():
-                with self._factory(self.session) as client:
-                    return client.get_project(project_id)
-
-            project = await asyncio.to_thread(read)
-            failure = None
-            try:
-                await delete_project(
-                    self.session.cdp_url, self.id, project_id, name=project["name"]
-                )
-            except ProviderError as error:
-                failure = error
-            for attempt in range(5):
-                try:
-                    await asyncio.to_thread(read)
-                except RemoteNotFound:
-                    return
-                if attempt < 4:
-                    await asyncio.sleep(0.25 * 2**attempt)
-            if failure:
-                raise failure
-            raise ProviderError("Proje silme sunucuda doğrulanamadı; yeniden silmeden kontrol edin")
+            await asyncio.to_thread(remove)
 
     async def list_projects(self, cursor: str | None = None) -> Page[Project]:
         def read():

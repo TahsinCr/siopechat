@@ -32,6 +32,10 @@ class FakeClient:
             ],
         }
 
+    def request(self, method, url, **kwargs):
+        self.deleted = (method, url)
+        return None
+
     def __enter__(self):
         return self
 
@@ -130,8 +134,10 @@ class ProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
             patch.object(self.provider.session, "launch"),
         ):
             await self.provider.delete_project("g-p-created")
-            delete.assert_awaited_once_with(
-                self.provider.session.cdp_url, "chatgpt", "g-p-created", name="Fixture"
+            delete.assert_not_awaited()
+            self.assertEqual(
+                self.client.deleted,
+                ("DELETE", "https://chatgpt.com/backend-api/gizmos/g-p-created"),
             )
 
     async def test_completed_snapshot_publishes_thinking_summaries(self):

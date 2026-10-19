@@ -23,7 +23,7 @@ from ..models import (
     SessionState,
     SessionStatus,
 )
-from ..projects import ProjectEditing, ProjectEditor
+from ..projects import ProjectEditing
 
 
 class GeminiProvider(ProjectEditing, OptionalFeatures):
@@ -56,36 +56,34 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
         self._factory = client_factory
         self._client = None
         self._gate = asyncio.Lock()
+        self._connect_gate = asyncio.Lock()
+        self._saved_cookies = None
         self._temporary = {}
         self.notebooks = notebooks
-        from .browser import NativeBrowser
-
-        self.browser = (
-            NativeBrowser(notebooks.cdp_url, ensure_ready=getattr(notebooks, "ensure_ready", None))
-            if isinstance(getattr(notebooks, "cdp_url", None), str)
-            else None
-        )
         from .notebooks import Notebooks
+        from .rpc import NotebookEditor, NotebookRPC
 
-        if self.browser and isinstance(notebooks, Notebooks):
-            notebooks.reader = self.browser.read
-        if notebooks is not None:
-            self.capabilities = self.capabilities | {Capability.PROJECTS, Capability.PROJECT_DELETE}
-            if self.browser:
-                self.capabilities = self.capabilities | {
-                    Capability.PROJECT_CREATE,
-                    Capability.PROJECT_UPDATE,
-                    Capability.RESOURCES,
-                }
-                self.editor = ProjectEditor(
-                    Path(__file__).parent / "scripts" / "projects.cjs",
-                    notebooks.cdp_url,
-                    getattr(notebooks, "ensure_ready", None),
-                )
+        self.rpc = NotebookRPC(self._connect)
+        self.notebooks = notebooks or Notebooks(None, account_id)
+        self.notebooks.reader = self.rpc.read
+        self.editor = NotebookEditor(self.rpc, self.notebooks)
+        self.capabilities = self.capabilities | {
+            Capability.PROJECTS,
+            Capability.PROJECT_CREATE,
+            Capability.PROJECT_UPDATE,
+            Capability.PROJECT_DELETE,
+            Capability.RESOURCES,
+        }
 
     async def _connect(self):
+        async with self._connect_gate:
+            return await self._connect_once()
+
+    async def _connect_once(self):
         if self._client is not None:
-            return self._client
+            if getattr(self._client, "_running", True) is not False:
+                return self._client
+            await self.close()
         if not self.cookie_file.is_file():
             raise AccountPaused("Gemini oturumu yok; Hesaplar bölümünden giriş yapın")
         values = json.loads(self.cookie_file.read_text(encoding="utf-8"))
@@ -105,19 +103,23 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                 from gemini_webapi.utils.logger import logger
 
                 logger.disable("gemini_webapi")
+            from .session import owned_client_type
             from .transport import notebook_client_type
 
-            factory = notebook_client_type(GeminiClient)
+            factory = notebook_client_type(owned_client_type(GeminiClient, self.cookie_file))
         client = factory(values["__Secure-1PSID"], values.get("__Secure-1PSIDTS"))
         try:
-            await client.init(timeout=45, auto_close=False, auto_refresh=False, verbose=False)
+            await client.init(timeout=45, auto_close=False, auto_refresh=True, verbose=False)
         except asyncio.CancelledError:
             await client.close()
             raise
-        except Exception:
+        except (AccountPaused, ProviderError):
             await client.close()
-            raise AccountPaused(
-                "Gemini oturumu doğrulanamadı; bağlı tarayıcıdan tekrar doğrulayın"
+            raise
+        except Exception as error:
+            await client.close()
+            raise ProviderError(
+                "Gemini oturum bağlantısı kurulamadı (" + type(error).__name__ + ")"
             ) from None
         status = getattr(client, "account_status", None)
         if getattr(status, "name", None) == "UNAUTHENTICATED" or status == 1016:
@@ -127,25 +129,20 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                 "Hesaplar → Bağlı tarayıcı ile giriş yapıp oturumu doğrulayın."
             )
         self._client = client
+        self._saved_cookies = values
         return client
 
     async def close(self):
         if hasattr(self, "editor"):
             await self.editor.close()
-        if self.browser:
-            await self.browser.close()
         client, self._client = self._client, None
         if client is not None:
             await client.close()
 
-    def _require_native_session(self):
-        if not self.cookie_file.is_file() and not self.browser.authenticated:
-            raise AccountPaused("Gemini hesabını Hesaplar bölümünden doğrulayın")
-
     async def session_status(self):
         return SessionStatus(
             SessionState.AUTHENTICATED
-            if self._client or (self.browser and self.browser.authenticated)
+            if self._client
             else SessionState.UNKNOWN
             if self.cookie_file.is_file()
             else SessionState.LOGIN_REQUIRED,
@@ -153,11 +150,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
         )
 
     async def authenticate(self):
-        async with self._gate:
-            if self.browser:
-                await self.browser.models()
-            else:
-                await self._connect()
+        await self._connect()
         return SessionStatus(SessionState.AUTHENTICATED, True)
 
     async def forget_session(self):
@@ -182,36 +175,32 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
         )
 
     async def models(self):
-        async with self._gate:
-            if self.browser:
-                self._require_native_session()
-                return await self.browser.models()
-            client = await self._connect()
-            # The transport exposes a boolean extended_thinking option, not
-            # OpenAI-style low/medium/high levels. Never invent those levels.
-            extended = (
-                "extended_thinking" in inspect.signature(client.generate_content_stream).parameters
+        client = await self._connect()
+        # The transport exposes a boolean extended_thinking option, not
+        # OpenAI-style low/medium/high levels. Never invent those levels.
+        extended = (
+            "extended_thinking" in inspect.signature(client.generate_content_stream).parameters
+        )
+        efforts = (
+            (Choice("standard", "Standart"), Choice("extended", "Genişletilmiş"))
+            if extended
+            else ()
+        )
+        models = tuple(
+            Model(
+                model.model_name,
+                model.display_name or model.model_name,
+                efforts,
+                metadata={
+                    "model_id": model.model_id,
+                    "description": model.description,
+                    "effort_source": "extended_thinking" if extended else None,
+                },
             )
-            efforts = (
-                (Choice("standard", "Standart"), Choice("extended", "Genişletilmiş"))
-                if extended
-                else ()
-            )
-            models = tuple(
-                Model(
-                    model.model_name,
-                    model.display_name or model.model_name,
-                    efforts,
-                    metadata={
-                        "model_id": model.model_id,
-                        "description": model.description,
-                        "effort_source": "extended_thinking" if extended else None,
-                    },
-                )
-                for model in client.list_models() or []
-                if model.is_available
-            )
-            return ModelCatalog(FeatureState.AVAILABLE, models)
+            for model in client.list_models() or []
+            if model.is_available
+        )
+        return ModelCatalog(FeatureState.AVAILABLE, models)
 
     def _origin(self, remote_id):
         return Origin(self.id, self.account_id, remote_id)
@@ -223,19 +212,6 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
             raise ValueError("invalid Gemini conversation cursor") from None
         if offset < 0 or offset > 5000 or not 1 <= limit <= 100:
             raise ValueError("invalid Gemini conversation page")
-        if self.browser:
-            self._require_native_session()
-            from .history import conversations
-
-            offset = int(cursor or 0)
-            if not 0 <= offset <= 5000 or not 1 <= limit <= 100:
-                raise ValueError("Invalid Gemini conversation page")
-            data = await self.browser.read("chats", limit=offset + limit + 1)
-            chats = conversations(data, self._origin)
-            return Page(
-                chats[offset : offset + limit],
-                str(offset + limit) if len(chats) > offset + limit else None,
-            )
         async with self._gate:
             client = await self._connect()
             if hasattr(client, "_fetch_recent_chats"):
@@ -248,7 +224,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                     Conversation(
                         self._origin(item.cid),
                         item.title or "Gemini sohbeti",
-                        metadata={"timestamp": item.timestamp},
+                        metadata={"updated_at": item.timestamp},
                     )
                     for item in chats[offset : offset + limit]
                 ),
@@ -256,12 +232,15 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
             )
 
     async def get_chat(self, conversation_id):
-        if self.browser:
-            self._require_native_session()
+        if self._factory is None:
             from .history import history
 
-            data = await self.browser.read("history", conversation_id=conversation_id)
-            return history(data, self._origin, conversation_id)
+            parts = await self.rpc.call(
+                "hNvQHb", [conversation_id, 1000, None, 1, [1], [4], None, 1], "/app"
+            )
+            if len(parts) != 1:
+                raise ProviderError("Gemini geçmiş yanıtı değişmiş")
+            return history(parts[0], self._origin, conversation_id)
         async with self._gate:
             client = await self._connect()
             history = await client.read_chat(conversation_id, limit=1000)
@@ -308,42 +287,20 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
 
     async def delete_chat(self, conversation_id):
         async with self._gate:
-            if self.browser:
-                self._require_native_session()
-                await self.browser.delete_chat(conversation_id)
-            else:
-                client = await self._connect()
-                await client.delete_chat(conversation_id)
+            client = await self._connect()
+            await client.delete_chat(conversation_id)
 
     async def delete_project(self, project_id):
-        from ..management import delete_project
         from .notebooks import notebook_id
 
-        project_id = notebook_id(project_id)
-        if not self.browser:
-            return await super().delete_project(project_id)
-        self._require_native_session()
+        remote = notebook_id(project_id)
         async with self._gate:
-            if self.browser.ensure_ready:
-                await asyncio.to_thread(self.browser.ensure_ready)
-            project = await self.notebooks.get(project_id)
-            failure = None
-            try:
-                await delete_project(self.browser.cdp_url, self.id, project_id, name=project.name)
-            except ProviderError as error:
-                failure = error
-            for attempt in range(5):
-                if not any(
-                    x.origin.remote_id == project_id for x in (await self.notebooks.list()).items
-                ):
-                    return
-                if attempt < 4:
-                    await asyncio.sleep(0.25 * 2**attempt)
-            if failure:
-                raise failure
-            raise ProviderError(
-                "Defter silme sunucuda doğrulanamadı; yeniden silmeden kontrol edin"
-            )
+            await self.editor.write("delete", remote)
+        for attempt in range(5):
+            if not any(x.origin.remote_id == remote for x in (await self.notebooks.list()).items):
+                return
+            await asyncio.sleep(0.25 * 2**attempt)
+        raise ProviderError("Defter silme sunucuda doğrulanamadı; işlem tekrarlanmadı")
 
     async def list_projects(self, cursor=None):
         if self.notebooks is None:
@@ -400,7 +357,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                         ) from None
                     raise ProviderError(
                         "Gemini 120 saniye boyunca veri döndürmedi; istek durduruldu. "
-                        "Yeniden göndermeden önce bağlı tarayıcıdaki sohbeti kontrol edin."
+                        "Yeniden göndermeden önce sohbet geçmişini eşitleyin."
                     ) from None
                 yield event
         finally:
@@ -412,14 +369,6 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
         from .notebooks import notebook_id
 
         project = notebook_id(request.project_id) if request.project_id else None
-        if self.browser:
-            self._require_native_session()
-            async with self._gate:
-                from dataclasses import replace
-
-                async for event in self.browser.stream(replace(request, project_id=project)):
-                    yield event
-            return
         if request.effort not in (None, "", "standard", "extended"):
             raise ValueError("unsupported Gemini thinking option")
         from contextlib import nullcontext
@@ -432,7 +381,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
             context = None
             if project:
                 if self.notebooks is None:
-                    raise ProviderError("Gemini defteri için bağlı tarayıcı gerekli")
+                    raise ProviderError("Gemini defter bağlantısı yapılandırılmamış")
                 notebook = await self.notebooks.get(project)
                 context = field(field(notebook.metadata.get("native"), 1), 12)
                 if not isinstance(context, list) or not context or context[0] not in (1, 2):
@@ -446,6 +395,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                 cid=request.conversation_id or "",
                 model=model,
             )
+            bound = False
             try:
                 with notebook_transport(client, project, context) if project else nullcontext():
                     async for chunk in chat.send_message_stream(
@@ -453,7 +403,11 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                         files=[item["path"] for item in request.attachments],
                         temporary=request.temporary,
                         extended_thinking=request.effort == "extended",
+                        current_retry=0,
                     ):
+                        if chat.cid and not bound:
+                            yield ConversationBound(chat.cid)
+                            bound = True
                         if chunk.thoughts:
                             yield ReplaceText(chunk.thoughts, "analysis")
                         yield ReplaceText(chunk.text or "", "final")
@@ -461,19 +415,20 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                 raise
             except ProviderError:
                 raise
-            except Exception:
+            except Exception as error:
                 raise ProviderError(
-                    "Gemini yanıtı tamamlanamadı; hesabı veya bağlantıyı kontrol edin"
-                ) from None
+                    "Gemini yanıtı tamamlanamadı ("
+                    + type(error).__name__
+                    + "); hesabı veya bağlantıyı kontrol edin"
+                ) from error
             if not chat.cid:
                 raise ProviderError("Gemini sohbet kimliği dönmedi")
             if request.temporary:
                 self._temporary[chat.cid] = chat.metadata
                 while len(self._temporary) > 32:
                     self._temporary.pop(next(iter(self._temporary)))
-            yield ConversationBound(chat.cid)
+            if not bound:
+                yield ConversationBound(chat.cid)
 
     async def forget_temporary(self, remote_id):
         self._temporary.pop(remote_id, None)
-        if self.browser:
-            await self.browser.close_temporary(remote_id)

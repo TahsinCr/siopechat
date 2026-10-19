@@ -22,7 +22,6 @@ from providers.chatgpt import BrowserSession, ChatGPTClient, ChatGPTProvider, Se
 from providers.claude import ClaudeProvider
 from providers.errors import AccountPaused, RemoteNotFound
 from providers.gemini import GeminiProvider
-from providers.gemini.notebooks import Notebooks
 from providers.models import FeatureState, ModelCatalog, SessionState
 from providers.registry import PROVIDERS
 
@@ -124,18 +123,6 @@ class Accounts:
 
     def read_record(self, key, kind, remote, fetch, force=False):
         archive = self.archive()
-        # Passive reads restore local state without opening a browser window.
-        # Explicit operations also check availability without launching a browser.
-        if self.status(key)["saved_snapshot"] and not self.browser_connected(key):
-            if force:
-                self.ensure_browser(key)
-            else:
-                cached = archive.get(key, kind, remote or "") if archive else None
-                if cached is not None:
-                    return cached
-                if kind in ("chats", "containers", "container_chats"):
-                    return {"items": [], "cursor": None, "offline": True}
-                raise RuntimeError("Bağlı tarayıcı kapalı; kayıtlı geçmiş korunuyor")
         if archive:
             try:
                 return archive.read(key, kind, remote or "", fetch, force=force)
@@ -212,18 +199,6 @@ class Accounts:
             "native.json" if key.startswith("claude/") else "cookies.json"
         )
 
-    def ensure_browser(self, key):
-        """Check native transport availability without launching a browser implicitly."""
-        session = self.session(key)
-        path = self.credential_path(key)
-        if not path.is_file() and not (key.startswith("claude/") and session.is_ready()):
-            raise RuntimeError("Hesap oturumu yok; Hesaplar bölümünden giriş yapın")
-        if not session.is_ready():
-            raise RuntimeError(
-                "Bu web taşıyıcısı canlı tarayıcı gerektiriyor; tarayıcısız gönderim henüz desteklenmiyor. "
-                "Tarayıcı otomatik açılmadı; hesap doğrulamanız korunur."
-            )
-
     def capabilities(self, key):
         return self.provider(key).capabilities
 
@@ -234,22 +209,9 @@ class Accounts:
                 if item["provider"] == "chatgpt":
                     provider = ChatGPTProvider(self.session(key), item["id"])
                 elif item["provider"] == "gemini":
-                    provider = GeminiProvider(
-                        self.credential_path(key),
-                        item["id"],
-                        notebooks=Notebooks(
-                            self.session(key).cdp_url,
-                            item["id"],
-                            ensure_ready=lambda: self.ensure_browser(key),
-                        ),
-                    )
+                    provider = GeminiProvider(self.credential_path(key), item["id"])
                 elif item["provider"] == "claude":
-                    provider = ClaudeProvider(
-                        self.credential_path(key),
-                        item["id"],
-                        cdp_url=self.session(key).cdp_url,
-                        ensure_ready=lambda: self.ensure_browser(key),
-                    )
+                    provider = ClaudeProvider(self.credential_path(key), item["id"])
                 else:
                     raise ValueError("Unknown provider")
                 self._providers[key] = provider
@@ -313,14 +275,6 @@ class Accounts:
         if not self.enabled(key.split("/")[0]):
             raise ValueError("Sağlayıcı devre dışı")
 
-        if self.status(key)["saved_snapshot"] and not self.browser_connected(key):
-            if force:
-                self.ensure_browser(key)
-            else:
-                return self.cached_models(key) or ModelCatalog(
-                    FeatureState.UNKNOWN, reason="Modeller için Eşitle'yi kullanın"
-                )
-
         async def discover():
             cached = self._catalogs.get(key)
             if cached and not force and time.monotonic() - cached[0] < 300:
@@ -350,7 +304,7 @@ class Accounts:
                                     return
                                 if (
                                     getattr(
-                                        getattr(self.provider(key), "browser", None),
+                                        getattr(self.provider(key), "transport", None),
                                         "authenticated",
                                         False,
                                     )
@@ -436,16 +390,16 @@ class Accounts:
     def _forget_verification(self, key):
         self._verified.discard(key)
         self._verification_path(key).unlink(missing_ok=True)
-        browser = getattr(self._providers.get(key), "browser", None)
-        if browser is not None:
-            browser.authenticated = False
+        transport = getattr(self._providers.get(key), "transport", None)
+        if transport is not None:
+            transport.authenticated = False
 
     def status(self, key):
         path = self.credential_path(key)
         saved = path.is_file()
         verified = (
             key in self._verified
-            or getattr(getattr(self._providers.get(key), "browser", None), "authenticated", False)
+            or getattr(getattr(self._providers.get(key), "transport", None), "authenticated", False)
             is True
         )
         if not verified:
@@ -458,7 +412,7 @@ class Accounts:
         return {
             "saved_snapshot": saved,
             "authenticated": saved and verified,
-            "browser_connected": self.browser_connected(key),
+            "transport": "http",
             "account": self.item(key)["label"],
             "provider": key.split("/")[0],
         }
@@ -506,27 +460,28 @@ class Accounts:
             self._forget_verification(key)
             return dict(self.status(key), logged_out=True)
         if action == "verify":
-            if item["provider"] == "gemini":
+            if item["provider"] in ("gemini", "claude"):
                 session = self.session(key)
                 script = Path(__file__).parent / "providers" / "scripts" / "cookies.cjs"
                 result = subprocess.run(
                     ["node", str(script)],
                     input=json.dumps(
-                        {"cdp_url": session.cdp_url, "origin": PROVIDERS["gemini"][2]}
+                        {"cdp_url": session.cdp_url, "origin": PROVIDERS[item["provider"]][2]}
                     ),
                     capture_output=True,
                     text=True,
                     timeout=15,
                 )
                 if result.returncode:
-                    raise RuntimeError("Gemini açık bağlı tarayıcı bulunamadı; önce giriş yapın")
+                    raise RuntimeError("Hesabın açık giriş tarayıcısı bulunamadı; önce giriş yapın")
                 cookies = json.loads(result.stdout)
-                if not cookies.get("__Secure-1PSID"):
-                    raise RuntimeError("Gemini hesabına giriş tamamlanmamış")
+                required = "__Secure-1PSID" if item["provider"] == "gemini" else "sessionKey"
+                if not cookies.get(required):
+                    raise RuntimeError("Hesaba giriş tamamlanmamış")
                 directory = self.directory(key)
                 directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-                self.api.get("backend").atomic_json_write(directory / "cookies.json", cookies)
                 self.call(provider.close())
+                self.api.get("backend").atomic_json_write(self.credential_path(key), cookies)
             try:
                 status = self.call(provider.authenticate())
             except AccountPaused:
@@ -534,10 +489,6 @@ class Accounts:
                 raise
             if status.state != SessionState.AUTHENTICATED:
                 raise RuntimeError("Oturum doğrulanamadı")
-            if item["provider"] == "claude":
-                self.api.get("backend").atomic_json_write(
-                    self.credential_path(key), {"account_key": key, "transport": "browser"}
-                )
             self._remember_verification(key)
             return self.status(key)
         raise ValueError("unknown account operation")
@@ -855,8 +806,6 @@ class Accounts:
 
         async def consume_one():
             remote_id, text, reasoning = remote, "", ""
-            if key.startswith("chatgpt/"):
-                await asyncio.to_thread(self.ensure_browser, key)
             async for event in provider.stream(request):
                 if isinstance(event, ConversationBound):
                     remote_id = event.conversation_id
@@ -1045,7 +994,6 @@ class Accounts:
             if not self.status(account)["saved_snapshot"]:
                 continue
             try:
-                self.ensure_browser(account)
                 if scope == "all":
                     self.models(account, force=True)
                 if scope in ("all", "library"):
@@ -1068,7 +1016,6 @@ class Accounts:
         return {"scope": scope, "queued": True}
 
     def create_project(self, key, name, visibility="private", memory="default"):
-        self.ensure_browser(key)
         project = self.call(
             self.provider(key).create_project(name, visibility=visibility, memory=memory)
         )
@@ -1078,14 +1025,12 @@ class Accounts:
         context, remote = origin(value, key)
         if context != key:
             raise ValueError("Proje seçili hesaba ait olmalı")
-        self.ensure_browser(key)
         return self.call(self.provider(key).project_options(remote), timeout=90)
 
     def project_details(self, key, value):
         context, remote = origin(value, key)
         if context != key or not remote:
             raise ValueError("Proje seçili hesaba ait olmalı")
-        self.ensure_browser(key)
         return self.store_project(key, self.call(self.provider(key).get_project(remote)))
 
     def store_project(self, key, project, local_file=None, previous_resources=()):
@@ -1122,7 +1067,6 @@ class Accounts:
         context, remote = origin(value, key)
         if context != key or not remote:
             raise ValueError("Proje seçili hesaba ait olmalı")
-        self.ensure_browser(key)
         provider = self.provider(key)
         if operation == "update":
             current = self.call(provider.get_project(remote))

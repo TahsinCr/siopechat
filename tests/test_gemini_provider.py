@@ -58,6 +58,10 @@ class GeminiTests(unittest.IsolatedAsyncioTestCase):
             with (
                 patch.object(gemini_webapi, "GeminiClient", return_value=self.client),
                 patch(
+                    "providers.gemini.session.owned_client_type",
+                    side_effect=lambda base, path: base,
+                ),
+                patch(
                     "providers.gemini.transport.notebook_client_type", side_effect=lambda base: base
                 ),
             ):
@@ -120,8 +124,8 @@ class GeminiTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
         ]
-        self.assertEqual(events[-1], ConversationBound("c_test"))
-        self.assertEqual(events[0], ReplaceText("Summary", "analysis"))
+        self.assertEqual(events[0], ConversationBound("c_test"))
+        self.assertEqual(events[1], ReplaceText("Summary", "analysis"))
         self.assertTrue(chat.send_message_stream.call_args.kwargs["extended_thinking"])
         self.assertEqual(chat.send_message_stream.call_count, 1)
         with self.assertRaises(ValueError):

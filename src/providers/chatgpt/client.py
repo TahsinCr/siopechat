@@ -18,7 +18,7 @@ import httpx
 
 from ..errors import RateLimited
 from . import discovery
-from .constants import CHATGPT_ORIGIN, DEFAULT_PAGE_SIZE, FORBIDDEN_REPLAY_HEADERS
+from .constants import CHATGPT_ORIGIN, DEFAULT_PAGE_SIZE
 from .errors import ChatGPTWebError, SentinelCompatibilityError
 from .formats import message_parts, text_from_parts
 from .resources import Script, script_path
@@ -53,22 +53,20 @@ class ChatGPTClient:
     def __exit__(self, *_args: object) -> None:
         self.close()
 
-    def refresh_auth(self, prefer_browser: bool = False) -> None:
-        if prefer_browser and self.session.is_ready():
+    def refresh_auth(self, prefer_browser=False):
+        if prefer_browser:
             self.list_url, self.headers = self.session.capture_auth()
             self.session.save(self.list_url, self.headers)
             return
         try:
             self.list_url, self.headers = self.session.load()
         except ChatGPTWebError:
-            if not self.session.is_ready():
-                raise
-            self.list_url, self.headers = self.session.capture_auth()
-            self.session.save(self.list_url, self.headers)
+            raise ChatGPTWebError("Kayıtlı oturum yok; Hesaplar bölümünden doğrulayın") from None
 
     def refresh_session(self) -> None:
         headers = self.headers.copy()
         headers.pop("authorization", None)
+        headers["accept-encoding"] = "gzip, deflate"
         response = self.http.get(
             urljoin(CHATGPT_ORIGIN, "/api/auth/session"),
             headers=headers,
@@ -107,15 +105,18 @@ class ChatGPTClient:
             request_headers["x-openai-target-path"] = target_path
             request_headers["x-openai-target-route"] = target_path
             response = self.http.request(method, url, headers=request_headers, **kwargs)
-            if response.status_code not in (401, 403) or attempt == 1:
+            if (
+                response.status_code not in (401, 403)
+                or attempt == 1
+                or method.upper() not in ("GET", "HEAD")
+            ):
                 break
             try:
                 self.refresh_session()
             except ChatGPTWebError:
-                if not self.session.is_ready():
-                    raise
-                self.list_url, self.headers = self.session.capture_auth()
-                self.session.save(self.list_url, self.headers)
+                raise ChatGPTWebError(
+                    "Oturum yenilenemedi; Hesaplar bölümünden tekrar doğrulayın"
+                ) from None
         if response.status_code == 429:
             try:
                 delay = float(response.headers.get("retry-after", ""))
@@ -178,62 +179,26 @@ class ChatGPTClient:
         projects = [value for item in items if (value := discovery.project(item)) is not None]
         return {"items": projects, "cursor": next_cursor}
 
-    def create_project(
-        self, name: str, instructions: str = "", *, visibility="private", memory="default"
-    ) -> dict[str, Any]:
-        if not isinstance(name, str) or not name.strip() or len(name) > 80:
+    def create_project(self, name, instructions="", *, visibility="private", memory="default"):
+        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80:
             raise ValueError("project name must contain 1–80 characters")
-        if visibility not in ("private", "public") or memory not in ("default", "project_only"):
-            raise ValueError("invalid project privacy or memory option")
-        if not self.session.is_ready():
-            raise ChatGPTWebError("Proje oluşturmak için Hesaplar → Bağlı tarayıcıyı açın")
-        previous = {item["id"] for item in self.list_projects()["items"]}
-        result = subprocess.run(
-            ["node", str(script_path(Script.PROJECT))],
-            input=json.dumps(
-                {
-                    "cdp_url": self.cdp_url,
-                    "name": name.strip(),
-                    "instructions": instructions,
-                    "visibility": visibility,
-                    "memory": memory,
-                }
-            ),
-            capture_output=True,
-            text=True,
-            timeout=25,
-        )
-        if result.returncode:
-            raise ChatGPTWebError(result.stderr.strip()[:400] or "Proje oluşturma tamamlanamadı")
-        for _ in range(4):
-            matches = [
-                item
-                for item in self.list_projects()["items"]
-                if item["id"] not in previous and item["name"] == name.strip()
-            ]
-            if len(matches) == 1:
-                project = self.get_project(matches[0]["id"])
-                raw = project["metadata"]
-                for _ in range(3):
-                    if not isinstance(raw.get("gizmo"), dict):
-                        break
-                    raw = raw["gizmo"]
-                expected = "project_v2" if memory == "project_only" else "global"
-                if raw.get("memory_scope") != expected:
-                    raise ChatGPTWebError(
-                        "Proje oluşturuldu ancak bellek ayarı doğrulanamadı; tarayıcıdan kontrol edin: "
-                        + project["id"]
-                    )
-                if visibility == "public" and raw.get("visibility") != "public":
-                    raise ChatGPTWebError(
-                        "Proje oluşturuldu ancak paylaşım doğrulanamadı; tarayıcıdan kontrol edin: "
-                        + project["id"]
-                    )
-                return project
-            time.sleep(0.3)
-        raise ChatGPTWebError(
-            "Oluşturma sonucu doğrulanamadı; tekrar oluşturmadan tarayıcıyı kontrol edin"
-        )
+        if visibility != "private" or memory not in ("default", "project_only"):
+            raise ValueError("unsupported project privacy or memory option")
+        raw = self.request(
+            "POST",
+            urljoin(CHATGPT_ORIGIN, "/backend-api/projects"),
+            json={
+                "name": name.strip(),
+                "instructions": instructions,
+                "memory_scope": "project_v2" if memory == "project_only" else "global",
+            },
+        ).json()
+        if raw.get("error") or not isinstance(raw.get("resource"), dict):
+            raise ChatGPTWebError("Project creation response changed; request was not replayed")
+        project = discovery.project(raw["resource"])
+        if project is None:
+            raise ChatGPTWebError("Project creation returned no project")
+        return self.get_project(project["id"])
 
     def get_project(self, project_id: str) -> dict[str, Any]:
         raw = self.request(
@@ -374,11 +339,6 @@ class ChatGPTClient:
             raise ChatGPTWebError("invalid conversation options")
         if temporary and project_id:
             raise ChatGPTWebError("temporary conversations cannot belong to a project")
-        send_mode = os.environ.get("CHATGPT_WEB_SEND_MODE", "node")
-        if attachments and send_mode != "node":
-            raise ChatGPTWebError("image attachments require the direct node send mode")
-        if temporary:
-            send_mode = "node"
         previous_ids: set[str] = set()
         previous: dict[str, Any] | None = None
         if conversation_id:
@@ -402,138 +362,73 @@ class ChatGPTClient:
             if previous and discovery.project_id(previous) not in (None, project_id):
                 raise ChatGPTWebError("conversation belongs to another project")
             previous = dict(previous or {}, project_id=project_id)
-        if model or effort or send_mode != "chrome":
-            catalog = self.model_catalog()
-            model = (
-                model
-                or os.environ.get("CHATGPT_WEB_MODEL")
-                or (previous.get("default_model_slug") if previous else None)
-                or catalog.default_model
-            )
-            selected = next((item for item in catalog.models if item.id == model), None)
-            if selected is None:
-                raise ChatGPTWebError(
-                    "Select a model from the current account catalog before sending"
-                )
-            if effort is not None and effort not in {item.id for item in selected.efforts}:
-                raise ChatGPTWebError(f"Effort '{effort}' is not offered for model '{model}'")
+        catalog = self.model_catalog()
+        model = (
+            model
+            or os.environ.get("CHATGPT_WEB_MODEL")
+            or (previous.get("default_model_slug") if previous else None)
+            or catalog.default_model
+        )
+        selected = next((item for item in catalog.models if item.id == model), None)
+        if selected is None:
+            raise ChatGPTWebError("Select a model from the current account catalog before sending")
+        if effort is not None and effort not in {item.id for item in selected.efforts}:
+            raise ChatGPTWebError(f"Effort '{effort}' is not offered for model '{model}'")
 
-        if send_mode != "chrome":
-            resolved_id, submitted_message_id = self.send_prompt_direct(
-                previous,
-                prompt,
-                attachments or [],
-                on_event,
-                model,
-                effort,
-                **({"temporary": True} if temporary else {}),
-            )
-            if temporary:
-                conversation = {
-                    "id": resolved_id,
-                    "conversation_id": resolved_id,
-                    "title": "Geçici sohbet",
-                    "default_model_slug": model,
-                    "current_node": self._last_stream_messages[-1].get("id")
-                    if self._last_stream_messages
-                    else None,
-                    "messages": list((previous or {}).get("messages", []))
-                    + [
-                        {
-                            "id": submitted_message_id,
-                            "author": {"role": "user"},
-                            "content": {"content_type": "text", "parts": [prompt]},
-                        }
-                    ]
-                    + self._last_stream_messages,
-                    "temporary": True,
-                }
-                if not conversation["current_node"]:
-                    raise ChatGPTWebError("temporary response has no continuation cursor")
-                size = sum(
-                    len(text_from_parts(message_parts(item.get("content"))))
-                    for item in conversation["messages"]
-                )
-                if size > 2_000_000:
-                    raise ChatGPTWebError(
-                        "temporary conversation reached the local memory limit; start a new one"
-                    )
-                self.temporary_conversations[resolved_id] = conversation
-                self.temporary_conversations.move_to_end(resolved_id)
-                while len(self.temporary_conversations) > 32:
-                    self.temporary_conversations.popitem(last=False)
-            else:
-                conversation = self.get_conversation(resolved_id)
-            messages = conversation.get("messages", [])
-            attached = isinstance(messages, list) and any(
-                isinstance(message, dict) and message.get("id") == submitted_message_id
-                for message in messages
-            )
-            if not attached:
-                raise ChatGPTWebError(
-                    "ChatGPT did not attach the submitted message to the conversation"
-                )
-            return resolved_id, conversation, previous_ids
-
-        helper = script_path(Script.SEND)
-        environment = self.session.environment()
-        environment["CHATGPT_WEB_CDP_URL"] = self.cdp_url.rstrip("/")
-        process = None
-        try:
-            process = subprocess.Popen(
-                ["node", str(helper)],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-                env=environment,
-            )
-            assert process.stdin is not None
-            assert process.stdout is not None
-            process.stdin.write(
-                json.dumps(
+        resolved_id, submitted_message_id = self.send_prompt_direct(
+            previous,
+            prompt,
+            attachments or [],
+            on_event,
+            model,
+            effort,
+            **({"temporary": True} if temporary else {}),
+        )
+        if temporary:
+            conversation = {
+                "id": resolved_id,
+                "conversation_id": resolved_id,
+                "title": "Geçici sohbet",
+                "default_model_slug": model,
+                "current_node": self._last_stream_messages[-1].get("id")
+                if self._last_stream_messages
+                else None,
+                "messages": list((previous or {}).get("messages", []))
+                + [
                     {
-                        "conversation_id": conversation_id,
-                        "prompt": prompt,
-                        "model": model,
-                        "effort": effort,
-                        "project_id": project_id,
+                        "id": submitted_message_id,
+                        "author": {"role": "user"},
+                        "content": {"content_type": "text", "parts": [prompt]},
                     }
-                )
+                ]
+                + self._last_stream_messages,
+                "temporary": True,
+            }
+            if not conversation["current_node"]:
+                raise ChatGPTWebError("temporary response has no continuation cursor")
+            size = sum(
+                len(text_from_parts(message_parts(item.get("content"))))
+                for item in conversation["messages"]
             )
-            process.stdin.close()
-            resolved_id = None
-            for line in process.stdout:
-                try:
-                    event = json.loads(line)
-                except json.JSONDecodeError as error:
-                    raise ChatGPTWebError("Chrome returned an invalid stream event") from error
-                if event.get("type") == "completed":
-                    resolved_id = event.get("conversation_id")
-                elif on_event is not None:
-                    on_event(event)
-            return_code = process.wait(timeout=5)
-        except (BrokenPipeError, ConnectionError, OSError):
-            if process is not None and process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-            raise
-        except subprocess.TimeoutExpired as error:
-            if process is not None:
-                process.kill()
-            raise ChatGPTWebError("prompt submission timed out") from error
-        if return_code != 0:
-            assert process.stderr is not None
-            detail = process.stderr.read().strip() or "prompt submission failed"
-            raise ChatGPTWebError(detail)
-        if not isinstance(resolved_id, str) or not resolved_id:
-            raise ChatGPTWebError("ChatGPT did not return a conversation ID")
-
-        conversation = self.get_conversation(resolved_id)
+            if size > 2_000_000:
+                raise ChatGPTWebError(
+                    "temporary conversation reached the local memory limit; start a new one"
+                )
+            self.temporary_conversations[resolved_id] = conversation
+            self.temporary_conversations.move_to_end(resolved_id)
+            while len(self.temporary_conversations) > 32:
+                self.temporary_conversations.popitem(last=False)
+        else:
+            conversation = self.get_conversation(resolved_id)
+        messages = conversation.get("messages", [])
+        attached = isinstance(messages, list) and any(
+            isinstance(message, dict) and message.get("id") == submitted_message_id
+            for message in messages
+        )
+        if not attached:
+            raise ChatGPTWebError(
+                "ChatGPT did not attach the submitted message to the conversation"
+            )
         return resolved_id, conversation, previous_ids
 
     def send_prompt_direct(
@@ -551,33 +446,12 @@ class ChatGPTClient:
             candidate = conversation.get("conversation_id") or conversation.get("id")
             if isinstance(candidate, str):
                 conversation_id = candidate
-        mode = os.environ.get("CHATGPT_WEB_SEND_MODE", "node")
-        if temporary and mode == "recipe":
-            raise ChatGPTWebError(
-                "temporary chat requires direct transport; browser recipe capture is disabled"
-            )
-        if mode == "recipe":
-            method, url, headers, body = self.capture_send_recipe(conversation_id, prompt)
-        else:
-            try:
-                sentinel_headers = self.create_sentinel_headers()
-            except SentinelCompatibilityError as error:
-                if temporary:
-                    raise ChatGPTWebError(
-                        "temporary chat preparation failed; no browser fallback was used"
-                    ) from error
-                if not self.session.is_ready():
-                    raise ChatGPTWebError(
-                        f"{error}; run siopechat login for compatibility fallback"
-                    ) from error
-                method, url, headers, body = self.capture_send_recipe(conversation_id, prompt)
-            else:
-                method = "POST"
-                url = urljoin(CHATGPT_ORIGIN, "/backend-api/f/conversation")
-                headers = self.headers.copy()
-                headers.update(sentinel_headers)
-                body = self.create_conversation_body(conversation, prompt, attachments)
-
+        sentinel_headers = self.create_sentinel_headers()
+        method = "POST"
+        url = urljoin(CHATGPT_ORIGIN, "/backend-api/f/conversation")
+        headers = self.headers.copy()
+        headers.update(sentinel_headers)
+        body = self.create_conversation_body(conversation, prompt, attachments)
         # Apply the provider-owned choices to this request; never retain an
         # effort preference captured from a different model.
         if model:
@@ -841,8 +715,10 @@ class ChatGPTClient:
                 body["conversation_id"] = conversation_id
         return body
 
-    def upload_file(self, file_name: str, mime_type: str, data: bytes) -> dict[str, Any]:
-        if mime_type == "image/png":
+    def upload_file(
+        self, file_name: str, mime_type: str, data: bytes, *, project_id=None
+    ) -> dict[str, Any]:
+        if mime_type == "image/png" and project_id is None:
             if not data.startswith(b"\x89PNG\r\n\x1a\n") or len(data) < 24:
                 raise ChatGPTWebError("invalid PNG file")
             return self.upload_image(
@@ -857,7 +733,12 @@ class ChatGPTClient:
         slot = self.request(
             "POST",
             urljoin(CHATGPT_ORIGIN, "/backend-api/files"),
-            json={"file_name": file_name, "file_size": len(data), "use_case": "ace_upload"},
+            json={
+                "file_name": file_name,
+                "file_size": len(data),
+                "use_case": "gizmo" if project_id else "ace_upload",
+                **({"gizmo_id": project_id, "mime_type": mime_type} if project_id else {}),
+            },
         ).json()
         file_id, upload_url = slot.get("file_id"), slot.get("upload_url")
         if not isinstance(file_id, str) or not isinstance(upload_url, str):
@@ -872,7 +753,16 @@ class ChatGPTClient:
         result = self.request(
             "POST",
             urljoin(CHATGPT_ORIGIN, f"/backend-api/files/{quote(file_id, safe='')}/uploaded"),
-            json={},
+            json={
+                "gizmo_id": project_id,
+                "use_case": "gizmo",
+                "entry_surface": "project_sources",
+                "file_name": file_name,
+                "mime_type": mime_type,
+                "index_for_retrieval": True,
+            }
+            if project_id
+            else {},
         ).json()
         if result.get("status") != "success":
             raise ChatGPTWebError("provider did not finalize the file upload")
@@ -925,45 +815,3 @@ class ChatGPTClient:
             "width": width,
             "height": height,
         }
-
-    def capture_send_recipe(
-        self, conversation_id: str | None, prompt: str
-    ) -> tuple[str, str, dict[str, str], dict[str, Any]]:
-        helper = script_path(Script.CAPTURE)
-        environment = self.session.environment()
-        environment["CHATGPT_WEB_CDP_URL"] = self.cdp_url.rstrip("/")
-        try:
-            captured = subprocess.run(
-                ["node", str(helper)],
-                input=json.dumps({"conversation_id": conversation_id, "prompt": prompt}),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=45,
-                check=False,
-                env=environment,
-            )
-        except (FileNotFoundError, subprocess.TimeoutExpired) as error:
-            raise ChatGPTWebError("Chrome request preparation failed") from error
-        if captured.returncode != 0:
-            raise ChatGPTWebError(captured.stderr.strip() or "request preparation failed")
-        try:
-            recipe = json.loads(captured.stdout)
-            url = recipe["url"]
-            method = recipe["method"]
-            body = json.loads(recipe["postData"])
-            headers = {
-                key.lower(): value
-                for key, value in recipe["headers"].items()
-                if key.lower() not in FORBIDDEN_REPLAY_HEADERS and not key.startswith(":")
-            }
-        except (KeyError, TypeError, json.JSONDecodeError) as error:
-            raise ChatGPTWebError("Chrome returned an invalid send recipe") from error
-        parsed = urlsplit(url)
-        if (parsed.scheme, parsed.netloc, parsed.path) != (
-            "https",
-            "chatgpt.com",
-            "/backend-api/f/conversation",
-        ) or method != "POST":
-            raise ChatGPTWebError("Chrome returned an unexpected send destination")
-        return method, url, headers, body

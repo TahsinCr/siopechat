@@ -1,0 +1,317 @@
+"""Account-scoped Claude HTTPS operations and completion streams."""
+
+import json
+import uuid
+from pathlib import Path
+from urllib.parse import quote
+
+from ..errors import AccountPaused, ProviderError
+from ..projects import ProjectOptions
+from ..session import WebSession, read_session
+
+
+def remote_id(value):
+    try:
+        return str(uuid.UUID(value))
+    except (ValueError, TypeError, AttributeError):
+        raise ValueError("Invalid Claude identity") from None
+
+
+def catalog_from_bootstrap(data, selected):
+    account = data.get("account")
+    if not isinstance(account, dict):
+        raise AccountPaused("Claude oturumu doğrulanamadı")
+    organizations = [x.get("organization", {}) for x in account.get("memberships", [])]
+    available = [x for x in organizations if "chat" in x.get("capabilities", [])]
+    org = next((x for x in available if x.get("uuid") == selected), None)
+    if org is None:
+        if not selected and len(available) == 1:
+            org = available[0]
+        else:
+            raise ProviderError("Claude çalışma alanı seçimi geçersiz; hesabı tekrar doğrulayın")
+    configs = org.get("claude_ai_bootstrap_models_config")
+    if not isinstance(configs, list):
+        raise ProviderError("Claude model kataloğu sözleşmesi değişmiş")
+    models = []
+    for item in configs:
+        if (
+            item.get("inactive")
+            or item.get("disabled")
+            or item.get("upgrade_required")
+            or not isinstance(item.get("model"), str)
+        ):
+            continue
+        efforts = [
+            {"id": x["id"], "title": x.get("selection_title") or x.get("title") or x["id"]}
+            for x in item.get("thinking_modes", [])
+            if isinstance(x.get("id"), str)
+        ]
+        models.append(
+            {
+                "id": item["model"],
+                "title": item.get("name") or item["model"],
+                "efforts": efforts,
+                "native": item,
+            }
+        )
+    if not models:
+        raise ProviderError("Claude bu hesap için model sunmadı")
+    preferred = account.get("settings", {}).get("default_model")
+    return org["uuid"], {
+        "models": models,
+        "default_model": preferred
+        if any(x["id"] == preferred for x in models)
+        else models[0]["id"],
+    }
+
+
+class ClaudeTransport:
+    def __init__(self, credential_file, *, session=None):
+        self.session = session or WebSession("https://claude.ai", credential_file, "sessionKey")
+        self.path, self.organization, self.catalog = self.session.path, None, None
+        self.authenticated = False
+
+    async def discover(self):
+        data = await self.session.request("GET", "/api/bootstrap")
+        values = read_session(self.path)
+        self.organization, self.catalog = catalog_from_bootstrap(
+            data, values.get("cookies", values).get("lastActiveOrg")
+        )
+        self.authenticated = True
+        return self.catalog
+
+    async def base(self):
+        if not self.organization:
+            await self.discover()
+        return "/api/organizations/" + remote_id(self.organization)
+
+    async def close(self):
+        await self.session.close()
+
+    async def request(self, mode, **v):
+        if mode in ("status", "models"):
+            data = await self.discover()
+            return data if mode == "models" else {"authenticated": True}
+        base = await self.base()
+        cid = remote_id(v["conversation_id"]) if v.get("conversation_id") else None
+        pid = remote_id(v["project_id"]) if v.get("project_id") else None
+        call = self.session.request
+        if mode == "chats":
+            offset, limit = int(v.get("cursor") or 0), int(v.get("limit") or 50)
+            if offset < 0 or not 1 <= limit <= 100:
+                raise ValueError("Invalid Claude page")
+            return await call("GET", base + f"/chat_conversations?limit={limit}&offset={offset}")
+        if mode == "history":
+            if cid is None:
+                raise ValueError("Conversation required")
+            return await call(
+                "GET",
+                base
+                + "/chat_conversations/"
+                + cid
+                + "?tree=True&rendering_mode=messages&render_all_tools=true",
+            )
+        if mode == "projects":
+            return await call("GET", base + "/projects")
+        if mode == "create_project":
+            return await call(
+                "POST",
+                base + "/projects",
+                json={
+                    "name": v["name"],
+                    "description": "",
+                    "prompt_template": v.get("instructions") or "",
+                    "is_private": True,
+                },
+            )
+        if mode in ("project", "project_chats", "delete_project"):
+            if pid is None:
+                raise ValueError("Project required")
+            path = base + "/projects/" + pid
+            if mode == "project_chats":
+                return await call("GET", path + "/conversations")
+            if mode == "delete_project":
+                return await call("DELETE", path)
+            detail = await call("GET", path)
+            docs, files = await call("GET", path + "/docs"), await call("GET", path + "/files")
+            if not isinstance(docs, list) or not isinstance(files, list):
+                raise ProviderError("Claude resource contract changed")
+            return dict(detail, docs=docs, files=files)
+        if cid is None:
+            raise ValueError("Conversation required")
+        path = base + "/chat_conversations/" + cid
+        if mode == "delete_chat":
+            return await call("DELETE", path)
+        if mode == "rename_chat":
+            await call("PUT", path, json={"name": v["title"]})
+            if (await call("GET", path)).get("name") != v["title"]:
+                raise ProviderError("Claude rename readback failed")
+            return None
+        if mode == "move_chat":
+            await call(
+                "POST",
+                base + "/chat_conversations/move_many",
+                json={"conversation_uuids": [cid], "project_uuid": pid},
+            )
+            if (await call("GET", path)).get("project_uuid") != pid:
+                raise ProviderError("Claude project membership readback failed")
+            return None
+        raise ValueError("Unsupported Claude operation")
+
+    async def events(self, mode, **v):
+        if mode != "send":
+            raise ValueError("Unsupported stream operation")
+        base = await self.base()
+        model = v.get("model") or self.catalog["default_model"]
+        choice = next((x for x in self.catalog["models"] if x["id"] == model), None)
+        if choice is None or (
+            v.get("effort") and not any(x["id"] == v["effort"] for x in choice["efforts"])
+        ):
+            raise ValueError("Select a model/thinking option from this account")
+        pid = remote_id(v["project_id"]) if v.get("project_id") else None
+        cid = remote_id(v["conversation_id"]) if v.get("conversation_id") else str(uuid.uuid4())
+        path = base + "/chat_conversations/" + cid
+        if v.get("conversation_id"):
+            history = await self.session.request("GET", path)
+            parent = history.get("current_leaf_message_uuid")
+        else:
+            created = await self.session.request(
+                "POST", base + "/chat_conversations", json={"uuid": cid, "name": ""}
+            )
+            parent = created.get("current_leaf_message_uuid") if isinstance(created, dict) else None
+            if pid:
+                await self.request("move_chat", conversation_id=cid, project_id=pid)
+        yield {"type": "bound", "id": cid}
+        body = {
+            "prompt": v["prompt"],
+            "model": model,
+            "timezone": "UTC",
+            "attachments": [],
+            "files": [],
+            "rendering_mode": "messages",
+        }
+        if parent:
+            body["parent_message_uuid"] = parent
+        effort = v.get("effort")
+        if effort:
+            body["thinking_mode"] = effort
+        completed, text, thinking, blocks = False, "", "", {}
+        async with self.session.connect().stream(
+            "POST",
+            self.session.url(path + "/completion"),
+            json=body,
+            headers={"accept": "text/event-stream"},
+            allow_redirects=False,
+            timeout=600,
+        ) as response:
+            self.session.check(response)
+            payload = []
+            async for line in response.aiter_lines():
+                if isinstance(line, bytes):
+                    line = line.decode("utf-8")
+                if line.startswith("data:"):
+                    payload.append(line[5:].lstrip())
+                    if sum(map(len, payload)) > 1_048_576:
+                        raise ProviderError("Claude stream event exceeds size limit")
+                    continue
+                if line or not payload:
+                    continue
+                raw, payload = "\n".join(payload), []
+                if raw == "[DONE]":
+                    continue
+                event = json.loads(raw)
+                kind, delta = event.get("type"), event.get("delta", {})
+                if kind == "error" or event.get("error"):
+                    raise ProviderError("Claude akışı hata verdi; istek tekrarlanmadı")
+                if kind == "content_block_start":
+                    block = event.get("content_block", {})
+                    blocks[event.get("index", 0)] = block.get("type")
+                    if block.get("type") == "text" and block.get("text"):
+                        text += block["text"]
+                        yield {"type": "replace", "text": text}
+                    elif block.get("type") == "thinking" and block.get("thinking"):
+                        thinking += block["thinking"]
+                        yield {"type": "replace", "channel": "analysis", "text": thinking}
+                if kind == "content_block_delta":
+                    channel = blocks.get(event.get("index", 0))
+                    if delta.get("type") == "thinking_delta" and channel == "thinking":
+                        thinking += delta.get("thinking", "")
+                        yield {"type": "replace", "channel": "analysis", "text": thinking}
+                    elif delta.get("type") == "text_delta" and channel == "text":
+                        text += delta.get("text", "")
+                        yield {"type": "replace", "text": text}
+                elif "completion" in event:
+                    text += event.get("completion") or ""
+                    yield {"type": "replace", "text": text}
+                    completed = bool(event.get("stop_reason"))
+                if kind == "message_stop" or (kind == "message_delta" and delta.get("stop_reason")):
+                    completed = True
+        if not completed:
+            raise ProviderError("Claude yanıtı tamamlanmadı; istek yeniden gönderilmedi")
+        yield {"type": "done"}
+
+
+class ClaudeProjectEditor:
+    def __init__(self, transport):
+        self.transport = transport
+
+    async def close(self):
+        pass
+
+    async def options(self, project_id=None):
+        return ProjectOptions(
+            fields=("name", "instructions") if project_id else ("name",),
+            sources=(
+                {"id": "text", "title": "Metin"},
+                {"id": "file", "title": "Dosya", "accept": "*/*"},
+            )
+            if project_id
+            else (),
+            remove_sources=bool(project_id),
+        )
+
+    async def write(self, operation, project_id=None, **v):
+        path = await self.transport.base() + "/projects/" + remote_id(project_id)
+        call = self.transport.session.request
+        if operation == "update":
+            fields = {"name": v["name"]} if "name" in v else {}
+            if "instructions" in v:
+                fields["prompt_template"] = v["instructions"]
+            return await call("PUT", path, json=fields)
+        if operation == "add_source":
+            if v["kind"] == "text":
+                return await call(
+                    "POST", path + "/docs", json={"file_name": v["name"], "content": v["text"]}
+                )
+            if v["kind"] != "file":
+                raise ValueError("Unsupported source type")
+            from curl_cffi import CurlMime
+
+            file = Path(v["path"]).expanduser().resolve(strict=True)
+            if not file.is_file() or file.stat().st_size > 20 * 1024 * 1024:
+                raise ValueError("Source must be at most 20 MiB")
+            mime = CurlMime()
+            try:
+                mime.addpart(name="file", filename=file.name, local_path=str(file))
+                return await call("POST", path + "/upload", multipart=mime)
+            finally:
+                mime.close()
+        if operation == "remove_source":
+            rid = quote(v["resource_id"], safe="")
+            current = await self.transport.request("project", project_id=project_id)
+            doc = next(
+                (x for x in current["docs"] if (x.get("uuid") or x.get("id")) == v["resource_id"]),
+                None,
+            )
+            if doc is not None:
+                return await call("DELETE", path + "/docs/" + rid)
+            file = next(
+                (x for x in current["files"] if (x.get("uuid") or x.get("id")) == v["resource_id"]),
+                None,
+            )
+            if file is None or not file.get("file_uuid"):
+                raise ValueError("Kaynak bu projeye ait değil veya dosya kimliği eksik")
+            return await call(
+                "POST", path + "/files/delete_many", json={"file_uuids": [file["file_uuid"]]}
+            )
+        raise ValueError("Unknown project operation")
