@@ -47,6 +47,7 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 
 ### Fixed
 
+- Remove the formatted-text newline from each lazy sidebar row so it is not shown as a blue `^J` control character.
 - Authenticate ChatGPT Estuary file downloads with the selected account instead of treating protected URLs as public CDN links, fixing HTTP 403 on generated files.
 - Use the native streaming HTTP transport for Gemini and Claude downloads, with scoped account cookies and no credential forwarding across origins.
 - Resolve Claude sandbox and computer file links through the owning conversation's file listing and download endpoint.
