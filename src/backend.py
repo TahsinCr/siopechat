@@ -16,8 +16,6 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-import httpx
-
 from providers.chatgpt import BrowserSession, ChatGPTClient, SessionPaths
 from providers.chatgpt.constants import DEFAULT_CDP_URL
 from providers.chatgpt.errors import ChatGPTWebError
@@ -529,6 +527,51 @@ class BackendService:
             return ({"stopping": True}, True)
         raise ChatGPTWebError(f"unknown daemon command: {command}")
 
+    def _daemon_response(self, client, connection, request):
+        if request.get("command") == "send_stream":
+            conversation_id = request.get("conversation_id")
+            prompt = request.get("prompt")
+            attachments = request.get("attachments", [])
+            model = request.get("model")
+            effort = request.get("effort")
+            if conversation_id is not None and (not isinstance(conversation_id, str)):
+                raise ChatGPTWebError("invalid conversation ID")
+            if not isinstance(prompt, str) or (not prompt.strip() and (not attachments)):
+                raise ChatGPTWebError("prompt or attachment is required")
+            if not isinstance(attachments, list):
+                raise ChatGPTWebError("invalid attachment list")
+            if model is not None and (not isinstance(model, str) or not model or len(model) > 128):
+                raise ChatGPTWebError("invalid model identifier")
+            if effort is not None and (not isinstance(effort, str) or not effort):
+                raise ChatGPTWebError("invalid effort choice")
+            resolved_id, conversation, previous_ids = client.send_prompt(
+                conversation_id,
+                prompt,
+                attachments,
+                lambda event: self.send_json_line(connection, {"ok": True, "event": event}),
+                model,
+                effort,
+                **self.send_options(request),
+            )
+            if request.get("temporary"):
+                conversation = dict(conversation, temporary=True)
+            self.cache_conversation(conversation)
+            self.send_json_line(
+                connection,
+                {
+                    "ok": True,
+                    "result": {
+                        "conversation_id": resolved_id,
+                        "conversation": conversation,
+                        "previous_ids": sorted(previous_ids),
+                    },
+                },
+            )
+            return False
+        result, stop_after_response = self.handle_daemon_command(client, request)
+        self.send_json(connection, {"ok": True, "result": result})
+        return stop_after_response
+
     def run_daemon(self, socket_path: Path, cdp_url: str) -> int:
         socket_path.parent.mkdir(mode=448, parents=True, exist_ok=True)
         set_private_permissions(socket_path.parent, 448)
@@ -551,84 +594,81 @@ class BackendService:
 
         signal.signal(signal.SIGTERM, request_stop)
         signal.signal(signal.SIGINT, request_stop)
+        from concurrent.futures import ThreadPoolExecutor
+        from contextlib import nullcontext
+
+        capacity = threading.BoundedSemaphore(8)
+        mutations = threading.Lock()
+        from collections import OrderedDict
+
+        temporary_conversations = OrderedDict()
+
+        def handle(connection):
+            nonlocal stopping
+            try:
+                with connection:
+                    connection.settimeout(10)
+                    try:
+                        request = self.receive_json(connection)
+                        if not isinstance(request, dict) or not isinstance(
+                            request.get("command"), str
+                        ):
+                            raise ValueError("invalid request")
+                        command = request["command"]
+                        if command in ("ping", "stop"):
+                            result, stop = self.handle_daemon_command(None, request)
+                            self.send_json(connection, {"ok": True, "result": result})
+                            if stop:
+                                stopping = True
+                            return
+                        gate = (
+                            mutations
+                            if command
+                            not in {
+                                "list",
+                                "history_page",
+                                "projects",
+                                "project",
+                                "project_chats",
+                                "load",
+                                "models",
+                                "status",
+                            }
+                            else nullcontext()
+                        )
+                        with gate, self.create_client(cdp_url) as client:
+                            client.temporary_conversations = temporary_conversations
+                            if self._daemon_response(client, connection, request):
+                                stopping = True
+                    except Exception:
+                        try:
+                            self.send_json_line(
+                                connection, {"ok": False, "error": "daemon_request_failed"}
+                            )
+                        except OSError:
+                            pass
+            finally:
+                capacity.release()
+
         try:
-            with self.create_client(cdp_url) as client:
-                server.bind(str(socket_path))
-                set_private_permissions(socket_path, 384)
-                server.listen(8)
+            server.bind(str(socket_path))
+            set_private_permissions(socket_path, 384)
+            server.listen(8)
+            server.settimeout(0.5)
+            with ThreadPoolExecutor(max_workers=8, thread_name_prefix="legacy-ipc") as workers:
                 while not stopping:
                     try:
                         connection, _ = server.accept()
+                    except socket.timeout:
+                        continue
                     except OSError:
                         if stopping:
                             break
                         raise
-                    stop_after_response = False
-                    with connection:
-                        connection.settimeout(10)
-                        try:
-                            request = self.receive_json(connection)
-                            if request.get("command") == "send_stream":
-                                conversation_id = request.get("conversation_id")
-                                prompt = request.get("prompt")
-                                attachments = request.get("attachments", [])
-                                model = request.get("model")
-                                effort = request.get("effort")
-                                if conversation_id is not None and (
-                                    not isinstance(conversation_id, str)
-                                ):
-                                    raise ChatGPTWebError("invalid conversation ID")
-                                if not isinstance(prompt, str) or (
-                                    not prompt.strip() and (not attachments)
-                                ):
-                                    raise ChatGPTWebError("prompt or attachment is required")
-                                if not isinstance(attachments, list):
-                                    raise ChatGPTWebError("invalid attachment list")
-                                if model is not None and (
-                                    not isinstance(model, str) or not model or len(model) > 128
-                                ):
-                                    raise ChatGPTWebError("invalid model identifier")
-                                if effort is not None and (
-                                    not isinstance(effort, str) or not effort
-                                ):
-                                    raise ChatGPTWebError("invalid effort choice")
-                                resolved_id, conversation, previous_ids = client.send_prompt(
-                                    conversation_id,
-                                    prompt,
-                                    attachments,
-                                    lambda event: self.send_json_line(
-                                        connection, {"ok": True, "event": event}
-                                    ),
-                                    model,
-                                    effort,
-                                    **self.send_options(request),
-                                )
-                                if request.get("temporary"):
-                                    conversation = dict(conversation, temporary=True)
-                                self.cache_conversation(conversation)
-                                self.send_json_line(
-                                    connection,
-                                    {
-                                        "ok": True,
-                                        "result": {
-                                            "conversation_id": resolved_id,
-                                            "conversation": conversation,
-                                            "previous_ids": sorted(previous_ids),
-                                        },
-                                    },
-                                )
-                                continue
-                            result, stop_after_response = self.handle_daemon_command(
-                                client, request
-                            )
-                            self.send_json(connection, {"ok": True, "result": result})
-                        except (ProviderError, httpx.HTTPError, OSError) as error:
-                            try:
-                                self.send_json_line(connection, {"ok": False, "error": str(error)})
-                            except OSError:
-                                pass
-                    if stop_after_response:
-                        stopping = True
+                    if not capacity.acquire(blocking=False):
+                        connection.close()
+                        continue
+                    workers.submit(handle, connection)
         finally:
             server.close()
             if socket_path.exists():

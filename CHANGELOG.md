@@ -19,6 +19,8 @@ Python distributions use the corresponding PEP 440 version (`1.1b0` for `v1.1-be
 
 ### Fixed
 
+- Isolate malformed legacy IPC requests, sanitize failure responses and accept bounded concurrent clients without blocking ping behind a long send. Keep mutations serialized and temporary conversation context shared.
+
 - Bind send activity and background completions to stable job/tab identity so closing or switching tabs cannot redirect a late result.
 
 - Require a confirmed ChatGPT stream ending and a visible assistant channel; reject malformed or CID-only responses without resending the request.
