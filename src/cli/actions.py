@@ -44,6 +44,7 @@ _ACTION_NAMES = {
     "ui.toggle_sidebar": "Sol paneli aç / kapat",
     "command.refresh": "Verileri eşitle",
     "command.settings": "Ayarlar",
+    "command.downloads": "İndirmeler",
     "command.help": "Yardım",
     "ui.command_palette": "Komut paleti",
     "edit.select_all": "Tüm metni / mesajı seç",

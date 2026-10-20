@@ -1190,8 +1190,10 @@ class Accounts:
             raise ValueError("Bu dosya sağlayıcı tarafından çözümlenemedi")
         return DownloadSource(url)
 
-    def download(self, key, url, conversation_id=None, message_id=None, progress=None):
-        return self.api.get("downloads").fetch(key, url, conversation_id, message_id, progress)
+    def download(self, key, url, conversation_id=None, message_id=None, progress=None, *, title=""):
+        return self.api.get("downloads").fetch(
+            key, url, conversation_id, message_id, progress, title=title
+        )
 
     def upload_image(self, key, data, name, mime, width, height):
         if key.startswith("claude/") and Capability.ATTACHMENTS not in self.capabilities(key):

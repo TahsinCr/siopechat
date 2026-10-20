@@ -151,7 +151,11 @@ def workspace_layout(view):
                         ),
                     ]
                 ),
-                filter=Condition(lambda: view.tab_kind != "settings"),
+                filter=Condition(lambda: view.tab_kind not in ("settings", "downloads")),
+            ),
+            ConditionalContainer(
+                view.downloads_panel.container,
+                filter=Condition(lambda: view.tab_kind == "downloads"),
             ),
             ConditionalContainer(
                 view.settings_dialog.container,
@@ -167,7 +171,10 @@ def workspace_layout(view):
                     wrap_lines=False,
                 ),
                 filter=Condition(
-                    lambda: view.tab_kind != "settings" and not view.editing_project()
+                    lambda: (
+                        view.tab_kind not in ("settings", "downloads")
+                        and not view.editing_project()
+                    )
                 ),
             ),
             text_window(view.render_footer, 1, "class:help"),

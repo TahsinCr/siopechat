@@ -40,12 +40,12 @@ class SQLiteRepository:
             ).fetchone()
             if exists:
                 versions = db.execute("SELECT version FROM schema_version").fetchall()
-                if versions != [(1,)]:
+                if versions not in ([(1,)], [(2,)]):
                     raise OSError("Unsupported archive schema version")
             db.executescript("""
                 PRAGMA journal_mode=WAL;
                 CREATE TABLE IF NOT EXISTS schema_version(version INTEGER PRIMARY KEY);
-                INSERT OR IGNORE INTO schema_version VALUES(1);
+                INSERT INTO schema_version SELECT 1 WHERE NOT EXISTS(SELECT 1 FROM schema_version);
                 CREATE TABLE IF NOT EXISTS tombstones(
                     account TEXT NOT NULL, kind TEXT NOT NULL, remote TEXT NOT NULL,
                     deleted REAL NOT NULL, PRIMARY KEY(account,kind,remote));
@@ -81,6 +81,14 @@ class SQLiteRepository:
                     state TEXT NOT NULL, checked REAL NOT NULL, error TEXT,
                     PRIMARY KEY(account,kind,remote));
             """)
+        # Upgrade the existing archive atomically; conversation tables remain intact.
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS downloads("
+                "id TEXT PRIMARY KEY, created REAL NOT NULL, payload TEXT NOT NULL)"
+            )
+            db.execute("UPDATE schema_version SET version=2 WHERE version=1")
         if os.name != "nt":
             self.path.chmod(0o600)
 

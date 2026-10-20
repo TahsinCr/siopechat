@@ -262,6 +262,7 @@ class SlashCommandCompleter(Completer):
         ("/effort", "show the provider effort value"),
         ("/actions", "search actions and commands"),
         ("/settings", "edit application and extension settings"),
+        ("/downloads", "download history and progress"),
         ("/session", "account and session controls"),
         ("/login", "open login controls"),
         ("/logout", "open local logout confirmation"),

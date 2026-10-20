@@ -166,6 +166,8 @@ class Forms:
         self.view.app.layout.focus(
             self.view.settings_dialog.category_control
             if self.view.tab_kind == "settings"
+            else self.view.downloads_panel.search
+            if self.view.tab_kind == "downloads"
             else self.view.transcript_control
             if self.view.tab_kind == "project"
             else self.view.input

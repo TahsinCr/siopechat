@@ -313,6 +313,9 @@ class ChatView:
         self.project_panel = ProjectPanel(self)
         self.session_dialog = SessionDialog(self)
         self.settings_dialog = SettingsDialog(self)
+        from .downloads import DownloadsPanel
+
+        self.downloads_panel = DownloadsPanel(self)
         self.layout_enabled = True
         self.layout_factory = layout_factory
         self.layout_controller = layout_factory(self) if layout_factory else None
@@ -343,6 +346,7 @@ class ChatView:
         making copied text lose its highlight almost immediately.
         """
         last_account_check = 0.0
+        last_download_check = 0.0
         while True:
             await asyncio.sleep(0.12)
             now = asyncio.get_running_loop().time()
@@ -357,6 +361,12 @@ class ChatView:
                 if key == self.account_key and state != self.session_state:
                     self.session_state = state
                     self.app.invalidate()
+            downloads_changed = self.downloads_panel.update()
+            if now - last_download_check >= 10:
+                last_download_check = now
+                self.downloads_panel.refresh()
+            if downloads_changed:
+                self.app.invalidate()
             active_tab_busy = bool(self.tabs and self.tabs[self.active_tab].get("busy"))
             self.apply_archive_updates()
             if active_tab_busy or self.loading_conversation or self.uploading_image:
@@ -1247,6 +1257,7 @@ class ChatView:
                 self.tr(" {0} Yardım ").format(self.shortcut("command.help")),
                 lambda: self.handle_command("/help"),
             ),
+            (self.downloads_panel.footer_label(), self.downloads_panel.open),
             (" ⚙ " + self.text("settings", self.tr("Ayarlar")) + " ", self.settings_dialog.open),
             (
                 self.tr(" ● Hesaplar ")
@@ -1306,6 +1317,7 @@ class ChatView:
         self.resume_search.prompt = self.tr("Search: ")
         self.sidebar_search.prompt = self.tr(" Ara ")
         self.settings_dialog.search.prompt = self.tr(" Ara  ")
+        self.downloads_panel.labels()
         self.keybindings = dict(DEFAULT_KEYBINDINGS) | config.get("keybindings", {})
         self.bindings = key_bindings(self)
         remembered = (
@@ -2554,6 +2566,7 @@ class ChatView:
                     "command.action": "/action",
                     "command.clear": "/clear",
                     "command.settings": "/settings",
+                    "command.downloads": "/downloads",
                     "command.session": "/session",
                     "command.quit": "/exit",
                     "command.quit_alias": "/quit",
@@ -2582,7 +2595,11 @@ class ChatView:
             self.tab_kind == "settings" and self.settings_dialog.category == "accounts"
         )
         self.app.layout.focus(
-            self.settings_dialog.category_control if self.tab_kind == "settings" else self.input
+            self.settings_dialog.category_control
+            if self.tab_kind == "settings"
+            else self.downloads_panel.search
+            if self.tab_kind == "downloads"
+            else self.input
         )
         self.app.invalidate()
 
@@ -2733,7 +2750,11 @@ class ChatView:
         self.app.invalidate()
         if focus:
             self.app.layout.focus(
-                self.settings_dialog.category_control if self.tab_kind == "settings" else self.input
+                self.settings_dialog.category_control
+                if self.tab_kind == "settings"
+                else self.downloads_panel.search
+                if self.tab_kind == "downloads"
+                else self.input
             )
         if self.account_service and self.catalog.state == FeatureState.UNKNOWN:
             self.refresh_provider_catalog()
@@ -3175,7 +3196,7 @@ class ChatView:
         if self.account_service is None:
             open_link(url)
             return
-        key, conversation = self.account_key, self.conversation_id
+        key, conversation, title = self.account_key, self.conversation_id, self.title
         message = (
             self.messages[index] if index is not None and 0 <= index < len(self.messages) else {}
         )
@@ -3212,7 +3233,9 @@ class ChatView:
             self.app.invalidate()
 
         self._read_in_background(
-            lambda: self.account_service.download(key, url, conversation, message_id, progress),
+            lambda: self.account_service.download(
+                key, url, conversation, message_id, progress, title=title
+            ),
             completed,
             failed,
             session_bound=False,
@@ -3443,7 +3466,10 @@ class ChatView:
         ).start()
 
     def handle_command(self, command: str) -> None:
-        if command.strip() == "/help" and self.tab_kind == "settings":
+        if command.strip() == "/downloads":
+            self.downloads_panel.open()
+            return
+        if command.strip() == "/help" and self.tab_kind in ("settings", "downloads"):
             self.new_tab()
         if command.strip() in ("/login", "/logout", "/session"):
             self.session_dialog.open()

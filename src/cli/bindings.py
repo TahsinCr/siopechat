@@ -27,6 +27,7 @@ def key_bindings(view) -> KeyBindings:
                     "command.help",
                     "command.session",
                     "command.settings",
+                    "command.downloads",
                     "chat.new",
                     "chat.next_tab",
                     "chat.previous_tab",
@@ -40,7 +41,11 @@ def key_bindings(view) -> KeyBindings:
                 )
                 or view.palette_visible
                 or view.resume_visible
-                or (not view.settings_dialog.visible and not view.session_dialog.visible)
+                or (
+                    not view.settings_dialog.visible
+                    and not view.session_dialog.visible
+                    and view.tab_kind != "downloads"
+                )
             )
         )
         bindings.add(
@@ -296,6 +301,7 @@ def key_bindings(view) -> KeyBindings:
         ("command.rename", rename_action),
         ("command.projects", projects_action),
         ("command.settings", settings_action),
+        ("command.downloads", lambda _: view.downloads_panel.open()),
         ("chat.clear_transcript", clear_transcript),
         ("chat.copy_response", copy_response),
         ("chat.remove_attachment", remove_attachment),

@@ -27,6 +27,9 @@ class Archive:
 
     def __init__(self, repository, files, events=None, memory_bytes=8 * 1024 * 1024):
         self.repository, self.files, self.events = repository, files, events
+        from .downloads import DownloadHistory
+
+        self.downloads = DownloadHistory(repository)
         self.memory_bytes = memory_bytes
         self.mappings = dict(MAPPINGS)
         self._hot, self._size = OrderedDict(), 0

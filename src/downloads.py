@@ -8,9 +8,11 @@ import socket
 import tempfile
 import threading
 import time
+import uuid
 from email.message import Message
 from pathlib import Path
 from urllib.parse import unquote, urljoin, urlsplit
+from urllib.parse import unquote as decode_id
 
 import httpx
 
@@ -25,13 +27,120 @@ class Downloads:
         self._gate = threading.BoundedSemaphore(2)
         self._lock = threading.Lock()
         self._active = set()
+        self._history_lock = threading.RLock()
+        self._store_lock = threading.RLock()
+        self._records = {}
+        self._running = set()
+        self._history_archive = None
+        self.revision = 0
+        self.history_available = False
+
+    def _history(self):
+        # Called under the storage lock, never under the render snapshot lock.
+        archive = self.accounts.archive() if hasattr(self.accounts, "archive") else None
+        self.history_available = archive is not None
+        if archive is not None and archive is not self._history_archive:
+            rows = archive.downloads.list()
+            if not isinstance(rows, list):
+                return None
+            with self._history_lock:
+                for row in rows:
+                    if row["state"] in ("preparing", "downloading"):
+                        row.update(state="interrupted", error="")
+                    self._records.setdefault(row["id"], row)
+                snapshots = [dict(row) for row in self._records.values()]
+                self.revision += 1
+            for row in snapshots:
+                archive.downloads.put(row)
+            self._history_archive = archive
+        return archive
+
+    def snapshot(self):
+        """Memory-only read for frontend rendering; refresh performs disk work."""
+        return self.snapshot_state()[1]
+
+    def snapshot_state(self):
+        with self._history_lock:
+            return self.revision, [dict(row) for row in self._records.values()]
+
+    def active_snapshot(self):
+        with self._history_lock:
+            return [dict(self._records[key]) for key in self._running if key in self._records]
+
+    def _update(self, identity, *, persist=False, **values):
+        with self._history_lock:
+            row = self._records.get(identity)
+            if row is None:
+                return
+            row.update(values, updated=time.time())
+            if row["state"] in ("preparing", "downloading"):
+                self._running.add(identity)
+            else:
+                self._running.discard(identity)
+            self.revision += 1
+        if persist:
+            try:
+                with self._store_lock:
+                    archive = self._history()
+                    with self._history_lock:
+                        row = dict(self._records[identity]) if identity in self._records else None
+                    if archive and row:
+                        row.pop("history_warning", None)
+                        archive.downloads.put(row)
+                        with self._history_lock:
+                            if identity in self._records:
+                                self._records[identity].pop("history_warning", None)
+            except (OSError, LookupError):
+                with self._history_lock:
+                    if identity in self._records:
+                        self._records[identity]["history_warning"] = True
+
+    def refresh(self):
+        """Reconcile files and known remote deletions without network requests."""
+        with self._store_lock:
+            archive = self._history()
+            deleted = archive.repository.tombstones() if archive else set()
+        for row in self.snapshot():
+            values = {}
+            if row["state"] in ("completed", "deleted") and row.get("path"):
+                try:
+                    exists = Path(row["path"]).is_file()
+                except OSError:
+                    exists = False
+                values["state"] = "completed" if exists else "deleted"
+            conversation = row.get("conversation_id") or ""
+            remote = decode_id(conversation.removeprefix("@" + row["account"] + "/"))
+            values["chat_deleted"] = (row["account"], "conversation", remote) in deleted
+            if row.get("history_warning") or any(
+                row.get(key) != value for key, value in values.items()
+            ):
+                self._update(row["id"], persist=True, **values)
+        return self.snapshot()
+
+    def remove(self, identity, *, delete_file=False):
+        with self._store_lock:
+            archive = self._history()
+            with self._history_lock:
+                row = dict(self._records[identity])
+            if row["state"] in ("preparing", "downloading"):
+                raise ValueError("İndirme sürerken kayıt silinemez")
+            if delete_file:
+                if row.get("path"):
+                    Path(row["path"]).unlink(missing_ok=True)
+                self._update(identity, persist=True, state="deleted")
+                return
+            if archive:
+                archive.downloads.remove(identity)
+            with self._history_lock:
+                del self._records[identity]
+                self.revision += 1
 
     def directory(self):
         value = self.settings.snapshot()["application"].get("download_directory", "downloads")
         path = Path(value).expanduser()
         return (path if path.is_absolute() else self.root / path).resolve()
 
-    def fetch(self, key, url, conversation_id=None, message_id=None, progress=None):
+    def fetch(self, key, url, conversation_id=None, message_id=None, progress=None, *, title=""):
         identity = (key, conversation_id, url)
         with self._lock:
             if identity in self._active:
@@ -39,18 +148,86 @@ class Downloads:
             if not self._gate.acquire(blocking=False):
                 raise ValueError("İki indirme sürüyor; tamamlanınca yeniden deneyin")
             self._active.add(identity)
+        record_id = uuid.uuid4().hex
+
+        last_saved = 0.0
+
+        def report(name, size, total):
+            nonlocal last_saved
+            now = time.monotonic()
+            persist = now - last_saved >= 1
+            if persist:
+                last_saved = now
+            self._update(
+                record_id, persist=persist, state="downloading", name=name, size=size, total=total
+            )
+            if progress:
+                progress(name, size, total)
+
         try:
+            try:
+                with self._store_lock:
+                    self._history()
+            except (OSError, LookupError):
+                pass  # A disabled/unavailable archive cannot stop file delivery.
+            with self._history_lock:
+                self._records[record_id] = dict(
+                    id=record_id,
+                    account=key,
+                    conversation_id=conversation_id,
+                    title=title,
+                    created=time.time(),
+                    updated=time.time(),
+                    state="preparing",
+                    name="",
+                    path=None,
+                    size=0,
+                    total=None,
+                    chat_deleted=False,
+                    error="",
+                )
+            self._update(record_id, persist=True)
             source = self.accounts.resolve_download(key, url, conversation_id, message_id)
             try:
-                return self._fetch(source, progress)
+                result = self._fetch(source, report)
+                if result["kind"] == "file":
+                    self._update(
+                        record_id,
+                        persist=True,
+                        state="completed",
+                        path=result["path"],
+                        name=Path(result["path"]).name,
+                        size=result["size"],
+                        total=result["size"],
+                    )
+                else:
+                    self.remove_page(record_id)
+                return result
             except httpx.HTTPError:
                 raise ValueError(
                     "Dosya aktarımı kesildi; bağlantıyı kontrol edip yeniden deneyin"
                 ) from None
+        except Exception:
+            if record_id in self._records:
+                self._update(record_id, persist=True, state="failed", error="download_failed")
+            raise
         finally:
             with self._lock:
                 self._active.discard(identity)
             self._gate.release()
+
+    def remove_page(self, identity):
+        with self._store_lock:
+            try:
+                archive = self._history()
+                if archive:
+                    archive.downloads.remove(identity)
+            except (OSError, LookupError):
+                pass
+            with self._history_lock:
+                self._records.pop(identity, None)
+                self._running.discard(identity)
+                self.revision += 1
 
     @staticmethod
     def _web_url(url):
@@ -201,6 +378,10 @@ class Downloads:
             )
             if total is not None and total > maximum:
                 raise ValueError("Dosya indirme boyutu sınırını aşıyor")
+            if response.headers.get("content-encoding"):
+                total = None  # Encoded Content-Length cannot measure decoded stream progress.
+            if progress:
+                progress(target.name, 0, total)
             with tempfile.NamedTemporaryFile(
                 dir=directory, prefix=".download-", suffix=".part", delete=False
             ) as output:

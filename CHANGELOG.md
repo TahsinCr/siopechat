@@ -10,6 +10,8 @@ Python distributions use the corresponding PEP 440 version (`1.1b0` for `v1.1-be
 
 ### Added
 
+- Downloads workspace between Help and Settings, with live transfer progress, searchable history, collapsible dates, status filters, sorting and links back to source chats. Open it with `/downloads` or Alt+J.
+- Archive-backed download history with an atomic v1-to-v2 SQLite migration, periodic file reconciliation, interrupted-transfer recovery, and separate file deletion and history removal.
 - GitHub Actions checks for Python 3.10/3.14 and Node 22/24 on Linux, Windows and macOS, including lint, tests and distribution builds.
 - Save open conversation references, split direction and active pane through layout.create; restore saved arrangements from the workspace sidebar.
 - Archive inspection and reference-safe, preview-first cleanup with shared-content protection and a one-hour grace period.

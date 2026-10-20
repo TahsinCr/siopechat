@@ -60,6 +60,7 @@ DEFAULT_KEYBINDINGS = {
     "command.project": "f9",
     "command.refresh": "f10",
     "command.settings": "f5",
+    "command.downloads": "escape j",
     "command.session": "f12",
     "chat.scroll_top": "c-home",
     "chat.scroll_bottom": "c-end",
