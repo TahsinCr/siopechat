@@ -117,8 +117,8 @@ class LocalizationTests(unittest.TestCase):
                 if other != name:
                     self.assertIn("](" + other + ")", text)
             self.assertIn("assets/siopechat.png", text)
-            self.assertIn("v1.0-beta", text)
-            self.assertIn("1.0b0", text)
+            self.assertIn("v1.1-beta", text)
+            self.assertIn("1.1b0", text)
             self.assertNotIn("```text", text)
         self.assertFalse((ROOT / "README-TR.example.md").exists())
 

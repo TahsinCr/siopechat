@@ -4,9 +4,11 @@ All notable changes to SiopeChat are documented here.
 
 The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
-Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-beta`).
+Python distributions use the corresponding PEP 440 version (`1.1b0` for `v1.1-beta`).
 
 ## [Unreleased]
+
+## [1.1-beta] - 2026-10-20
 
 ### Added
 
@@ -35,15 +37,8 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 ### Removed
 
 - Browser-launch and separate browser-verification controls from account settings; profile import is now the account login flow.
-
-### Security
-
-- Scope profile imports to provider authentication cookies, exclude Firefox containers, bound keyring work, and validate candidate sessions before replacing existing account credentials.
-
-### Changed
-
-- Remove retired browser-based conversation/project transports and their private scripts; current HTTP providers, login helpers and session signing remain in place.
-- Remove unused terminal rendering state and obsolete controls. Keep the shared Markdown and account-routing tests alongside the current provider tests.
+- Retired browser-based conversation and project transports plus their private scripts; the HTTP providers and login/session-signing path remain in place.
+- Unused terminal rendering state and obsolete controls; shared Markdown and account-routing tests remain in place.
 
 ### Fixed
 
@@ -80,6 +75,10 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 - Account-row clicks now update the selected row, keyboard focus and managed account together; full row width is clickable.
 - Distinguish missing profile-reader dependencies, filesystem permissions, cookie database failures, keyring access and decryption errors without exposing cookie values or raw exceptions.
 - Keep default-browser diagnostics out of the terminal UI while reporting launch failures.
+
+### Security
+
+- Scope profile imports to provider authentication cookies, exclude Firefox containers, bound keyring work, and validate candidate sessions before replacing existing account credentials.
 
 ## [1.0-beta] - 2026-10-19
 
