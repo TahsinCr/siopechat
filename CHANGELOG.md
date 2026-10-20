@@ -10,12 +10,16 @@ Python distributions use the corresponding PEP 440 version (`1.1b0` for `v1.1-be
 
 ### Changed
 
+- Use separate bounded pools for terminal reads, mutations and Markdown preparation, with queue rejection and shutdown handling.
+
 - Publish Claude text and thinking as incremental events and count SSE event size without rescanning accumulated lines.
 
 - Route application sends through the shared TaskService with account-specific provider factories, bounded responses, stable job identity and persistence inside the account queue.
 - Keep archive listing order explicitly based on remote IDs; presentation sorting remains independent.
 
 ### Fixed
+
+- Bind send activity and background completions to stable job/tab identity so closing or switching tabs cannot redirect a late result.
 
 - Require a confirmed ChatGPT stream ending and a visible assistant channel; reject malformed or CID-only responses without resending the request.
 - Handle explicitly permitted empty ChatGPT mutation responses, use real IANA timezone information, validate Gemini notebook envelopes and share session parsing errors.
@@ -25,6 +29,8 @@ Python distributions use the corresponding PEP 440 version (`1.1b0` for `v1.1-be
 - Reject future archive schemas before changing their structure and flush archived content before publishing its filename.
 
 ### Added
+
+- Save open conversation references, split direction and active pane through layout.create; restore saved arrangements from the workspace sidebar.
 
 - Archive inspection and reference-safe, preview-first cleanup with shared-content protection and a one-hour grace period.
 

@@ -400,8 +400,7 @@ class ProviderUiTests(unittest.TestCase):
                 "project_id": "g-p-work",
                 "messages": [],
             }
-            with patch("cli.chat.threading.Thread") as thread:
-                thread.side_effect = lambda target, daemon: Mock(start=target)
+            with patch.object(view._reads, "submit", side_effect=lambda target: target() or True):
                 view.resume_conversation("c1")
             self.assertEqual(view.model, "account-thinking")
             self.assertEqual(view.current_project["name"], "Work")
@@ -460,9 +459,9 @@ class ProviderUiTests(unittest.TestCase):
             view.close_palette()
             view.new_tab()
             view.load_conversation = lambda _: {"id": "chat", "messages": []}
-            with patch("cli.chat.threading.Thread") as thread:
+            with patch.object(view._reads, "submit", return_value=True) as submit:
                 view.resume_conversation("chat")
-                load = thread.call_args.kwargs["target"]
+                load = submit.call_args.args[0]
             view.open_palette()
             load()
             self.assertIs(view.app.layout.current_control, view.palette_search.control)

@@ -94,10 +94,9 @@ class CliComponentTests(unittest.TestCase):
                 view.focus_sidebar()
                 self.assertTrue(view.sidebar_visible)
                 self.assertIs(view.app.layout.current_control, view.sidebar_control)
-                with patch("cli.chat.threading.Thread") as thread:
-                    thread.side_effect = lambda target, daemon=True: Mock(
-                        start=Mock(side_effect=target)
-                    )
+                with patch.object(
+                    view._reads, "submit", side_effect=lambda target: target() or True
+                ):
                     view.open_sidebar_search()
                 self.assertIs(view.app.layout.current_control, view.sidebar_search.control)
                 view.sidebar_items = [
@@ -161,10 +160,9 @@ class CliComponentTests(unittest.TestCase):
                 )
                 previous = {"id": "known", "title": "Keep visible"}
                 view.sidebar_items = [previous]
-                with patch("cli.chat.threading.Thread") as thread:
-                    thread.side_effect = lambda target, daemon=True: Mock(
-                        start=Mock(side_effect=target)
-                    )
+                with patch.object(
+                    view._reads, "submit", side_effect=lambda target: target() or True
+                ):
                     view.refresh_sidebar()
                 self.assertEqual(view.sidebar_items, [previous])
                 self.assertEqual(view.sidebar_error, "offline")

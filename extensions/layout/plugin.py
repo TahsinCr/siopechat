@@ -21,14 +21,18 @@ class Workspaces:
 
         return SplitLayout(view)
 
-    async def execute(self, command: str, name=None, workspace_id=None, path=None):
+    async def execute(self, command: str, name=None, workspace_id=None, path=None, workspace=None):
         store = await WorkspaceStore.open(Path(path) if path else self.path)
         if command == "create":
-            value = Workspace(uuid.uuid4().hex, name)
+            value = (
+                Workspace.from_dict(workspace)
+                if workspace is not None
+                else Workspace(uuid.uuid4().hex, name)
+            )
             await store.save(value)
-            return asdict(value)
+            return json.loads(json.dumps(asdict(value)))
         if command == "show":
-            return asdict(await store.load(workspace_id))
+            return json.loads(json.dumps(asdict(await store.load(workspace_id))))
         if command == "delete":
             return {"deleted": await store.delete(workspace_id)}
         return [{"id": key, "name": title} for key, title in await store.list()]

@@ -78,3 +78,32 @@ class ResponsiveSettingsTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 view.app.exit()
                 await run
+
+
+class BackgroundCapacityTests(unittest.TestCase):
+    def test_metadata_queue_is_bounded_and_shutdown_rejects_new_work(self):
+        import threading
+
+        from cli.background import BackgroundReads
+
+        pool = BackgroundReads(workers=1, capacity=2)
+        started, release, finished = threading.Event(), threading.Event(), threading.Event()
+        queued = []
+
+        def work():
+            started.set()
+            release.wait(3)
+            finished.set()
+
+        try:
+            self.assertTrue(pool.submit(work))
+            self.assertTrue(started.wait(1))
+            self.assertTrue(pool.submit(lambda: queued.append(True)))
+            self.assertFalse(pool.submit(lambda: None))
+            pool.close()
+            self.assertFalse(pool.submit(lambda: None))
+        finally:
+            release.set()
+            self.assertTrue(finished.wait(2))
+            pool.close()
+        self.assertEqual(queued, [])

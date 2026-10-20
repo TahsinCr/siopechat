@@ -17,6 +17,105 @@ class SplitLayout:
         self.pending = None
         self._panes = {}
 
+    def snapshot(self, name):
+        """Persist references and geometry only; never credentials, drafts or jobs."""
+        import json
+        import uuid
+        from dataclasses import asdict
+
+        from .models import Tab, TabGroup, Workspace
+
+        view = self.view
+        view._save_active_tab()
+        tabs = {}
+        for tab in view.tabs:
+            if (
+                tab.get("kind", "chat") != "chat"
+                or tab.get("temporary")
+                or not tab.get("conversation_id")
+            ):
+                continue
+            provider, account = tab["account_key"].split("/", 1)
+            key = tab["tab_id"]
+            tabs[key] = Tab(
+                key,
+                tab.get("title") or "Chat",
+                provider_id=provider,
+                account_id=account,
+                chat_id=key,
+                conversation_id=tab["conversation_id"],
+            )
+        active = view.tabs[view.active_tab]["tab_id"]
+        groups, assigned = [], set()
+        for group in self.groups:
+            members = tuple(tabs[key] for key in group["tabs"] if key in tabs)
+            if members:
+                assigned.update(tab.id for tab in members)
+                groups.append(
+                    TabGroup(
+                        uuid.uuid4().hex,
+                        members,
+                        active if active in {x.id for x in members} else members[0].id,
+                        group["axis"],
+                    )
+                )
+        for key, tab in tabs.items():
+            if key not in assigned:
+                groups.append(TabGroup(uuid.uuid4().hex, (tab,), key))
+        active_group = next(
+            (group.id for group in groups if active in {x.id for x in group.tabs}), None
+        )
+        return json.loads(
+            json.dumps(asdict(Workspace(uuid.uuid4().hex, name, tuple(groups), active_group)))
+        )
+
+    def restore(self, value):
+        from .models import Workspace
+
+        workspace = Workspace.from_dict(value)
+        view, remap = self.view, {}
+        for group in workspace.groups:
+            for tab in group.tabs:
+                if tab.kind != "chat" or not tab.conversation_id:
+                    continue
+                key = tab.provider_id + "/" + tab.account_id
+                if view.account_service and key not in {
+                    item["key"] for item in view.account_service.items()
+                }:
+                    continue
+                existing = next(
+                    (
+                        i
+                        for i, state in enumerate(view.tabs)
+                        if state.get("conversation_id") == tab.conversation_id
+                    ),
+                    None,
+                )
+                if existing is not None:
+                    view.select_tab(existing)
+                else:
+                    before = len(view.tabs)
+                    view.new_tab()
+                    if len(view.tabs) == before:
+                        continue
+                    view.resume_conversation(tab.conversation_id)
+                remap[tab.id] = view.tabs[view.active_tab]["tab_id"]
+        for group in workspace.groups:
+            members = [remap[tab.id] for tab in group.tabs if tab.id in remap]
+            if len(members) > 1 and group.layout in ("columns", "rows"):
+                self.groups = [
+                    old for old in self.groups if not set(members).intersection(old["tabs"])
+                ]
+                self.groups.append({"axis": group.layout, "tabs": members})
+            if group.id == workspace.active_group_id:
+                active = remap.get(group.active_tab_id)
+                index = next(
+                    (i for i, tab in enumerate(view.tabs) if tab.get("tab_id") == active), None
+                )
+                if index is not None:
+                    view.select_tab(index)
+        view.app.invalidate()
+
     def active_group(self):
         existing = {tab.get("tab_id") for tab in self.view.tabs}
         for group in self.groups:

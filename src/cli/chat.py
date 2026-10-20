@@ -207,6 +207,11 @@ class ChatView:
         self.pending_attachments: list[dict[str, Any]] = []
         self.status = "Ready"
         self.cancel_connection: Any = None
+        from .background import BackgroundReads
+
+        self._reads = BackgroundReads()
+        self._render_reads = BackgroundReads(workers=2, capacity=16)
+        self._operations = BackgroundReads(workers=2, capacity=16)
         self.lock = threading.RLock()
         self.resume_visible = False
         self.resume_loading = False
@@ -1712,9 +1717,11 @@ class ChatView:
 
             self._dispatch_ui(apply_results)
 
-        threading.Thread(target=load, daemon=True).start()
+        if not self._reads.submit(load):
+            self.sidebar_loading = False
+            self.status = self.tr("Arka plan iş kuyruğu dolu; yeniden deneyin")
 
-    def _read_in_background(self, read, success, failure, session_bound=True) -> None:
+    def _read_in_background(self, read, success, failure, session_bound=True, *, cpu=False) -> None:
         if self.event_loop is None:
             self.event_loop = getattr(self.app, "loop", None)
         epoch = self.session_epoch
@@ -1744,7 +1751,11 @@ class ChatView:
 
                 self._dispatch_ui(deliver)
 
-        threading.Thread(target=work, daemon=True).start()
+        pool = self._render_reads if cpu else self._reads
+        if not pool.submit(work):
+            self._dispatch_ui(
+                lambda: failure(self.tr("Arka plan iş kuyruğu dolu; yeniden deneyin"))
+            )
 
     def refresh_provider_catalog(self, force=False) -> None:
         key = self.account_key
@@ -2195,13 +2206,19 @@ class ChatView:
                     submit,
                 )
                 return
+        if action_id == "layout.create" and self.layout_controller and arguments:
+            arguments = dict(
+                arguments, workspace=self.layout_controller.snapshot(arguments["name"])
+            )
         target_tab = self.active_tab
+        target_state = self.tabs[self.active_tab]
         target_messages = self.messages
         self.background_jobs += 1
 
         def invoke() -> None:
             preview = None
             error_text = None
+            result = None
             try:
                 result = self.invoke_action(action_id, arguments or {})
                 if result is not None:
@@ -2216,6 +2233,9 @@ class ChatView:
 
             def show_result() -> None:
                 self.background_jobs = max(0, self.background_jobs - 1)
+                if action_id == "layout.show" and error_text is None and self.layout_controller:
+                    self.layout_controller.restore(result)
+                    return
                 if preview is not None:
                     with self.lock:
                         target_messages.append(
@@ -2224,10 +2244,10 @@ class ChatView:
                                 "text": f"**{action_id}**\n\n```text\n{preview}\n```",
                             }
                         )
-                tab = self.tabs[target_tab]
+                tab = target_state
                 tab["messages"] = target_messages
-                tab["completed_pending"] = target_tab != self.active_tab
-                if target_tab == self.active_tab:
+                tab["completed_pending"] = target_state is not self.tabs[self.active_tab]
+                if target_state is self.tabs[self.active_tab]:
                     self.messages = target_messages
                     self.status = (
                         self.tr("Action failed: {0}").format(error_text)
@@ -2241,7 +2261,9 @@ class ChatView:
 
             self._dispatch_ui(show_result)
 
-        threading.Thread(target=invoke, daemon=True).start()
+        if not self._operations.submit(invoke):
+            self.background_jobs = max(0, self.background_jobs - 1)
+            self.status = self.tr("Arka plan iş kuyruğu dolu; yeniden deneyin")
 
     def activate_sidebar_item(self) -> None:
         self._build_sidebar_rows()
@@ -3020,7 +3042,7 @@ class ChatView:
                     pending.discard(key)
                     self.app.invalidate()
 
-                self._read_in_background(read, ready, failed, session_bound=False)
+                self._read_in_background(read, ready, failed, session_bound=False, cpu=True)
             if (
                 snapshot
                 and snapshot.get("conversation_id") == tab.get("conversation_id")
@@ -3647,6 +3669,7 @@ class ChatView:
             return
         conversation_id = self.conversation_id
         target_tab = self.active_tab
+        target_state = self.tabs[self.active_tab]
         self.status = self.tr("Renaming conversation…")
         self.background_jobs += 1
         self.app.invalidate()
@@ -3661,8 +3684,8 @@ class ChatView:
             def apply_result() -> None:
                 self.background_jobs = max(0, self.background_jobs - 1)
                 if error_text is None:
-                    self.tabs[target_tab]["title"] = title
-                if target_tab == self.active_tab:
+                    target_state["title"] = title
+                if target_state is self.tabs[self.active_tab]:
                     if error_text is None:
                         self.title = title
                         self._save_active_tab()
@@ -3679,7 +3702,9 @@ class ChatView:
 
             self._dispatch_ui(apply_result)
 
-        threading.Thread(target=rename, daemon=True).start()
+        if not self._operations.submit(rename):
+            self.background_jobs = max(0, self.background_jobs - 1)
+            self.status = self.tr("Arka plan iş kuyruğu dolu; yeniden deneyin")
 
     def paste_clipboard_image(self) -> None:
         if self.uploading_image:
@@ -3728,7 +3753,10 @@ class ChatView:
 
                 self._dispatch_ui(finish_upload)
 
-        threading.Thread(target=upload, daemon=True).start()
+        if not self._operations.submit(upload):
+            self.background_jobs = max(0, self.background_jobs - 1)
+            self.uploading_image, self.upload_started = False, None
+            self.status = self.tr("Arka plan iş kuyruğu dolu; yeniden deneyin")
 
     def copy_latest_response(self) -> None:
         with self.lock:
@@ -3798,7 +3826,9 @@ class ChatView:
 
                 self._dispatch_ui(show_error)
 
-        threading.Thread(target=load_items, daemon=True).start()
+        if not self._reads.submit(load_items):
+            self.resume_loading = False
+            self.status = self.tr("Arka plan iş kuyruğu dolu; yeniden deneyin")
 
     def filter_resume(self) -> None:
         query = self.resume_search.text.strip().casefold()
@@ -4063,7 +4093,10 @@ class ChatView:
 
                 self._dispatch_ui(show_error)
 
-        threading.Thread(target=load_selected, daemon=True).start()
+        if not self._reads.submit(load_selected):
+            target_tab.update(loading=False, syncing=False, loading_started=None)
+            self.loading_conversation, self.loading_started = False, None
+            self.status = self.tr("Arka plan iş kuyruğu dolu; yeniden deneyin")
 
     def run_send(
         self,
@@ -4096,11 +4129,15 @@ class ChatView:
 
         def register_connection(connection: Any) -> None:
             target_tab["connection"] = connection
+            target_tab["job_id"] = getattr(connection, "id", None)
             if is_active():
                 self.cancel_connection = connection
 
         def on_event(event: dict[str, Any]) -> None:
             nonlocal rendered, final_message_id
+            connection = target_tab.get("connection")
+            if connection is not None:
+                target_tab["job_id"] = getattr(connection, "id", None)
             event_type = event.get("type")
             if event.get("channel") == "analysis" or event_type == "reasoning":
                 text = event.get("text")
@@ -4287,6 +4324,9 @@ class ChatView:
             with patch_stdout(raw=True):
                 self.app.run(pre_run=started)
         finally:
+            self._reads.close()
+            self._render_reads.close()
+            self._operations.close()
             if self.forget_temporary and not self.busy:
                 self._save_active_tab()
                 for tab in self.tabs:

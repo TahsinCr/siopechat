@@ -46,6 +46,26 @@ class SplitTests(unittest.IsolatedAsyncioTestCase):
                 v.app.exit()
                 await run
 
+    async def test_split_workspace_snapshot_roundtrip_preserves_group_and_focus(self):
+        with interaction.terminal(layout_factory=SplitLayout) as (view, _):
+            view.account_key = "chatgpt/default"
+            view.conversation_id = "@chatgpt/default/left"
+            view.title = "Left"
+            view.new_tab()
+            view.conversation_id = "@chatgpt/default/right"
+            view.title = "Right"
+            view._save_active_tab()
+            view.layout_controller.begin("rows")
+            view.select_tab(0)
+            view.layout_controller.attach()
+            value = view.layout_controller.snapshot("Saved split")
+            self.assertEqual(value["groups"][0]["layout"], "rows")
+            self.assertEqual(len(value["groups"][0]["tabs"]), 2)
+            view.layout_controller.groups.clear()
+            view.layout_controller.restore(value)
+            self.assertEqual(view.layout_controller.active_group()["axis"], "rows")
+            self.assertEqual(view.conversation_id, "@chatgpt/default/left")
+
     async def test_tab_switch_preserves_manual_reading_position(self):
         with interaction.terminal() as (v, _):
             v.follow_output = False

@@ -273,9 +273,8 @@ class ArchiveIntegrationTests(unittest.TestCase):
                 with (
                     patch.object(self.accounts, "cached", return_value=cached),
                     patch.object(self.accounts, "load", return_value=body),
-                    patch(
-                        "cli.chat.threading.Thread",
-                        side_effect=lambda target, daemon: Mock(start=target),
+                    patch.object(
+                        view._reads, "submit", side_effect=lambda target: target() or True
                     ),
                 ):
                     view.resume_conversation(body["id"])
@@ -467,3 +466,74 @@ class ArchiveIntegrationTests(unittest.TestCase):
             until = time.monotonic() + 3
             while archive._pending and time.monotonic() < until:
                 time.sleep(0.01)
+
+
+class ArchiveMaintenanceTests(unittest.TestCase):
+    def test_future_schema_is_rejected_without_modification(self):
+        import sqlite3
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "future.db"
+            from contextlib import closing
+
+            with closing(sqlite3.connect(path)) as db:
+                db.execute("CREATE TABLE schema_version(version INTEGER PRIMARY KEY)")
+                db.execute("INSERT INTO schema_version VALUES(99)")
+                db.commit()
+            with self.assertRaises(OSError):
+                SQLiteRepository(path)
+            with closing(sqlite3.connect(path)) as db:
+                self.assertEqual(
+                    db.execute("SELECT version FROM schema_version").fetchall(), [(99,)]
+                )
+
+    def test_shared_sql_references_survive_until_the_last_owner_is_deleted(self):
+        import os
+        import time
+
+        with tempfile.TemporaryDirectory() as folder:
+            repository = SQLiteRepository(Path(folder) / "archive.db")
+            files = Files(Path(folder) / "files")
+            relative, _ = files.save(b"shared content")
+            os.utime(files.root / relative, (time.time() - 7200,) * 2)
+            for remote in ("first", "second"):
+                repository.put(
+                    "gemini/account",
+                    "conversation",
+                    remote,
+                    {"messages": [{"resources": [{"path": relative}]}]},
+                )
+            repository.delete("gemini/account", "conversation", "first")
+            self.assertEqual(files.collect(repository.file_references()), [])
+            repository.delete("gemini/account", "conversation", "second")
+            self.assertEqual(files.collect(repository.file_references()), [relative])
+            repository.close()
+
+    def test_failed_content_fsync_does_not_publish_a_partial_archive_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            files = Files(Path(folder))
+            with patch(
+                "extensions.archive.repository.os.fsync", side_effect=OSError("disk failure")
+            ):
+                with self.assertRaises(OSError):
+                    files.save(b"not durable")
+            self.assertEqual([path for path in files.root.rglob("*") if path.is_file()], [])
+
+    def test_gc_preserves_shared_references_recent_saves_and_unknown_files(self):
+        import os
+        import time
+
+        with tempfile.TemporaryDirectory() as folder:
+            files = Files(Path(folder))
+            live, _ = files.save(b"shared")
+            orphan, _ = files.save(b"orphan")
+            recent, _ = files.save(b"recent")
+            for item in (live, orphan):
+                os.utime(files.root / item, (time.time() - 7200,) * 2)
+            (files.root / "notes.txt").write_text("keep")
+            self.assertEqual(files.collect({live}), [orphan])
+            self.assertTrue((files.root / orphan).exists())
+            self.assertEqual(files.collect({live}, dry_run=False), [orphan])
+            self.assertTrue((files.root / live).exists())
+            self.assertTrue((files.root / recent).exists())
+            self.assertTrue((files.root / "notes.txt").exists())

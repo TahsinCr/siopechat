@@ -1,1 +1,1 @@
-"""Workspace foundation; split-view UI integration is pending."""
+"""Optional saved workspaces and terminal split layouts."""
