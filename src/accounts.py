@@ -980,11 +980,6 @@ class Accounts:
                         text = text + event.text if isinstance(event, TextDelta) else event.text
 
             def persist():
-                if (
-                    not key.startswith("chatgpt/")
-                    and getattr(getattr(provider, "browser", None), "authenticated", False) is True
-                ):
-                    self._remember_verification(key)
                 if not remote_id:
                     raise RuntimeError("Sağlayıcı sohbet kimliği döndürmedi")
                 cache_warning = None

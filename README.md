@@ -172,7 +172,7 @@ Application settings and cached records share atomic JSON persistence. The indep
 
 Bundled providers use their HTTPS transports for conversations and projects. Packaged Node helpers are limited to explicit login/session capture and ChatGPT request signing.
 
-The provider library is independent of the terminal, archive and application runtime. `accounts.py` routes provider/account work; `runtime.py`, `actions.py` and `extension.py` manage shared services and contributions. Terminal-specific code stays in `src/cli/`. Optional features live in `extensions/`, common helpers in `src/utils/`. A GUI can consume the same services; no GUI is included in this beta.
+The provider library is independent of the terminal, archive and application runtime. `accounts.py` routes provider/account work; `runtime.py`, `actions.py` and `extension.py` manage shared services and contributions. Terminal-specific code stays in `src/cli/`, with tab rendering in `layout.py` and library filtering/rows in `library.py`. Optional features live in `extensions/`, common helpers in `src/utils/`. A GUI can consume the same services; no GUI is included in this beta.
 
 Tests run without requiring your personal account sessions:
 

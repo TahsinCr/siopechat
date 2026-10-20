@@ -440,7 +440,6 @@
   "ui.add a file using the path picker": "add a file using the path picker",
   "ui.choose visible providers": "choose visible providers",
   "ui.add a provider account": "add a provider account",
-  "ui.create a project in the provider browser": "create a project in the provider browser",
   "ui.edit the selected project's name and instructions": "edit the selected project's name and instructions",
   "ui.add a supported source to the selected project": "add a supported source to the selected project",
   "ui.remove a selected project source": "remove a selected project source",
@@ -640,5 +639,6 @@
   "ui.Görselin gerçek dosya adresi sağlayıcıdan alınamadı; sohbeti eşitleyin": "The image file URL was not returned by the provider; synchronize the conversation",
   "ui.İndirme klasörü boş veya geçersiz": "The download folder is empty or invalid",
   "ui.Dosya aktarımı kesildi; bağlantıyı kontrol edip yeniden deneyin": "File transfer interrupted; check your connection and try again",
-  "ui.Dosya henüz hazır değil; biraz sonra yeniden deneyin": "The file is not ready yet; try again shortly"
+  "ui.Dosya henüz hazır değil; biraz sonra yeniden deneyin": "The file is not ready yet; try again shortly",
+  "ui.create a project in the selected provider": "create a project in the selected provider"
 }

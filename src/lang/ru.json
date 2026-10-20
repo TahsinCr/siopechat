@@ -440,7 +440,6 @@
   "ui.add a file using the path picker": "Прикрепить файл",
   "ui.choose visible providers": "Выбрать видимые аккаунты",
   "ui.add a provider account": "Добавить аккаунт провайдера",
-  "ui.create a project in the provider browser": "Создать проект",
   "ui.edit the selected project's name and instructions": "Изменить название и инструкции проекта",
   "ui.add a supported source to the selected project": "Добавить источник проекта",
   "ui.remove a selected project source": "Удалить источник проекта",
@@ -640,5 +639,6 @@
   "ui.Görselin gerçek dosya adresi sağlayıcıdan alınamadı; sohbeti eşitleyin": "Провайдер не вернул адрес изображения; синхронизируйте чат",
   "ui.İndirme klasörü boş veya geçersiz": "Папка загрузок не указана или недопустима",
   "ui.Dosya aktarımı kesildi; bağlantıyı kontrol edip yeniden deneyin": "Передача файла прервана; проверьте соединение и повторите попытку",
-  "ui.Dosya henüz hazır değil; biraz sonra yeniden deneyin": "Файл ещё не готов; повторите попытку немного позже"
+  "ui.Dosya henüz hazır değil; biraz sonra yeniden deneyin": "Файл ещё не готов; повторите попытку немного позже",
+  "ui.create a project in the selected provider": "Создать проект у выбранного провайдера"
 }

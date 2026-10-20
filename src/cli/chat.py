@@ -39,8 +39,8 @@ from utils import clipboard
 from .actions import action_order, action_title
 from .bindings import key_bindings
 from .history import prepare_archive_snapshot, prepare_transcript
-from .layout import workspace_layout
-from .library import SORT_OPTIONS, sort_records
+from .layout import render_tab_bar, workspace_layout
+from .library import SORT_OPTIONS, build_sidebar_rows
 from .markdown import (
     MessageRenderer,
     index_transcript,
@@ -878,79 +878,7 @@ class ChatView:
         return self.translations.get(f"application.{key}", fallback)
 
     def render_tabs(self):
-        width = self.terminal_width()
-        prefix = fit_text(" ☰ SiopeChat ", max(0, width - 12))
-        fragments = [("class:brand", prefix, on_click(self.toggle_sidebar))]
-        available = max(0, width - get_cwidth(prefix) - 12)
-        entries = list(range(len(self.tabs)))
-        group_titles = {}
-        if self.layout_controller and self.layout_enabled:
-            self.layout_controller.active_group()
-            for group in self.layout_controller.groups:
-                members = [
-                    i for i, tab in enumerate(self.tabs) if tab.get("tab_id") in group["tabs"]
-                ]
-                if len(members) < 2:
-                    continue
-                representative = self.active_tab if self.active_tab in members else members[0]
-                group_titles[representative] = " ◫ ".join(
-                    self.title
-                    if i == self.active_tab
-                    else self.tabs[i].get("title", self.tr("Sohbet"))
-                    for i in members
-                )
-                entries = [i for i in entries if i not in members or i == representative]
-        count = min(len(entries), max(1, available // 12))
-        indices = sorted(sorted(entries, key=lambda i: (abs(i - self.active_tab), i))[:count])
-        base, remainder = divmod(available, max(1, len(indices)))
-        for position, i in enumerate(indices):
-            tab_width = min(
-                getattr(self, "theme_options", {}).get("tab_width", 26),
-                base + (position < remainder),
-            )
-            tab = self.tabs[i]
-            title = group_titles.get(i) or (
-                self.title if i == self.active_tab else tab.get("title", self.tr("Sohbet"))
-            )
-            marker = (
-                "● "
-                if tab.get("busy")
-                else "✓ "
-                if tab.get("completed_pending")
-                else "↻ "
-                if tab.get("loading") or tab.get("syncing")
-                else "◌ "
-                if tab.get("temporary")
-                else ""
-            )
-            label = fit_text(marker + title, max(0, tab_width - 4))
-            padding = max(0, tab_width - 4 - get_cwidth(label))
-            label = " " * (padding // 2) + label + " " * (padding - padding // 2)
-            style = (
-                "class:tab.active"
-                if i == self.active_tab
-                else "class:tab.running"
-                if tab.get("busy")
-                else "class:tab"
-            )
-            fragments.append(("class:tab.divider", "│"))
-            fragments.append(
-                ("class:tab.open " + style, label, on_click(lambda i=i: self.select_tab(i)))
-            )
-            fragments.append(
-                ("class:tab.close " + style, " × ", on_click(lambda i=i: self.close_clicked_tab(i)))
-            )
-        used = sum(get_cwidth(fragment[1]) for fragment in fragments)
-        fragments.append(("class:tabs", " " * max(0, width - used - 12)))
-        fragments.extend(
-            [
-                ("class:button", " ‹ ", on_click(lambda: self.switch_tab(-1))),
-                ("class:button", " › ", on_click(lambda: self.switch_tab(1))),
-                ("class:button", " + ", on_click(self.new_tab)),
-                ("class:button", " ⊗ ", on_click(self.close_all_tabs)),
-            ]
-        )
-        return FormattedText(fragments)
+        return render_tab_bar(self)
 
     def close_clicked_tab(self, index):
         self.select_tab(index)
@@ -997,7 +925,7 @@ class ChatView:
             return FormattedText([("class:settings.title", self.tr(" Ayarlar"))])
         if self.editing_project():
             return FormattedText([])
-        selected = next((m for m in self.catalog.chat_models if m.id == self.model), None)
+        selected = self.catalog.chat_model(self.model)
         model = (
             (selected.chat_title or selected.title)
             if selected
@@ -1353,7 +1281,7 @@ class ChatView:
                     m.id: m.chat_title or m.title for m in self.catalog.chat_models
                 }
             if row["section"] == "application" and row["key"] == "effort":
-                selected = next((m for m in self.catalog.chat_models if m.id == self.model), None)
+                selected = self.catalog.chat_model(self.model)
                 row["choices"] = tuple(e.id for e in selected.efforts) if selected else ()
                 row["choice_labels"] = {e.id: e.title for e in selected.efforts} if selected else {}
         return rows
@@ -1599,218 +1527,8 @@ class ChatView:
         self.palette_index = index
         self.execute_palette_item()
 
-    def _build_sidebar_rows(self) -> None:
-        query = self.sidebar_search.text.strip().casefold()
-        active_keys = (
-            {
-                item["key"]
-                for item in self.account_service.items()
-                if item.get("enabled", True)
-                and (self.account_filter is None or item["key"] in self.account_filter)
-            }
-            if self.account_service and hasattr(self.account_service, "items")
-            else None
-        )
-        live_items = {item.get("id"): dict(item) for item in self.sidebar_items}
-        for tab in self.tabs + self.background_tabs:
-            if not tab.get("busy") and not any(tab is item for item in self.background_tabs):
-                continue
-            key = tab.get("account_key", self.account_key)
-            identifier = tab.get("conversation_id") or "background:" + str(id(tab))
-            item = live_items.setdefault(identifier, {"id": identifier})
-            item.update(
-                title=tab.get("title") or self.tr("New conversation"),
-                provider_id=key.split("/")[0],
-                project_id=(tab.get("project") or {}).get("id"),
-                live_tab=tab,
-            )
-        conversations = [
-            item
-            for item in live_items.values()
-            if item.get("kind") != "workspace"
-            and (
-                active_keys is None
-                or (
-                    item["live_tab"].get("account_key", self.account_key)
-                    if item.get("live_tab") is not None
-                    else origin(item.get("id"), self.account_key)[0]
-                )
-                in active_keys
-            )
-            and (
-                self.provider_filter is None
-                or item.get("provider_id", "chatgpt") in self.provider_filter
-            )
-        ]
-        workspaces = [item for item in self.sidebar_items if item.get("kind") == "workspace"]
-        projects: dict[str, list[dict[str, Any]]] = {
-            key: []
-            for key, project in self.project_items.items()
-            if (active_keys is None or origin(key, self.account_key)[0] in active_keys)
-            and (
-                self.provider_filter is None
-                or project.get("provider_id", origin(key)[0].split("/")[0]) in self.provider_filter
-            )
-        }
-        unassigned: list[dict[str, Any]] = []
-        for item in conversations:
-            project = item.get("project")
-            project_id = item.get("project_id")
-            if isinstance(project, dict):
-                project_id = project.get("id") or project_id
-            if isinstance(project_id, str) and project_id:
-                projects.setdefault(project_id, []).append(item)
-            else:
-                unassigned.append(item)
-
-        def matches(item: dict[str, Any]) -> bool:
-            title = str(item.get("title") or item.get("name") or "").casefold()
-            return not query or query in title or query in str(item.get("id", "")).casefold()
-
-        rows: list[dict[str, Any]] = []
-        rows.append(
-            {
-                "kind": "section",
-                "id": "projects",
-                "title": self.tr("Projeler"),
-                "count": len(projects),
-                "collapsed": "section:projects" in self.sidebar_collapsed,
-            }
-        )
-        if "section:projects" not in self.sidebar_collapsed:
-            project_order = sort_records(
-                [dict(self.project_items.get(pid, {}), id=pid) for pid in projects],
-                self.library_sort,
-            )
-            for project_record in project_order:
-                project_id = project_record["id"]
-                items = sort_records(projects[project_id], self.library_sort)
-                project_meta = items[0].get("project") if items else {}
-                project_meta = project_meta if isinstance(project_meta, dict) else {}
-                remote = self.project_items.get(project_id, {})
-                project_name = str(
-                    remote.get("name")
-                    or (items[0].get("project_name") if items else None)
-                    or project_meta.get("name")
-                    or self.tr("Proje")
-                )
-                visible_items = [item for item in items if matches(item)]
-                if query and query in project_name.casefold():
-                    visible_items = items
-                if query and query not in project_name.casefold() and not visible_items:
-                    continue
-                collapsed = f"project:{project_id}" in self.sidebar_collapsed
-                rows.append(
-                    {
-                        "kind": "project",
-                        "id": project_id,
-                        "title": project_name,
-                        "provider_id": remote.get("provider_id")
-                        or origin(project_id)[0].split("/")[0],
-                        "count": len(items),
-                        "collapsed": collapsed,
-                    }
-                )
-                if not collapsed:
-                    if project_id in self.project_chats_loading:
-                        rows.append({"kind": "message", "title": self.tr("Sohbetler yükleniyor…")})
-                    if project_id in self.project_chat_errors:
-                        rows.append(
-                            {"kind": "message", "title": self.project_chat_errors[project_id]}
-                        )
-                    rows.extend(self._chat_row(item, nested=True) for item in visible_items)
-                    if self.project_chat_cursors.get(project_id):
-                        rows.append(
-                            {
-                                "kind": "project_more",
-                                "id": project_id,
-                                "title": self.tr("Daha fazla sohbet…"),
-                            }
-                        )
-            if not projects:
-                rows.append(
-                    {
-                        "kind": "message",
-                        "title": self.tr("Projeler yükleniyor…")
-                        if self.projects_loading
-                        else self.project_error or self.tr("Henüz proje yok"),
-                    }
-                )
-            elif self.project_error:
-                rows.append(
-                    {"kind": "message", "title": self.tr("Hata: {0}").format(self.project_error)}
-                )
-            if self.project_cursor:
-                rows.append({"kind": "projects_more", "title": self.tr("Daha fazla proje…")})
-
-        visible_chats = sort_records(
-            [item for item in unassigned if matches(item)], self.library_sort
-        )
-        rows.append(
-            {
-                "kind": "section",
-                "id": "chats",
-                "title": self.tr("Sohbetler"),
-                "count": len(unassigned),
-                "collapsed": "section:chats" in self.sidebar_collapsed,
-            }
-        )
-        if "section:chats" not in self.sidebar_collapsed:
-            if self.sidebar_error:
-                rows.append(
-                    {
-                        "kind": "message",
-                        "title": self.tr("Hata: {0}").format(self.sidebar_error[:80]),
-                    }
-                )
-            rows.extend(self._chat_row(item) for item in visible_chats)
-            if self.history_cursor:
-                rows.append(
-                    {
-                        "kind": "history_more",
-                        "title": self.tr("Yükleniyor…")
-                        if self.history_loading
-                        else self.tr("Daha eski sohbetleri yükle…"),
-                    }
-                )
-            if not visible_chats and unassigned:
-                rows.append({"kind": "message", "title": self.tr("Aramayla eşleşen sohbet yok")})
-
-        layout_start = len(rows)
-        visible_workspaces = [item for item in workspaces if matches(item)]
-        rows.append(
-            {
-                "kind": "section",
-                "id": "layouts",
-                "title": self.tr("Düzenler"),
-                "count": len(workspaces),
-                "collapsed": "section:layouts" in self.sidebar_collapsed,
-            }
-        )
-        if "section:layouts" not in self.sidebar_collapsed:
-            rows.extend(
-                {
-                    "kind": "workspace",
-                    "id": item.get("id"),
-                    "title": str(item.get("name") or self.tr("Adsız çalışma alanı")),
-                }
-                for item in visible_workspaces
-            )
-            if self.workspace_error:
-                rows.append({"kind": "message", "title": self.tr("Düzen eklentisi kullanılamıyor")})
-            elif not workspaces:
-                rows.append({"kind": "message", "title": self.tr("Henüz düzen yok")})
-        if not getattr(self, "layout_enabled", True):
-            rows = rows[:layout_start]
-        if self.account_service and not projects and self.provider_id == "gemini":
-            rows = [
-                row
-                for row in rows
-                if not (row["kind"] == "section" and row.get("id") == "projects")
-            ]
-        self.sidebar_rows = rows
-        self.sidebar_index = min(max(0, self.sidebar_index), max(0, len(rows) - 1))
-        self.sidebar_index = min(self.sidebar_index, max(0, len(rows) - 1))
+    def _build_sidebar_rows(self):
+        return build_sidebar_rows(self)
 
     def _chat_row(self, item: dict[str, Any], nested: bool = False) -> dict[str, Any]:
         return {
@@ -2038,7 +1756,7 @@ class ChatView:
                 tab["catalog"] = catalog
                 if tab.get("busy"):
                     continue
-                selected = next((m for m in catalog.chat_models if m.id == tab.get("model")), None)
+                selected = catalog.chat_model(tab.get("model"))
                 if selected is None and catalog.default_chat_model is not None:
                     tab["response_model"] = tab.get("response_model") or tab.get("model")
                     selected = catalog.default_chat_model
@@ -2080,7 +1798,7 @@ class ChatView:
     def normalize_model_selection(self):
         if self.catalog.state != FeatureState.AVAILABLE or self.active_busy():
             return
-        selected = next((m for m in self.catalog.chat_models if m.id == self.model), None)
+        selected = self.catalog.chat_model(self.model)
         if selected is None:
             preferred = getattr(self, "default_model_preference", "")
             selected = next(
@@ -2103,7 +1821,7 @@ class ChatView:
             self.status = self.tr("Yanıt tamamlanınca bu sohbetin modelini değiştirebilirsiniz")
             self.app.invalidate()
             return
-        selected = next((m for m in self.catalog.chat_models if m.id == model_id), None)
+        selected = self.catalog.chat_model(model_id)
         if selected is None:
             self.status = self.tr(
                 "Bu model normal sohbet kataloğunda yok · F10 yenile · /model ile seçin"
@@ -2128,7 +1846,7 @@ class ChatView:
             self.status = self.tr("Yanıt tamamlanınca bu sohbetin eforunu değiştirebilirsiniz")
             self.app.invalidate()
             return
-        selected = next((m for m in self.catalog.chat_models if m.id == self.model), None)
+        selected = self.catalog.chat_model(self.model)
         if effort is not None and (
             selected is None or effort not in {e.id for e in selected.efforts}
         ):
@@ -2615,7 +2333,7 @@ class ChatView:
                             "detail": key.split("/")[0] + " · " + model.id,
                         }
                     )
-        selected = next((m for m in self.catalog.chat_models if m.id == self.model), None)
+        selected = self.catalog.chat_model(self.model)
         if mode != "models" and selected:
             self.palette_items.extend(
                 {

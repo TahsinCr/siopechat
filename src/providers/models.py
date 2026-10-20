@@ -75,6 +75,11 @@ class ModelCatalog:
     def chat_models(self) -> tuple[Model, ...]:
         return tuple(model for model in self.models if model.chat_selectable)
 
+    def chat_model(self, model_id: str | None) -> Model | None:
+        return next(
+            (model for model in self.models if model.chat_selectable and model.id == model_id), None
+        )
+
     @property
     def default_chat_model(self) -> Model | None:
         return next(

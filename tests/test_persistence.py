@@ -21,7 +21,8 @@ class AtomicPersistenceTests(unittest.TestCase):
             value = {"title": "Türkçe", "version": 1}
             atomic_json_write(path, value, indent=2, allow_nan=False, directory_mode=0o700)
             self.assertEqual(
-                path.read_text(), json.dumps(value, ensure_ascii=False, indent=2) + "\n"
+                path.read_text(encoding="utf-8"),
+                json.dumps(value, ensure_ascii=False, indent=2) + "\n",
             )
             if os.name != "nt":
                 self.assertEqual(path.stat().st_mode & 0o777, 0o600)
@@ -30,11 +31,11 @@ class AtomicPersistenceTests(unittest.TestCase):
                 with patch("utils.files." + target, side_effect=OSError("disk error")):
                     with self.assertRaises(OSError):
                         atomic_json_write(path, {"version": 2})
-                self.assertEqual(json.loads(path.read_text()), value)
+                self.assertEqual(json.loads(path.read_text(encoding="utf-8")), value)
                 self.assertEqual(list(path.parent.iterdir()), [path])
             with self.assertRaises(ValueError):
                 atomic_json_write(path, {"invalid": float("nan")}, allow_nan=False)
-            self.assertEqual(json.loads(path.read_text()), value)
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), value)
             self.assertEqual(list(path.parent.iterdir()), [path])
 
     def test_concurrent_writes_never_publish_partial_json(self):
@@ -43,7 +44,7 @@ class AtomicPersistenceTests(unittest.TestCase):
 
             def write(index):
                 atomic_json_write(path, {"version": index, "body": str(index) * 1000})
-                record = json.loads(path.read_text())
+                record = json.loads(path.read_text(encoding="utf-8"))
                 self.assertEqual(record["body"], str(record["version"]) * 1000)
 
             with ThreadPoolExecutor(max_workers=8) as workers:
@@ -62,10 +63,10 @@ class AtomicPersistenceTests(unittest.TestCase):
                         range(24),
                     )
                 )
-            record = json.loads(path.read_text())
+            record = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(record["version"], 1)
             self.assertEqual(record["url"], "https://chatgpt.com/")
-            self.assertTrue(path.read_text().endswith("\n"))
+            self.assertTrue(path.read_text(encoding="utf-8").endswith("\n"))
             self.assertEqual(list(root.iterdir()), [path])
             if os.name != "nt":
                 self.assertEqual(path.stat().st_mode & 0o777, 0o600)

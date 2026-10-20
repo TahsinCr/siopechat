@@ -172,7 +172,7 @@ Uygulama ayarları ve önbellek kayıtları ortak atomik JSON yazıcısını kul
 
 Yerleşik sağlayıcılar sohbet ve proje işlemlerinde kendi HTTPS taşıyıcılarını kullanır. Paketlenen Node yardımcıları açıkça başlatılan giriş/oturum aktarımı ve ChatGPT istek imzalama işlemleriyle sınırlıdır.
 
-Sağlayıcı kütüphanesi terminalden, arşivden ve uygulama çalışma zamanından bağımsızdır. `accounts.py` sağlayıcı/hesap işlerini yönlendirir; `runtime.py`, `actions.py` ve `extension.py` ortak servis ve katkıları yönetir. Terminal kodu `src/cli/`, isteğe bağlı özellikler `extensions/`, ortak yardımcılar `src/utils/` altındadır. Aynı servisler bir GUI tarafından kullanılabilir; bu betada GUI bulunmuyor.
+Sağlayıcı kütüphanesi terminalden, arşivden ve uygulama çalışma zamanından bağımsızdır. `accounts.py` sağlayıcı/hesap işlerini yönlendirir; `runtime.py`, `actions.py` ve `extension.py` ortak servis ve katkıları yönetir. Terminal kodu `src/cli/` altında; sekme çizimi `layout.py`, kütüphane filtreleri ve satırları `library.py` içindedir. İsteğe bağlı özellikler `extensions/`, ortak yardımcılar `src/utils/` altındadır. Aynı servisler bir GUI tarafından kullanılabilir; bu betada GUI bulunmuyor.
 
 Testler kişisel hesap oturumlarınızı gerektirmez:
 

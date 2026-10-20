@@ -88,3 +88,17 @@ class EntitlementTests(unittest.TestCase):
             }
         )
         self.assertEqual([m.id for m in catalog.models], ["live"])
+
+
+class ChatModelLookupTests(unittest.TestCase):
+    def test_lookup_keeps_chat_visibility_order_and_unknown_selection(self):
+        from providers.models import FeatureState, Model, ModelCatalog
+
+        hidden = Model("shared", "Tool", chat_selectable=False)
+        first = Model("shared", "First chat")
+        second = Model("shared", "Second chat")
+        catalog = ModelCatalog(FeatureState.AVAILABLE, (hidden, first, second))
+        self.assertIs(catalog.chat_model("shared"), first)
+        self.assertIsNone(catalog.chat_model("missing"))
+        self.assertIsNone(catalog.chat_model(None))
+        self.assertIsNone(ModelCatalog(FeatureState.UNKNOWN).chat_model("shared"))

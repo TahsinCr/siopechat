@@ -440,7 +440,6 @@
   "ui.add a file using the path picker": "add a file using the path picker",
   "ui.choose visible providers": "choose visible providers",
   "ui.add a provider account": "add a provider account",
-  "ui.create a project in the provider browser": "create a project in the provider browser",
   "ui.edit the selected project's name and instructions": "edit the selected project's name and instructions",
   "ui.add a supported source to the selected project": "add a supported source to the selected project",
   "ui.remove a selected project source": "remove a selected project source",
@@ -640,5 +639,6 @@
   "ui.Görselin gerçek dosya adresi sağlayıcıdan alınamadı; sohbeti eşitleyin": "Görselin gerçek dosya adresi sağlayıcıdan alınamadı; sohbeti eşitleyin",
   "ui.İndirme klasörü boş veya geçersiz": "İndirme klasörü boş veya geçersiz",
   "ui.Dosya aktarımı kesildi; bağlantıyı kontrol edip yeniden deneyin": "Dosya aktarımı kesildi; bağlantıyı kontrol edip yeniden deneyin",
-  "ui.Dosya henüz hazır değil; biraz sonra yeniden deneyin": "Dosya henüz hazır değil; biraz sonra yeniden deneyin"
+  "ui.Dosya henüz hazır değil; biraz sonra yeniden deneyin": "Dosya henüz hazır değil; biraz sonra yeniden deneyin",
+  "ui.create a project in the selected provider": "seçili sağlayıcıda proje oluştur"
 }

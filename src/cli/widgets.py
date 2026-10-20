@@ -173,7 +173,7 @@ class SlashCommandCompleter(Completer):
         ("/attach", "add a file using the path picker"),
         ("/filter", "choose visible providers"),
         ("/account-add", "add a provider account"),
-        ("/project-new", "create a project in the provider browser"),
+        ("/project-new", "create a project in the selected provider"),
         ("/project-edit", "edit the selected project's name and instructions"),
         ("/project-source-add", "add a supported source to the selected project"),
         ("/project-source-remove", "remove a selected project source"),
