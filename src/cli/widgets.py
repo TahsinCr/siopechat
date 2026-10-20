@@ -163,8 +163,7 @@ class SidebarControl(UIControl):
         # appends a newline to each row, so omit that separator here instead
         # of letting prompt_toolkit render it as a visible control character.
         return [
-            (item[0], item[1][:-1] if item[1].endswith("\n") else item[1])
-            for item in fragments
+            (item[0], item[1][:-1] if item[1].endswith("\n") else item[1]) for item in fragments
         ]
 
     def mouse_handler(self, mouse_event):
