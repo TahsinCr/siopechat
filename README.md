@@ -70,6 +70,8 @@ Click a Markdown web link in a message to open it in your default browser. Click
 
 File links download in the background to `downloads/` under the project directory. Change this in **Settings → General → Download folder**; relative paths are resolved against the project and absolute paths are supported. At most two transfers run at once, progress appears in the status bar, existing files are preserved and failed transfers are cleaned up. Ordinary web pages still open in your default browser. ChatGPT sandbox files are resolved through the owning conversation; Gemini image placeholders use actual provider media records, and Claude sandbox/computer links use the owning conversation’s file store. Protected downloads use the selected account’s saved session; account credentials are not forwarded to other origins. Missing or expired resources show an error instead of a fabricated URL.
 
+Downloads default to a 512 MiB limit. General settings expose the size limit in bytes and an opt-in for local-network downloads. Public downloads reject private and loopback addresses, validate every redirect and keep HTTPS connections on HTTPS. The checked address is used for the actual connection, while the original hostname is retained for TLS and HTTP.
+
 Drag across a response or thinking summary to select part of its rendered text, then press Ctrl+C. Click a message and press Ctrl+A to select the whole message.
 
 Closing a conversation tab keeps its running response in the background. In the sidebar, a green **●** marks a running conversation and **✓** marks a completed background reply. Select it to reopen the same conversation. You can open other conversations and synchronize history while a response is running. This continues only while SiopeChat is running.
@@ -96,7 +98,7 @@ Use `/project` to choose a project for a new chat or move the current chat where
 
 You can also write directly from project details. Choose a model and effort for that project's account and send: a separate conversation tab opens inside the project. The composer and selectors are hidden while editing the project itself.
 
-Choose **Split**, `/split` or `/split-down`, then select another chat from the sidebar. Click anywhere in an inactive pane to activate it. Scrolling a passive pane does not change focus. `/unsplit` returns to one pane. Saved workspace metadata is supported; saving and restoring the live split arrangement is not included yet.
+Choose **Split**, `/split` or `/split-down`, then select another chat from the sidebar. Click anywhere in an inactive pane to activate it. Scrolling a passive pane does not change focus. `/unsplit` returns to one pane. Use `layout.create` in the command palette to save the current chats, split direction and active pane. Open a saved workspace from the sidebar to restore it. Only conversation references are saved; temporary chats, drafts and running requests are excluded.
 
 Use **Delete** beside the composer to delete a conversation. `/project-delete` opens a project picker; project details also have a delete button. Both ask for permanent-deletion confirmation, with **No** focused initially. Deletion is submitted to the provider and checked there before removing local records. Project deletion follows the provider's rules for its contained chats. Closing tabs does not delete conversations.
 
@@ -143,11 +145,21 @@ def activate(context):
 SPEC = ExtensionSpec("my_feature", activate)
 ```
 
+An optional `manifest.json` beside `plugin.py` declares metadata without executing Python:
+
+```json
+{"id": "my_feature", "api_version": 1, "requires": []}
+```
+
+Keep `requires` consistent with `ExtensionSpec`. Disabled extensions are not imported; enabling one loads its Python module. Existing packages without a manifest remain supported.
+
 Restart to discover the package, then enable or disable it in **Settings → Extensions**. Settings live under `extensions.my_feature`; contributed language bundles are namespaced and merged with the application catalog. Declare dependencies with `requires=("archive",)` when needed. Actions can declare input fields for the command palette; extensions can also contribute services, views and themes.
 
 For archive access, use `context.api.get("archive")`. Its `conversations`, `messages` and `resources` methods provide paginated records scoped by provider/account. The replaceable repository contract and SQLite adapter live in `extensions/archive/repository.py`; provider normalization lives in `adapters.py`.
 
 Extensions and Python themes execute local code. Load only packages you trust. Keep network work out of render functions and use the shared lifecycle for cleanup.
+
+Archive lists have a stable remote-ID order; UI sorting is applied separately. `siopechat action archive.inspect` reports missing references and unreferenced content files. `siopechat action archive.collect` previews cleanup; pass `'{"dry_run": false}'` as the action arguments only when you want to remove the candidates. Collection preserves shared references, unknown files and files saved within the last hour. A database from a newer schema version is rejected before its schema is changed.
 
 ## Themes
 
@@ -185,6 +197,10 @@ uv build
 ```
 
 Before reporting an issue, note the provider, operation, terminal, operating system and error message. Remove credentials and private conversation content. The [changelog](CHANGELOG.md) records release changes.
+
+`Accounts` sends use the shared `TaskService`, with an account resolver, response limits and persistence inside the account queue. Cancellation releases the account after transport cleanup and accepted-response writes finish. Provider registration accepts an `account_factory` for isolated adapter instances. Terminal reads, mutations and Markdown preparation use separate bounded worker pools; closing a tab does not cancel its response.
+
+The GitHub Actions workflow defines Python 3.10/3.14 and Node 22/24 checks on Linux, Windows and macOS, including package builds. Passing unit tests or CI does not establish live provider compatibility or native terminal interaction. Session files still use private file permissions rather than an operating-system credential vault; the signing helper is a separate process with restricted inputs and environment, and Node VM execution is not an OS security sandbox.
 
 ## License
 

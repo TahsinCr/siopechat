@@ -1,0 +1,38 @@
+name: Checks
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ['3.10', '3.14']
+        node: ['22', '24']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: python -m pip install -e . ruff build twine
+      - run: python -m ruff check .
+      - run: python -m ruff format --check .
+      - run: python -m unittest discover -q
+        env:
+          PYTHONPATH: src
+      - run: node --test tests/js/browser.test.cjs tests/js/connection.test.cjs tests/js/markdown.test.cjs tests/js/sentinel.test.cjs
+      - run: python -m build
+      - run: python -m twine check dist/*
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: diagnostics-${{ matrix.os }}-${{ matrix.python }}-${{ matrix.node }}
+          path: dist/

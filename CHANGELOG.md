@@ -8,43 +8,36 @@ Python distributions use the corresponding PEP 440 version (`1.1b0` for `v1.1-be
 
 ## [Unreleased]
 
+### Added
+
+- GitHub Actions checks for Python 3.10/3.14 and Node 22/24 on Linux, Windows and macOS, including lint, tests and distribution builds.
+- Save open conversation references, split direction and active pane through layout.create; restore saved arrangements from the workspace sidebar.
+- Archive inspection and reference-safe, preview-first cleanup with shared-content protection and a one-hour grace period.
+
 ### Changed
 
+- Update English, Turkish and Russian documentation for job ownership, safe downloads, extension manifests, archive maintenance and saved split workspaces; state the remaining live-platform and credential-storage boundaries explicitly.
 - Use separate bounded pools for terminal reads, mutations and Markdown preparation, with queue rejection and shutdown handling.
-
 - Publish Claude text and thinking as incremental events and count SSE event size without rescanning accumulated lines.
-
 - Route application sends through the shared TaskService with account-specific provider factories, bounded responses, stable job identity and persistence inside the account queue.
 - Keep archive listing order explicitly based on remote IDs; presentation sorting remains independent.
 
 ### Fixed
 
 - Isolate malformed legacy IPC requests, sanitize failure responses and accept bounded concurrent clients without blocking ping behind a long send. Keep mutations serialized and temporary conversation context shared.
-
 - Bind send activity and background completions to stable job/tab identity so closing or switching tabs cannot redirect a late result.
-
 - Require a confirmed ChatGPT stream ending and a visible assistant channel; reject malformed or CID-only responses without resending the request.
 - Handle explicitly permitted empty ChatGPT mutation responses, use real IANA timezone information, validate Gemini notebook envelopes and share session parsing errors.
-
 - Drain cancelled sends before releasing account state, expose cancellation in progress, and preserve successful remote sends when local archival fails.
 - Read back project children after deletion and tombstone only confirmed missing chats; keep surviving or uncertain histories available without the deleted project.
 - Reject future archive schemas before changing their structure and flush archived content before publishing its filename.
 
-### Added
-
-- Save open conversation references, split direction and active pane through layout.create; restore saved arrangements from the workspace sidebar.
-
-- Archive inspection and reference-safe, preview-first cleanup with shared-content protection and a one-hour grace period.
-
 ### Security
 
 - Discover extension metadata from manifests and defer Python imports until activation, including disabled legacy packages; retain dependency and API-version checks.
-
 - Validate and pin download addresses, block private networks by default, reject HTTPS downgrades and preserve account/origin boundaries across redirects.
 - Limit downloads to a configurable 512 MiB by default, enforce both declared and streamed sizes, and expose local-network opt-in and size settings in all three languages.
-
 - Restrict Sentinel SDK origins, redirects, source size and fetch duration; validate cached SDK paths and limit the helper process environment.
-
 
 ## [1.1-beta] - 2026-10-20
 

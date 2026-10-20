@@ -70,6 +70,8 @@ Mesajdaki Markdown web bağlantısına tıklayarak varsayılan tarayıcınızda 
 
 Dosya bağlantıları arka planda proje dizinindeki `downloads/` klasörüne indirilir. Konumu **Ayarlar → Genel → İndirme klasörü** bölümünden değiştirebilirsiniz; göreli yollar proje dizinine göre çözülür, tam yollar da desteklenir. Aynı anda en fazla iki aktarım çalışır, ilerleme durum çubuğunda gösterilir; mevcut dosyaların üzerine yazılmaz ve başarısız aktarımlar temizlenir. Normal web sayfaları varsayılan tarayıcıda açılır. ChatGPT sandbox dosyaları ait olduğu sohbet üzerinden, Gemini görsel yer tutucuları gerçek medya kayıtlarından çözümlenir; Claude sandbox/computer bağlantıları ait olduğu sohbetin dosya deposundan alınır. Korumalı indirmelerde seçili hesabın kayıtlı oturumu kullanılır; hesap bilgileri başka adreslere yönlendirilmez. Bulunamayan veya süresi dolmuş kaynaklar için hata gösterilir.
 
+İndirmelerde varsayılan sınır 512 MiB’tır. Genel ayarlardan bayt cinsinden boyut sınırını ve yerel ağdan indirme iznini değiştirebilirsiniz. Genel indirme yolu özel ve loopback adreslerini engeller, her yönlendirmeyi doğrular ve HTTPS bağlantısını HTTP’ye düşürmez. Bağlantıda doğrulanmış IP kullanılır; TLS ve HTTP için özgün alan adı korunur.
+
 Yanıt veya düşünme özeti üzerinde sürükleyerek metnin bir kısmını seçip Ctrl+C ile kopyalayabilirsiniz. Mesaja tıkladıktan sonra Ctrl+A ile mesajın tamamını seçebilirsiniz.
 
 Sohbet sekmesini kapatmak, devam eden yanıtı durdurmaz. Sol listede yeşil **●** çalışan sohbeti, **✓** arka planda tamamlanan yanıtı gösterir. Sohbete tıklayarak aynı yanıtı yeniden açabilirsiniz. Yanıt sürerken diğer sohbetleri açabilir ve geçmişi eşitleyebilirsiniz. İşlem yalnız SiopeChat açıkken sürer.
@@ -96,7 +98,7 @@ Yeni sohbetin projesini seçmek veya destekleniyorsa mevcut sohbeti taşımak i�
 
 Proje hakkında ekranından doğrudan da yazabilirsiniz. Proje hesabına ait model ve eforu seçip gönderdiğinizde, proje içinde ayrı bir sohbet sekmesi açılır. Proje düzenlenirken mesaj alanı ve seçiciler gizlenir.
 
-**Böl**, `/split` veya `/split-down` seçeneğinin ardından sol panelden başka bir sohbet seçin. Aktif olmayan panelin herhangi bir yerine tıklamak onu aktif eder. Pasif paneli fare tekerleğiyle kaydırmak odağı değiştirmez. `/unsplit` tek panele döner. Çalışma alanı metaverileri kaydedilebilir; canlı bölünmüş düzeni kaydetme ve geri yükleme bu sürümde bulunmuyor.
+**Böl**, `/split` veya `/split-down` seçeneğinin ardından sol panelden başka bir sohbet seçin. Aktif olmayan panelin herhangi bir yerine tıklamak onu aktif eder. Pasif paneli fare tekerleğiyle kaydırmak odağı değiştirmez. `/unsplit` tek panele döner. Komut paletindeki `layout.create` ile açık sohbetleri, bölünme yönünü ve aktif paneli kaydedebilirsiniz. Sol panelden kaydedilmiş çalışma alanını açmak düzeni geri yükler. Yalnız sohbet referansları kaydedilir; geçici sohbetler, taslaklar ve çalışan istekler kayda alınmaz.
 
 Sohbet silmek için yazma alanının yanındaki **Sil** düğmesini kullanın. `/project-delete` proje seçicisini açar; proje bilgilerinde de silme düğmesi vardır. Her ikisi kalıcı silme onayı ister; başlangıçta **Hayır** odaktadır. Yerel kayıt kaldırılmadan önce işlem sağlayıcıya gönderilir ve orada doğrulanır. Proje içindeki sohbetlerin durumu, sağlayıcının silme kurallarına bağlıdır. Sekme kapatmak sohbet silmez.
 
@@ -143,11 +145,21 @@ def activate(context):
 SPEC = ExtensionSpec("my_feature", activate)
 ```
 
+`plugin.py` yanındaki isteğe bağlı `manifest.json`, Python çalıştırmadan eklentinin bilgilerini bildirir:
+
+```json
+{"id": "my_feature", "api_version": 1, "requires": []}
+```
+
+`requires` alanını `ExtensionSpec` ile aynı tutun. Kapalı eklentiler import edilmez; etkinleştirildiğinde Python modülü yüklenir. Manifesti olmayan mevcut paketler de desteklenir.
+
 Paketin keşfedilmesi için yeniden başlatın; ardından **Ayarlar → Eklentiler** bölümünden açıp kapatın. Ayarları `extensions.my_feature` altında tutulur. Dil paketleri ad alanlarına ayrılır ve uygulama kataloğuyla birleştirilir. Gerektiğinde `requires=("archive",)` ile bağımlılık bildirin. Aksiyonlar komut paletine giriş alanları sunabilir; eklentiler ayrıca servis, görünüm ve tema kaydedebilir.
 
 Arşive `context.api.get("archive")` ile erişilir. `conversations`, `messages` ve `resources` metotları sağlayıcı/hesap kapsamlı, sayfalanabilir kayıtlar sunar. Değiştirilebilir repository sözleşmesi ve SQLite adaptörü `extensions/archive/repository.py`, sağlayıcı normalleştirmeleri `adapters.py` içindedir.
 
 Eklentiler ve Python temaları yerel kod çalıştırır. Yalnız güvendiğiniz paketleri yükleyin. Ağ işlerini çizim fonksiyonlarında yürütmeyin; kaynak temizliğinde ortak yaşam döngüsünü kullanın.
+
+Arşiv listeleri uzak kimliğe göre kararlı sıradadır; arayüz sıralaması ayrıca uygulanır. `siopechat action archive.inspect`, eksik dosya referanslarını ve sahipsiz içerikleri bildirir. `siopechat action archive.collect` yalnız temizlik önizlemesi yapar; adayları silmek istediğinizde aksiyon parametresi olarak `'{"dry_run": false}'` verin. Ortak kullanılan dosyalar, bilinmeyen dosyalar ve son bir saatte kaydedilen içerikler korunur. Daha yeni şemaya ait veritabanı değiştirilmeden reddedilir.
 
 ## Temalar
 
@@ -185,6 +197,10 @@ uv build
 ```
 
 Hata bildirirken sağlayıcıyı, işlemi, terminali, işletim sistemini ve hata mesajını belirtin. Kimlik bilgilerini ve özel sohbet içeriğini çıkarın. Sürüm değişiklikleri [CHANGELOG.md](CHANGELOG.md) içinde yer alır.
+
+`Accounts` gönderimleri hesap çözümleyicisi, yanıt sınırı ve hesap kuyruğu içindeki kayıt işlemiyle ortak `TaskService` üzerinden çalışır. İptal, taşıyıcı temizliği ve kabul edilmiş yanıtın yazımı bittikten sonra hesabı serbest bırakır. Sağlayıcı kaydındaki `account_factory`, hesaplara bağımsız adaptör örnekleri oluşturur. Terminal okumaları, değişiklik işlemleri ve Markdown hazırlığı ayrı, sınırlı iş havuzları kullanır; sekmeyi kapatmak yanıtı iptal etmez.
+
+GitHub Actions tanımı Linux, Windows ve macOS üzerinde Python 3.10/3.14 ve Node 22/24 kontrollerini, ayrıca paket üretimini kapsar. Birim testleri veya CI başarısı, canlı sağlayıcı uyumluluğunu ve gerçek terminal etkileşimini tek başına doğrulamaz. Oturumlar işletim sistemi kasası yerine özel dosya izinleriyle saklanır. İmzalama yardımcısı sınırlı girdi ve ortamla ayrı süreçte çalışır; Node VM bir işletim sistemi güvenlik sandbox’ı değildir.
 
 ## Lisans
 

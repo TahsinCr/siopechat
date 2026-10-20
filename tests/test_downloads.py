@@ -112,6 +112,15 @@ class DownloadTests(unittest.TestCase):
         if not shutil.which("openssl"):
             self.skipTest("openssl certificate fixture")
         certificate, key = self.root / "cert.pem", self.root / "key.pem"
+        config = self.root / "openssl.cnf"
+        config.write_text(
+            "[req]\ndistinguished_name=dn\nx509_extensions=extensions\nprompt=no\n"
+            "[dn]\nCN=localhost\n[extensions]\nsubjectAltName=DNS:localhost\n"
+            "basicConstraints=critical,CA:TRUE\n"
+            "keyUsage=critical,keyCertSign,digitalSignature,keyEncipherment\n"
+            "subjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid:always\n"
+            "extendedKeyUsage=serverAuth\n"
+        )
         subprocess.run(
             [
                 "openssl",
@@ -128,8 +137,8 @@ class DownloadTests(unittest.TestCase):
                 "1",
                 "-subj",
                 "/CN=localhost",
-                "-addext",
-                "subjectAltName=DNS:localhost",
+                "-config",
+                str(config),
             ],
             check=True,
             capture_output=True,
