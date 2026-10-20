@@ -48,9 +48,9 @@ class UiControlsTests(unittest.TestCase):
             view.open_palette()
             click(view.render_palette()[0])
             self.assertEqual(len(view.tabs), 3)
-            click(view.render_scrollbar()[0])
+            view.scroll_transcript(-1)
             self.assertFalse(view.follow_output)
-            click(view.render_scrollbar()[2])
+            view.scroll_bottom()
             self.assertTrue(view.follow_output)
             self.assertTrue(view.app.mouse_support())
 
@@ -186,7 +186,6 @@ class UiControlsTests(unittest.TestCase):
             pending[0]()
             success.assert_not_called()
             self.assertEqual(view.renderer.cache, {})
-            self.assertEqual(view.formatted_transcript_source, "")
             self.assertIsNone(view._transcript_signature)
 
     def test_setting_choices_cycle_without_saving_or_changing_selection(self):

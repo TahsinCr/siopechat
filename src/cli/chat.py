@@ -17,7 +17,7 @@ from typing import Any, Callable
 from prompt_toolkit.application import Application
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.filters import Condition
-from prompt_toolkit.formatted_text import ANSI, FormattedText
+from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.key_binding import DynamicKeyBindings
 from prompt_toolkit.layout import Layout, Window
 from prompt_toolkit.layout.dimension import D
@@ -186,7 +186,6 @@ class ChatView:
         self.temporary = False
         self.tab_kind = "chat"
         self.last_response_model: str | None = None
-        self.send_mode = os.environ.get("CHATGPT_WEB_SEND_MODE", "node")
         self.current_project: dict[str, Any] = dict(initial_project or {})
         self.messages: list[Message] = []
         for message in initial_messages or []:
@@ -219,8 +218,6 @@ class ChatView:
         self.active_started: float | None = None
         self.last_elapsed: float | None = None
         self.renderer = MessageRenderer()
-        self.formatted_transcript_source = ""
-        self.formatted_transcript: ANSI = ANSI("")
         self.event_loop: asyncio.AbstractEventLoop | None = None
         self.sidebar_items: list[dict[str, Any]] = []
         self.sidebar_index = 0
@@ -233,7 +230,6 @@ class ChatView:
         self.sidebar_rows: list[dict[str, Any]] = []
         self.palette_visible = False
         self.palette_mode = "actions"
-        self.palette_query = ""
         self.palette_items: list[dict[str, str]] = []
         self.palette_filtered: list[dict[str, str]] = []
         self.palette_index = 0
@@ -1259,30 +1255,6 @@ class ChatView:
         self.transcript_window.vertical_scroll = 0
         self.app.invalidate()
 
-    def render_scrollbar(self):
-        return FormattedText(
-            [
-                (
-                    "class:button",
-                    self.tr(" ↑ Önceki "),
-                    on_click(lambda: self.scroll_transcript(-1)),
-                ),
-                (
-                    "class:button",
-                    self.tr(" ↓ Sonraki "),
-                    on_click(lambda: self.scroll_transcript(1)),
-                ),
-                ("class:button", self.tr(" ⇣ Son mesaja git "), on_click(self.scroll_bottom)),
-                (
-                    "class:help",
-                    self.tr(" · Tekerlek / PgUp / PgDn · ")
-                    + (
-                        self.tr("Canlı takip") if self.follow_output else self.tr("Geçmiş okunuyor")
-                    ),
-                ),
-            ]
-        )
-
     def render_composer_actions(self):
         compact = self.main_width() < 42
         controls = [
@@ -1492,15 +1464,12 @@ class ChatView:
         render_tokens = dict(self.renderer.tokens)
         self.renderer = MessageRenderer()
         self.renderer.configure(render_tokens)
-        self._selection_render_key = None
         self.message_selection = False
         self.selected_message = 0
         self.selected_message_ref = None
         self.message_ranges = []
         self._transcript_signature = None
         self._transcript_cache = ""
-        self.formatted_transcript_source = ""
-        self.formatted_transcript = ANSI("")
         self.resume_items = self.resume_filtered = []
         self.resume_loading = False
         self.sidebar_rows = []
@@ -1537,18 +1506,6 @@ class ChatView:
         if value.startswith("f") and value[1:].isdigit():
             return value.upper()
         return value.replace(" ", "+").title()
-
-    def render_sidebar_help(self):
-        return FormattedText(
-            [
-                (
-                    "class:help",
-                    self.tr(" ↑↓ gezin · Enter aç · Space ±\n {0} ara · {1} gizle").format(
-                        self.shortcut("ui.search"), self.shortcut("ui.toggle_sidebar")
-                    ),
-                )
-            ]
-        )
 
     def render_sidebar(self) -> FormattedText:
         self._build_sidebar_rows()

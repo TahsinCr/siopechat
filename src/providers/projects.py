@@ -2,9 +2,7 @@
 
 import asyncio
 from dataclasses import dataclass
-from pathlib import Path
 
-from .browser import BrowserTransport
 from .errors import ProviderError
 from .models import Choice
 
@@ -28,29 +26,6 @@ class ProjectOptions:
             bool(value.get("remove_sources")),
             value.get("source_error"),
         )
-
-
-class ProjectEditor:
-    """Own a separate browser component; adapters serialize and verify its writes."""
-
-    def __init__(self, script, cdp_url, ensure_ready=None):
-        self.browser = BrowserTransport(Path(script), cdp_url, ensure_ready)
-
-    async def options(self, project_id=None):
-        return ProjectOptions.from_dict(
-            await self.browser.request("options", project_id=project_id)
-        )
-
-    async def write(self, operation, project_id=None, **values):
-        if operation == "add_source" and values.get("kind") == "file":
-            path = Path(values["path"]).expanduser().resolve(strict=True)
-            if not path.is_file() or path.stat().st_size > 20 * 1024 * 1024:
-                raise ValueError("Kaynak dosyası en fazla 20 MiB olabilir")
-            values["path"] = str(path)
-        return await self.browser.request(operation, project_id=project_id, **values)
-
-    async def close(self):
-        await self.browser.close()
 
 
 class ProjectEditing:

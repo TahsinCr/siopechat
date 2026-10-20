@@ -318,7 +318,6 @@ class CliComponentTests(unittest.TestCase):
                 self.assertTrue(view.sidebar_visible)
                 view.sidebar_visible = False
                 self.assertFalse(view.sidebar_visible)
-                view.send_mode = "node"
                 view.handle_command("/model gpt-account-model")
                 self.assertEqual(view.model, "gpt-account-model")
                 view.handle_command("/effort")
@@ -326,7 +325,6 @@ class CliComponentTests(unittest.TestCase):
                 view.close_palette()
                 view.handle_command("/effort medium")
                 self.assertIn("kataloğunda yok", view.status)
-                view.send_mode = "chrome"
                 view.handle_command("/model another-model")
                 self.assertEqual(view.model, "another-model")
 

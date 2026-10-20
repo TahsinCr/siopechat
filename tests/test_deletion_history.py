@@ -369,30 +369,6 @@ class GeminiHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([m.id for m in first.messages], [m.id for m in second.messages[-2:]])
 
 
-class NativeChatDeletionTests(unittest.IsolatedAsyncioTestCase):
-    async def test_native_deletion_requires_matching_acknowledgement(self):
-        from providers.errors import ProviderError
-        from providers.gemini.browser import NativeBrowser
-
-        browser = NativeBrowser("http://127.0.0.1:9231")
-
-        async def events(mode, **options):
-            self.assertEqual(mode, "delete_chat")
-            self.assertEqual(options["conversation_id"], "c_abc")
-            yield {"type": "deleted", "id": "c_abc"}
-
-        browser.events = events
-        await browser.delete_chat("c_abc")
-        self.assertTrue(browser.authenticated)
-
-        async def missing_ack(*args, **kwargs):
-            yield {"type": "deleted", "id": "c_other"}
-
-        browser.events = missing_ack
-        with self.assertRaises(ProviderError):
-            await browser.delete_chat("c_abc")
-
-
 class NotebookDeleteVerificationTests(unittest.IsolatedAsyncioTestCase):
     async def test_server_index_may_lag_deletion_without_resubmitting_the_write(self):
         project = SimpleNamespace(

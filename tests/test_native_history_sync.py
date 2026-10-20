@@ -13,25 +13,6 @@ from providers.models import FeatureState, Model, ModelCatalog, Origin
 
 
 class NativeHistoryTests(unittest.IsolatedAsyncioTestCase):
-    async def test_native_read_drains_subprocess_and_has_a_separate_tab(self):
-        from providers.gemini.browser import NativeBrowser
-
-        browser = NativeBrowser("http://127.0.0.1:9231")
-        browser.tab_id = "composer"
-        drained = []
-
-        async def events(mode, **kwargs):
-            self.assertFalse(kwargs["remember"])
-            self.assertIsNone(kwargs["tab_id"])
-            yield {"type": "tab", "id": "reader"}
-            yield {"type": mode, "data": []}
-            drained.append(True)
-
-        browser.events = events
-        self.assertEqual(await browser.read("history"), [])
-        self.assertEqual(drained, [True])
-        self.assertEqual((browser.tab_id, browser.read_tab_id), ("composer", "reader"))
-
     async def test_http_history_read_does_not_wait_for_the_composer_gate(self):
         import asyncio
 
@@ -48,19 +29,6 @@ class NativeHistoryTests(unittest.IsolatedAsyncioTestCase):
         provider.rpc.call.assert_awaited_once_with(
             "CNgdBe", [2, ["en"], 0, None, [2]], "/notebooks/view"
         )
-
-    async def test_read_reconnects_once_without_replaying_a_send(self):
-        from providers.errors import ProviderError
-        from providers.gemini.browser import NativeBrowser
-
-        browser = NativeBrowser("http://127.0.0.1:9231")
-        browser._read_once = AsyncMock(side_effect=[ProviderError("Debugger disconnected"), []])
-        self.assertEqual(await browser.read("history"), [])
-        self.assertEqual(browser._read_once.await_count, 2)
-        browser._read_once = AsyncMock(side_effect=ProviderError("native contract changed"))
-        with self.assertRaisesRegex(ProviderError, "contract changed"):
-            await browser.read("history")
-        self.assertEqual(browser._read_once.await_count, 1)
 
     async def test_history_uses_only_the_owned_account_http_session(self):
         provider = GeminiProvider(Path("unused"))

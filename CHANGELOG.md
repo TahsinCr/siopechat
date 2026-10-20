@@ -37,6 +37,11 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 
 - Scope profile imports to provider authentication cookies, exclude Firefox containers, bound keyring work, and validate candidate sessions before replacing existing account credentials.
 
+### Changed
+
+- Remove retired browser-based conversation/project transports and their private scripts; current HTTP providers, login helpers and session signing remain in place.
+- Remove unused terminal rendering state and obsolete controls. Keep the shared Markdown and account-routing tests alongside the current provider tests.
+
 ### Fixed
 
 - Authenticate ChatGPT Estuary file downloads with the selected account instead of treating protected URLs as public CDN links, fixing HTTP 403 on generated files.

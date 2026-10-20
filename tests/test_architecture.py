@@ -87,8 +87,26 @@ class ArchitectureTests(unittest.TestCase):
         directory = ROOT / "src/providers/chatgpt/scripts"
         for name in (
             "browser/auth.cjs",
-            "browser/capture.cjs",
-            "browser/send.cjs",
             "sentinel/sign.cjs",
         ):
             self.assertTrue((directory / name).is_file(), name)
+
+    def test_packaged_node_helpers_are_reachable_from_current_entrypoints(self):
+        import re
+
+        from providers.chatgpt.resources import Script, script_path
+
+        directory = (ROOT / "src/providers").resolve()
+        pending = [script_path(script).resolve() for script in Script]
+        pending += [directory / "scripts" / name for name in ("page.cjs", "cookies.cjs")]
+        reachable = set()
+        while pending:
+            path = pending.pop()
+            if path in reachable:
+                continue
+            self.assertTrue(path.is_file(), path)
+            reachable.add(path)
+            for reference in re.findall(r"require\(['\"](\.[^'\"]+)['\"]\)", path.read_text()):
+                target = (path.parent / reference).resolve()
+                pending.append(target if target.suffix else target.with_suffix(".cjs"))
+        self.assertEqual(reachable, set(directory.rglob("*.cjs")))

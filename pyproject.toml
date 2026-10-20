@@ -50,8 +50,6 @@ packages = ["cli", "providers", "providers.chatgpt", "providers.gemini", "provid
 
 [tool.setuptools.package-data]
 "providers" = ["scripts/*.cjs"]
-"providers.gemini" = ["scripts/*.cjs"]
-"providers.claude" = ["scripts/*.cjs"]
 "providers.chatgpt" = ["scripts/*.cjs", "scripts/browser/*.cjs", "scripts/sentinel/*.cjs"]
 "lang" = ["*.json"]
 "extensions.layout" = ["languages/*.json"]

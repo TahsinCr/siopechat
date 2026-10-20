@@ -130,11 +130,11 @@ class ProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
 
         self.client.get_project = get_project
         with (
-            patch("providers.management.delete_project", new_callable=AsyncMock) as delete,
+            patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as browser,
             patch.object(self.provider.session, "launch"),
         ):
             await self.provider.delete_project("g-p-created")
-            delete.assert_not_awaited()
+            browser.assert_not_awaited()
             self.assertEqual(
                 self.client.deleted,
                 ("DELETE", "https://chatgpt.com/backend-api/gizmos/g-p-created"),

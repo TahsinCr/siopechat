@@ -316,7 +316,6 @@ class ProviderUiTests(unittest.TestCase):
             self.assertEqual(view.effort, "extended")
             view.input.text = "first draft"
             view.new_tab()
-            view.send_mode = "chrome"
             view.handle_command("/model account-instant")
             self.assertEqual(view.model, "account-instant")
             self.assertIsNone(view.effort)
