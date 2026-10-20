@@ -221,6 +221,43 @@ class DiscoveryTests(unittest.TestCase):
         with self.assertRaisesRegex(ChatGPTWebError, "not offered"):
             self.client.send_prompt(None, "hello", model="account-instant", effort="extended")
 
+    def test_truncated_or_malformed_chatgpt_stream_cannot_succeed(self):
+        for payload in (
+            'data: {"conversation_id":"chat"}\n\n',
+            "data: {bad}\n\ndata: [DONE]\n\n",
+            'data: {"error":{"message":"secret"}}\n\ndata: [DONE]\n\n',
+        ):
+            self.client.http.close()
+            self.client.http = httpx.Client(
+                transport=httpx.MockTransport(
+                    lambda _: httpx.Response(
+                        200, headers={"content-type": "text/event-stream"}, text=payload
+                    )
+                )
+            )
+            with patch.object(self.client, "create_sentinel_headers", return_value={}):
+                with self.assertRaises(ChatGPTWebError):
+                    self.client.send_prompt_direct(None, "hello", [])
+
+    def test_timezone_uses_a_real_iana_name_or_omits_the_optional_field(self):
+        from providers.chatgpt.client import system_timezone
+
+        with patch.dict("os.environ", {"TZ": "Asia/Tokyo"}):
+            self.assertEqual(system_timezone(), "Asia/Tokyo")
+        with patch("providers.chatgpt.client.system_timezone", return_value=None):
+            body = self.client.create_conversation_body(None, "Question")
+        self.assertNotIn("timezone", body)
+        self.assertIsInstance(body["timezone_offset_min"], int)
+
+    def test_empty_mutation_success_is_explicit_and_json_reads_remain_strict(self):
+        self.client.http.close()
+        self.client.http = httpx.Client(
+            transport=httpx.MockTransport(lambda _: httpx.Response(204))
+        )
+        self.client.delete_conversation("chat")
+        with self.assertRaises(ChatGPTWebError):
+            self.client.request("GET", "https://chatgpt.com/backend-api/test")
+
     def test_old_daemon_is_replaced_before_new_discovery_commands(self):
         backend = BackendService()
         with (
@@ -242,7 +279,7 @@ class DiscoveryTests(unittest.TestCase):
             return httpx.Response(
                 200,
                 headers={"content-type": "text/event-stream"},
-                text='data: {"conversation_id":"chat"}\n\ndata: [DONE]\n\n',
+                text='data: {"conversation_id":"chat","message":{"id":"a","author":{"role":"assistant"},"content":{"parts":["Answer"]}}}\n\ndata: [DONE]\n\n',
             )
 
         self.client.http.close()

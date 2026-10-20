@@ -40,6 +40,22 @@ class NotebookStreamTests(unittest.IsolatedAsyncioTestCase):
         self.provider.notebooks.get.assert_awaited_once_with("notebooks/abcdef")
         self.assertEqual(chat.send_message_stream.call_count, 1)
 
+    def test_changed_notebook_envelope_is_rejected_before_transport(self):
+        original = Mock()
+        transport = NotebookTransport(original, "notebooks/abcdef", [2])
+        for outer in (
+            {"one": "wrong"},
+            [None, json.dumps([None] * 20)],
+            [None, json.dumps([None] * 40 + [{}])],
+        ):
+            with self.assertRaises(Exception):
+                transport.stream(
+                    "POST",
+                    "https://gemini.google.com/assistant.lamda.BardFrontendService/StreamGenerate",
+                    data={"f.req": json.dumps(outer)},
+                )
+        original.stream.assert_not_called()
+
     def test_notebook_aliases_are_strictly_gemini_native(self):
         self.assertEqual(
             notebook_id("https://gemini.google.com/notebook/abcdef"), "notebooks/abcdef"

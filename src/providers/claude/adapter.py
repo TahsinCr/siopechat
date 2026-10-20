@@ -3,7 +3,7 @@
 import asyncio
 from pathlib import Path
 
-from ..api import Capability, ConversationBound, ReplaceText
+from ..api import Capability, ConversationBound, ReplaceText, TextDelta
 from ..contracts import OptionalFeatures
 from ..errors import AccountPaused, FeatureUnavailable, ProviderError
 from ..models import (
@@ -275,8 +275,9 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
             ):
                 if event["type"] == "bound":
                     yield ConversationBound(event["id"])
-                elif event["type"] == "replace":
-                    yield ReplaceText(event["text"], event.get("channel", "final"))
+                elif event["type"] in ("replace", "delta"):
+                    event_type = TextDelta if event["type"] == "delta" else ReplaceText
+                    yield event_type(event["text"], event.get("channel", "final"))
                 elif event["type"] == "done":
                     completed = True
             if not completed:

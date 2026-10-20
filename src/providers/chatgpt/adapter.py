@@ -171,11 +171,14 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
         def remove():
             with self._factory(self.session) as client:
                 client.request(
-                    "DELETE", "https://chatgpt.com/backend-api/gizmos/" + quote(project_id, safe="")
+                    "DELETE",
+                    "https://chatgpt.com/backend-api/gizmos/" + quote(project_id, safe=""),
+                    expect_json=False,
                 )
 
         async with self._gate:
             await asyncio.to_thread(remove)
+        await confirm_deleted(lambda: self.get_project(project_id))
 
     async def list_projects(self, cursor: str | None = None) -> Page[Project]:
         def read():

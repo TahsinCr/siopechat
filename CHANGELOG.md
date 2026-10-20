@@ -10,10 +10,15 @@ Python distributions use the corresponding PEP 440 version (`1.1b0` for `v1.1-be
 
 ### Changed
 
+- Publish Claude text and thinking as incremental events and count SSE event size without rescanning accumulated lines.
+
 - Route application sends through the shared TaskService with account-specific provider factories, bounded responses, stable job identity and persistence inside the account queue.
 - Keep archive listing order explicitly based on remote IDs; presentation sorting remains independent.
 
 ### Fixed
+
+- Require a confirmed ChatGPT stream ending and a visible assistant channel; reject malformed or CID-only responses without resending the request.
+- Handle explicitly permitted empty ChatGPT mutation responses, use real IANA timezone information, validate Gemini notebook envelopes and share session parsing errors.
 
 - Drain cancelled sends before releasing account state, expose cancellation in progress, and preserve successful remote sends when local archival fails.
 - Read back project children after deletion and tombstone only confirmed missing chats; keep surviving or uncertain histories available without the deleted project.
@@ -22,6 +27,10 @@ Python distributions use the corresponding PEP 440 version (`1.1b0` for `v1.1-be
 ### Added
 
 - Archive inspection and reference-safe, preview-first cleanup with shared-content protection and a one-hour grace period.
+
+### Security
+
+- Restrict Sentinel SDK origins, redirects, source size and fetch duration; validate cached SDK paths and limit the helper process environment.
 
 
 ## [1.1-beta] - 2026-10-20

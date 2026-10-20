@@ -72,6 +72,7 @@ class ChatGPTProjectEditor:
                     client.request(
                         "PATCH",
                         path,
+                        expect_json=False,
                         json={
                             "name": values.get("name", current["name"]),
                             "instructions": values.get("instructions", current["instructions"]),
@@ -114,7 +115,9 @@ class ChatGPTProjectEditor:
                         (x.get("file_id") or x.get("id")) == rid for x in current["resources"]
                     ):
                         raise ValueError("Kaynak bu projeye ait değil")
-                    client.request("DELETE", path + "/files/" + quote(rid, safe=""))
+                    client.request(
+                        "DELETE", path + "/files/" + quote(rid, safe=""), expect_json=False
+                    )
                 else:
                     raise ValueError("Unknown project operation")
 

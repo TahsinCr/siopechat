@@ -192,7 +192,12 @@ class ClaudeHTTPTests(unittest.IsolatedAsyncioTestCase):
             {
                 "type": "content_block_delta",
                 "index": 1,
-                "delta": {"type": "text_delta", "text": "Answer"},
+                "delta": {"type": "text_delta", "text": "An"},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 1,
+                "delta": {"type": "text_delta", "text": "swer"},
             },
             {"type": "message_stop"},
         ]
@@ -227,7 +232,9 @@ class ClaudeHTTPTests(unittest.IsolatedAsyncioTestCase):
         with patch("asyncio.create_subprocess_exec", side_effect=AssertionError("browser")):
             result = [e async for e in transport.events("send", prompt="Question", model="model")]
         self.assertTrue(any(e.get("channel") == "analysis" for e in result))
-        self.assertTrue(any(e.get("text") == "Answer" for e in result))
+        final = [e for e in result if "text" in e and e.get("channel") != "analysis"]
+        self.assertEqual("".join(e["text"] for e in final), "Answer")
+        self.assertTrue(all(e["type"] == "delta" for e in final))
         self.assertEqual(session.request.await_count, 1)
 
 

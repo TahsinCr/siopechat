@@ -15,6 +15,28 @@ const bootstrapUrl = "https://chatgpt.com/backend-api/sentinel/sdk.js";
 const cacheTtlMs = Number(
   process.env.CHATGPT_WEB_SENTINEL_CACHE_TTL_MS || "21600000");
 
+const maxSdkBytes = 8 * 1024 * 1024;
+function sdkUrl(value) {
+  const url = new URL(value);
+  if (url.protocol !== "https:" || url.username || url.password ||
+      !["chatgpt.com", "sentinel.openai.com"].includes(url.hostname) || (url.port && url.port !== "443")) {
+    throw new Error("untrusted Sentinel SDK origin");
+  }
+  return url;
+}
+async function sdkText(value) {
+  const response = await fetch(sdkUrl(value), {redirect: "error", signal: AbortSignal.timeout(15000)});
+  if (!response.ok) throw new Error(`SDK HTTP ${response.status}`);
+  let size = 0;
+  const parts = [];
+  for await (const chunk of response.body) {
+    size += chunk.length;
+    if (size > maxSdkBytes) throw new Error("Sentinel SDK too large");
+    parts.push(chunk);
+  }
+  return Buffer.concat(parts).toString("utf8");
+}
+
 function sha256(value) {
   return cryptoModule.createHash("sha256").update(value).digest("hex");
 }
@@ -38,7 +60,10 @@ function readCachedSdk() {
   const directory = cacheDirectory();
   const manifestPath = path.join(directory, "current.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  if (!/^sdk-[a-f0-9]{16}\.js$/.test(manifest.file)) throw new Error("invalid SDK cache path");
+  sdkUrl(manifest.implementation);
   const sourcePath = path.join(directory, manifest.file);
+  if (fs.statSync(sourcePath).size > maxSdkBytes) throw new Error("SDK cache too large");
   const source = fs.readFileSync(sourcePath, "utf8");
   if (sha256(source) !== manifest.sha256) {
     throw new Error("cached Sentinel SDK failed its SHA-256 check");
@@ -61,14 +86,10 @@ async function loadSdk() {
     return { ...cached, cacheStatus: "hit" };
   }
   try {
-    const bootstrapResponse = await fetch(bootstrapUrl);
-    if (!bootstrapResponse.ok) throw new Error(`bootstrap HTTP ${bootstrapResponse.status}`);
-    const bootstrap = await bootstrapResponse.text();
+    const bootstrap = await sdkText(bootstrapUrl);
     const implementation = bootstrap.match(/script\.src = '([^']+)'/)?.[1];
     if (!implementation) throw new Error("Sentinel implementation URL not found");
-    const sourceResponse = await fetch(implementation);
-    if (!sourceResponse.ok) throw new Error(`SDK HTTP ${sourceResponse.status}`);
-    const source = await sourceResponse.text();
+    const source = await sdkText(implementation);
     const digest = sha256(source);
     const directory = cacheDirectory();
     fs.mkdirSync(directory, { recursive: true, mode: 0o700 });

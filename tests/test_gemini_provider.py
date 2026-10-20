@@ -102,6 +102,27 @@ class GeminiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(chat.messages[1].channel, "analysis")
         self.assertEqual(chat.origin.account_id, "test")
 
+    async def test_cid_without_answer_is_not_success_and_bad_session_is_paused(self):
+        from providers import SendRequest
+        from providers.errors import AccountPaused, ProviderError
+
+        async def empty(prompt, **options):
+            yield SimpleNamespace(text="", thoughts=None)
+
+        chat = SimpleNamespace(cid="c_empty", metadata=[], send_message_stream=empty)
+        self.client.start_chat.return_value = chat
+        with self.assertRaises(ProviderError):
+            _ = [
+                event
+                async for event in self.provider.stream(
+                    SendRequest("gemini", "test", "local", "Question")
+                )
+            ]
+        await self.provider.close()
+        self.provider.cookie_file.write_text("{invalid")
+        with self.assertRaises(AccountPaused):
+            await self.provider._connect()
+
     async def test_stream_does_not_resend_and_passes_files_and_effort(self):
         async def stream(prompt, **kwargs):
             yield SimpleNamespace(text="Answer", thoughts="Summary")

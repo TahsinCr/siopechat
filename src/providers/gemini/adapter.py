@@ -2,7 +2,6 @@
 
 import asyncio
 import inspect
-import json
 from pathlib import Path
 
 from ..api import Capability, ConversationBound, ReplaceText, SendRequest
@@ -88,7 +87,9 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
             await self.close()
         if not self.cookie_file.is_file():
             raise AccountPaused("Gemini oturumu yok; Hesaplar bölümünden giriş yapın")
-        values = json.loads(self.cookie_file.read_text(encoding="utf-8"))
+        from ..session import read_session
+
+        values = read_session(self.cookie_file)
         if not isinstance(values, dict) or not values.get("__Secure-1PSID"):
             raise AccountPaused("Gemini oturum çerezleri eksik")
         factory = self._factory
@@ -425,6 +426,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                 model=model,
             )
             bound = False
+            visible_output = False
             try:
                 with notebook_transport(client, project, context) if project else nullcontext():
                     async for chunk in chat.send_message_stream(
@@ -442,6 +444,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                         from .media import render_images, sdk_images
 
                         images = sdk_images(chunk)
+                        visible_output = visible_output or bool(chunk.text or images)
                         for image in images:
                             self._media[chat.cid, image["alias"]] = image
                             self._media[chat.cid, image["url"]] = image
@@ -458,6 +461,8 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                     + type(error).__name__
                     + "); hesabı veya bağlantıyı kontrol edin"
                 ) from error
+            if not visible_output:
+                raise ProviderError("Gemini yanıtı tamamlanmadı; istek yeniden gönderilmedi")
             if not chat.cid:
                 raise ProviderError("Gemini sohbet kimliği dönmedi")
             if request.temporary:

@@ -171,7 +171,7 @@ class ClaudeTransport:
                 body.update(choice["selections"][effort])
             else:
                 body["thinking_mode"] = effort
-        completed, text, thinking, blocks = False, "", "", {}
+        completed, blocks = False, {}
         async with self.session.connect().stream(
             "POST",
             self.session.url(path + "/completion"),
@@ -182,17 +182,20 @@ class ClaudeTransport:
         ) as response:
             self.session.check(response)
             payload = []
+            payload_size = 0
             async for line in response.aiter_lines():
                 if isinstance(line, bytes):
                     line = line.decode("utf-8")
                 if line.startswith("data:"):
                     payload.append(line[5:].lstrip())
-                    if sum(map(len, payload)) > 1_048_576:
+                    payload_size += len(payload[-1])
+                    if payload_size > 1_048_576:
                         raise ProviderError("Claude stream event exceeds size limit")
                     continue
                 if line or not payload:
                     continue
                 raw, payload = "\n".join(payload), []
+                payload_size = 0
                 if raw == "[DONE]":
                     continue
                 event = json.loads(raw)
@@ -203,22 +206,21 @@ class ClaudeTransport:
                     block = event.get("content_block", {})
                     blocks[event.get("index", 0)] = block.get("type")
                     if block.get("type") == "text" and block.get("text"):
-                        text += block["text"]
-                        yield {"type": "replace", "text": text}
+                        yield {"type": "delta", "text": block["text"]}
                     elif block.get("type") == "thinking" and block.get("thinking"):
-                        thinking += block["thinking"]
-                        yield {"type": "replace", "channel": "analysis", "text": thinking}
+                        yield {"type": "delta", "channel": "analysis", "text": block["thinking"]}
                 if kind == "content_block_delta":
                     channel = blocks.get(event.get("index", 0))
                     if delta.get("type") == "thinking_delta" and channel == "thinking":
-                        thinking += delta.get("thinking", "")
-                        yield {"type": "replace", "channel": "analysis", "text": thinking}
+                        yield {
+                            "type": "delta",
+                            "channel": "analysis",
+                            "text": delta.get("thinking", ""),
+                        }
                     elif delta.get("type") == "text_delta" and channel == "text":
-                        text += delta.get("text", "")
-                        yield {"type": "replace", "text": text}
+                        yield {"type": "delta", "text": delta.get("text", "")}
                 elif "completion" in event:
-                    text += event.get("completion") or ""
-                    yield {"type": "replace", "text": text}
+                    yield {"type": "delta", "text": event.get("completion") or ""}
                     completed = bool(event.get("stop_reason"))
                 if kind == "message_stop" or (kind == "message_delta" and delta.get("stop_reason")):
                     completed = True

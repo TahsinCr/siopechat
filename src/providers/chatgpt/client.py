@@ -25,6 +25,30 @@ from .resources import Script, script_path
 from .session import BrowserSession
 
 
+def system_timezone():
+    """Use an actual IANA identifier, omitting the optional field if unknown."""
+    from pathlib import Path
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    candidates = [os.environ.get("TZ", "").removeprefix(":")]
+    try:
+        target = str(Path("/etc/localtime").resolve())
+        if "/zoneinfo/" in target:
+            candidates.append(target.split("/zoneinfo/", 1)[1])
+        path = Path("/etc/timezone")
+        if path.is_file():
+            candidates.append(path.read_text().strip())
+    except OSError:
+        pass
+    for value in candidates:
+        try:
+            if value:
+                return ZoneInfo(value).key
+        except (ValueError, ZoneInfoNotFoundError):
+            pass
+    return None
+
+
 class ChatGPTClient:
     def __init__(self, session: BrowserSession, *, authenticate: bool = True) -> None:
         self.session = session
@@ -92,7 +116,9 @@ class ChatGPTClient:
         )
         self.session.save(self.list_url, self.headers)
 
-    def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+    def request(
+        self, method: str, url: str, *, expect_json: bool = True, **kwargs: Any
+    ) -> httpx.Response:
         target = urlsplit(url)
         if target.scheme != "https" or target.netloc != "chatgpt.com":
             raise ChatGPTWebError("authenticated requests must stay on the ChatGPT origin")
@@ -132,6 +158,12 @@ class ChatGPTClient:
                 f"ChatGPT returned HTTP {response.status_code} for {method} {response.url.path}"
             )
         content_type = response.headers.get("content-type", "")
+        if (
+            not expect_json
+            and response.status_code in (200, 201, 202, 204)
+            and not response.content
+        ):
+            return response
         if "application/json" not in content_type:
             raise ChatGPTWebError(
                 f"ChatGPT returned unexpected content type {content_type or '<missing>'}"
@@ -288,6 +320,7 @@ class ChatGPTClient:
             "PATCH",
             urljoin(CHATGPT_ORIGIN, f"/backend-api/conversation/{conversation_id}"),
             json={"title": title},
+            expect_json=False,
         )
 
     def delete_conversation(self, conversation_id: str) -> None:
@@ -297,8 +330,9 @@ class ChatGPTClient:
             "PATCH",
             urljoin(CHATGPT_ORIGIN, f"/backend-api/conversation/{quote(conversation_id, safe='')}"),
             json={"is_visible": False},
+            expect_json=False,
         )
-        if response.json().get("success") is False:
+        if response.content and response.json().get("success") is False:
             raise ChatGPTWebError("ChatGPT sohbeti silmeyi reddetti")
 
     def move_conversation(self, conversation_id: str, project_id: str | None) -> dict[str, Any]:
@@ -474,6 +508,8 @@ class ChatGPTClient:
             raise ChatGPTWebError("conversation request has no user message ID")
         resolved_id: str | None = conversation_id
         rendered_by_channel = {}
+        terminal_seen = False
+        final_seen = False
         streamed_messages = OrderedDict()
         self._last_stream_messages = []
         with self.http.stream(
@@ -499,13 +535,18 @@ class ChatGPTClient:
                     continue
                 payload = line[6:]
                 if payload == "[DONE]":
+                    terminal_seen = True
                     break
                 try:
                     event = json.loads(payload)
                 except json.JSONDecodeError:
-                    continue
+                    raise ChatGPTWebError(
+                        "ChatGPT stream protocol changed; request not retried"
+                    ) from None
                 if not isinstance(event, dict):
                     continue
+                if event.get("error"):
+                    raise ChatGPTWebError("ChatGPT stream failed; request not retried")
                 event_id = event.get("conversation_id")
                 if isinstance(event_id, str) and event_id:
                     resolved_id = event_id
@@ -529,6 +570,8 @@ class ChatGPTClient:
                     continue
                 if message.get("recipient") not in (None, "all"):
                     continue
+                if channel != "analysis":
+                    final_seen = True
                 text = text_from_parts(message_parts(message.get("content")))
                 rendered = rendered_by_channel.get(identity, "")
                 if not text or text == rendered:
@@ -543,6 +586,10 @@ class ChatGPTClient:
                         }
                     )
                 rendered_by_channel[identity] = text
+        if not terminal_seen or not final_seen:
+            raise ChatGPTWebError(
+                "ChatGPT response incomplete; remote outcome unknown; request not retried"
+            )
         if not isinstance(resolved_id, str) or not resolved_id:
             raise ChatGPTWebError("ChatGPT did not return a conversation ID")
         return resolved_id, submitted_message_id
@@ -551,7 +598,23 @@ class ChatGPTClient:
         self, arguments: list[str], payload: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         helper = script_path(Script.SIGN)
-        environment = self.session.environment()
+        environment = {
+            key: value
+            for key, value in self.session.environment().items()
+            if key
+            in {
+                "PATH",
+                "HOME",
+                "USERPROFILE",
+                "SYSTEMROOT",
+                "WINDIR",
+                "TEMP",
+                "TMP",
+                "TMPDIR",
+                "SIOPECHAT_CACHE_HOME",
+                "CHATGPT_WEB_SENTINEL_CACHE_TTL_MS",
+            }
+        }
         try:
             result = subprocess.run(
                 ["node", str(helper), *arguments],
@@ -616,6 +679,7 @@ class ChatGPTClient:
         parent = conversation.get("current_node") if conversation else None
         if not isinstance(parent, str) or not parent:
             parent = str(uuid.uuid4())
+        zone = system_timezone()
         now = datetime.now().astimezone()
         offset = now.utcoffset()
         offset_minutes = -int(offset.total_seconds() / 60) if offset else 0
@@ -694,7 +758,7 @@ class ChatGPTClient:
             "parent_message_id": parent,
             "client_prepare_state": "sent",
             "timezone_offset_min": offset_minutes,
-            "timezone": os.environ.get("TZ", "Europe/Lisbon"),
+            **({"timezone": zone} if zone else {}),
             "conversation_mode": {"kind": "primary_assistant"},
             "enable_message_followups": True,
             "system_hints": [],

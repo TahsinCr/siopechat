@@ -30,14 +30,19 @@ def cookie_header(values, names):
 class NativeDownloadClient:
     """Stream bytes with the same HTTP transport used by Gemini and Claude."""
 
-    def __init__(self, *, timeout, follow_redirects=False):
+    def __init__(self, *, timeout, follow_redirects=False, trust_env=False):
         from curl_cffi.requests import Session
 
         self.client = Session(
             impersonate="chrome",
             timeout=(getattr(timeout, "connect", 15), getattr(timeout, "read", 120)),
             allow_redirects=False,
+            trust_env=trust_env,
         )
+
+    @property
+    def cookies(self):
+        return self.client.cookies
 
     def __enter__(self):
         return self
@@ -46,9 +51,18 @@ class NativeDownloadClient:
         self.client.close()
 
     @contextmanager
-    def stream(self, method, url, *, headers):
+    def stream(self, method, url, *, headers, resolved_address=None):
         from curl_cffi.requests.exceptions import RequestException
 
+        if resolved_address:
+            from urllib.parse import urlsplit
+
+            from curl_cffi import CurlOpt
+
+            target = urlsplit(url)
+            port = target.port or (443 if target.scheme == "https" else 80)
+            address = f"[{resolved_address}]" if ":" in resolved_address else resolved_address
+            self.client.curl_options[CurlOpt.RESOLVE] = [f"{target.hostname}:{port}:{address}"]
         try:
             with self.client.stream(
                 method, url, headers=headers, allow_redirects=False

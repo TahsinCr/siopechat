@@ -120,7 +120,7 @@ class ProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
         }
         created = await self.provider.create_project("New project", memory="project_only")
         self.assertEqual(created.name, "New project")
-        project_reads = iter([{"name": "Fixture"}, RemoteNotFound("deleted")])
+        project_reads = iter([{"id": "g-p-created", "name": "Fixture"}, RemoteNotFound("deleted")])
 
         def get_project(value):
             result = next(project_reads)
