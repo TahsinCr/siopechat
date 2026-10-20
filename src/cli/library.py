@@ -41,8 +41,12 @@ def sort_records(records, mode="time_desc"):
     dated, undated = [], []
     for value in values:
         stamp = modified_time(value)
-        (undated if stamp is None else dated).append(value)
-    return sorted(dated, key=modified_time, reverse=mode != "time_asc") + undated
+        if stamp is None:
+            undated.append(value)
+        else:
+            dated.append((stamp, value))
+    dated.sort(key=lambda item: item[0], reverse=mode != "time_asc")
+    return [value for _, value in dated] + undated
 
 
 def build_sidebar_rows(view) -> None:

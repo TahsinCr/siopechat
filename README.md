@@ -122,7 +122,7 @@ The archive extension stores conversations, ordered messages, published thinking
 
 Previously loaded conversations open from the local archive and refresh in the background. Synchronization indicators appear in the footer and conversation list. Refreshes reconcile newer local turns instead of replacing an active reply. Failed refreshes retain the last good data. Remote mutations are not automatically replayed after an ambiguous failure: synchronize before resending.
 
-The archive has bounded memory and worker queues. Large transcript preparation runs outside the UI event loop. Disabling the archive preserves its files and leaves direct provider loading and sending available. Disabling layout removes split controls without disabling providers.
+The archive has bounded memory and worker queues. Large transcript preparation runs outside the UI event loop. The sidebar draws visible rows on demand and reuses its filtered, sorted list until library data changes. Disabling the archive preserves its files and leaves direct provider loading and sending available. Disabling layout removes split controls without disabling providers.
 
 ## Extensions
 

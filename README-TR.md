@@ -122,7 +122,7 @@ Arşiv eklentisi; sohbetleri, sıralı mesajları, yayımlanmış düşünme ver
 
 Daha önce yüklenmiş sohbetler önce yerel arşivden açılır, arka planda yenilenir. Eşitleme göstergeleri alt çubukta ve sohbet listesinde görünür. Yeni yerel mesajlar, yenilenen geçmişle birleştirilir; aktif yanıtın üzerine yazılmaz. Başarısız eşitlemede son sağlam kayıt korunur. Sonucu belirsiz bir uzak işlem otomatik tekrarlanmaz; yeniden göndermeden önce eşitleyin.
 
-Arşivin bellek ve iş kuyrukları sınırlıdır. Büyük geçmişlerin hazırlanması arayüz olay döngüsü dışında yapılır. Arşivi devre dışı bırakmak dosyalarını korur; doğrudan sağlayıcıdan yükleme ve gönderim devam eder. Düzen eklentisini kapatmak, sağlayıcıları etkilemeden bölme araçlarını kaldırır.
+Arşivin bellek ve iş kuyrukları sınırlıdır. Büyük geçmişlerin hazırlanması arayüz olay döngüsü dışında yapılır. Sol panel yalnızca ekranda görünen satırları çizer; süzülmüş ve sıralanmış liste, kütüphane verisi değişene kadar yeniden kullanılır. Arşivi devre dışı bırakmak dosyalarını korur; doğrudan sağlayıcıdan yükleme ve gönderim devam eder. Düzen eklentisini kapatmak, sağlayıcıları etkilemeden bölme araçlarını kaldırır.
 
 ## Eklenti geliştirme
 

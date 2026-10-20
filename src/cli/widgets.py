@@ -125,6 +125,64 @@ class TranscriptControl(UIControl):
         return NotImplemented
 
 
+class SidebarControl(UIControl):
+    """Build only the sidebar rows requested by the terminal viewport."""
+
+    def __init__(self, view):
+        self.view = view
+        self.rows = ()
+        self._fragments = {}
+        self._states = {}
+        self._open_ids = set()
+
+    def is_focusable(self):
+        return True
+
+    def create_content(self, width, height):
+        self.view._build_sidebar_rows(force=False)
+        self.rows = self.view.sidebar_rows
+        self._fragments = {}
+        self._states = self.view._sidebar_sync_states()
+        self._open_ids = {tab.get("conversation_id") for tab in self.view.tabs}
+        cursor_y = min(max(0, self.view.sidebar_index), max(0, len(self.rows) - 1))
+        return UIContent(
+            get_line=self._line,
+            line_count=len(self.rows),
+            cursor_position=Point(x=0, y=cursor_y),
+            show_cursor=False,
+        )
+
+    def _line(self, index):
+        if not 0 <= index < len(self.rows):
+            return []
+        fragments = self._fragments.get(index)
+        if fragments is None:
+            fragments = self.view.render_sidebar_row(index, self._states, self._open_ids)
+            self._fragments[index] = fragments
+        return [(item[0], item[1]) for item in fragments]
+
+    def mouse_handler(self, mouse_event):
+        if (
+            mouse_event.button != MouseButton.LEFT
+            or mouse_event.event_type != MouseEventType.MOUSE_UP
+        ):
+            return NotImplemented
+        line = mouse_event.position.y
+        if not 0 <= line < len(self.rows):
+            return NotImplemented
+        fragments = self._fragments.get(line)
+        if fragments is None:
+            self._line(line)
+            fragments = self._fragments[line]
+        column = 0
+        for fragment in fragments:
+            end = column + get_cwidth(fragment[1])
+            if column <= mouse_event.position.x < end and len(fragment) > 2:
+                return fragment[2](mouse_event)
+            column = end
+        return NotImplemented
+
+
 class BoundedTextControl(FormattedTextControl):
     """Clamp a dynamic cursor against the exact content snapshot being rendered."""
 

@@ -200,7 +200,7 @@ def key_bindings(view) -> KeyBindings:
         elif view.resume_visible:
             view.resume_index = max(0, view.resume_index - 1)
         elif view.app.layout.current_control in (view.sidebar_control, view.sidebar_search.control):
-            view._build_sidebar_rows()
+            view._build_sidebar_rows(force=False)
             view.sidebar_index = max(0, view.sidebar_index - 1)
             view.ensure_sidebar_selection_visible()
         else:
@@ -213,7 +213,7 @@ def key_bindings(view) -> KeyBindings:
         elif view.resume_visible:
             view.resume_index = min(len(view.resume_filtered) - 1, view.resume_index + 1)
         elif view.app.layout.current_control in (view.sidebar_control, view.sidebar_search.control):
-            view._build_sidebar_rows()
+            view._build_sidebar_rows(force=False)
             view.sidebar_index = min(len(view.sidebar_rows) - 1, view.sidebar_index + 1)
             view.ensure_sidebar_selection_visible()
         else:

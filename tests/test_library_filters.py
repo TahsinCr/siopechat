@@ -3,9 +3,9 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
-from cli.library import sort_records
+from cli.library import modified_time, sort_records
 from providers.gemini.history import conversations
 from providers.gemini.notebooks import project_from_native
 from providers.models import Conversation, Origin, Page
@@ -34,6 +34,19 @@ class LibraryTests(unittest.TestCase):
         ]:
             self.assertEqual("".join(x["id"] for x in sort_records(rows, mode)), expected)
         self.assertEqual([x["id"] for x in rows], list("bac"))
+
+    def test_time_sort_extracts_each_date_once_and_keeps_stable_ties(self):
+        rows = [
+            {"id": "c", "title": "Zulu", "updated_at": "2026-10-10T00:00:00Z"},
+            {"id": "a", "title": "Alpha", "updated_at": "2026-10-10T00:00:00Z"},
+            {"id": "b", "title": "Beta", "updated_at": "2026-10-10T00:00:00Z"},
+            {"id": "u", "title": "Missing"},
+        ]
+        with patch("cli.library.modified_time", wraps=modified_time) as read_time:
+            self.assertEqual(
+                [row["id"] for row in sort_records(rows, "time_desc")], ["a", "b", "c", "u"]
+            )
+        self.assertEqual(read_time.call_count, len(rows))
 
     def test_gemini_native_dates_are_normalized_for_both_record_types(self):
         chat = conversations(

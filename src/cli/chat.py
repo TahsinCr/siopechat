@@ -55,6 +55,7 @@ from .styles import DEFAULT_TERMINAL_STYLE, terminal_style
 from .widgets import (
     BoundedTextControl,
     ComposerPlaceholderProcessor,
+    SidebarControl,
     SlashCommandCompleter,
     TranscriptControl,
     TranscriptWindow,
@@ -228,6 +229,7 @@ class ChatView:
         self.sidebar_visible = True
         self.sidebar_collapsed: set[str] = set()
         self.sidebar_rows: list[dict[str, Any]] = []
+        self._sidebar_rows_dirty = True
         self.palette_visible = False
         self.palette_mode = "actions"
         self.palette_items: list[dict[str, str]] = []
@@ -276,11 +278,7 @@ class ChatView:
             height=1, prompt=self.tr(" Ara "), style="class:sidebar.search"
         )
         self.sidebar_search.buffer.on_text_changed += lambda _buffer: self.filter_sidebar()
-        self.sidebar_control = BoundedTextControl(
-            text=self.render_sidebar,
-            focusable=True,
-            get_cursor_position=lambda: Point(x=0, y=self.sidebar_index),
-        )
+        self.sidebar_control = SidebarControl(self)
         self.sidebar_window = Window(
             content=self.sidebar_control, wrap_lines=False, always_hide_cursor=True
         )
@@ -550,6 +548,7 @@ class ChatView:
                 if i == self.active_tab:
                     self.messages = messages
                     self.title = tab["title"]
+        self._invalidate_sidebar_rows()
         self.app.invalidate()
 
     def render_prompt(self) -> FormattedText:
@@ -575,6 +574,7 @@ class ChatView:
             self._account_projects[self.account_key] = self.project_items
             self.project_items = dict(self.project_items) | self._account_projects.get(key, {})
             self.projects_loaded = bool(self.project_items)
+            self._invalidate_sidebar_rows()
         self.account_key = key
         self.provider_id = key.split("/")[0]
         self.provider_features = self.account_service.capabilities(key) if key else frozenset()
@@ -699,6 +699,7 @@ class ChatView:
                 a["provider"] for a in accounts if a["key"] in self.account_filter
             }
             self.library_sort = values["sort"]
+            self._invalidate_sidebar_rows()
             self.refresh_sidebar()
 
         self.forms.open(
@@ -772,6 +773,7 @@ class ChatView:
                     for x in self.sidebar_items
                     if x.get("id") not in removed and x.get("project_id") not in removed
                 ]
+                self._invalidate_sidebar_rows()
                 for item in removed:
                     self.project_items.pop(item, None)
                     self.project_chats_loaded.discard(item)
@@ -1287,6 +1289,7 @@ class ChatView:
         return rows
 
     def apply_preferences(self, preferences):
+        self._invalidate_sidebar_rows()
         config = preferences.get("settings", preferences)
         application = config.get("application", {})
         self.show_reasoning = application.get("show_reasoning", True)
@@ -1401,6 +1404,7 @@ class ChatView:
         self.resume_items = self.resume_filtered = []
         self.resume_loading = False
         self.sidebar_rows = []
+        self._invalidate_sidebar_rows()
         self.conversation_id = None
         self.title = self.tr("New conversation")
         self.messages = []
@@ -1435,88 +1439,101 @@ class ChatView:
             return value.upper()
         return value.replace(" ", "+").title()
 
-    def render_sidebar(self) -> FormattedText:
-        self._build_sidebar_rows()
-        fragments = []
-        open_ids = {tab.get("conversation_id") for tab in self.tabs}
+    def _sidebar_sync_states(self):
         archive = self.archive_service()
-        states = (
-            {(x["account"], x["kind"], x["remote"]): x["state"] for x in self.sync_states(archive)}
+        return (
+            {
+                (item["account"], item["kind"], item["remote"]): item["state"]
+                for item in self.sync_states(archive)
+            }
             if archive
             else {}
         )
-        for i, row in enumerate(self.sidebar_rows):
-            kind = row["kind"]
-            selected = i == self.sidebar_index
-            click = on_click(lambda i=i: self.click_sidebar(i))
-            style = "class:sidebar.selected" if selected else "class:sidebar.item"
-            if row.get("id") in open_ids:
-                style += " class:sidebar.open"
-            if kind == "message":
-                fragments.append(
-                    (
-                        "class:sidebar.muted",
-                        "   " + fit_text(row["title"], self.sidebar_width() - 3) + "\n",
-                    )
+
+    def render_sidebar_row(self, index, states=None, open_ids=None):
+        if not 0 <= index < len(self.sidebar_rows):
+            return []
+        row = self.sidebar_rows[index]
+        kind = row["kind"]
+        if kind == "message":
+            return [
+                (
+                    "class:sidebar.muted",
+                    "   " + fit_text(row["title"], self.sidebar_width() - 3) + "\n",
                 )
-                continue
-            marker = (
-                ("▸" if row["collapsed"] else "▾")
-                if kind in ("section", "project")
-                else ("›" if selected else " ")
-            )
-            indent = "   " if row.get("nested") else " "
-            fragments.append((style, indent + marker + " ", click))
-            if kind in ("chat", "project"):
-                provider = row.get("provider_id", "chatgpt")
-                fragments.append(
-                    (
-                        "class:provider." + provider,
-                        PROVIDERS.get(provider, (provider, "◈", ""))[1] + " ",
-                        click,
-                    )
-                )
-            suffix = " " + str(row.get("count", "")) if kind in ("section", "project") else ""
-            if kind == "project":
-                suffix += " ⓘ"
-            key, remote = origin(row.get("id"), self.account_key)
-            state = states.get((key, "conversation" if kind == "chat" else "container", remote))
-            live_tab = row.get("live_tab")
-            if kind == "chat" and live_tab is not None and live_tab.get("busy"):
-                suffix += " ●"
-                style += " class:sidebar.running"
-            elif kind == "chat" and live_tab is not None and live_tab.get("completed_pending"):
-                suffix += " ✓"
-            if state == "syncing":
-                suffix += " ↻"
-            elif state == "error":
-                suffix += " !"
-            width = (
-                self.sidebar_width()
-                - len(indent)
-                - 3
-                - (2 if kind in ("chat", "project") else 0)
-                - get_cwidth(suffix)
-            )
+            ]
+        states = states if states is not None else {}
+        if open_ids is None:
+            open_ids = {tab.get("conversation_id") for tab in self.tabs}
+        selected = index == self.sidebar_index
+        click = on_click(lambda i=index: self.click_sidebar(i))
+        style = "class:sidebar.selected" if selected else "class:sidebar.item"
+        if row.get("id") in open_ids:
+            style += " class:sidebar.open"
+        marker = (
+            ("▸" if row["collapsed"] else "▾")
+            if kind in ("section", "project")
+            else ("›" if selected else " ")
+        )
+        indent = "   " if row.get("nested") else " "
+        fragments = [(style, indent + marker + " ", click)]
+        if kind in ("chat", "project"):
+            provider = row.get("provider_id", "chatgpt")
             fragments.append(
                 (
-                    style + (" bold" if kind == "section" else ""),
-                    fit_text(row["title"], max(1, width)),
+                    "class:provider." + provider,
+                    PROVIDERS.get(provider, (provider, "◈", ""))[1] + " ",
                     click,
                 )
             )
-            if kind == "project":
-                fragments.append(
-                    (
-                        "class:sidebar.muted",
-                        suffix + "\n",
-                        on_click(
-                            lambda project_id=row["id"]: self.show_project_details(project_id)
-                        ),
-                    )
+        suffix = " " + str(row.get("count", "")) if kind in ("section", "project") else ""
+        if kind == "project":
+            suffix += " ⓘ"
+        key, remote = origin(row.get("id"), self.account_key)
+        state = states.get((key, "conversation" if kind == "chat" else "container", remote))
+        live_tab = row.get("live_tab")
+        if kind == "chat" and live_tab is not None and live_tab.get("busy"):
+            suffix += " ●"
+            style += " class:sidebar.running"
+        elif kind == "chat" and live_tab is not None and live_tab.get("completed_pending"):
+            suffix += " ✓"
+        if state == "syncing":
+            suffix += " ↻"
+        elif state == "error":
+            suffix += " !"
+        width = (
+            self.sidebar_width()
+            - len(indent)
+            - 3
+            - (2 if kind in ("chat", "project") else 0)
+            - get_cwidth(suffix)
+        )
+        fragments.append(
+            (
+                style + (" bold" if kind == "section" else ""),
+                fit_text(row["title"], max(1, width)),
+                click,
+            )
+        )
+        if kind == "project":
+            fragments.append(
+                (
+                    "class:sidebar.muted",
+                    suffix + "\n",
+                    on_click(lambda project_id=row["id"]: self.show_project_details(project_id)),
                 )
-            else:
-                fragments.append((style, suffix + "\n", click))
+            )
+        else:
+            fragments.append((style, suffix + "\n", click))
+        return fragments
+
+    def render_sidebar(self) -> FormattedText:
+        self._build_sidebar_rows()
+        states = self._sidebar_sync_states()
+        open_ids = {tab.get("conversation_id") for tab in self.tabs}
+        fragments = []
+        for index in range(len(self.sidebar_rows)):
+            fragments.extend(self.render_sidebar_row(index, states, open_ids))
         return FormattedText(fragments)
 
     def click_sidebar(self, index):
@@ -1527,8 +1544,14 @@ class ChatView:
         self.palette_index = index
         self.execute_palette_item()
 
-    def _build_sidebar_rows(self):
-        return build_sidebar_rows(self)
+    def _invalidate_sidebar_rows(self):
+        self._sidebar_rows_dirty = True
+
+    def _build_sidebar_rows(self, force=True):
+        if force or self._sidebar_rows_dirty:
+            build_sidebar_rows(self)
+            self._sidebar_rows_dirty = False
+        return self.sidebar_rows
 
     def _chat_row(self, item: dict[str, Any], nested: bool = False) -> dict[str, Any]:
         return {
@@ -1588,6 +1611,8 @@ class ChatView:
         if not self.list_history_page or not self.history_cursor or self.history_loading:
             return
         self.history_loading = True
+        self._invalidate_sidebar_rows()
+        self.app.invalidate()
         cursor = self.history_cursor
 
         def loaded(page):
@@ -1602,6 +1627,7 @@ class ChatView:
 
         def failed(reason):
             self.history_loading = False
+            self._invalidate_sidebar_rows()
             self.status = str(reason)
             self.app.invalidate()
 
@@ -1867,6 +1893,7 @@ class ChatView:
         ):
             self.projects_loading = False
             self.projects_loaded = True
+            self._invalidate_sidebar_rows()
             return
         account_key = self.account_key
         if self.list_projects_callback is None or account_key in self._project_requests:
@@ -1875,6 +1902,8 @@ class ChatView:
         token = uuid.uuid4().hex
         self._project_requests[account_key] = token
         self.projects_loading = True
+        self._invalidate_sidebar_rows()
+        self.app.invalidate()
         callback = self.list_projects_callback
         if self.account_service and hasattr(self.account_service, "all_projects"):
 
@@ -1887,6 +1916,7 @@ class ChatView:
             if self._project_requests.get(account_key) == token:
                 self._project_requests.pop(account_key, None)
             self.projects_loading = self.account_key in self._project_requests
+            self._invalidate_sidebar_rows()
 
         def success(result):
             finish()
@@ -1951,6 +1981,8 @@ class ChatView:
             return
         cursor = self.project_chat_cursors.get(project_id) if more else None
         self.project_chats_loading.add(project_id)
+        self._invalidate_sidebar_rows()
+        self.app.invalidate()
 
         def success(result):
             if not isinstance(result, dict) or not isinstance(result.get("items"), list):
@@ -2053,6 +2085,7 @@ class ChatView:
 
         def success(project):
             self.project_items[project_id] = project
+            self._invalidate_sidebar_rows()
             update(self.project_messages(project)[0]["text"], project)
 
         def update(text, project):
@@ -2093,6 +2126,7 @@ class ChatView:
 
     def filter_sidebar(self) -> None:
         if hasattr(self, "app"):
+            self._invalidate_sidebar_rows()
             self._build_sidebar_rows()
             self.ensure_sidebar_selection_visible()
             self.app.invalidate()
@@ -2109,6 +2143,7 @@ class ChatView:
         self.close_overlays()
         self.sidebar_visible = True
         self.sidebar_collapsed.discard("section:projects")
+        self._invalidate_sidebar_rows()
         self.sidebar_index = 0
         self.sidebar_search.text = ""
         self.refresh_sidebar()
@@ -3358,6 +3393,7 @@ class ChatView:
         self.busy = True
         self.busy_tab_index = self.active_tab
         self.tabs[self.active_tab]["busy"] = True
+        self._invalidate_sidebar_rows()
         if not self.conversation_id:
             self.title = self.tabs[self.active_tab]["title"] = prompt[:60]
         self.tabs[self.active_tab]["completed_pending"] = False
@@ -4199,6 +4235,7 @@ class ChatView:
                         provider_id=tab.get("account_key", self.account_key).split("/")[0],
                         project_id=(tab.get("project") or {}).get("id"),
                     )
+                self._invalidate_sidebar_rows()
                 completed = [item for item in self.background_tabs if not item.get("busy")]
                 if len(completed) > 16:
                     expired = {id(item) for item in completed[:-16]}

@@ -25,6 +25,7 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 
 ### Changed
 
+- Render only visible sidebar rows and reuse the filtered, sorted navigation list until its source data changes.
 - Keep tab rendering in cli/layout.py and library row assembly in cli/library.py; share chat-only model lookup instead of repeating it throughout the view controller.
 - Share atomic JSON persistence between application settings and cached records, reuse provider session persistence for ChatGPT, and centralize project-source file validation without changing limits or provider error messages.
 - Start new installations with an empty account list. Accounts are added explicitly; the first added account becomes active, and existing configurations are preserved.
