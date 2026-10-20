@@ -87,6 +87,8 @@ DEFAULTS = {
         "mouse": True,
         "show_reasoning": True,
         "download_directory": "downloads",
+        "download_max_bytes": 512 * 1024 * 1024,
+        "download_allow_private": False,
     },
     "keybindings": DEFAULT_KEYBINDINGS,
     "providers": {key: {"enabled": True} for key in PROVIDERS},
@@ -220,6 +222,12 @@ class Settings:
             or "\0" in data["application"]["download_directory"]
         ):
             raise ValueError("İndirme klasörü boş veya geçersiz")
+        if (
+            type(data["application"]["download_allow_private"]) is not bool
+            or type(data["application"]["download_max_bytes"]) is not int
+            or data["application"]["download_max_bytes"] < 1
+        ):
+            raise ValueError("invalid download limits")
         for value in data["extensions"].values():
             if not isinstance(value, dict) or type(value.get("enabled", True)) is not bool:
                 raise ValueError("invalid extension settings")

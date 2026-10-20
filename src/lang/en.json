@@ -640,5 +640,12 @@
   "ui.İndirme klasörü boş veya geçersiz": "The download folder is empty or invalid",
   "ui.Dosya aktarımı kesildi; bağlantıyı kontrol edip yeniden deneyin": "File transfer interrupted; check your connection and try again",
   "ui.Dosya henüz hazır değil; biraz sonra yeniden deneyin": "The file is not ready yet; try again shortly",
-  "ui.create a project in the selected provider": "create a project in the selected provider"
+  "ui.create a project in the selected provider": "create a project in the selected provider",
+  "download_max_bytes": "Maximum download size (bytes)",
+  "download_allow_private": "Allow downloads from local networks",
+  "ui.Dosya hedefi çözümlenemedi veya ağ politikası tarafından engellendi": "The download host could not be resolved or was blocked by network policy",
+  "ui.HTTPS dosyası HTTP bağlantısına yönlendirilemez": "HTTPS downloads cannot redirect to HTTP",
+  "ui.Dosya indirme boyutu sınırını aşıyor": "The file exceeds the download size limit",
+  "ui.Dosya seçili hesaba ait olmalı": "The file must belong to the selected account",
+  "ui.Arka plan iş kuyruğu dolu; yeniden deneyin": "The background queue is full; try again"
 }

@@ -1,8 +1,10 @@
 """Frontend-independent streaming downloads with bounded concurrency and atomic files."""
 
+import ipaddress
 import mimetypes
 import os
 import re
+import socket
 import tempfile
 import threading
 import time
@@ -14,9 +16,12 @@ import httpx
 
 
 class Downloads:
-    def __init__(self, settings, root, accounts, client_factory=httpx.Client):
+    def __init__(
+        self, settings, root, accounts, client_factory=httpx.Client, *, resolver=socket.getaddrinfo
+    ):
         self.settings, self.root, self.accounts = settings, Path(root), accounts
         self.client_factory = client_factory
+        self.resolver = resolver
         self._gate = threading.BoundedSemaphore(2)
         self._lock = threading.Lock()
         self._active = set()
@@ -60,18 +65,52 @@ class Downloads:
             raise ValueError("Dosya bağlantısı geçersiz veya desteklenmiyor")
         return parsed
 
+    def _address(self, origin):
+        allow_private = self.settings.snapshot()["application"].get("download_allow_private", False)
+        port = origin.port or (443 if origin.scheme == "https" else 80)
+        try:
+            addresses = {
+                row[4][0] for row in self.resolver(origin.hostname, port, type=socket.SOCK_STREAM)
+            }
+            if not addresses or (
+                not allow_private
+                and any(not ipaddress.ip_address(value).is_global for value in addresses)
+            ):
+                raise ValueError("Yerel veya özel ağ dosya hedeflerine izin verilmiyor")
+        except (OSError, ValueError) as error:
+            raise ValueError(
+                "Dosya hedefi çözümlenemedi veya ağ politikası tarafından engellendi"
+            ) from error
+        return sorted(addresses)[0]
+
     def _fetch(self, source, progress):
         url, headers = source.url, dict(source.headers)
         factory = source.client_factory or self.client_factory
-        with factory(timeout=httpx.Timeout(120, connect=15), follow_redirects=False) as client:
+        with factory(
+            timeout=httpx.Timeout(120, connect=15), follow_redirects=False, trust_env=False
+        ) as client:
             for _ in range(6):
                 origin = self._web_url(url)
-                with client.stream("GET", url, headers=headers) as response:
+                address = self._address(origin)
+                cookies = getattr(client, "cookies", None)
+                if cookies is not None:
+                    cookies.clear()  # Only the explicit, origin-scoped source headers carry auth.
+                if source.client_factory:
+                    request_url, stream_options = url, {"resolved_address": address}
+                else:
+                    request_url = str(httpx.URL(url).copy_with(host=address))
+                    headers = dict(headers, Host=origin.netloc)
+                    stream_options = {"extensions": {"sni_hostname": origin.hostname}}
+                with client.stream(
+                    "GET", request_url, headers=headers, **stream_options
+                ) as response:
                     if response.status_code in (301, 302, 303, 307, 308):
                         target = urljoin(url, response.headers.get("location", ""))
                         if not response.headers.get("location"):
                             raise ValueError("Dosya yönlendirmesi geçersiz")
                         next_origin = self._web_url(target)
+                        if origin.scheme == "https" and next_origin.scheme != "https":
+                            raise ValueError("HTTPS dosyası HTTP bağlantısına yönlendirilemez")
                         if (next_origin.scheme, next_origin.netloc) != (
                             origin.scheme,
                             origin.netloc,
@@ -157,11 +196,18 @@ class Downloads:
             size, last = 0, 0.0
             total = response.headers.get("content-length", "")
             total = int(total) if total.isdigit() else None
+            maximum = self.settings.snapshot()["application"].get(
+                "download_max_bytes", 512 * 1024 * 1024
+            )
+            if total is not None and total > maximum:
+                raise ValueError("Dosya indirme boyutu sınırını aşıyor")
             with tempfile.NamedTemporaryFile(
                 dir=directory, prefix=".download-", suffix=".part", delete=False
             ) as output:
                 temporary = Path(output.name)
                 for chunk in response.iter_bytes(256 * 1024):
+                    if size + len(chunk) > maximum:
+                        raise ValueError("Dosya indirme boyutu sınırını aşıyor")
                     output.write(chunk)
                     size += len(chunk)
                     now = time.monotonic()

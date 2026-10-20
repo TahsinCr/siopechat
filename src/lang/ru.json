@@ -640,5 +640,12 @@
   "ui.İndirme klasörü boş veya geçersiz": "Папка загрузок не указана или недопустима",
   "ui.Dosya aktarımı kesildi; bağlantıyı kontrol edip yeniden deneyin": "Передача файла прервана; проверьте соединение и повторите попытку",
   "ui.Dosya henüz hazır değil; biraz sonra yeniden deneyin": "Файл ещё не готов; повторите попытку немного позже",
-  "ui.create a project in the selected provider": "Создать проект у выбранного провайдера"
+  "ui.create a project in the selected provider": "Создать проект у выбранного провайдера",
+  "download_max_bytes": "Максимальный размер загрузки (байт)",
+  "download_allow_private": "Разрешить загрузки из локальной сети",
+  "ui.Dosya hedefi çözümlenemedi veya ağ politikası tarafından engellendi": "Не удалось определить адрес файла или он заблокирован сетевой политикой",
+  "ui.HTTPS dosyası HTTP bağlantısına yönlendirilemez": "Загрузка по HTTPS не может перенаправляться на HTTP",
+  "ui.Dosya indirme boyutu sınırını aşıyor": "Файл превышает ограничение размера загрузки",
+  "ui.Dosya seçili hesaba ait olmalı": "Файл должен принадлежать выбранному аккаунту",
+  "ui.Arka plan iş kuyruğu dolu; yeniden deneyin": "Очередь фоновых задач заполнена; повторите попытку"
 }

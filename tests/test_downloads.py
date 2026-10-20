@@ -29,7 +29,53 @@ class DownloadTests(unittest.TestCase):
             self.root,
             self.accounts,
             lambda **kw: httpx.Client(transport=httpx.MockTransport(respond), **kw),
+            resolver=lambda host, port, **kw: [(2, 1, 6, "", ("93.184.216.34", port))],
         )
+
+    def test_private_targets_and_https_downgrade_are_rejected(self):
+        for address in ("127.0.0.1", "10.0.0.1", "169.254.169.254", "::1"):
+            service = self.service(lambda _: self.fail("private target must not be requested"))
+            service.resolver = lambda host, port, **kw: [(2, 1, 6, "", (address, port))]
+            with self.assertRaises(ValueError):
+                service.fetch("account", "https://example.com/file")
+        service = self.service(
+            lambda _: httpx.Response(302, headers={"location": "http://example.com/file"})
+        )
+        with self.assertRaisesRegex(ValueError, "HTTPS"):
+            service.fetch("account", "https://example.com/file")
+
+    def test_download_limit_cleans_reserved_and_partial_files(self):
+        self.settings.update("application", {"download_max_bytes": 3})
+
+        class Body(httpx.SyncByteStream):
+            def __iter__(self):
+                yield b"12"
+                yield b"34"
+
+        for headers in ({"content-length": "4"}, {}):
+            service = self.service(
+                lambda _: httpx.Response(
+                    200,
+                    headers=dict(headers, **{"content-type": "application/pdf"}),
+                    stream=Body(),
+                )
+            )
+            with self.assertRaisesRegex(ValueError, "boyutu"):
+                service.fetch("account", "https://example.com/file")
+            self.assertEqual(list((self.root / "downloads").iterdir()), [])
+
+    def test_validated_ip_is_pinned_while_host_and_tls_name_are_preserved(self):
+        seen = []
+        service = self.service(
+            lambda request: (
+                seen.append(request)
+                or httpx.Response(200, headers={"content-type": "application/pdf"}, content=b"ok")
+            )
+        )
+        service.fetch("account", "https://example.com/file")
+        self.assertEqual(seen[0].url.host, "93.184.216.34")
+        self.assertEqual(seen[0].headers["host"], "example.com")
+        self.assertEqual(seen[0].extensions["sni_hostname"], "example.com")
 
     def test_streaming_atomic_filename_collision_and_custom_directory(self):
         data = b"abc" * 100000
@@ -57,6 +103,71 @@ class DownloadTests(unittest.TestCase):
         third = service.fetch("account", "https://example.com/file")
         self.assertEqual(Path(third["path"]).parent, self.root / "my-files")
 
+    def test_pinned_https_connection_validates_the_original_hostname(self):
+        import shutil
+        import ssl
+        import subprocess
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        if not shutil.which("openssl"):
+            self.skipTest("openssl certificate fixture")
+        certificate, key = self.root / "cert.pem", self.root / "key.pem"
+        subprocess.run(
+            [
+                "openssl",
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-nodes",
+                "-keyout",
+                str(key),
+                "-out",
+                str(certificate),
+                "-days",
+                "1",
+                "-subj",
+                "/CN=localhost",
+                "-addext",
+                "subjectAltName=DNS:localhost",
+            ],
+            check=True,
+            capture_output=True,
+        )
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Type", "application/pdf")
+                self.end_headers()
+                self.wfile.write(b"verified TLS")
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(certificate, key)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            self.settings.update("application", {"download_allow_private": True})
+            trusted = ssl.create_default_context(cafile=str(certificate))
+            service = Downloads(
+                self.settings,
+                self.root,
+                self.accounts,
+                lambda **options: httpx.Client(verify=trusted, **options),
+                resolver=lambda host, port, **options: [(2, 1, 6, "", ("127.0.0.1", port))],
+            )
+            result = service.fetch("account", f"https://localhost:{server.server_port}/file")
+            self.assertEqual(Path(result["path"]).read_bytes(), b"verified TLS")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(2)
+
     def test_real_http_stream_downloads_without_buffering_the_entire_response(self):
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -79,6 +190,7 @@ class DownloadTests(unittest.TestCase):
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
+            self.settings.update("application", {"download_allow_private": True})
             service = Downloads(self.settings, self.root, self.accounts)
             result = service.fetch("account", f"http://127.0.0.1:{server.server_port}/file")
             self.assertEqual(Path(result["path"]).read_bytes(), payload)

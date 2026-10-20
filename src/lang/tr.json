@@ -640,5 +640,12 @@
   "ui.İndirme klasörü boş veya geçersiz": "İndirme klasörü boş veya geçersiz",
   "ui.Dosya aktarımı kesildi; bağlantıyı kontrol edip yeniden deneyin": "Dosya aktarımı kesildi; bağlantıyı kontrol edip yeniden deneyin",
   "ui.Dosya henüz hazır değil; biraz sonra yeniden deneyin": "Dosya henüz hazır değil; biraz sonra yeniden deneyin",
-  "ui.create a project in the selected provider": "seçili sağlayıcıda proje oluştur"
+  "ui.create a project in the selected provider": "seçili sağlayıcıda proje oluştur",
+  "download_max_bytes": "En büyük indirme boyutu (bayt)",
+  "download_allow_private": "Yerel ağdan indirmeye izin ver",
+  "ui.Dosya hedefi çözümlenemedi veya ağ politikası tarafından engellendi": "Dosya hedefi çözümlenemedi veya ağ politikası tarafından engellendi",
+  "ui.HTTPS dosyası HTTP bağlantısına yönlendirilemez": "HTTPS dosyası HTTP bağlantısına yönlendirilemez",
+  "ui.Dosya indirme boyutu sınırını aşıyor": "Dosya indirme boyutu sınırını aşıyor",
+  "ui.Dosya seçili hesaba ait olmalı": "Dosya seçili hesaba ait olmalı",
+  "ui.Arka plan iş kuyruğu dolu; yeniden deneyin": "Arka plan iş kuyruğu dolu; yeniden deneyin"
 }

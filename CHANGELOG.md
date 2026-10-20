@@ -30,6 +30,9 @@ Python distributions use the corresponding PEP 440 version (`1.1b0` for `v1.1-be
 
 ### Security
 
+- Validate and pin download addresses, block private networks by default, reject HTTPS downgrades and preserve account/origin boundaries across redirects.
+- Limit downloads to a configurable 512 MiB by default, enforce both declared and streamed sizes, and expose local-network opt-in and size settings in all three languages.
+
 - Restrict Sentinel SDK origins, redirects, source size and fetch duration; validate cached SDK paths and limit the helper process environment.
 
 
