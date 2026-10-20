@@ -1,5 +1,6 @@
 """Streaming file delivery, provider resolution and partial transcript selection."""
 
+import os
 import tempfile
 import threading
 import unittest
@@ -93,7 +94,9 @@ class DownloadTests(unittest.TestCase):
         first = service.fetch(
             "account", "https://example.com/file", progress=lambda *a: events.append(a)
         )
-        self.assertEqual(Path(first["path"]), self.root / "downloads/hello.py")
+        self.assertEqual(
+            Path(first["path"]).resolve(), (self.root / "downloads/hello.py").resolve()
+        )
         self.assertEqual(Path(first["path"]).read_bytes(), data)
         second = service.fetch("account", "https://example.com/file")
         self.assertNotEqual(second["path"], first["path"])
@@ -101,7 +104,7 @@ class DownloadTests(unittest.TestCase):
         self.assertEqual(list((self.root / "downloads").glob("*.part")), [])
         self.settings.update("application", {"download_directory": "my-files"})
         third = service.fetch("account", "https://example.com/file")
-        self.assertEqual(Path(third["path"]).parent, self.root / "my-files")
+        self.assertTrue(os.path.samefile(Path(third["path"]).parent, self.root / "my-files"))
 
     def test_pinned_https_connection_validates_the_original_hostname(self):
         import shutil
@@ -220,7 +223,7 @@ class DownloadTests(unittest.TestCase):
         api = create_application(self.root)
         try:
             service = api.get("downloads")
-            self.assertEqual(service.directory(), self.root / "downloads")
+            self.assertEqual(service.directory().resolve(), (self.root / "downloads").resolve())
             field = next(
                 row for row in SettingsCatalog(api).rows() if row["key"] == "download_directory"
             )
@@ -230,7 +233,7 @@ class DownloadTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     api.settings.update("application", {"download_directory": invalid})
             api.settings.update("application", {"download_directory": str(self.root / "other")})
-            self.assertEqual(service.directory(), self.root / "other")
+            self.assertEqual(service.directory().resolve(), (self.root / "other").resolve())
         finally:
             api.runtime.close()
 

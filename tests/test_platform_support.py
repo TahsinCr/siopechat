@@ -1,9 +1,15 @@
 import unittest
-from pathlib import Path, PureWindowsPath
+from pathlib import PurePosixPath, PureWindowsPath
 from unittest.mock import patch
 
 from utils import paths as platform
 from utils import process
+
+
+class TestPosixPath(PurePosixPath):
+    @classmethod
+    def home(cls):
+        return cls("/Users/test")
 
 
 class PlatformSupportTests(unittest.TestCase):
@@ -33,14 +39,19 @@ class PlatformSupportTests(unittest.TestCase):
             self.assertEqual(process.detached_process_options(), {"creationflags": 0x208})
 
     def test_windows_permissions_use_inherited_acl(self):
-        with patch.object(platform.os, "name", "nt"), patch.object(platform.os, "chmod") as chmod:
-            process.set_private_permissions(Path("credentials.json"), 0o600)
+        with (
+            patch.object(platform.os, "name", "nt"),
+            patch.object(platform, "Path", PureWindowsPath),
+            patch.object(platform.os, "chmod") as chmod,
+        ):
+            process.set_private_permissions(PureWindowsPath("credentials.json"), 0o600)
         chmod.assert_not_called()
 
     def test_unix_xdg_paths_preserve_legacy_directory_name(self):
         with (
             patch.object(platform.os, "name", "posix"),
             patch.object(platform.sys, "platform", "linux"),
+            patch.object(platform, "Path", TestPosixPath),
             patch.dict(
                 platform.os.environ,
                 {
@@ -51,22 +62,24 @@ class PlatformSupportTests(unittest.TestCase):
                 clear=True,
             ),
         ):
-            self.assertEqual(platform.legacy_data_dir(), Path("/tmp/data/chatgpt-web"))
-            self.assertEqual(platform.state_dir(), Path("/tmp/state/chatgpt-web"))
-            self.assertEqual(platform.cache_dir(), Path("/tmp/cache/chatgpt-web"))
+            self.assertEqual(platform.legacy_data_dir(), TestPosixPath("/tmp/data/chatgpt-web"))
+            self.assertEqual(platform.state_dir(), TestPosixPath("/tmp/state/chatgpt-web"))
+            self.assertEqual(platform.cache_dir(), TestPosixPath("/tmp/cache/chatgpt-web"))
 
     def test_macos_uses_native_data_directories(self):
         with (
             patch.object(platform.os, "name", "posix"),
             patch.object(platform.sys, "platform", "darwin"),
             patch.dict(platform.os.environ, {}, clear=True),
-            patch.object(Path, "home", return_value=Path("/Users/test")),
+            patch.object(platform, "Path", TestPosixPath),
         ):
             self.assertEqual(
                 platform.legacy_data_dir(),
-                Path("/Users/test/Library/Application Support/SiopeChat"),
+                TestPosixPath("/Users/test/Library/Application Support/SiopeChat"),
             )
-            self.assertEqual(platform.cache_dir(), Path("/Users/test/Library/Caches/SiopeChat"))
+            self.assertEqual(
+                platform.cache_dir(), TestPosixPath("/Users/test/Library/Caches/SiopeChat")
+            )
 
 
 if __name__ == "__main__":

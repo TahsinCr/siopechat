@@ -426,6 +426,9 @@ class MessageRenderer:
             width=width,
             soft_wrap=False,
             theme=self.theme,
+            # Preserve OSC-8 targets in the ANSI transcript on Windows too;
+            # legacy console detection otherwise strips clickable link data.
+            legacy_windows=False,
         )
         defaults = {"user": "#303030", "reasoning": "#1c2732"}
         background = self.tokens.get(role + "_background", defaults.get(role, "#181818"))

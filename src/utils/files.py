@@ -3,7 +3,34 @@
 import json
 import os
 import tempfile
+import threading
+import time
+import weakref
 from pathlib import Path
+
+_REPLACE_LOCKS = weakref.WeakValueDictionary()
+_REPLACE_LOCKS_GUARD = threading.Lock()
+
+
+def _replace_lock(path):
+    key = os.path.normcase(str(path.resolve(strict=False)))
+    with _REPLACE_LOCKS_GUARD:
+        lock = _REPLACE_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _REPLACE_LOCKS[key] = lock
+        return lock
+
+
+def _replace_with_retry(source, destination):
+    for attempt in range(8):
+        try:
+            os.replace(source, destination)
+            return
+        except PermissionError:
+            if os.name != "nt" or attempt == 7:
+                raise
+            time.sleep(0.01 * (2**attempt))
 
 
 def atomic_json_write(
@@ -35,7 +62,8 @@ def atomic_json_write(
             stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, path)
+        with _replace_lock(path):
+            _replace_with_retry(temporary, path)
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)

@@ -21,7 +21,9 @@ def terminal(output=None, **callbacks):
         create_pipe_input() as pipe,
         patch(
             "cli.chat.Application",
-            side_effect=lambda **kw: Application(input=pipe, output=output or DummyOutput(), **kw),
+            side_effect=lambda **kw: Application(
+                input=pipe, output=output if output is not None else DummyOutput(), **kw
+            ),
         ),
     ):
         view = ChatView(lambda: [], lambda _: {}, lambda *_: {}, **callbacks)

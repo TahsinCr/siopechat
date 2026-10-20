@@ -36,15 +36,27 @@ class FormsRenderTests(unittest.IsolatedAsyncioTestCase):
                 await self.settle(lambda: v.app.is_running)
                 for columns, rows in [(100, 30), (80, 24), (60, 18)]:
                     output.columns, output.rows = columns, rows
+                    previous_screen = v.app.renderer._last_screen
                     v.open_filters()
                     v.app.invalidate()
-                    await asyncio.sleep(0.06)
+                    await self.settle(
+                        lambda: (
+                            v.app.renderer._last_screen is not previous_screen
+                            and "ChatGPT" in screen_text(v)
+                        )
+                    )
                     self.assertIn("ChatGPT", screen_text(v))
                     self.assertIn("Gemini", screen_text(v))
                     self.assertNotIn("Window too small", screen_text(v))
                     v.forms.close()
+                    previous_screen = v.app.renderer._last_screen
                     v.open_project_create()
-                    await asyncio.sleep(0.06)
+                    await self.settle(
+                        lambda: (
+                            v.app.renderer._last_screen is not previous_screen
+                            and "ChatGPT" in screen_text(v)
+                        )
+                    )
                     self.assertIn("ChatGPT", screen_text(v))
                     self.assertIn("Gemini", screen_text(v))
                     v.forms.close()
@@ -80,8 +92,7 @@ class FormsRenderTests(unittest.IsolatedAsyncioTestCase):
             try:
                 await self.settle(lambda: v.app.is_running)
                 v.delete_record(value=value)
-                await asyncio.sleep(0.06)
-                self.assertIn("Kalıcı olarak sil", screen_text(v))
+                await self.settle(lambda: "Kalıcı olarak sil" in screen_text(v))
                 service.delete.assert_not_called()
                 v.app.layout.focus(v.forms.confirm_buttons[0])
                 pipe.send_bytes(b"\r")

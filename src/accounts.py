@@ -305,6 +305,12 @@ class Accounts:
             raise
 
         async def bounded():
+            if _closing:
+                # Keep the shutdown coroutine in the run_coroutine_threadsafe
+                # task. wait_for() wraps it in a child task; Accounts.close()
+                # then mistakes this child/parent pair for background work
+                # and cancels its own caller while draining the provider loop.
+                return await coroutine
             return await asyncio.wait_for(coroutine, timeout)
 
         future = asyncio.run_coroutine_threadsafe(bounded(), self._loop)
@@ -780,7 +786,11 @@ class Accounts:
                     and len(page.items) < 50,
                 }
 
-            return self.read_record(key, "chats", page_cursor, fetch, force)
+            page = self.read_record(key, "chats", page_cursor, fetch, force)
+            # Closed or tombstoned list-page cache entries must not hide the
+            # provider's live chat list. Conversation tombstones remain enforced
+            # when the fetched page is normalized by the archive.
+            return page if page is not None else fetch()
 
         from concurrent.futures import ThreadPoolExecutor
 

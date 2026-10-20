@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -238,6 +239,7 @@ class ClaudeHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.request.await_count, 1)
 
 
+@unittest.skipIf(sys.version_info < (3, 11), "Gemini SDK requires Python 3.11+")
 class OwnedGeminiSessionTests(unittest.IsolatedAsyncioTestCase):
     async def test_bootstrap_never_calls_sdk_cookie_discovery_or_guest_fallback(self):
         from curl_cffi.requests import Cookies

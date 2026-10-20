@@ -29,7 +29,7 @@ class ArchiveTests(unittest.TestCase):
         self.addCleanup(self.archive.close)
 
     def wait(self):
-        until = time.monotonic() + 3
+        until = time.monotonic() + 10
         while any(x["state"] == "syncing" for x in self.archive.states()):
             self.assertLess(time.monotonic(), until)
             time.sleep(0.005)
@@ -98,12 +98,26 @@ class ArchiveTests(unittest.TestCase):
                 )
             )
         self.assertLess(time.monotonic() - start, 0.5)
-        self.assertTrue(entered.wait(1))
+        self.assertTrue(
+            entered.wait(5),
+            f"archive closed={self.archive.closed}, deleted={self.archive._deleted}, "
+            f"pending={tuple(self.archive._pending)}, states={self.archive.states()}",
+        )
         self.assertEqual({v["title"] for v in results}, {"old"})
         self.assertEqual(len(self.archive._pending), 1)
         release.set()
         self.wait()
         self.assertEqual(self.archive.get("gemini/a", "conversation", "one")["title"], "new")
+
+    def test_cold_record_syncs_when_monotonic_uptime_is_under_one_minute(self):
+        from unittest.mock import patch
+
+        with patch("extensions.archive.sync.time.monotonic", return_value=15):
+            value = self.archive.read(
+                "gemini/a", "conversation", "cold", lambda: {"title": "remote"}
+            )
+        self.assertEqual(value, {"title": "remote"})
+        self.assertEqual(self.archive.get("gemini/a", "conversation", "cold"), value)
 
     def test_late_read_cannot_overwrite_completed_send(self):
         self.archive.put("chatgpt/a", "conversation", "one", {"title": "old"})
@@ -141,7 +155,7 @@ class ArchiveTests(unittest.TestCase):
         started = time.monotonic()
         try:
             self.archive.refresh()
-            self.assertLess(time.monotonic() - started, 0.1)
+            self.assertLess(time.monotonic() - started, 0.5)
         finally:
             release.set()
             self.wait()

@@ -240,10 +240,18 @@ class DiscoveryTests(unittest.TestCase):
                     self.client.send_prompt_direct(None, "hello", [])
 
     def test_timezone_uses_a_real_iana_name_or_omits_the_optional_field(self):
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
         from providers.chatgpt.client import system_timezone
 
-        with patch.dict("os.environ", {"TZ": "Asia/Tokyo"}):
-            self.assertEqual(system_timezone(), "Asia/Tokyo")
+        try:
+            ZoneInfo("Asia/Tokyo")
+        except ZoneInfoNotFoundError:
+            with patch.dict("os.environ", {"TZ": "Asia/Tokyo"}):
+                self.assertIsNone(system_timezone())
+        else:
+            with patch.dict("os.environ", {"TZ": "Asia/Tokyo"}):
+                self.assertEqual(system_timezone(), "Asia/Tokyo")
         with patch("providers.chatgpt.client.system_timezone", return_value=None):
             body = self.client.create_conversation_body(None, "Question")
         self.assertNotIn("timezone", body)

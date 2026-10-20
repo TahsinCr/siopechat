@@ -38,6 +38,14 @@ class AccountTests(unittest.TestCase):
             self.assertEqual(self.accounts.status(self.gemini)["transport"], "http")
             self.assertFalse(self.accounts.status(self.gemini)["authenticated"])
 
+    def test_runtime_shutdown_does_not_cancel_provider_loop_cleanup(self):
+        self.accounts.call(asyncio.sleep(0))
+
+        self.api.runtime.close()
+
+        self.assertTrue(self.accounts.closed)
+        self.assertFalse(self.accounts._thread.is_alive())
+
     def test_verification_survives_closed_browser_and_account_service_restart(self):
         path = self.accounts.directory(self.gemini) / "cookies.json"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -159,7 +167,7 @@ class AccountTests(unittest.TestCase):
                 )
             )
             self.accounts._providers[key] = provider
-        with patch("accounts.HISTORY_TIMEOUT", 0.02):
+        with patch("accounts.HISTORY_TIMEOUT", 0.2):
             page = self.accounts.list_chats()
         self.assertEqual(len(page["items"]), 1)
         self.assertEqual(page["errors"], ["Personal Gemini"])

@@ -4,10 +4,22 @@ import asyncio
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from .errors import AccountPaused, ProviderError, RateLimited, RemoteNotFound
+
+
+def _replace_with_retry(source, destination):
+    for attempt in range(5):
+        try:
+            os.replace(source, destination)
+            return
+        except PermissionError:
+            if os.name != "nt" or attempt == 4:
+                raise
+            time.sleep(0.01 * (2**attempt))
 
 
 def read_session(path):
@@ -41,7 +53,7 @@ def save_session(path, value, *, ensure_ascii=False, newline=False):
                 output.write("\n")
             output.flush()
             os.fsync(output.fileno())
-        os.replace(name, path)
+        _replace_with_retry(name, path)
     finally:
         if name and os.path.exists(name):
             os.unlink(name)

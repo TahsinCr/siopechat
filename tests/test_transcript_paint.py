@@ -29,7 +29,7 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
             control = view.transcript_control
             control.create_content(40, 20)
             clicked = 0
-            with patch("cli.markdown.subprocess.Popen") as launch:
+            with patch("cli.markdown.open_link") as launch:
                 for y, (spans, _) in enumerate(control.rows):
                     x = 0
                     for span in spans:
@@ -38,7 +38,7 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
                                 Point(x, y), MouseEventType.MOUSE_UP, MouseButton.LEFT, frozenset()
                             )
                             control.mouse_handler(event)
-                            self.assertEqual(launch.call_args.args[0][-1], url)
+                            self.assertEqual(launch.call_args.args[0], url)
                             clicked += 1
                         x += len(span[1])
                 self.assertGreater(clicked, 0)
@@ -108,14 +108,14 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
                 else:
                     self.fail("Link did not render")
                 x, y = hit
-                with patch("cli.markdown.subprocess.Popen") as launch:
+                with patch("cli.markdown.open_link") as launch:
                     pipe.send_bytes(f"\x1b[<0;{x + 1};{y + 1}M\x1b[<0;{x + 1};{y + 1}m".encode())
                     for _ in range(100):
                         if launch.called:
                             break
                         await asyncio.sleep(0.01)
                     launch.assert_called_once()
-                    self.assertEqual(launch.call_args.args[0][-1], "https://example.com/target")
+                    self.assertEqual(launch.call_args.args[0], "https://example.com/target")
             finally:
                 view.app.exit()
                 await run

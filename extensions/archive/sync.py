@@ -200,7 +200,8 @@ class Archive:
             while len(self._fetchers) > 256:
                 self._fetchers.popitem(last=False)
             future = self._pending.get(key)
-            if future is None and (force or time.monotonic() - self._checked.get(key, 0) > 60):
+            checked = self._checked.get(key)
+            if future is None and (force or checked is None or time.monotonic() - checked > 60):
                 if len(self._pending) >= 32:
                     if value is not None:
                         return value

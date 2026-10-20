@@ -4,9 +4,11 @@ All notable changes to SiopeChat are documented here.
 
 The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
-Python distributions use the corresponding PEP 440 version (`1.1b0` for `v1.1-beta`).
+Python distributions use the corresponding PEP 440 version (`1.2b0` for `v1.2-beta`).
 
 ## [Unreleased]
+
+## [1.2-beta] - 2026-10-21
 
 ### Added
 
@@ -26,6 +28,9 @@ Python distributions use the corresponding PEP 440 version (`1.1b0` for `v1.1-be
 
 ### Fixed
 
+- Avoid cancelling provider-loop shutdown on Python 3.10, and keep Gemini history media parsing independent of the optional transport SDK.
+- Retry transient Windows file replacement locks; normalize cross-platform paths, preserve Markdown links on Windows and use a compatible selector loop in terminal tests.
+- Always fetch uncached archive records on fresh system starts, even when the monotonic clock has been running for less than a minute.
 - Isolate malformed legacy IPC requests, sanitize failure responses and accept bounded concurrent clients without blocking ping behind a long send. Keep mutations serialized and temporary conversation context shared.
 - Bind send activity and background completions to stable job/tab identity so closing or switching tabs cannot redirect a late result.
 - Require a confirmed ChatGPT stream ending and a visible assistant channel; reject malformed or CID-only responses without resending the request.

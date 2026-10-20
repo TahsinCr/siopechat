@@ -259,10 +259,28 @@ class DialogInputTests(unittest.IsolatedAsyncioTestCase):
             run = asyncio.create_task(view.app.run_async())
             try:
                 await self.settle(lambda: view.app.renderer._last_screen is not None)
+
+                def transcript_ready():
+                    screen = view.app.renderer._last_screen
+                    if screen is None:
+                        return False
+                    rendered = "\n".join(
+                        "".join(cell.char for cell in row.values())
+                        for row in screen.data_buffer.values()
+                    )
+                    return "Question" in rendered and "Answer" in rendered
+
+                await self.settle(transcript_ready)
                 for columns in (80, 120, 60, 100):
+                    previous_screen = view.app.renderer._last_screen
                     output.size = Size(rows=24, columns=columns)
                     view.toggle_sidebar()
-                    await asyncio.sleep(0.12)
+                    await self.settle(
+                        lambda: (
+                            view.app.renderer._last_screen is not previous_screen
+                            and transcript_ready()
+                        )
+                    )
                     screen = view.app.renderer._last_screen
 
                     def line(y):

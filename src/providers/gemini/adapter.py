@@ -375,13 +375,13 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                     remaining = deadline - asyncio.get_running_loop().time()
                     if remaining <= 0:
                         raise ProviderError("Gemini isteği 10 dakikalık süre sınırını aştı")
-                    event = await asyncio.wait_for(
-                        anext(iterator), timeout=min(self.stream_idle_timeout, remaining)
-                    )
+                    timeout = min(self.stream_idle_timeout, remaining)
+                    total_deadline_is_next = remaining <= self.stream_idle_timeout
+                    event = await asyncio.wait_for(anext(iterator), timeout=timeout)
                 except StopAsyncIteration:
                     break
                 except asyncio.TimeoutError:
-                    if asyncio.get_running_loop().time() >= deadline:
+                    if total_deadline_is_next or asyncio.get_running_loop().time() >= deadline:
                         raise ProviderError(
                             "Gemini isteği 10 dakikalık süre sınırını aştı"
                         ) from None

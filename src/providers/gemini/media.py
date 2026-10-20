@@ -14,20 +14,48 @@ def valid_media_url(url):
     return parsed.scheme == "https" and (parsed.hostname or "").endswith(".googleusercontent.com")
 
 
-def candidate_images(candidate):
-    from gemini_webapi.utils.parsing import get_nested_value, get_rich_content_field
+def _nested_value(data, path, default=None):
+    current = data
+    for key in path:
+        if (
+            isinstance(current, list)
+            and isinstance(key, int)
+            and -len(current) <= key < len(current)
+        ):
+            current = current[key]
+        elif isinstance(current, dict) and isinstance(key, str):
+            current = current.get(key, default)
+        else:
+            return default
+        if current is None:
+            return default
+    return current
 
-    values = get_nested_value(get_rich_content_field(candidate, 7), [0], [])
+
+def _field(container, index, default=None):
+    if not isinstance(container, list) or not container:
+        return default
+    value = container[index] if index < len(container) else None
+    if value in (None, [], {}) or isinstance(value, dict):
+        sparse = container[-1] if isinstance(container[-1], dict) else {}
+        value = sparse.get(str(index + 1))
+    return default if value in (None, [], {}) else value
+
+
+def candidate_images(candidate):
+    # Keep historical media parsing available on Python 3.10, where the
+    # Gemini transport SDK is intentionally not installed.
+    values = _nested_value(_field(_nested_value(candidate, [12]), 7), [0], [])
     images = []
     for index, item in enumerate(values or []):
-        url = get_nested_value(item, [0, 3, 3])
+        url = _nested_value(item, [0, 3, 3])
         if isinstance(url, str) and valid_media_url(url):
             images.append(
                 {
                     "url": url,
-                    "media_type": get_nested_value(item, [0, 3, 11]),
-                    "name": get_nested_value(item, [0, 3, 2]) or f"image-{index + 1}.png",
-                    "alias": get_nested_value(item, [1, 0])
+                    "media_type": _nested_value(item, [0, 3, 11]),
+                    "name": _nested_value(item, [0, 3, 2]) or f"image-{index + 1}.png",
+                    "alias": _nested_value(item, [1, 0])
                     or f"http://googleusercontent.com/image_generation_content/{index}",
                 }
             )

@@ -2,6 +2,7 @@ import importlib.util
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -48,7 +49,7 @@ class ApplicationTests(unittest.TestCase):
     def test_source_entrypoint_works_outside_repository(self):
         with tempfile.TemporaryDirectory() as directory:
             result = subprocess.run(
-                [str(ROOT / "siopechat.py"), "--help"],
+                [sys.executable, str(ROOT / "siopechat.py"), "--help"],
                 cwd=directory,
                 env=os.environ | {"SIOPECHAT_HOME": directory},
                 capture_output=True,

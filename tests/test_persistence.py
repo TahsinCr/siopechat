@@ -3,6 +3,7 @@
 import json
 import os
 import tempfile
+import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -44,7 +45,15 @@ class AtomicPersistenceTests(unittest.TestCase):
 
             def write(index):
                 atomic_json_write(path, {"version": index, "body": str(index) * 1000})
-                record = json.loads(path.read_text(encoding="utf-8"))
+                deadline = time.monotonic() + 2
+                while True:
+                    try:
+                        record = json.loads(path.read_text(encoding="utf-8"))
+                        break
+                    except PermissionError:
+                        if time.monotonic() >= deadline:
+                            raise
+                        time.sleep(0.005)
                 self.assertEqual(record["body"], str(record["version"]) * 1000)
 
             with ThreadPoolExecutor(max_workers=8) as workers:
