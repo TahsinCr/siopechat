@@ -127,7 +127,7 @@ class FoundationTests(unittest.TestCase):
     def test_failed_atomic_settings_write_preserves_file_and_memory(self):
         self.api.settings.save()
         before = self.api.settings.snapshot()
-        with patch("settings.os.replace", side_effect=OSError("disk error")):
+        with patch("utils.files.os.replace", side_effect=OSError("disk error")):
             with self.assertRaises(OSError):
                 self.api.settings.update("application", {"language": "tr"})
         self.assertEqual(self.api.settings.snapshot(), before)

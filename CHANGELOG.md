@@ -25,6 +25,7 @@ Python distributions use the corresponding PEP 440 version (`1.0b0` for `v1.0-be
 
 ### Changed
 
+- Share atomic JSON persistence between application settings and cached records, reuse provider session persistence for ChatGPT, and centralize project-source file validation without changing limits or provider error messages.
 - Start new installations with an empty account list. Accounts are added explicitly; the first added account becomes active, and existing configurations are preserved.
 
 - Simplify account settings to profile verification and logout, and remove the unused login-profile sharing selector from account creation.

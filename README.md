@@ -168,6 +168,8 @@ For computed themes, export the same dictionary as `THEME` from a Python file. [
 
 ## Development
 
+Application settings and cached records share atomic JSON persistence. The independent provider library owns session persistence and common project-source validation; it does not depend on application utilities.
+
 Bundled providers use their HTTPS transports for conversations and projects. Packaged Node helpers are limited to explicit login/session capture and ChatGPT request signing.
 
 The provider library is independent of the terminal, archive and application runtime. `accounts.py` routes provider/account work; `runtime.py`, `actions.py` and `extension.py` manage shared services and contributions. Terminal-specific code stays in `src/cli/`. Optional features live in `extensions/`, common helpers in `src/utils/`. A GUI can consume the same services; no GUI is included in this beta.

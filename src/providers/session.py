@@ -25,7 +25,7 @@ def read_session(path):
         ) from None
 
 
-def save_session(path, value):
+def save_session(path, value, *, ensure_ascii=False, newline=False):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     name = None
@@ -36,7 +36,9 @@ def save_session(path, value):
             name = output.name
             if os.name != "nt":
                 os.chmod(name, 0o600)
-            json.dump(value, output, ensure_ascii=False)
+            json.dump(value, output, ensure_ascii=ensure_ascii)
+            if newline:
+                output.write("\n")
             output.flush()
             os.fsync(output.fileno())
         os.replace(name, path)

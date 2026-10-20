@@ -2,11 +2,10 @@
 
 import asyncio
 import mimetypes
-from pathlib import Path
 from urllib.parse import quote
 
 from ..models import Choice
-from ..projects import ProjectOptions
+from ..projects import ProjectOptions, source_file
 
 
 class ChatGPTProjectEditor:
@@ -87,9 +86,7 @@ class ChatGPTProjectEditor:
                         if not name.endswith(".txt"):
                             name += ".txt"
                     elif values["kind"] == "file":
-                        file = Path(values["path"]).expanduser().resolve(strict=True)
-                        if not file.is_file() or file.stat().st_size > 20 * 1024 * 1024:
-                            raise ValueError("Kaynak dosyası en fazla 20 MiB olabilir")
+                        file = source_file(values["path"])
                         name, data = file.name, file.read_bytes()
                         mime = mimetypes.guess_type(name)[0] or "application/octet-stream"
                     else:

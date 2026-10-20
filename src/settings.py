@@ -2,9 +2,7 @@
 
 import copy
 import json
-import os
 import re
-import tempfile
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +10,7 @@ from typing import Any
 
 from providers.registry import PROVIDERS
 from utils.events import EventBus
+from utils.files import atomic_json_write
 
 DEFAULT_KEYBINDINGS = {
     "edit.select_all": "c-a",
@@ -370,27 +369,8 @@ class Settings:
 
     def _commit(self, candidate: dict) -> None:
         self._validate_document(candidate)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=self.path.parent,
-                prefix=".config-",
-                suffix=".tmp",
-                delete=False,
-            ) as stream:
-                temporary = Path(stream.name)
-                json.dump(candidate, stream, ensure_ascii=False, indent=2, allow_nan=False)
-                stream.write("\n")
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, self.path)
-            self._data = copy.deepcopy(candidate)
-        finally:
-            if temporary is not None:
-                temporary.unlink(missing_ok=True)
+        atomic_json_write(self.path, candidate, indent=2, allow_nan=False, prefix=".config-")
+        self._data = copy.deepcopy(candidate)
 
 
 class SettingsCatalog:

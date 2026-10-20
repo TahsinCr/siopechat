@@ -12,7 +12,6 @@ import subprocess
 import sys
 import threading
 import time
-import uuid
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -24,6 +23,7 @@ from providers.chatgpt.constants import DEFAULT_CDP_URL
 from providers.chatgpt.errors import ChatGPTWebError
 from providers.chatgpt.formats import normalize_conversation
 from providers.errors import ProviderError
+from utils.files import atomic_json_write
 from utils.paths import cache_dir, legacy_data_dir, project_root, runtime_dir, state_dir
 from utils.process import acquire_exclusive, detached_process_options, set_private_permissions
 
@@ -78,18 +78,7 @@ class BackendService:
         return self.conversation_cache_dir().parent / "active-conversation.json"
 
     def atomic_json_write(self, path: Path, value: dict[str, Any]) -> None:
-        path.parent.mkdir(mode=448, parents=True, exist_ok=True)
-        temporary = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
-        try:
-            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 384)
-            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                json.dump(value, stream, ensure_ascii=False, separators=(",", ":"))
-                stream.write("\n")
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, path)
-        finally:
-            temporary.unlink(missing_ok=True)
+        atomic_json_write(path, value, separators=(",", ":"), directory_mode=0o700)
 
     def set_active_conversation(self, conversation_id: str | None) -> None:
         if conversation_id is None:

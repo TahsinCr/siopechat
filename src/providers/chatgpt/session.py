@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from ..session import save_session
 from .constants import DEFAULT_CDP_URL, FORBIDDEN_REPLAY_HEADERS
 from .errors import ChatGPTWebError
 from .resources import Script, script_path
@@ -81,19 +82,10 @@ class BrowserSession:
         path = self.paths.session_file
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         _private(path.parent, 0o700)
-        temporary = path.with_suffix(f".tmp-{os.getpid()}")
-        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                json.dump({"version": 1, "url": url, "headers": headers}, stream)
-                stream.write("\n")
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, path)
-            _private(path, 0o600)
-        finally:
-            if temporary.exists():
-                temporary.unlink()
+        save_session(
+            path, {"version": 1, "url": url, "headers": headers}, ensure_ascii=True, newline=True
+        )
+        _private(path, 0o600)
 
     def import_cookies(self, cookies: dict[str, str]) -> None:
         """Bootstrap a profile's web session without CDP or a running browser."""

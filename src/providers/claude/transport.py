@@ -2,12 +2,11 @@
 
 import json
 import uuid
-from pathlib import Path
 from urllib.parse import quote
 
 from ..contracts import confirm_deleted
 from ..errors import AccountPaused, ProviderError
-from ..projects import ProjectOptions
+from ..projects import ProjectOptions, source_file
 from ..session import WebSession, read_session
 from .catalog import selector_catalog
 
@@ -264,9 +263,7 @@ class ClaudeProjectEditor:
                 raise ValueError("Unsupported source type")
             from curl_cffi import CurlMime
 
-            file = Path(v["path"]).expanduser().resolve(strict=True)
-            if not file.is_file() or file.stat().st_size > 20 * 1024 * 1024:
-                raise ValueError("Source must be at most 20 MiB")
+            file = source_file(v["path"], error="Source must be at most 20 MiB")
             mime = CurlMime()
             try:
                 mime.addpart(name="file", filename=file.name, local_path=str(file))

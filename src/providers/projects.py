@@ -2,6 +2,7 @@
 
 import asyncio
 from dataclasses import dataclass
+from pathlib import Path
 
 from .errors import ProviderError
 from .models import Choice
@@ -26,6 +27,14 @@ class ProjectOptions:
             bool(value.get("remove_sources")),
             value.get("source_error"),
         )
+
+
+def source_file(path, *, error="Kaynak dosyası en fazla 20 MiB olabilir"):
+    """Apply the common project-source file limit before provider-specific uploads."""
+    file = Path(path).expanduser().resolve(strict=True)
+    if not file.is_file() or file.stat().st_size > 20 * 1024 * 1024:
+        raise ValueError(error)
+    return file
 
 
 class ProjectEditing:
