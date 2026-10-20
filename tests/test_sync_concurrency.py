@@ -193,6 +193,76 @@ class AccountConcurrencyTests(unittest.TestCase):
             key, identity(key, "c_fixture"), "question", [], lambda _: None, lambda _: None
         )
 
+    def test_background_catalog_verification_does_not_resume_a_paused_send_account(self):
+        account = tuple(self.gemini.split("/", 1))
+
+        async def block():
+            self.api.tasks._block_account(account, None)
+
+        async def paused():
+            return account in self.api.tasks._blocked
+
+        self.accounts.call(block())
+        self.accounts._remember_verification(self.gemini)
+        self.assertTrue(self.accounts.call(paused()))
+        self.accounts._remember_verification(self.gemini, resume=True)
+        self.assertFalse(self.accounts.call(paused()))
+
+    def test_unexpected_local_archive_error_does_not_reject_an_accepted_turn(self):
+        with patch.object(
+            self.accounts.archive(), "save_turn", side_effect=RuntimeError("local corruption")
+        ):
+            result = self.send(self.gemini)
+        self.assertEqual(result["conversation_id"], identity(self.gemini, "c_fixture"))
+        self.assertTrue(result["cache_warning"])
+
+    def test_download_rejects_another_accounts_conversation_before_provider_access(self):
+        with patch.object(self.accounts, "provider") as provider:
+            with self.assertRaises(ValueError):
+                self.accounts.resolve_download(
+                    self.gemini, "https://example.com/file", identity("chatgpt/default", "chat")
+                )
+            provider.assert_not_called()
+
+    def test_cancel_keeps_account_busy_until_provider_cleanup_finishes(self):
+        started, draining, release = threading.Event(), threading.Event(), threading.Event()
+        handles = []
+
+        async def stream(request):
+            started.set()
+            try:
+                yield ConversationBound("c_fixture")
+                await asyncio.Event().wait()
+            finally:
+                draining.set()
+                await asyncio.to_thread(release.wait, 3)
+
+        self.accounts._providers[self.gemini].stream = stream
+        with ThreadPoolExecutor(1) as pool:
+            send = pool.submit(
+                self.accounts.send,
+                self.gemini,
+                None,
+                "Question",
+                [],
+                lambda _: None,
+                handles.append,
+            )
+            try:
+                self.assertTrue(started.wait(1))
+                handles[0].close()
+                self.assertTrue(draining.wait(1))
+                handles[0].close()
+                self.assertFalse(send.done())
+                self.assertGreater(self.accounts._sending[self.gemini], 0)
+                with self.assertRaises((RuntimeError, ValueError)):
+                    self.accounts.set_enabled("gemini", False)
+            finally:
+                release.set()
+            with self.assertRaises(CancelledError):
+                send.result(2)
+        self.assertEqual(self.accounts._sending[self.gemini], 0)
+
     def test_slow_archive_write_does_not_block_another_provider_stream_or_loop(self):
         archive = self.accounts.archive()
         entered, release = threading.Event(), threading.Event()

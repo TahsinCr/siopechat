@@ -8,6 +8,22 @@ Python distributions use the corresponding PEP 440 version (`1.1b0` for `v1.1-be
 
 ## [Unreleased]
 
+### Changed
+
+- Route application sends through the shared TaskService with account-specific provider factories, bounded responses, stable job identity and persistence inside the account queue.
+- Keep archive listing order explicitly based on remote IDs; presentation sorting remains independent.
+
+### Fixed
+
+- Drain cancelled sends before releasing account state, expose cancellation in progress, and preserve successful remote sends when local archival fails.
+- Read back project children after deletion and tombstone only confirmed missing chats; keep surviving or uncertain histories available without the deleted project.
+- Reject future archive schemas before changing their structure and flush archived content before publishing its filename.
+
+### Added
+
+- Archive inspection and reference-safe, preview-first cleanup with shared-content protection and a one-hour grace period.
+
+
 ## [1.1-beta] - 2026-10-20
 
 ### Added

@@ -12,6 +12,7 @@ import tempfile
 import threading
 import time
 import uuid
+from concurrent.futures import CancelledError, Future
 from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -64,7 +65,6 @@ class Accounts:
         self._loop = None
         self._thread = None
         self._lock = threading.Lock()
-        self._send_locks = {}
         self._active_pending = {}
         self._active_values = {}
         self._active_writer_running = False
@@ -272,14 +272,12 @@ class Accounts:
         with self._lock:
             if key not in self._providers:
                 item = self.item(key)
+                configuration = {"credential_file": self.credential_path(key)}
                 if item["provider"] == "chatgpt":
-                    provider = ChatGPTProvider(self.session(key), item["id"])
-                elif item["provider"] == "gemini":
-                    provider = GeminiProvider(self.credential_path(key), item["id"])
-                elif item["provider"] == "claude":
-                    provider = ClaudeProvider(self.credential_path(key), item["id"])
-                else:
-                    raise ValueError("Unknown provider")
+                    configuration["session"] = self.session(key)
+                provider = self.api.providers.create_account(
+                    item["provider"], item["id"], **configuration
+                )
                 self._providers[key] = provider
             return self._providers[key]
 
@@ -415,6 +413,7 @@ class Accounts:
         if self._loop is not None:
 
             async def cleanup():
+                await self.api.tasks.close()
                 current = asyncio.current_task()
                 pending = [task for task in asyncio.all_tasks() if task is not current]
                 for task in pending:
@@ -447,8 +446,17 @@ class Accounts:
     def _verification_path(self, key):
         return self.directory(key) / "verification.json"
 
-    def _remember_verification(self, key):
+    def _remember_verification(self, key, *, resume=False):
         self._verified.add(key)
+        if resume and self._loop is not None and self._loop.is_running():
+
+            def resume_job_account():
+                try:
+                    self.api.tasks.resume_account(*key.split("/", 1))
+                except AccountPaused:
+                    pass  # Verification must not bypass an active server cooldown.
+
+            self._loop.call_soon_threadsafe(resume_job_account)
         try:
             self.api.get("backend").atomic_json_write(
                 self._verification_path(key), {"account_key": key, "verified_at": time.time()}
@@ -544,7 +552,7 @@ class Accounts:
                         self._catalog_versions[key] = self._catalog_versions.get(key, 0) + 1
                         self._catalogs.pop(key, None)
                         (self.directory(key) / "models.json").unlink(missing_ok=True)
-                    self._remember_verification(key)
+                    self._remember_verification(key, resume=True)
 
             self.call(verify_candidate(), timeout=90)
             return dict(self.status(key), imported_browser=browser)
@@ -641,7 +649,7 @@ class Accounts:
                 raise
             if status.state != SessionState.AUTHENTICATED:
                 raise RuntimeError("Oturum doğrulanamadı")
-            self._remember_verification(key)
+            self._remember_verification(key, resume=True)
             return self.status(key)
         raise ValueError("unknown account operation")
 
@@ -942,25 +950,28 @@ class Accounts:
             options.get("temporary", False),
             tuple(attachments),
         )
-        provider = self.provider(key)
+        self.provider(key)
         stream_id = uuid.uuid4().hex
 
+        completion = Future()
+        task = None
+        job_id = None
+        cancel_requested = False
+
         async def consume():
-            # Serialize each account through persistence too, so two views of
-            # the same remote chat cannot lose a turn in a read/append/write race.
-            gate = self._send_locks.setdefault(key, asyncio.Lock())
-            async with gate:
+            nonlocal job_id
+            remote_id, text, reasoning = remote, [], []
+
+            def guard():
                 current_archive = self.archive()
                 if current_archive and (
                     (remote and current_archive.deleted(key, "conversation", remote))
                     or (project and current_archive.deleted(key, "container", project))
                 ):
                     raise RemoteNotFound("Sohbet veya proje bu sırada silindi")
-                return await consume_one()
 
-        async def consume_one():
-            remote_id, text, reasoning = remote, "", ""
-            async for event in provider.stream(request):
+            def deliver(event):
+                nonlocal remote_id
                 if isinstance(event, ConversationBound):
                     remote_id = event.conversation_id
                 elif isinstance(event, (TextDelta, ReplaceText)):
@@ -972,12 +983,10 @@ class Accounts:
                             "message_id": stream_id + ":" + (event.channel or "final"),
                         }
                     )
-                    if event.channel == "analysis":
-                        reasoning = (
-                            reasoning + event.text if isinstance(event, TextDelta) else event.text
-                        )
-                    else:
-                        text = text + event.text if isinstance(event, TextDelta) else event.text
+                    chunks = reasoning if event.channel == "analysis" else text
+                    if isinstance(event, ReplaceText):
+                        chunks.clear()
+                    chunks.append(event.text)
 
             def persist():
                 if not remote_id:
@@ -1019,13 +1028,14 @@ class Accounts:
                         "resources": resources,
                     }
                 ]
-                if reasoning:
+                reasoning_text = "".join(reasoning)
+                if reasoning_text:
                     messages.append(
                         {
                             "id": stream_id + ":analysis",
                             "local_pending": True,
                             "role": "reasoning",
-                            "text": reasoning,
+                            "text": reasoning_text,
                         }
                     )
                 messages.append(
@@ -1033,7 +1043,7 @@ class Accounts:
                         "id": stream_id + ":final",
                         "local_pending": True,
                         "role": "assistant",
-                        "text": text,
+                        "text": "".join(text),
                     }
                 )
                 title = prior.get("title") or prompt[:60]
@@ -1068,36 +1078,94 @@ class Accounts:
                     "conversation": {"title": title, "default_model_slug": model, "messages": []},
                 }
 
-            # Disk I/O and large transcript copies must not block the common
-            # provider loop or pause another account's streamed response.
-            writing = asyncio.create_task(asyncio.to_thread(persist), name="siope-persist:" + key)
+            async def complete():
+                if not remote_id:
+                    raise ProviderError("Sağlayıcı sohbet kimliği döndürmedi")
+                try:
+                    return await asyncio.to_thread(persist)
+                except Exception:
+                    # The remote turn has already completed. Local failures must
+                    # not invite a duplicate POST or report the accepted send as failed.
+                    return {
+                        "conversation_id": identity(key, remote_id),
+                        "cache_warning": "Yanıt alındı ancak yerel arşive kaydedilemedi",
+                        "conversation": {
+                            "title": prompt[:60],
+                            "default_model_slug": model,
+                            "messages": [],
+                        },
+                    }
+
+            jobs = self.api.tasks
+            job_id = jobs.submit(
+                request, on_event=deliver, on_complete=complete, guard=guard, queue_chat=True
+            )
             try:
-                return await asyncio.shield(writing)
+                return await jobs.result(job_id)
             except asyncio.CancelledError:
-                await asyncio.shield(writing)
+                await jobs.cancel(job_id)
                 raise
+            finally:
+                jobs.forget(job_id)
 
         self._start()
         with self._lock:
             if key in self._session_changes:
                 raise RuntimeError("Profil doğrulaması tamamlanana kadar bekleyin")
             self._sending[key] = self._sending.get(key, 0) + 1
+
+            def finished(inner):
+                try:
+                    completion.set_result(inner.result())
+                except asyncio.CancelledError:
+                    completion.set_exception(CancelledError())
+                except BaseException as error:
+                    completion.set_exception(error)
+
+            def start():
+                nonlocal task
+                task = self._loop.create_task(consume(), name="siope-send:" + key)
+                task.add_done_callback(finished)
+                if cancel_requested:
+                    task.cancel()
+
             try:
-                future = asyncio.run_coroutine_threadsafe(consume(), self._loop)
+                self._loop.call_soon_threadsafe(start)
             except BaseException:
                 self._sending[key] -= 1
                 raise
 
+        def cancel():
+            nonlocal cancel_requested
+            if not cancel_requested:
+                cancel_requested = True
+                if task is not None and not task.done():
+                    task.cancel()
+
         class Cancellation:
+            @property
+            def id(self):
+                return job_id
+
             def shutdown(self, *_):
-                future.cancel()
+                self.close()
 
             def close(self):
-                future.cancel()
+                self_loop.call_soon_threadsafe(cancel)
 
+        self_loop = self._loop
         try:
-            on_connection(Cancellation())
-            return future.result()
+            connection = Cancellation()
+            try:
+                on_connection(connection)
+            except BaseException:
+                connection.close()
+                try:
+                    completion.result()
+                except BaseException:
+                    pass
+                raise
+            return completion.result()
         except AccountPaused:
             self._forget_verification(key)
             raise
@@ -1110,7 +1178,9 @@ class Accounts:
 
         from providers.files import DownloadSource
 
-        _, remote = origin(conversation_id, key)
+        context, remote = origin(conversation_id, key)
+        if context != key:
+            raise ValueError("Dosya seçili hesaba ait olmalı")
         provider = self.provider(key) if key else None
         if provider and hasattr(provider, "resolve_download"):
             source = self.call(provider.resolve_download(url, remote, message_id))
@@ -1274,10 +1344,20 @@ class Accounts:
         if capability not in provider.capabilities:
             raise ValueError("Sağlayıcı bu silme işlemini desteklemiyor")
 
+        confirmed_children = None
+
         def cleanup():
             archive = self.archive()
             try:
-                removed = archive.delete(key, kind, remote) if archive else [(key, kind, remote)]
+                removed = (
+                    archive.delete(key, kind, remote, children=confirmed_children)
+                    if archive
+                    else [(key, kind, remote)]
+                )
+                if kind == "container":
+                    for member_key, project_id in tuple(self._chat_projects.items()):
+                        if member_key[0] == key and project_id == remote:
+                            self._chat_projects.pop(member_key, None)
                 for _, target_kind, target in removed:
                     if target_kind == "conversation":
                         self.cache(key).mark_conversation_deleted(target)
@@ -1289,7 +1369,14 @@ class Accounts:
             return {"removed": [identity(a, r) for a, _, r in removed], "kind": kind}
 
         async def remove():
-            gate = self._send_locks.setdefault(key, asyncio.Lock())
+            nonlocal confirmed_children
+            archive = self.archive()
+            members = (
+                await asyncio.to_thread(archive.repository.container_members, key, remote)
+                if kind == "container" and archive
+                else set()
+            )
+            gate = self.api.tasks.account_gate(*key.split("/", 1))
             async with gate:
                 try:
                     await (
@@ -1311,6 +1398,17 @@ class Accounts:
                         raise ProviderError(
                             "Sağlayıcı silmeyi doğrulamadı; uzak ve yerel kayıt korundu"
                         )
+                if kind == "container":
+                    confirmed_children = set()
+                    for child in members:
+                        try:
+                            chat = await provider.get_chat(child)
+                            if chat.metadata.get("is_visible") is False:
+                                confirmed_children.add(child)
+                        except RemoteNotFound:
+                            confirmed_children.add(child)
+                        except ProviderError:
+                            pass  # Unknown remote outcome must not hide a surviving chat.
                 return await asyncio.to_thread(cleanup)
 
         return self.call(remove(), timeout=60)

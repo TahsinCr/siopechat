@@ -5,6 +5,7 @@ import json
 import os
 import sqlite3
 import tempfile
+import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -34,6 +35,13 @@ class SQLiteRepository:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         with self._connect() as db:
+            exists = db.execute(
+                "SELECT 1 FROM sqlite_master WHERE name='schema_version'"
+            ).fetchone()
+            if exists:
+                versions = db.execute("SELECT version FROM schema_version").fetchall()
+                if versions != [(1,)]:
+                    raise OSError("Unsupported archive schema version")
             db.executescript("""
                 PRAGMA journal_mode=WAL;
                 CREATE TABLE IF NOT EXISTS schema_version(version INTEGER PRIMARY KEY);
@@ -208,11 +216,29 @@ class SQLiteRepository:
                 self._write_resources(db, account, kind, remote, value)
         return True
 
+    def container_members(self, account, remote):
+        with self._connect() as db:
+            values = {
+                row[0]
+                for row in db.execute(
+                    "SELECT conversation FROM memberships WHERE account=? AND container=?",
+                    (account, remote),
+                )
+            }
+            values.update(
+                row[0]
+                for row in db.execute(
+                    "SELECT remote,container FROM conversations WHERE account=?", (account,)
+                )
+                if self._remote(account, row[1]) == remote
+            )
+        return values
+
     def tombstones(self):
         with self._connect() as db:
             return set(db.execute("SELECT account,kind,remote FROM tombstones"))
 
-    def delete(self, account, kind, remote):
+    def delete(self, account, kind, remote, *, children=None):
         """Remove normalized rows and every saved page reference in one transaction."""
         removed = [(account, kind, remote)]
         with self._connect() as db:
@@ -221,7 +247,11 @@ class SQLiteRepository:
                     "SELECT conversation FROM memberships WHERE account=? AND container=?",
                     (account, remote),
                 ).fetchall()
-                removed.extend((account, "conversation", row[0]) for row in members)
+                removed.extend(
+                    (account, "conversation", row[0])
+                    for row in members
+                    if children is None or row[0] in children
+                )
                 known = {x[2] for x in removed}
                 for chat_remote, container in db.execute(
                     "SELECT remote,container FROM conversations WHERE account=?", (account,)
@@ -230,6 +260,7 @@ class SQLiteRepository:
                         container
                         and self._remote(account, container) == remote
                         and chat_remote not in known
+                        and (children is None or chat_remote in children)
                     ):
                         removed.append((account, "conversation", chat_remote))
                         known.add(chat_remote)
@@ -269,6 +300,32 @@ class SQLiteRepository:
                     "DELETE FROM synchronization WHERE account=? AND kind=? AND remote=?",
                     (account, target_kind, target),
                 )
+            if kind == "container":
+                # Only confirmed-missing children are tombstoned. Retain the
+                # others as unassigned while their own history is revalidated.
+                for child, metadata in db.execute(
+                    "SELECT remote,metadata FROM conversations WHERE account=?", (account,)
+                ).fetchall():
+                    item = json.loads(metadata)
+                    if self._remote(account, item.get("project_id")) != remote:
+                        continue
+                    item["project_id"] = None
+                    db.execute(
+                        "UPDATE conversations SET container=NULL,metadata=? WHERE account=? AND remote=?",
+                        (encode(item), account, child),
+                    )
+                    row = db.execute(
+                        "SELECT payload FROM records WHERE account=? AND kind='conversation' AND remote=?",
+                        (account, child),
+                    ).fetchone()
+                    if row:
+                        record = json.loads(row[0])
+                        record["project_id"] = None
+                        payload = encode(record)
+                        db.execute(
+                            "UPDATE records SET payload=?,digest=? WHERE account=? AND kind='conversation' AND remote=?",
+                            (payload, hashlib.sha256(payload.encode()).hexdigest(), account, child),
+                        )
             deleted = {(k, r) for _, k, r in removed}
             for page_kind, page_remote, payload in db.execute(
                 "SELECT kind,remote,payload FROM records WHERE account=? AND kind IN ('chats','container_chats','containers','pointer')",
@@ -286,6 +343,10 @@ class SQLiteRepository:
                         if (target_kind, self._remote(account, x.get("remote_id") or x.get("id")))
                         not in deleted
                     ]
+                if kind == "container" and page_kind in ("chats", "container_chats"):
+                    for item in value.get("items", []):
+                        if self._remote(account, item.get("project_id")) == remote:
+                            item["project_id"] = None
                 encoded = encode(value)
                 db.execute(
                     "UPDATE records SET payload=?,digest=? WHERE account=? AND kind=? AND remote=?",
@@ -347,6 +408,7 @@ class SQLiteRepository:
         return self._rows("containers", account, limit, offset)
 
     def _rows(self, table, account, limit, offset):
+        """Stable remote-ID order; presentation sorting is explicitly owned by callers."""
         if not 1 <= limit <= 500 or offset < 0:
             raise ValueError("limit must be 1..500 and offset nonnegative")
         with self._connect() as db:
@@ -374,6 +436,29 @@ class SQLiteRepository:
             ).fetchall()
         return [json.loads(row[0]) for row in rows]
 
+    def file_references(self):
+        """Include nested message resources and legacy record metadata."""
+        references = set()
+
+        def visit(value):
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    if key == "path" and isinstance(item, str):
+                        references.add(item)
+                    else:
+                        visit(item)
+            elif isinstance(value, list):
+                for item in value:
+                    visit(item)
+
+        with self._connect() as db:
+            for (payload,) in db.execute("SELECT payload FROM records"):
+                visit(json.loads(payload))
+            references.update(
+                row[0] for row in db.execute("SELECT path FROM resources WHERE path IS NOT NULL")
+            )
+        return references
+
     def close(self):
         pass  # Connections are scoped to individual transactions, never held across remote work.
 
@@ -381,8 +466,13 @@ class SQLiteRepository:
 class Files:
     def __init__(self, root):
         self.root = Path(root)
+        self._lock = threading.RLock()
 
     def save(self, data):
+        with self._lock:
+            return self._save(data)
+
+    def _save(self, data):
         digest = hashlib.sha256(data).hexdigest()
         path = self.root / digest[:2] / digest
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -391,7 +481,39 @@ class Files:
             try:
                 with os.fdopen(fd, "wb") as stream:
                     stream.write(data)
+                    stream.flush()
+                    os.fsync(stream.fileno())
                 os.replace(temporary, path)
+                if os.name != "nt" and hasattr(os, "O_DIRECTORY"):
+                    directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+                    try:
+                        os.fsync(directory)
+                    finally:
+                        os.close(directory)
             finally:
                 Path(temporary).unlink(missing_ok=True)
+        os.utime(path, None)  # Protect reused content until its SQL reference commits.
         return str(path.relative_to(self.root)), digest
+
+    def collect(self, references, *, dry_run=True, minimum_age=3600):
+        """Only owned hash files; recent saves remain protected before SQL commit."""
+        if minimum_age < 3600:
+            raise ValueError("archive collection grace must be at least one hour")
+        root = self.root.resolve()
+        live = {(root / value).resolve() for value in references}
+        candidates = []
+        with self._lock:
+            for path in self.root.glob("??/" + "?" * 64):
+                if path.is_symlink() or path.parent.is_symlink() or not path.is_file():
+                    continue
+                if (
+                    not all(c in "0123456789abcdef" for c in path.name)
+                    or path.parent.name != path.name[:2]
+                ):
+                    continue
+                if path.resolve() in live or time.time() - path.stat().st_mtime < minimum_age:
+                    continue
+                candidates.append(str(path.relative_to(self.root)))
+                if not dry_run:
+                    path.unlink()
+        return candidates

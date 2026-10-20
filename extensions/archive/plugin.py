@@ -1,6 +1,6 @@
 """Bundled local archive extension, usable without any frontend."""
 
-from extension import ExtensionSpec, SettingField
+from extension import Action, ExtensionSpec, SettingField
 
 from .repository import Files, SQLiteRepository
 from .sync import Archive
@@ -16,6 +16,12 @@ def activate(context):
         SQLiteRepository(root / "archive.sqlite3"), Files(root / "files"), context.api.events
     )
     context.provide("archive", service)
+    context.action(
+        Action("archive.collect", "Preview unreferenced archive files", service.collect_files)
+    )
+    context.action(
+        Action("archive.inspect", "Inspect archive file references", service.inspect_files)
+    )
 
 
 SPEC = ExtensionSpec("archive", activate)

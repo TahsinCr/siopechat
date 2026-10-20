@@ -34,7 +34,6 @@ def create_application(root: Path | None = None):
     from backend import BackendService
     from extension import ExtensionAPI, ExtensionManager
     from extensions import __file__ as extensions_file
-    from extensions.layout.plugin import SPEC
     from lang import __file__ as language_file
     from providers.chatgpt import ChatGPTProvider
     from settings import Settings, SettingsCatalog
@@ -47,18 +46,30 @@ def create_application(root: Path | None = None):
     api.provide("application", "paths", root)
     backend = BackendService(root)
     api.provide("application", "backend", backend)
-    api.providers.register(ChatGPTProvider(backend.create_session()))
+    api.providers.register(
+        ChatGPTProvider(backend.create_session()),
+        account_factory=lambda account_id, session, **_: ChatGPTProvider(session, account_id),
+    )
     from providers.claude import ClaudeProvider
     from providers.gemini import GeminiProvider
 
     api.providers.register(
-        GeminiProvider(root / "data" / "accounts" / "gemini" / "default" / "cookies.json")
+        GeminiProvider(root / "data" / "accounts" / "gemini" / "default" / "cookies.json"),
+        account_factory=lambda account_id, credential_file, **_: GeminiProvider(
+            credential_file, account_id
+        ),
     )
     api.providers.register(
-        ClaudeProvider(root / "data" / "accounts" / "claude" / "default" / "native.json")
+        ClaudeProvider(root / "data" / "accounts" / "claude" / "default" / "native.json"),
+        account_factory=lambda account_id, credential_file, **_: ClaudeProvider(
+            credential_file, account_id
+        ),
     )
     accounts = Accounts(api)
     api.provide("application", "accounts", accounts)
+    api.tasks.provider_resolver = lambda provider, account: accounts.provider(
+        provider + "/" + account
+    )
     from downloads import Downloads
 
     api.provide("application", "downloads", Downloads(settings, root, accounts))
@@ -90,8 +101,6 @@ def create_application(root: Path | None = None):
         "application", Action("extensions.disable", "Disable extension", manager.disable_async)
     )
     api.actions.register("application", Action("settings.change", "Change setting", panel.change))
-    manager.register(SPEC)
-    manager.activate("layout")
     bundled_extensions = Path(extensions_file).parent
     manager.load_directory(bundled_extensions)
     if (root / "extensions").resolve() != bundled_extensions.resolve():

@@ -170,6 +170,7 @@ class DeleteAndCacheTests(unittest.TestCase):
 
     def test_project_delete_cascades_known_members_and_preserves_other_accounts(self):
         chat = self.seed()
+        self.provider.get_chat = AsyncMock(side_effect=RemoteNotFound("deleted upstream"))
         self.archive.put("chatgpt/default", "conversation", "c_abc", {"title": "other"})
         result = self.accounts.delete(identity(self.key, "notebooks/abcdef"), self.key, "container")
         self.assertIn(chat["id"], result["removed"])
@@ -177,6 +178,23 @@ class DeleteAndCacheTests(unittest.TestCase):
         self.assertEqual(
             self.archive.get("chatgpt/default", "conversation", "c_abc")["title"], "other"
         )
+
+    def test_project_delete_does_not_tombstone_surviving_or_unknown_chats(self):
+        from types import SimpleNamespace
+
+        from providers.errors import ProviderError
+
+        for outcome in (SimpleNamespace(metadata={}), ProviderError("offline")):
+            with self.subTest(outcome=outcome):
+                self.seed()
+                self.provider.get_chat = (
+                    AsyncMock(return_value=outcome)
+                    if not isinstance(outcome, Exception)
+                    else AsyncMock(side_effect=outcome)
+                )
+                self.accounts.delete(identity(self.key, "notebooks/abcdef"), self.key, "container")
+                self.assertFalse(self.archive.deleted(self.key, "conversation", "c_abc"))
+                self.assertIsNotNone(self.archive.get(self.key, "conversation", "c_abc"))
 
     def test_server_confirmed_missing_chat_is_tombstoned_but_network_failure_is_not(self):
         self.seed()

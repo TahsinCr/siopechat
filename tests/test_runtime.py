@@ -33,6 +33,38 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def finish(self, job_id):
         return await asyncio.wait_for(self.runtime.wait(job_id), 1)
 
+    def test_registry_account_factory_preserves_identity_and_isolates_instances(self):
+        from types import SimpleNamespace
+
+        registry = ProviderRegistry()
+        registry.register(
+            ControlledProvider(),
+            account_factory=lambda account, **options: SimpleNamespace(
+                id="gpt", account_id=account, options=options
+            ),
+        )
+        first = registry.create_account("gpt", "personal", credential_file="personal")
+        second = registry.create_account("gpt", "work", credential_file="work")
+        self.assertIsNot(first, second)
+        self.assertEqual(first.options["credential_file"], "personal")
+        self.assertEqual(second.account_id, "work")
+
+    async def test_account_resolver_never_uses_the_registry_default_session(self):
+        personal, work = ControlledProvider(), ControlledProvider()
+        self.runtime.provider_resolver = lambda provider, account: {
+            "personal": personal,
+            "work": work,
+        }[account]
+        first = self.runtime.submit(request("one", account="personal"))
+        second = self.runtime.submit(request("two", account="work"))
+        await self.started(personal)
+        await self.started(work)
+        self.assertEqual(self.gpt.calls, [])
+        personal.release("one")
+        work.release("two")
+        self.assertEqual((await self.finish(first)).state, JobState.COMPLETED)
+        self.assertEqual((await self.finish(second)).state, JobState.COMPLETED)
+
     async def test_other_provider_finishes_while_first_is_waiting(self):
         first = self.runtime.submit(request())
         second = self.runtime.submit(request("two", "gemini"))

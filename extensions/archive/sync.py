@@ -109,6 +109,20 @@ class Archive:
                     raise OSError("Archive is closed")
                 if key in self._deleted:
                     return
+                members = (
+                    [value]
+                    if kind == "conversation"
+                    else value.get("items", [])
+                    if kind in ("chats", "container_chats")
+                    else []
+                )
+                for item in members:
+                    project = item.get("project_id")
+                    project = (
+                        unquote(project.removeprefix("@" + account + "/")) if project else None
+                    )
+                    if project and (account, "container", project) in self._deleted:
+                        item["project_id"] = None
                 if kind in ("chats", "container_chats", "containers"):
                     item_kind = "container" if kind == "containers" else "conversation"
                     value["items"] = [
@@ -298,9 +312,9 @@ class Archive:
         with self._lock:
             return (account, kind, remote) in self._deleted
 
-    def delete(self, account, kind, remote):
+    def delete(self, account, kind, remote, *, children=None):
         with self._write_lock:
-            removed = self.repository.delete(account, kind, remote)
+            removed = self.repository.delete(account, kind, remote, children=children)
             with self._lock:
                 self._deleted.update(removed)
                 for key in removed:
@@ -312,6 +326,28 @@ class Archive:
                         self._size -= self._hot.pop(key)[1]
                 self.revision += 1
         return removed
+
+    def inspect_files(self):
+        with self._write_lock:
+            if self.closed:
+                raise RuntimeError("archive is closed")
+            references = self.repository.file_references()
+            missing = []
+            for value in references:
+                path = self.files.root / value
+                try:
+                    relative = path.resolve().relative_to(self.files.root.resolve())
+                except ValueError:
+                    continue
+                if len(relative.parts) == 2 and len(relative.name) == 64 and not path.is_file():
+                    missing.append(value)
+            return {"missing": sorted(missing), "unreferenced": self.files.collect(references)}
+
+    def collect_files(self, dry_run=True):
+        with self._write_lock:
+            if self.closed:
+                raise RuntimeError("archive is closed")
+            return self.files.collect(self.repository.file_references(), dry_run=dry_run)
 
     def _maybe_close_repository(self):
         with self._write_lock:

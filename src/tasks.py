@@ -27,6 +27,7 @@ class JobState(str, Enum):
     QUEUED = "queued"
     RUNNING = "running"
     STREAMING = "streaming"
+    CANCELLING = "cancelling"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -73,6 +74,11 @@ class _Job:
     version: int = 0
     task: asyncio.Task | None = None
     cancel_requested: bool = False
+    event_sink: Callable | None = None
+    complete: Callable | None = None
+    guard: Callable | None = None
+    result: object = None
+    error: BaseException | None = None
 
 
 class TaskService:
@@ -85,18 +91,21 @@ class TaskService:
         max_jobs: int = 256,
         max_response_chars: int = 2_000_000,
         clock: Callable[[], float] = time.monotonic,
+        provider_resolver: Callable | None = None,
     ):
         if per_account < 1 or max_jobs < 1 or max_response_chars < 1:
             raise ValueError("limits must be positive")
         self.events = events if events is not None else EventBus()
         self._owns_events = events is None
         self.providers = providers
+        self.provider_resolver = provider_resolver
         self._per_account = per_account
         self._max_jobs = max_jobs
         self._max_chars = max_response_chars
         self._clock = clock
         self._jobs: dict[str, _Job] = {}
         self._active_chats: set[tuple[str, str, str]] = set()
+        self._chat_jobs: dict[tuple[str, str, str], int] = {}
         self._gates: dict[tuple[str, str], asyncio.Semaphore] = {}
         self._blocked: dict[tuple[str, str], float | None] = {}
         self._subscribers: dict[asyncio.Queue[JobChanged], object] = {}
@@ -178,7 +187,9 @@ class TaskService:
             raise AccountPaused("server cooldown has not expired")
         self._blocked.pop(account, None)
 
-    def submit(self, request: SendRequest) -> str:
+    def submit(
+        self, request: SendRequest, *, on_event=None, on_complete=None, guard=None, queue_chat=False
+    ) -> str:
         self._check_loop()
         if self._closed:
             raise RuntimeError("runtime is closed")
@@ -196,26 +207,45 @@ class TaskService:
         account = (request.provider_id, request.account_id)
         self._check_account(account)
         chat = (*account, request.chat_id)
-        if chat in self._active_chats:
+        if queue_chat and self._per_account != 1:
+            raise ValueError("queued chat submissions require account serialization")
+        if chat in self._active_chats and not queue_chat:
             raise ValueError("this chat already has an active job")
         job_id = uuid.uuid4().hex
-        self._jobs[job_id] = _Job(request, conversation_id=request.conversation_id)
+        self._jobs[job_id] = _Job(
+            request,
+            conversation_id=request.conversation_id,
+            event_sink=on_event,
+            complete=on_complete,
+            guard=guard,
+        )
         self._active_chats.add(chat)
+        self._chat_jobs[chat] = self._chat_jobs.get(chat, 0) + 1
         self._changed(job_id)
         self._jobs[job_id].task = asyncio.create_task(self._run(job_id))
         return job_id
 
     def _release_chat(self, request: SendRequest) -> None:
         account = (request.provider_id, request.account_id)
-        self._active_chats.discard((*account, request.chat_id))
-        if not any(chat[:2] == account for chat in self._active_chats):
-            self._gates.pop(account, None)
+        chat = (*account, request.chat_id)
+        count = self._chat_jobs.get(chat, 0)
+        if count > 1:
+            self._chat_jobs[chat] = count - 1
+        else:
+            self._chat_jobs.pop(chat, None)
+            self._active_chats.discard(chat)
+
+    def account_gate(self, provider_id, account_id):
+        self._check_loop()
+        return self._gates.setdefault(
+            (provider_id, account_id), asyncio.Semaphore(self._per_account)
+        )
 
     async def _run(self, job_id: str) -> None:
         job = self._jobs[job_id]
         request = job.request
         account = (request.provider_id, request.account_id)
-        gate = self._gates.setdefault(account, asyncio.Semaphore(self._per_account))
+        gate = self.account_gate(*account)
         try:
             async with gate:
                 if self._closed:
@@ -231,6 +261,10 @@ class TaskService:
                     self.providers.require(request.provider_id, Capability.MODELS)
                 if request.effort is not None:
                     self.providers.require(request.provider_id, Capability.EFFORT)
+                if self.provider_resolver is not None:
+                    provider = self.provider_resolver(request.provider_id, request.account_id)
+                if job.guard is not None:
+                    job.guard()
                 self._changed(job_id, JobState.RUNNING)
                 async with aclosing(provider.stream(request)) as stream:
                     async for event in stream:
@@ -254,6 +288,8 @@ class TaskService:
                                     job.reasoning_chunks.clear()
                                 job.reasoning_chunks.append(event.text)
                                 job.reasoning_length = length
+                                if job.event_sink is not None:
+                                    job.event_sink(event)
                                 self._changed(job_id)
                                 continue
                             length = len(event.text)
@@ -269,14 +305,24 @@ class TaskService:
                             job.state = JobState.STREAMING
                         else:
                             raise TypeError("unsupported provider event")
+                        if job.event_sink is not None:
+                            job.event_sink(event)
                         self._changed(job_id)
                 if job.cancel_requested:
                     raise asyncio.CancelledError
+                if job.complete is not None:
+                    writing = asyncio.create_task(job.complete(), name="siope-persist:" + job_id)
+                    try:
+                        job.result = await asyncio.shield(writing)
+                    except asyncio.CancelledError:
+                        await asyncio.shield(writing)
+                        raise
                 self._changed(job_id, JobState.COMPLETED)
         except asyncio.CancelledError:
             self._changed(job_id, JobState.CANCELLED)
             raise
         except RateLimited as error:
+            job.error = error
             try:
                 delay = float(error.retry_after)
             except (TypeError, ValueError, OverflowError):
@@ -285,18 +331,23 @@ class TaskService:
             self._block_account(account, until)
             job.error_code = "rate_limited"
             self._changed(job_id, JobState.FAILED)
-        except _AccountBlocked:
+        except _AccountBlocked as error:
+            job.error = error
             job.error_code = "account_paused"
             self._changed(job_id, JobState.FAILED)
-        except AccountPaused:
+        except AccountPaused as error:
+            job.error = error
             self._block_account(account, None)
             job.error_code = "account_paused"
             self._changed(job_id, JobState.FAILED)
         except CompatibilityError as error:
-            self.providers.mark_unavailable(request.provider_id, error.capability)
+            job.error = error
+            if self.provider_resolver is None:
+                self.providers.mark_unavailable(request.provider_id, error.capability)
             job.error_code = "capability_changed"
             self._changed(job_id, JobState.FAILED)
-        except Exception:
+        except Exception as error:
+            job.error = error
             # Raw adapter errors can contain request headers or conversation data.
             job.error_code = job.error_code or "provider_error"
             self._changed(job_id, JobState.FAILED)
@@ -337,17 +388,27 @@ class TaskService:
             task.result()
         return self._snapshot(job_id, job)
 
-    @staticmethod
-    def _request_cancel(job: _Job) -> None:
+    async def result(self, job_id):
+        snapshot = await self.wait(job_id)
+        job = self._jobs[job_id]
+        if snapshot.state == JobState.CANCELLED:
+            raise asyncio.CancelledError
+        if job.error is not None:
+            raise job.error
+        return job.result
+
+    def _request_cancel(self, job_id: str) -> None:
+        job = self._jobs[job_id]
         if not job.cancel_requested:
             job.cancel_requested = True
+            self._changed(job_id, JobState.CANCELLING)
             job.task.cancel()
 
     async def cancel(self, job_id: str) -> JobSnapshot:
         self._check_loop()
         job = self._jobs[job_id]
         if job.state not in TERMINAL:
-            self._request_cancel(job)
+            self._request_cancel(job_id)
             await asyncio.wait((job.task,))
             if not job.task.cancelled():
                 job.task.result()
@@ -371,8 +432,8 @@ class TaskService:
         # Cancel all queued tasks before yielding: releasing one account gate
         # must not start another queued send during shutdown.
         pending = [(key, job) for key, job in self._jobs.items() if job.state not in TERMINAL]
-        for _, job in pending:
-            self._request_cancel(job)
+        for job_id, job in pending:
+            self._request_cancel(job_id)
         await asyncio.gather(*(job.task for _, job in pending), return_exceptions=True)
         for job_id, job in pending:
             if job.state not in TERMINAL:

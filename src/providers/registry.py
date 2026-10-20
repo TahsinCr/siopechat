@@ -1,6 +1,7 @@
 """Provider registration and capability-level health."""
 
 from dataclasses import dataclass, field
+from typing import Callable
 
 from .api import Capability, Provider
 
@@ -14,6 +15,7 @@ PROVIDERS = {
 @dataclass
 class _Entry:
     provider: Provider
+    account_factory: Callable | None = None
     enabled: bool = True
     unavailable: set[Capability] = field(default_factory=set)
 
@@ -22,10 +24,20 @@ class ProviderRegistry:
     def __init__(self):
         self._providers: dict[str, _Entry] = {}
 
-    def register(self, provider: Provider) -> None:
+    def register(self, provider: Provider, *, account_factory: Callable | None = None) -> None:
         if not provider.id or provider.id in self._providers:
             raise ValueError("provider ID must be nonempty and unique")
-        self._providers[provider.id] = _Entry(provider)
+        self._providers[provider.id] = _Entry(provider, account_factory)
+
+    def create_account(self, provider_id, account_id, **configuration):
+        """Construct an independent account adapter using host-supplied configuration."""
+        factory = self._providers[provider_id].account_factory
+        if factory is None:
+            raise ValueError("provider has no account factory")
+        provider = factory(account_id, **configuration)
+        if provider.id != provider_id or provider.account_id != account_id:
+            raise ValueError("account factory returned a different provider or account")
+        return provider
 
     def set_enabled(self, provider_id: str, enabled: bool) -> None:
         """Affects future operations; already running operations are not killed."""
