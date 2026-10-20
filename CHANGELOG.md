@@ -30,6 +30,8 @@ Python distributions use the corresponding PEP 440 version (`1.1b0` for `v1.1-be
 
 ### Security
 
+- Discover extension metadata from manifests and defer Python imports until activation, including disabled legacy packages; retain dependency and API-version checks.
+
 - Validate and pin download addresses, block private networks by default, reject HTTPS downgrades and preserve account/origin boundaries across redirects.
 - Limit downloads to a configurable 512 MiB by default, enforce both declared and streamed sizes, and expose local-network opt-in and size settings in all three languages.
 

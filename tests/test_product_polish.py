@@ -136,6 +136,22 @@ class ProductServicesTests(unittest.TestCase):
         self.api.get("extensions").disable("sample")
         self.assertFalse(self.api.actions.search("sample.hello"))
 
+    def test_disabled_extension_is_not_imported_until_explicit_enable(self):
+        directory = self.root / "extensions" / "lazy"
+        directory.mkdir(parents=True)
+        marker = directory / "imported"
+        (directory / "manifest.json").write_text('{"id":"lazy","api_version":1,"requires":[]}')
+        (directory / "plugin.py").write_text(
+            'from pathlib import Path\nfrom extension import ExtensionSpec\nPath(__file__).with_name("imported").touch()\nSPEC = ExtensionSpec("lazy", lambda ctx: None)\n'
+        )
+        self.api.settings.update_extension("lazy", {"enabled": False})
+        manager = self.api.get("extensions")
+        manager.load_directory(directory.parent)
+        self.assertFalse(marker.exists())
+        self.assertEqual(manager.statuses()["lazy"].state, "disabled")
+        self.assertTrue(manager.enable("lazy"))
+        self.assertTrue(marker.exists())
+
     def test_application_composition_does_not_import_cli(self):
         script = """import builtins,tempfile
 from pathlib import Path

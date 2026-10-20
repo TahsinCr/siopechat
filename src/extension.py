@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import importlib.util
 import inspect
+import json
 import sys
 import types
 from dataclasses import dataclass
@@ -222,16 +223,48 @@ class ExtensionManager:
                 "siope_extension_" + hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:16]
             )
             try:
-                parent = types.ModuleType(package)
-                parent.__path__ = [str(path.parent)]
-                sys.modules[package] = parent
-                spec = importlib.util.spec_from_file_location(package + ".plugin", path)
-                module = importlib.util.module_from_spec(spec)
-                sys.modules[spec.name] = module
-                spec.loader.exec_module(module)
-                if not isinstance(module.SPEC, ExtensionSpec) or module.SPEC.id != name:
-                    raise ValueError("extension directory and SPEC.id must match")
-                self.register(module.SPEC)
+                manifest_path = path.parent / "manifest.json"
+                manifest = json.loads(manifest_path.read_text()) if manifest_path.is_file() else {}
+                if (
+                    manifest.get("id", name) != name
+                    or manifest.get("api_version", 1) != self.api.version
+                ):
+                    raise ValueError("invalid extension manifest")
+                requires = manifest.get("requires", [])
+                if not isinstance(requires, list) or not all(isinstance(x, str) for x in requires):
+                    raise ValueError("invalid extension dependencies")
+
+                def activate(
+                    context,
+                    path=path,
+                    package=package,
+                    name=name,
+                    requires=tuple(requires),
+                    has_manifest=manifest_path.is_file(),
+                ):
+                    parent = types.ModuleType(package)
+                    parent.__path__ = [str(path.parent)]
+                    sys.modules[package] = parent
+                    spec = importlib.util.spec_from_file_location(package + ".plugin", path)
+                    module = importlib.util.module_from_spec(spec)
+                    sys.modules[spec.name] = module
+                    spec.loader.exec_module(module)
+                    if not isinstance(module.SPEC, ExtensionSpec) or module.SPEC.id != name:
+                        raise ValueError("extension directory and SPEC.id must match")
+                    if module.SPEC.api_version != self.api.version:
+                        raise ValueError("incompatible extension API version")
+                    if has_manifest and tuple(module.SPEC.requires) != requires:
+                        raise ValueError("extension dependencies differ from manifest")
+                    if not has_manifest:
+                        self._specs[name] = module.SPEC
+                        for dependency in module.SPEC.requires:
+                            if dependency not in self._specs or not self.activate(
+                                dependency, (name,)
+                            ):
+                                raise ValueError("extension dependency unavailable")
+                    return module.SPEC.activate(context)
+
+                self.register(ExtensionSpec(name, activate, requires=tuple(requires)))
             except Exception:
                 self._status(name, "failed", "discovery_failed")
         for name in tuple(self._specs):
