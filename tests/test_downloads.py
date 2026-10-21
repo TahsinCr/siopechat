@@ -106,6 +106,36 @@ class DownloadTests(unittest.TestCase):
         third = service.fetch("account", "https://example.com/file")
         self.assertTrue(os.path.samefile(Path(third["path"]).parent, self.root / "my-files"))
 
+    def test_named_binary_rejects_html_but_html_attachment_is_downloadable(self):
+        self.accounts.resolve_download.side_effect = lambda key, url, *_: DownloadSource(
+            url, filename="report.pdf"
+        )
+        page = self.service(
+            lambda _: httpx.Response(
+                200, headers={"content-type": "text/html"}, content=b"<html>sign in</html>"
+            )
+        )
+        with self.assertRaisesRegex(ValueError, "HTML"):
+            page.fetch("account", "https://example.com/report")
+        self.assertEqual(list((self.root / "downloads").glob("*")), [])
+
+        self.accounts.resolve_download.side_effect = lambda key, url, *_: DownloadSource(
+            url, filename="report.html"
+        )
+        attachment = self.service(
+            lambda _: httpx.Response(
+                200,
+                headers={
+                    "content-type": "text/html",
+                    "content-disposition": 'attachment; filename="report.html"',
+                },
+                content=b"<html>report</html>",
+            )
+        )
+        result = attachment.fetch("account", "https://example.com/report")
+        self.assertEqual(Path(result["path"]).name, "report.html")
+        self.assertEqual(Path(result["path"]).read_bytes(), b"<html>report</html>")
+
     def test_pinned_https_connection_validates_the_original_hostname(self):
         import shutil
         import ssl

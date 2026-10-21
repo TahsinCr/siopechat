@@ -2,13 +2,14 @@
 
 import asyncio
 import json
+import os
 import sqlite3
 import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import httpx
 
@@ -76,6 +77,66 @@ class DownloadHistoryTests(unittest.TestCase):
         fresh.remove(row["id"])
         self.assertEqual(self.make_service().refresh(), [])
 
+    def test_opening_existing_history_does_not_rewrite_unchanged_rows(self):
+        self.download()
+        fresh = self.make_service()
+        with patch.object(
+            self.archive.downloads,
+            "put_many",
+            wraps=self.archive.downloads.put_many,
+        ) as put_many:
+            fresh.refresh()
+        put_many.assert_not_called()
+
+    def test_bulk_history_write_rejects_stale_revision(self):
+        history = self.archive.downloads
+        initial = {
+            "id": "revisioned",
+            "created": 1,
+            "updated": 1,
+            "state": "completed",
+            "account": "gemini/a",
+            "name": "initial.txt",
+            "path": None,
+        }
+        self.assertEqual(history.put_many([{**initial, "_revision": 1}]), {})
+        newer = {**initial, "name": "latest.txt", "_revision": 2}
+        self.assertEqual(history.put_many([newer]), {})
+        stale = {**initial, "name": "stale.txt", "_revision": 2}
+
+        rejected = history.put_many([stale])
+
+        self.assertEqual(rejected["revisioned"]["name"], "latest.txt")
+        stored = next(row for row in history.list() if row["id"] == "revisioned")
+        self.assertEqual(stored["name"], "latest.txt")
+        self.assertEqual(stored["_revision"], 2)
+
+    def test_legacy_single_row_put_still_updates_existing_record(self):
+        history = self.archive.downloads
+        row = {
+            "id": "legacy",
+            "created": 1,
+            "state": "completed",
+            "account": "gemini/a",
+            "name": "old.txt",
+        }
+        history.put(row)
+        history.put({**row, "name": "new.txt"})
+
+        stored = history.list()[0]
+        self.assertEqual(stored["name"], "new.txt")
+        self.assertEqual(stored["_revision"], 2)
+
+    def test_refresh_reads_each_download_directory_once(self):
+        first = self.download()
+        self.service.fetch("gemini/a", "https://example.com/b.txt")
+        with patch("downloads.os.scandir", wraps=os.scandir) as scandir:
+            rows = self.service.refresh()
+
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(Path(row["path"]).parent == Path(first["path"]).parent for row in rows))
+        scandir.assert_called_once()
+
     def test_delete_file_retains_row_until_explicit_forget(self):
         result = self.download()
         identity = self.service.snapshot()[0]["id"]
@@ -121,7 +182,10 @@ class DownloadHistoryTests(unittest.TestCase):
         self.assertEqual(reopened.get("gemini/a", "conversation", "chat")["title"], "Saved")
         self.assertEqual(self.make_service().refresh()[0]["state"], "interrupted")
         with closing(sqlite3.connect(self.repo.path)) as db:
-            self.assertEqual(db.execute("SELECT version FROM schema_version").fetchall(), [(2,)])
+            self.assertEqual(db.execute("SELECT version FROM schema_version").fetchall(), [(3,)])
+            self.assertIn(
+                "revision", {row[1] for row in db.execute("PRAGMA table_info(downloads)")}
+            )
 
     def test_archive_failure_does_not_fail_saved_download(self):
         self.accounts.archive = Mock(side_effect=OSError("unavailable"))
@@ -131,6 +195,48 @@ class DownloadHistoryTests(unittest.TestCase):
 
 
 class DownloadWorkspaceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_download_rows_format_only_terminal_requested_lines(self):
+        from cli.downloads import _DownloadsRowsControl
+
+        class Panel:
+            rows = [None] * 20_000
+            index = 0
+            render_revision = 1
+
+            def __init__(self):
+                self.rendered = []
+
+            def render_row(self, index, width):
+                self.rendered.append(index)
+                return [("", str(index))]
+
+        panel = Panel()
+        control = _DownloadsRowsControl(panel)
+        content = control.create_content(100, 24)
+
+        self.assertEqual(content.line_count, 20_000)
+        self.assertEqual(content.get_line(0), [("", "0")])
+        self.assertEqual(content.get_line(1), [("", "1")])
+        self.assertEqual(panel.rendered, [0, 1])
+
+    async def test_filtered_active_download_updates_its_own_record(self):
+        with terminal() as (view, _):
+            panel = view.downloads_panel
+            panel.records = [
+                dict(id="done", state="completed", created=1, account="g/a", name="done"),
+                dict(id="live", state="downloading", created=2, account="g/a", name="live"),
+            ]
+            panel.filter_index = 1
+            panel.rebuild()
+            self.assertEqual(panel._records_by_id, {"done": 0, "live": 1})
+
+            updated = {**panel.records[1], "size": 12}
+            panel._update_active_rows([updated])
+
+            self.assertEqual(panel.records[1]["id"], "live")
+            self.assertEqual(panel.records[1]["size"], 12)
+            self.assertTrue(all(row[1].get("size") == 12 for row in panel.rows if row[0] != "day"))
+
     async def test_download_tab_reuses_switches_and_keyboard_closes(self):
         with tempfile.TemporaryDirectory() as folder:
             api = create_application(Path(folder))

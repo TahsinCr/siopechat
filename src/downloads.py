@@ -31,8 +31,10 @@ class Downloads:
         self._store_lock = threading.RLock()
         self._records = {}
         self._running = set()
+        self._dirty_records = set()
         self._history_archive = None
         self.revision = 0
+        self.model_revision = 0
         self.history_available = False
 
     def _history(self):
@@ -43,17 +45,90 @@ class Downloads:
             rows = archive.downloads.list()
             if not isinstance(rows, list):
                 return None
+            changed_model = False
             with self._history_lock:
+                disk_ids = set()
                 for row in rows:
+                    identity = row["id"]
+                    disk_ids.add(identity)
+                    row["_revision"] = int(row.get("_revision", 0))
                     if row["state"] in ("preparing", "downloading"):
-                        row.update(state="interrupted", error="")
-                    self._records.setdefault(row["id"], row)
-                snapshots = [dict(row) for row in self._records.values()]
-                self.revision += 1
-            for row in snapshots:
-                archive.downloads.put(row)
+                        row.update(
+                            state="interrupted",
+                            error="",
+                            updated=max(time.time(), float(row.get("updated", 0)) + 0.000001),
+                            _revision=row["_revision"] + 1,
+                        )
+                        self._dirty_records.add(identity)
+                        changed_model = True
+                    current = self._records.get(identity)
+                    if current is None:
+                        self._records[identity] = row
+                        changed_model = True
+                    elif identity in self._dirty_records:
+                        if int(row["_revision"]) >= int(current.get("_revision", 0)):
+                            changed_model |= self._record_model_changed(current, row)
+                            self._records[identity] = row
+                            self._dirty_records.discard(identity)
+                    else:
+                        changed_model |= self._record_model_changed(current, row)
+                        self._records[identity] = row
+                for identity in tuple(self._records):
+                    if identity not in disk_ids and identity not in self._dirty_records:
+                        del self._records[identity]
+                        self._running.discard(identity)
+                        changed_model = True
+                snapshots = [
+                    dict(self._records[identity])
+                    for identity in self._dirty_records
+                    if identity in self._records
+                ]
+                if changed_model or rows:
+                    self.revision += 1
+                    self.model_revision += int(changed_model)
+            stale = self._write_history(archive, snapshots)
+            self._finish_history_write(snapshots, stale)
             self._history_archive = archive
         return archive
+
+    @staticmethod
+    def _record_model_changed(before, after):
+        fields = ("state", "name", "title", "account", "created", "chat_deleted")
+        if any(before.get(field) != after.get(field) for field in fields):
+            return True
+        return before.get("state") not in ("preparing", "downloading") and before.get(
+            "size"
+        ) != after.get("size")
+
+    @staticmethod
+    def _write_history(archive, rows):
+        if not rows:
+            return {}
+        put_many = getattr(archive.downloads, "put_many", None)
+        if callable(put_many):
+            return put_many(rows) or {}
+        for row in rows:
+            archive.downloads.put(row)
+        return {}
+
+    def _finish_history_write(self, written, stale):
+        stale = stale or {}
+        with self._history_lock:
+            for row in written:
+                identity = row["id"]
+                current = self._records.get(identity)
+                stored = stale.get(identity)
+                if stored is not None:
+                    if current and int(stored.get("_revision", 0)) >= int(
+                        current.get("_revision", 0)
+                    ):
+                        if self._record_model_changed(current, stored):
+                            self.model_revision += 1
+                        self._records[identity] = stored
+                        self.revision += 1
+                    self._dirty_records.discard(identity)
+                elif current and int(current.get("_revision", 0)) == int(row.get("_revision", 0)):
+                    self._dirty_records.discard(identity)
 
     def snapshot(self):
         """Memory-only read for frontend rendering; refresh performs disk work."""
@@ -72,12 +147,20 @@ class Downloads:
             row = self._records.get(identity)
             if row is None:
                 return
-            row.update(values, updated=time.time())
+            before = dict(row)
+            row.update(values)
+            row.update(
+                updated=max(time.time(), float(before.get("updated", 0)) + 0.000001),
+                _revision=int(before.get("_revision", 0)) + 1,
+            )
+            self._dirty_records.add(identity)
             if row["state"] in ("preparing", "downloading"):
                 self._running.add(identity)
             else:
                 self._running.discard(identity)
             self.revision += 1
+            if self._record_model_changed(before, row):
+                self.model_revision += 1
         if persist:
             try:
                 with self._store_lock:
@@ -86,9 +169,10 @@ class Downloads:
                         row = dict(self._records[identity]) if identity in self._records else None
                     if archive and row:
                         row.pop("history_warning", None)
-                        archive.downloads.put(row)
+                        stale = self._write_history(archive, [row])
+                        self._finish_history_write([row], stale)
                         with self._history_lock:
-                            if identity in self._records:
+                            if identity in self._records and identity not in stale:
                                 self._records[identity].pop("history_warning", None)
             except (OSError, LookupError):
                 with self._history_lock:
@@ -100,13 +184,14 @@ class Downloads:
         with self._store_lock:
             archive = self._history()
             deleted = archive.repository.tombstones() if archive else set()
+        files_by_directory = {}
         for row in self.snapshot():
             values = {}
             if row["state"] in ("completed", "deleted") and row.get("path"):
-                try:
-                    exists = Path(row["path"]).is_file()
-                except OSError:
-                    exists = False
+                path = Path(row["path"])
+                if path.parent not in files_by_directory:
+                    files_by_directory[path.parent] = self._file_names(path.parent)
+                exists = path.name in files_by_directory[path.parent]
                 values["state"] = "completed" if exists else "deleted"
             conversation = row.get("conversation_id") or ""
             remote = decode_id(conversation.removeprefix("@" + row["account"] + "/"))
@@ -116,6 +201,22 @@ class Downloads:
             ):
                 self._update(row["id"], persist=True, **values)
         return self.snapshot()
+
+    @staticmethod
+    def _file_names(directory):
+        """Read each download directory once instead of statting every history path."""
+        try:
+            with os.scandir(directory) as entries:
+                names = set()
+                for entry in entries:
+                    try:
+                        if entry.is_file():
+                            names.add(entry.name)
+                    except OSError:
+                        continue
+                return names
+        except OSError:
+            return set()
 
     def remove(self, identity, *, delete_file=False):
         with self._store_lock:
@@ -133,7 +234,9 @@ class Downloads:
                 archive.downloads.remove(identity)
             with self._history_lock:
                 del self._records[identity]
+                self._dirty_records.discard(identity)
                 self.revision += 1
+                self.model_revision += 1
 
     def directory(self):
         value = self.settings.snapshot()["application"].get("download_directory", "downloads")
@@ -185,7 +288,11 @@ class Downloads:
                     total=None,
                     chat_deleted=False,
                     error="",
+                    _revision=0,
                 )
+                self._dirty_records.add(record_id)
+                self.revision += 1
+                self.model_revision += 1
             self._update(record_id, persist=True)
             source = self.accounts.resolve_download(key, url, conversation_id, message_id)
             try:
@@ -227,7 +334,9 @@ class Downloads:
             with self._history_lock:
                 self._records.pop(identity, None)
                 self._running.discard(identity)
+                self._dirty_records.discard(identity)
                 self.revision += 1
+                self.model_revision += 1
 
     @staticmethod
     def _web_url(url):
@@ -281,6 +390,9 @@ class Downloads:
                 with client.stream(
                     "GET", request_url, headers=headers, **stream_options
                 ) as response:
+                    media_type = (
+                        response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+                    )
                     if response.status_code in (301, 302, 303, 307, 308):
                         target = urljoin(url, response.headers.get("location", ""))
                         if not response.headers.get("location"):
@@ -299,7 +411,7 @@ class Downloads:
                         response.status_code in (401, 403)
                         and not source.force_download
                         and not source.filename
-                        and response.headers.get("content-type", "").startswith("text/html")
+                        and media_type in ("text/html", "application/xhtml+xml")
                     ):
                         return {"kind": "page", "url": url}
                     if response.status_code == 206:
@@ -307,7 +419,6 @@ class Downloads:
                         raise ValueError("Dosya henüz hazır değil; biraz sonra yeniden deneyin")
                     if response.status_code >= 400:
                         raise ValueError("Dosya alınamadı (HTTP {0})".format(response.status_code))
-                    media_type = response.headers.get("content-type", "").split(";", 1)[0].lower()
                     disposition = Message()
                     disposition["content-disposition"] = response.headers.get(
                         "content-disposition", ""
@@ -326,11 +437,25 @@ class Downloads:
                     )
                     if not is_file:
                         return {"kind": "page", "url": url}
-                    if (
-                        media_type in ("text/html", "application/xhtml+xml")
-                        and source.force_download
+                    html_types = {"text/html", "application/xhtml+xml"}
+                    if media_type in html_types and (
+                        source.force_download
+                        or source.filename
+                        or disposition.get_content_disposition() == "attachment"
                     ):
-                        raise ValueError("Dosya yerine giriş sayfası döndü; hesabı doğrulayın")
+                        expected_type = mimetypes.guess_type(source.filename or "")[0]
+                        delivered_type = mimetypes.guess_type(filename or "")[0]
+                        valid_html_attachment = (
+                            disposition.get_content_disposition() == "attachment"
+                            and delivered_type in html_types
+                            and (expected_type is None or expected_type in html_types)
+                        )
+                        if valid_html_attachment:
+                            filename = filename or source.filename
+                        else:
+                            raise ValueError(
+                                "Beklenen dosya yerine HTML sayfası döndü; hesabı doğrulayın"
+                            )
                     filename = filename or Path(unquote(origin.path)).name or "download"
                     if not Path(filename).suffix:
                         filename += mimetypes.guess_extension(media_type) or ""

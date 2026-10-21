@@ -8,9 +8,19 @@ Python distributions use the corresponding PEP 440 version (`1.2b0` for `v1.2-be
 
 ## [Unreleased]
 
+### Changed
+
+- Render only visible download-history rows and cache formatted fragments until their content changes.
+- Reconcile download history with revision-guarded bulk SQLite writes, avoiding full-history rewrites on startup; check each download directory once when refreshing file status.
+
 ### Fixed
 
 - Isolate task observer failures from provider streaming and completed-response persistence.
+- Reject HTML login or verification pages returned in place of named downloads, while allowing explicit HTML attachments.
+
+### Security
+
+- Prevent stale concurrent download-history snapshots from overwriting newer SQLite records.
 
 ## [1.2-beta] - 2026-10-21
 

@@ -5,6 +5,7 @@ from datetime import datetime
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import DynamicContainer, HSplit, VSplit, Window
+from prompt_toolkit.layout.controls import UIContent, UIControl
 from prompt_toolkit.layout.margins import ScrollbarMargin
 from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Button, TextArea
@@ -20,6 +21,54 @@ def size_label(size):
         value /= 1024
 
 
+class _DownloadsRowsControl(UIControl):
+    """Expose the full scroll range while formatting only requested terminal rows."""
+
+    def __init__(self, panel):
+        self.panel = panel
+        self._rows = ()
+        self._width = 0
+        self._revision = -1
+        self._fragments = {}
+
+    def is_focusable(self):
+        return True
+
+    def get_key_bindings(self):
+        return getattr(self, "key_bindings", None)
+
+    def invalidate_row(self, index):
+        self._fragments.pop(index, None)
+
+    def create_content(self, width, height):
+        panel = self.panel
+        self._rows = panel.rows
+        if self._revision != panel.render_revision or self._width != width:
+            self._fragments.clear()
+            self._revision = panel.render_revision
+            self._width = width
+        line_count = max(1, len(self._rows))
+        cursor_y = min(max(0, panel.index), line_count - 1)
+        return UIContent(
+            get_line=self._line,
+            line_count=line_count,
+            cursor_position=Point(0, cursor_y),
+            show_cursor=False,
+        )
+
+    def _line(self, index):
+        if not 0 <= index < max(1, len(self._rows)):
+            return []
+        cached = self._fragments.get(index)
+        if cached is None:
+            if self._rows:
+                cached = self.panel.render_row(index, self._width)
+            else:
+                cached = [("class:help", "  " + self.panel.view.tr("İndirme kaydı yok"))]
+            self._fragments[index] = cached
+        return cached
+
+
 class DownloadsPanel:
     def __init__(self, view):
         self.view = view
@@ -30,13 +79,15 @@ class DownloadsPanel:
         self.pending = False
         self.message = ""
         self.revision = -1
+        self.model_revision = -1
+        self.render_revision = 0
+        self._records_by_id = {}
+        self._rows_by_id = {}
         self.filters = ("all", "active", "completed", "deleted", "failed")
         self.sorts = ("newest", "oldest", "name", "largest", "name_desc", "smallest")
         self.search = TextArea(height=1, prompt=view.tr("Ara  "), multiline=False)
         self.search.buffer.on_text_changed += lambda _: self.rebuild()
-        self.control = BoundedTextControl(
-            self.render, focusable=True, get_cursor_position=lambda: Point(0, self.index)
-        )
+        self.control = _DownloadsRowsControl(self)
         self.window = SelectionWindow(
             content=self.control,
             move=self.move,
@@ -168,6 +219,7 @@ class DownloadsPanel:
                 else "Arşiv kapalı · geçmiş yalnız bu oturumda tutuluyor"
             )
             self.revision, self.records = service.snapshot_state()
+            self.model_revision = getattr(service, "model_revision", self.revision)
             self.rebuild()
 
         def failed(reason):
@@ -178,14 +230,30 @@ class DownloadsPanel:
 
     def update(self):
         service = self.service()
-        if service and service.revision != self.revision:
-            if self.view.tab_kind == "downloads":
-                self.revision, self.records = service.snapshot_state()
-                self.rebuild()
-            else:
-                self.revision = service.revision
-            return True
-        return False
+        if service is None or self.view.tab_kind != "downloads":
+            return False
+        model_revision = getattr(service, "model_revision", service.revision)
+        if service.revision == self.revision:
+            return False
+        if model_revision != self.model_revision:
+            self.revision, self.records = service.snapshot_state()
+            self.model_revision = model_revision
+            self.rebuild()
+        else:
+            self._update_active_rows(service.active_snapshot())
+            self.revision = service.revision
+            self.view.app.invalidate()
+        return True
+
+    def _update_active_rows(self, active_rows):
+        for item in active_rows:
+            record_index = self._records_by_id.get(item["id"])
+            if record_index is not None:
+                self.records[record_index] = item
+            for row_index in self._rows_by_id.get(item["id"], ()):
+                row_type = self.rows[row_index][0]
+                self.rows[row_index] = (row_type, item)
+                self.control.invalidate_row(row_index)
 
     def cycle_filter(self):
         self.filter_index = (self.filter_index + 1) % len(self.filters)
@@ -230,11 +298,17 @@ class DownloadsPanel:
             date = datetime.fromtimestamp(row["created"]).strftime("%Y-%m-%d")
             groups.setdefault(date, []).append(row)
         self.rows = []
-        for date, group in groups.items():
+        self._records_by_id = {row["id"]: index for index, row in enumerate(self.records)}
+        self._rows_by_id = {}
+        for date in sorted(groups, reverse=True):
+            group = groups[date]
             self.rows.append(("day", date, len(group)))
             if date not in self.collapsed:
                 for row in group:
+                    row_indexes = self._rows_by_id.setdefault(row["id"], [])
+                    row_indexes.append(len(self.rows))
                     self.rows.extend((("file", row), ("chat", row)))
+                    row_indexes.append(len(self.rows) - 1)
         if selected:
             identity = (selected[0], selected[1] if selected[0] == "day" else selected[1]["id"])
             self.index = next(
@@ -246,6 +320,7 @@ class DownloadsPanel:
                 self.index,
             )
         self.index = min(self.index, max(0, len(self.rows) - 1))
+        self.render_revision += 1
         if hasattr(self.view, "app"):
             self.view.app.invalidate()
 
@@ -258,7 +333,7 @@ class DownloadsPanel:
         self.view.app.layout.focus(self.control)
         self.activate()
 
-    def render(self):
+    def render_row(self, index, width):
         tr = self.view.tr
         states = {
             "preparing": "Hazırlanıyor",
@@ -268,48 +343,40 @@ class DownloadsPanel:
             "failed": "Başarısız",
             "interrupted": "Kesildi",
         }
-        if not self.rows:
-            return [("class:help", "  " + tr("İndirme kaydı yok"))]
-        width = max(20, self.view.terminal_width() - 4)
-        result = []
-        for i, row in enumerate(self.rows):
-            style = "class:message.selected" if i == self.index else ""
-            if row[0] == "day":
-                text = f" {'▸' if row[1] in self.collapsed else '▾'} {row[1]}  · {row[2]}"
-                style += " class:settings.title"
+        row = self.rows[index]
+        style = "class:message.selected" if index == self.index else ""
+        if row[0] == "day":
+            text = f" {'▸' if row[1] in self.collapsed else '▾'} {row[1]}  · {row[2]}"
+            style += " class:settings.title"
+        else:
+            item = row[1]
+            if row[0] == "file":
+                size, total = item.get("size", 0), item.get("total")
+                detail = size_label(size)
+                if item["state"] == "downloading":
+                    detail += (
+                        f" / {size_label(total)} · {int(size * 100 / total)}%" if total else " / ?"
+                    )
+                    if total and width >= 95:
+                        detail += " · " + tr("Kalan") + " " + size_label(max(0, total - size))
+                label = tr(states[item["state"]])
+                clock = datetime.fromtimestamp(item["created"]).strftime("%H:%M")
+                suffix = f"  · {label} · {detail}"
+                name = fit_text(
+                    item["name"] or tr("Hazırlanıyor"), max(8, width - get_cwidth(suffix) - 11)
+                )
+                text = f"   {clock}  {name}{suffix}"
             else:
-                item = row[1]
-                if row[0] == "file":
-                    size, total = item.get("size", 0), item.get("total")
-                    detail = size_label(size)
-                    if item["state"] == "downloading":
-                        detail += (
-                            f" / {size_label(total)} · {int(size * 100 / total)}%"
-                            if total
-                            else " / ?"
-                        )
-                        if total and width >= 95:
-                            detail += " · " + tr("Kalan") + " " + size_label(max(0, total - size))
-                    label = tr(states[item["state"]])
-                    clock = datetime.fromtimestamp(item["created"]).strftime("%H:%M")
-                    suffix = f"  · {label} · {detail}"
-                    name = fit_text(
-                        item["name"] or tr("Hazırlanıyor"), max(8, width - get_cwidth(suffix) - 11)
-                    )
-                    text = f"   {clock}  {name}{suffix}"
-                else:
-                    chat = (
-                        tr("Sohbet silindi")
-                        if item.get("chat_deleted")
-                        else (item.get("title") or tr("Sohbet"))
-                    )
-                    if not item.get("conversation_id"):
-                        chat = tr("Geçici sohbet / kaynak yok")
-                    text = f"          ↳ {chat} · {item['account']}"
-                    style += " class:help"
-            result.append((style, fit_text(text, width), on_click(lambda i=i: self.pick(i))))
-            result.append(("", "\n"))
-        return result
+                chat = (
+                    tr("Sohbet silindi")
+                    if item.get("chat_deleted")
+                    else (item.get("title") or tr("Sohbet"))
+                )
+                if not item.get("conversation_id"):
+                    chat = tr("Geçici sohbet / kaynak yok")
+                text = f"          ↳ {chat} · {item['account']}"
+                style += " class:help"
+        return [(style, fit_text(text, max(20, width)), on_click(lambda: self.pick(index)))]
 
     def activate(self):
         if not self.rows:
@@ -354,7 +421,9 @@ class DownloadsPanel:
 
         def submit():
             def complete(_):
-                self.records = self.service().snapshot()
+                service = self.service()
+                self.revision, self.records = service.snapshot_state()
+                self.model_revision = getattr(service, "model_revision", self.revision)
                 self.rebuild()
                 self.message = self.view.tr("Silindi")
 

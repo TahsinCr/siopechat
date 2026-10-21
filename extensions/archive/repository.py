@@ -40,7 +40,7 @@ class SQLiteRepository:
             ).fetchone()
             if exists:
                 versions = db.execute("SELECT version FROM schema_version").fetchall()
-                if versions not in ([(1,)], [(2,)]):
+                if versions not in ([(1,)], [(2,)], [(3,)]):
                     raise OSError("Unsupported archive schema version")
             db.executescript("""
                 PRAGMA journal_mode=WAL;
@@ -89,6 +89,14 @@ class SQLiteRepository:
                 "id TEXT PRIMARY KEY, created REAL NOT NULL, payload TEXT NOT NULL)"
             )
             db.execute("UPDATE schema_version SET version=2 WHERE version=1")
+        # Revisions let a process reject stale download-history writes without
+        # changing the payload contract or overwriting another process's row.
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            columns = {row[1] for row in db.execute("PRAGMA table_info(downloads)")}
+            if "revision" not in columns:
+                db.execute("ALTER TABLE downloads ADD COLUMN revision INTEGER NOT NULL DEFAULT 0")
+            db.execute("UPDATE schema_version SET version=3 WHERE version=2")
         if os.name != "nt":
             self.path.chmod(0o600)
 
