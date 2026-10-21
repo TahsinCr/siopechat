@@ -49,6 +49,37 @@ def system_timezone():
     return None
 
 
+def _sse_data(lines):
+    """Yield Server-Sent Events data fields, including valid multiline payloads."""
+    data = []
+    for line in lines:
+        if line == "":
+            if data:
+                yield "\n".join(data)
+                data.clear()
+            continue
+        if line.startswith(":"):
+            continue
+        field, separator, value = line.partition(":")
+        if field == "data":
+            if separator and value.startswith(" "):
+                value = value[1:]
+            if data:
+                previous = "\n".join(data)
+                try:
+                    json.loads(previous)
+                except json.JSONDecodeError:
+                    pass
+                else:
+                    # Preserve providers that emit one complete JSON event per
+                    # data line without the blank separator required by SSE.
+                    yield previous
+                    data.clear()
+            data.append(value)
+    if data:
+        yield "\n".join(data)
+
+
 class ChatGPTClient:
     def __init__(self, session: BrowserSession, *, authenticate: bool = True) -> None:
         self.session = session
@@ -530,10 +561,7 @@ class ChatGPTClient:
                 raise ChatGPTWebError(
                     f"ChatGPT returned unexpected content type {content_type or '<missing>'}"
                 )
-            for line in response.iter_lines():
-                if not line.startswith("data: "):
-                    continue
-                payload = line[6:]
+            for payload in _sse_data(response.iter_lines()):
                 if payload == "[DONE]":
                     terminal_seen = True
                     break

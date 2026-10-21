@@ -299,3 +299,32 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(
             (sent[0]["model"], sent[0]["thinking_effort"]), ("account-thinking", "standard")
         )
+
+    def test_chatgpt_stream_accepts_sse_data_without_space_and_multiline_json(self):
+        event = json.dumps(
+            {
+                "conversation_id": "chat",
+                "message": {
+                    "id": "assistant",
+                    "author": {"role": "assistant"},
+                    "content": {"parts": ["Answer"]},
+                },
+            }
+        )
+        midpoint = event.index('"message"')
+        payload = (
+            f": keepalive\n\ndata:{event[:midpoint]}\ndata: {event[midpoint:]}\n\ndata:[DONE]\n\n"
+        )
+        self.client.http.close()
+        self.client.http = httpx.Client(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(
+                    200, headers={"content-type": "text/event-stream"}, text=payload
+                )
+            )
+        )
+        with patch.object(self.client, "create_sentinel_headers", return_value={}):
+            result = self.client.send_prompt_direct(None, "hello", [])
+
+        self.assertEqual(result[0], "chat")
+        self.assertEqual(self.client._last_stream_messages[0]["content"]["parts"], ["Answer"])
