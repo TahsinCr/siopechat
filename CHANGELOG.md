@@ -8,6 +8,10 @@ Python distributions use the corresponding PEP 440 version (`1.2b0` for `v1.2-be
 
 ## [Unreleased]
 
+### Fixed
+
+- Isolate task observer failures from provider streaming and completed-response persistence.
+
 ## [1.2-beta] - 2026-10-21
 
 ### Added

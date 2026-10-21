@@ -1,6 +1,7 @@
 """One asyncio-loop runtime; UI subscriptions never own the response stream."""
 
 import asyncio
+import logging
 import math
 import time
 import uuid
@@ -21,6 +22,8 @@ from providers.api import (
 )
 from providers.registry import ProviderRegistry
 from utils.events import EventBus
+
+_LOG = logging.getLogger(__name__)
 
 
 class JobState(str, Enum):
@@ -162,7 +165,25 @@ class TaskService:
         job.version += 1
         event = JobChanged(job_id, job.state, job.version)
         # The shared bus carries invalidations; bounded UI queues retain drop/resync semantics.
-        self.events.publish(event)
+        try:
+            self.events.publish(event)
+        except Exception:
+            # State notifications are invalidations; a broken observer must not
+            # turn a successful provider response into a failed job.
+            _LOG.warning("Task state observer failed for job %s", job_id)
+
+    @staticmethod
+    def _deliver_event(job: _Job, event) -> None:
+        sink = job.event_sink
+        if sink is None:
+            return
+        try:
+            sink(event)
+        except Exception:
+            # Detach a faulty view once. Provider streaming and persistence own
+            # the job lifecycle, not a callback attached to one presentation.
+            job.event_sink = None
+            _LOG.warning("Detached failing task observer for job %s", job.request.chat_id)
 
     def _check_account(self, account: tuple[str, str]) -> None:
         if account not in self._blocked:
@@ -288,8 +309,7 @@ class TaskService:
                                     job.reasoning_chunks.clear()
                                 job.reasoning_chunks.append(event.text)
                                 job.reasoning_length = length
-                                if job.event_sink is not None:
-                                    job.event_sink(event)
+                                self._deliver_event(job, event)
                                 self._changed(job_id)
                                 continue
                             length = len(event.text)
@@ -305,8 +325,7 @@ class TaskService:
                             job.state = JobState.STREAMING
                         else:
                             raise TypeError("unsupported provider event")
-                        if job.event_sink is not None:
-                            job.event_sink(event)
+                        self._deliver_event(job, event)
                         self._changed(job_id)
                 if job.cancel_requested:
                     raise asyncio.CancelledError

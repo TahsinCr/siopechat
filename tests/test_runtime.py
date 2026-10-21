@@ -130,6 +130,25 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.gpt.release("one")
         await self.finish(replacement)
 
+    async def test_failing_view_callback_does_not_fail_provider_or_persistence(self):
+        persisted = []
+
+        def broken_view(_event):
+            raise RuntimeError("view closed during stream")
+
+        async def persist():
+            persisted.append("saved")
+
+        job = self.runtime.submit(request(), on_event=broken_view, on_complete=persist)
+        await self.started(self.gpt)
+        self.gpt.release("one")
+
+        result = await self.finish(job)
+
+        self.assertEqual(result.state, JobState.COMPLETED)
+        self.assertEqual(result.text, "partial response")
+        self.assertEqual(persisted, ["saved"])
+
     async def test_cancel_queued_does_not_affect_running_job(self):
         running = self.runtime.submit(request())
         queued = self.runtime.submit(request("two"))
