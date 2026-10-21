@@ -16,6 +16,7 @@ Python distributions use the corresponding PEP 440 version (`1.2b0` for `v1.2-be
 ### Fixed
 
 - Isolate task observer failures from provider streaming and completed-response persistence.
+- Keep a provider event loop open when cleanup times out or its thread misses the shutdown deadline, allowing a later retry.
 - Reject HTML login or verification pages returned in place of named downloads, while allowing explicit HTML attachments.
 
 ### Security

@@ -40,11 +40,59 @@ class AccountTests(unittest.TestCase):
 
     def test_runtime_shutdown_does_not_cancel_provider_loop_cleanup(self):
         self.accounts.call(asyncio.sleep(0))
+        thread = self.accounts._thread
 
         self.api.runtime.close()
 
         self.assertTrue(self.accounts.closed)
-        self.assertFalse(self.accounts._thread.is_alive())
+        self.assertFalse(thread.is_alive())
+
+    def test_shutdown_keeps_a_live_event_loop_open_for_retry(self):
+        loop, thread = Mock(), Mock()
+        loop.is_running.return_value = True
+        loop.is_closed.return_value = False
+        thread.is_alive.side_effect = (True, True)
+        self.accounts._loop, self.accounts._thread = loop, thread
+
+        def close_coroutine(coroutine, *, _closing=False):
+            coroutine.close()
+
+        try:
+            with (
+                patch.object(self.accounts, "call", side_effect=close_coroutine),
+                self.assertRaisesRegex(RuntimeError, "remains open"),
+            ):
+                self.accounts.close()
+            loop.close.assert_not_called()
+            loop.call_soon_threadsafe.assert_called_once_with(loop.stop)
+            self.assertIs(self.accounts._loop, loop)
+            self.assertIs(self.accounts._thread, thread)
+        finally:
+            self.accounts._loop = self.accounts._thread = None
+
+    def test_shutdown_timeout_does_not_stop_or_close_the_live_event_loop(self):
+        loop, thread = Mock(), Mock()
+        loop.is_running.return_value = True
+        loop.is_closed.return_value = False
+        thread.is_alive.return_value = True
+        self.accounts._loop, self.accounts._thread = loop, thread
+
+        def time_out(coroutine, *, _closing=False):
+            coroutine.close()
+            raise TimeoutError("slow provider close")
+
+        try:
+            with (
+                patch.object(self.accounts, "call", side_effect=time_out),
+                self.assertRaisesRegex(RuntimeError, "remains open"),
+            ):
+                self.accounts.close()
+            loop.call_soon_threadsafe.assert_not_called()
+            loop.close.assert_not_called()
+            thread.join.assert_not_called()
+            self.assertIs(self.accounts._loop, loop)
+        finally:
+            self.accounts._loop = self.accounts._thread = None
 
     def test_verification_survives_closed_browser_and_account_service_restart(self):
         path = self.accounts.directory(self.gemini) / "cookies.json"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import mimetypes
 import os
 import subprocess
@@ -28,10 +29,12 @@ from providers.models import FeatureState, ModelCatalog, SessionState
 from providers.profiles import import_cookies
 from providers.registry import PROVIDERS
 from providers.session import read_session, save_session
+from utils.compatibility import ExceptionGroup
 
 CATALOG_SCHEMA = 2
 MODEL_TIMEOUT = 30
 HISTORY_TIMEOUT = 20
+_LOG = logging.getLogger(__name__)
 
 
 def identity(context, remote):
@@ -416,26 +419,60 @@ class Accounts:
 
     def close(self):
         self.closed = True
-        if self._loop is not None:
+        loop, thread = self._loop, self._thread
+        if loop is None or thread is None:
+            return
 
-            async def cleanup():
+        async def cleanup():
+            errors = []
+            try:
                 await self.api.tasks.close()
-                current = asyncio.current_task()
-                pending = [task for task in asyncio.all_tasks() if task is not current]
-                for task in pending:
-                    if not task.get_name().startswith("siope-persist:"):
-                        task.cancel()
-                await asyncio.gather(*pending, return_exceptions=True)
-                for provider in self._providers.values():
-                    close = getattr(provider, "close", None)
-                    if close:
+            except Exception as error:
+                errors.append(error)
+            current = asyncio.current_task()
+            pending = [task for task in asyncio.all_tasks() if task is not current]
+            for task in pending:
+                if not task.get_name().startswith("siope-persist:"):
+                    task.cancel()
+            results = await asyncio.gather(*pending, return_exceptions=True)
+            errors.extend(result for result in results if isinstance(result, Exception))
+            for provider in self._providers.values():
+                close = getattr(provider, "close", None)
+                if close:
+                    try:
                         await close()
+                    except Exception as error:
+                        errors.append(error)
+            if errors:
+                raise ExceptionGroup("account shutdown failed", errors)
 
-            self.call(cleanup(), _closing=True)
-            self._loop.call_soon_threadsafe(self._loop.stop)
-            self._thread.join(timeout=5)
-            self._loop.close()
-            self._loop = None
+        cleanup_error = None
+        if loop.is_running():
+            try:
+                self.call(cleanup(), _closing=True)
+            except TimeoutError as error:
+                message = (
+                    "Provider cleanup timed out; its event loop remains open for a later retry"
+                )
+                _LOG.error(message)
+                raise RuntimeError(message) from error
+            except Exception as error:
+                cleanup_error = error
+            try:
+                loop.call_soon_threadsafe(loop.stop)
+            except RuntimeError as error:
+                cleanup_error = cleanup_error or error
+        if thread.is_alive():
+            thread.join(timeout=5)
+        if thread.is_alive():
+            message = "Provider event loop did not stop; it remains open for a later shutdown retry"
+            _LOG.error(message)
+            raise RuntimeError(message) from cleanup_error
+        if not loop.is_closed():
+            loop.close()
+        self._loop = self._thread = None
+        if cleanup_error is not None:
+            raise cleanup_error
 
     def browser_connected(self, key):
         # A short local socket probe cannot block UI binding on an HTTP timeout.
