@@ -4152,6 +4152,30 @@ class ChatView:
         resolved_id = conversation_id
         resolved_title: str | None = None
         resolved_model: str | None = None
+        refresh_lock = threading.Lock()
+        refresh_pending = False
+        refresh_status = False
+
+        def schedule_stream_refresh(*, show_status: bool = False) -> None:
+            nonlocal refresh_pending, refresh_status
+            with refresh_lock:
+                refresh_status = refresh_status or show_status
+                if refresh_pending:
+                    return
+                refresh_pending = True
+
+            def update_active_view() -> None:
+                nonlocal refresh_pending, refresh_status
+                with refresh_lock:
+                    update_status = refresh_status
+                    refresh_status = False
+                    refresh_pending = False
+                if is_active():
+                    if update_status:
+                        self.status = self.tr("Streaming response…")
+                    self.scroll_bottom(force=False)
+
+            self._dispatch_ui(update_active_view)
 
         def register_connection(connection: Any) -> None:
             target_tab["connection"] = connection
@@ -4183,7 +4207,7 @@ class ChatView:
                         }
                         messages.insert(max(0, len(messages) - 1), item)
                     item["text"] = item["text"] + text if event_type == "delta" else text
-                self._dispatch_ui(lambda: self.scroll_bottom(force=False) if is_active() else None)
+                schedule_stream_refresh()
                 return
             identity = event.get("message_id")
             if identity and final_message_id and identity != final_message_id:
@@ -4199,13 +4223,7 @@ class ChatView:
                 return
             with self.lock:
                 messages[-1]["text"] = rendered
-
-            def update_active_view() -> None:
-                if is_active():
-                    self.status = self.tr("Streaming response…")
-                    self.scroll_bottom(force=False)
-
-            self._dispatch_ui(update_active_view)
+            schedule_stream_refresh(show_status=True)
 
         try:
             result = (send_callback or self.send_prompt)(

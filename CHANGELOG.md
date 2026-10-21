@@ -10,6 +10,7 @@ Python distributions use the corresponding PEP 440 version (`1.2b0` for `v1.2-be
 
 ### Changed
 
+- Coalesce redundant streaming scroll updates while retaining every response and reasoning fragment.
 - Use `uv.lock` for the cross-platform CI matrix and check upgraded dependency versions separately on Linux.
 - Render only visible download-history rows and cache formatted fragments until their content changes.
 - Reconcile download history with revision-guarded bulk SQLite writes, avoiding full-history rewrites on startup; check each download directory once when refreshing file status.
