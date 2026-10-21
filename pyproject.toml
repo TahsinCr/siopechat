@@ -33,7 +33,7 @@ dependencies = [
 siopechat = "bootstrap:main"
 
 [dependency-groups]
-dev = ["ruff>=0.11,<1"]
+dev = ["build>=1,<2", "ruff>=0.11,<1", "twine>=6,<7"]
 
 [tool.ruff]
 target-version = "py310"

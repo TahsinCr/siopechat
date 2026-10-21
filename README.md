@@ -188,21 +188,23 @@ Bundled providers use their HTTPS transports for conversations and projects. Pac
 
 The provider library is independent of the terminal, archive and application runtime. `accounts.py` routes provider/account work; `runtime.py`, `actions.py` and `extension.py` manage shared services and contributions. Terminal-specific code stays in `src/cli/`, with tab rendering in `layout.py` and library filtering/rows in `library.py`. Optional features live in `extensions/`, common helpers in `src/utils/`. A GUI can consume the same services; no GUI is included in this beta.
 
-Tests run without requiring your personal account sessions:
+Tests run without requiring your personal account sessions. Install [uv](https://docs.astral.sh/uv/) first; the first command creates the lockfile-backed development environment:
 
 ```sh
-PYTHONPATH=src:. python -m unittest discover -s tests
+uv sync --locked --all-groups
+PYTHONPATH=src:. uv run --locked python -m unittest discover -s tests
 node --test tests/js/*.test.cjs
-uvx ruff check src extensions tests
-uvx ruff format --check src extensions tests
-uv build
+uv run --locked python -m ruff check .
+uv run --locked python -m ruff format --check .
+uv run --locked python -m build
+uv run --locked python -m twine check dist/*
 ```
 
 Before reporting an issue, note the provider, operation, terminal, operating system and error message. Remove credentials and private conversation content. The [changelog](CHANGELOG.md) records release changes.
 
 `Accounts` sends use the shared `TaskService`, with an account resolver, response limits and persistence inside the account queue. Cancellation releases the account after transport cleanup and accepted-response writes finish. Provider registration accepts an `account_factory` for isolated adapter instances. Terminal reads, mutations and Markdown preparation use separate bounded worker pools; closing a tab does not cancel its response.
 
-The GitHub Actions workflow defines Python 3.10/3.14 and Node 22/24 checks on Linux, Windows and macOS, including package builds. Passing unit tests or CI does not establish live provider compatibility or native terminal interaction. Session files still use private file permissions rather than an operating-system credential vault; the signing helper is a separate process with restricted inputs and environment, and Node VM execution is not an OS security sandbox.
+The GitHub Actions workflow runs the locked Python 3.10/3.14 and Node 22/24 matrix on Linux, Windows and macOS, plus a Linux compatibility job with upgraded dependencies. Passing unit tests or CI does not establish live provider compatibility or native terminal interaction. Session files still use private file permissions rather than an operating-system credential vault; the signing helper is a separate process with restricted inputs and environment, and Node VM execution is not an OS security sandbox.
 
 ## License
 

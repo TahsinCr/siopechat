@@ -188,21 +188,23 @@ Yerleşik sağlayıcılar sohbet ve proje işlemlerinde kendi HTTPS taşıyıcı
 
 Sağlayıcı kütüphanesi terminalden, arşivden ve uygulama çalışma zamanından bağımsızdır. `accounts.py` sağlayıcı/hesap işlerini yönlendirir; `runtime.py`, `actions.py` ve `extension.py` ortak servis ve katkıları yönetir. Terminal kodu `src/cli/` altında; sekme çizimi `layout.py`, kütüphane filtreleri ve satırları `library.py` içindedir. İsteğe bağlı özellikler `extensions/`, ortak yardımcılar `src/utils/` altındadır. Aynı servisler bir GUI tarafından kullanılabilir; bu betada GUI bulunmuyor.
 
-Testler kişisel hesap oturumlarınızı gerektirmez:
+Testler kişisel hesap oturumlarınızı gerektirmez. Önce [uv](https://docs.astral.sh/uv/) kurun; ilk komut kilit dosyasına bağlı geliştirme ortamını oluşturur:
 
 ```sh
-PYTHONPATH=src:. python -m unittest discover -s tests
+uv sync --locked --all-groups
+PYTHONPATH=src:. uv run --locked python -m unittest discover -s tests
 node --test tests/js/*.test.cjs
-uvx ruff check src extensions tests
-uvx ruff format --check src extensions tests
-uv build
+uv run --locked python -m ruff check .
+uv run --locked python -m ruff format --check .
+uv run --locked python -m build
+uv run --locked python -m twine check dist/*
 ```
 
 Hata bildirirken sağlayıcıyı, işlemi, terminali, işletim sistemini ve hata mesajını belirtin. Kimlik bilgilerini ve özel sohbet içeriğini çıkarın. Sürüm değişiklikleri [CHANGELOG.md](CHANGELOG.md) içinde yer alır.
 
 `Accounts` gönderimleri hesap çözümleyicisi, yanıt sınırı ve hesap kuyruğu içindeki kayıt işlemiyle ortak `TaskService` üzerinden çalışır. İptal, taşıyıcı temizliği ve kabul edilmiş yanıtın yazımı bittikten sonra hesabı serbest bırakır. Sağlayıcı kaydındaki `account_factory`, hesaplara bağımsız adaptör örnekleri oluşturur. Terminal okumaları, değişiklik işlemleri ve Markdown hazırlığı ayrı, sınırlı iş havuzları kullanır; sekmeyi kapatmak yanıtı iptal etmez.
 
-GitHub Actions tanımı Linux, Windows ve macOS üzerinde Python 3.10/3.14 ve Node 22/24 kontrollerini, ayrıca paket üretimini kapsar. Birim testleri veya CI başarısı, canlı sağlayıcı uyumluluğunu ve gerçek terminal etkileşimini tek başına doğrulamaz. Oturumlar işletim sistemi kasası yerine özel dosya izinleriyle saklanır. İmzalama yardımcısı sınırlı girdi ve ortamla ayrı süreçte çalışır; Node VM bir işletim sistemi güvenlik sandbox’ı değildir.
+GitHub Actions, Linux, Windows ve macOS üzerinde kilitli bağımlılıklarla Python 3.10/3.14 ve Node 22/24 matrisini; ayrıca güncel bağımlılıklarla Linux uyumluluk işini ve paket üretimini kapsar. Birim testleri veya CI başarısı, canlı sağlayıcı uyumluluğunu ve gerçek terminal etkileşimini tek başına doğrulamaz. Oturumlar işletim sistemi kasası yerine özel dosya izinleriyle saklanır. İmzalama yardımcısı sınırlı girdi ve ortamla ayrı süreçte çalışır; Node VM bir işletim sistemi güvenlik sandbox’ı değildir.
 
 ## Lisans
 
