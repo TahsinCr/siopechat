@@ -9,6 +9,18 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 ## [Unreleased]
 
 ### Added
+- Add clean-install wheel and source-archive checks for the standalone provider package to CI.
+
+### Changed
+- Render large fenced code messages through bounded transcript windows, avoiding full-message ANSI buffers and syntax tokenization.
+- Document the archive's 20 MiB local-file copy limit in all README languages.
+
+### Fixed
+- Stop ChatGPT file uploads by cancelling the synchronous transfer, and reject files changed after preflight.
+- Keep split-pane transcript render caches bounded and release inactive pane pages.
+- Retain failed provider backends for a later `close()` retry instead of discarding them.
+
+### Added
 
 - Add an optional process-tree performance sampler for SiopeChat, recording CPU, resident memory, thread count and process count to CSV.
 - Publish a host-independent provider client, account factory and complete typed backend contract; the provider directory includes standalone packaging and portable API tests.
