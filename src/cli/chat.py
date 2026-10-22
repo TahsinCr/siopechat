@@ -2918,6 +2918,9 @@ class ChatView:
         getattr(self, "_prepared_transcripts", {}).pop(tab_id, None)
         self.renderer.clear_cache()
         if getattr(self, "_virtual_tab_id", None) == tab_id:
+            layout = getattr(self, "_virtual_transcript", None)
+            if layout is not None:
+                layout.dispose()
             self._virtual_transcript = None
             self._virtual_tab_id = None
             self._virtual_conversation_id = None
@@ -3282,6 +3285,15 @@ class ChatView:
             self._line_render_key = rendered
         return self._transcript_lines
 
+    @staticmethod
+    def _virtual_message_key(messages):
+        """Track the transcript's supported mutation paths without scanning it."""
+        if not messages:
+            return id(messages), 0, None, None, None
+        first = messages[0]
+        last = messages[-1]
+        return id(messages), len(messages), id(first), id(last), id(last.get("text"))
+
     def _virtual_transcript_rows(self, viewport_height):
         """Prepare transcript layout off-thread and retain only viewport pages."""
         from .transcript import VirtualTranscriptRows
@@ -3290,13 +3302,14 @@ class ChatView:
         tab_id = tab.get("tab_id")
         width = self.transcript_width()
         reasoning = self.show_reasoning
-        messages = [dict(message) for message in self.messages]
-        content = tuple((message.get("role"), message.get("text")) for message in messages)
-        active_index = (
-            len(messages) - 1
-            if self.busy and self.busy_tab_index == self.active_tab and messages
-            else None
-        )
+        with self.lock:
+            messages = self.messages
+            message_key = self._virtual_message_key(messages)
+            active_index = (
+                len(messages) - 1
+                if self.busy and self.busy_tab_index == self.active_tab and messages
+                else None
+            )
         conversation_id = tab.get("conversation_id")
         signature = (
             tab_id,
@@ -3304,7 +3317,7 @@ class ChatView:
             width,
             reasoning,
             repr(self.renderer.tokens),
-            content,
+            message_key,
             active_index,
         )
         layout = getattr(self, "_virtual_transcript", None)
@@ -3316,12 +3329,14 @@ class ChatView:
                 getattr(self, "_virtual_tab_id", None) != tab_id
                 or getattr(self, "_virtual_conversation_id", None) != conversation_id
             ):
+                if layout is not None:
+                    layout.dispose()
                 self._virtual_transcript = None
                 layout = None
             self._virtual_tab_id = tab_id
             self._virtual_conversation_id = conversation_id
             self._request_virtual_transcript(
-                tab, messages, width, reasoning, signature, active_index, viewport_height
+                tab, width, reasoning, signature, active_index, viewport_height
             )
             layout = getattr(self, "_virtual_transcript", None)
         if layout is None:
@@ -3331,19 +3346,24 @@ class ChatView:
 
         self.message_ranges = layout.ranges
         self.transcript_line_count = layout.line_count
-        self._transcript_roles = tuple(message.get("role") for message in self.messages)
-        reference = getattr(self, "selected_message_ref", None)
-        if reference is not None:
-            self.selected_message = next(
-                (i for i, item in enumerate(self.messages) if item is reference),
-                self.selected_message,
-            )
+        structure_key = (tab_id, *message_key[:4])
+        if structure_key != getattr(self, "_virtual_selection_key", None):
+            with self.lock:
+                self._transcript_roles = tuple(message.get("role") for message in self.messages)
+                reference = getattr(self, "selected_message_ref", None)
+                if reference is not None:
+                    self.selected_message = next(
+                        (i for i, item in enumerate(self.messages) if item is reference),
+                        self.selected_message,
+                    )
+            self._virtual_selection_key = structure_key
         rows = VirtualTranscriptRows(layout)
         scroll = self.transcript_window.vertical_scroll
         if scroll > layout.line_count:
             scroll = max(0, layout.line_count - viewport_height)
-        start = max(0, scroll - viewport_height)
-        stop = min(layout.line_count, scroll + 2 * viewport_height)
+        overscan = 2 * viewport_height
+        start = max(0, scroll - overscan)
+        stop = min(layout.line_count, scroll + viewport_height + overscan)
         prefetch_key = (id(layout), start, stop)
         self._virtual_prefetch_key = prefetch_key
         if prefetch_key != getattr(self, "_virtual_prefetch_done_key", None) and not getattr(
@@ -3360,15 +3380,17 @@ class ChatView:
                     )
                     self.app.invalidate()
 
+            def prefetch():
+                cancelled = lambda: (
+                    self._virtual_prefetch_key != prefetch_key
+                    or getattr(self, "_virtual_transcript", None) is not layout
+                )
+                layout.prefetch(scroll, min(layout.line_count, scroll + viewport_height), cancelled)
+                if not cancelled():
+                    layout.prefetch(start, stop, cancelled)
+
             self._read_in_background(
-                lambda: layout.prefetch(
-                    start,
-                    stop,
-                    cancelled=lambda: (
-                        self._virtual_prefetch_key != prefetch_key
-                        or getattr(self, "_virtual_transcript", None) is not layout
-                    ),
-                ),
+                prefetch,
                 prefetch_finished,
                 lambda _: prefetch_finished(),
                 session_bound=False,
@@ -3377,7 +3399,7 @@ class ChatView:
         return rows
 
     def _request_virtual_transcript(
-        self, tab, messages, width, reasoning, signature, active_index, viewport_height
+        self, tab, width, reasoning, signature, active_index, viewport_height
     ):
         if getattr(
             self, "_virtual_failed_signature", None
@@ -3411,12 +3433,28 @@ class ChatView:
         tab_id = tab.get("tab_id")
         tokens = dict(self.renderer.tokens)
 
+        with self.lock:
+            if self._virtual_message_key(self.messages) != signature[5]:
+                self._virtual_pending_signature = None
+                return
+            messages = tuple(
+                (message.get("role"), message.get("text", "")) for message in self.messages
+            )
+
         def still_active():
+            current_active_index = (
+                len(self.messages) - 1
+                if self.busy and self.busy_tab_index == self.active_tab and self.messages
+                else None
+            )
             return (
                 any(item is tab for item in self.tabs)
                 and self.tabs[self.active_tab] is tab
                 and self.transcript_width() == width
                 and self.show_reasoning == reasoning
+                and repr(self.renderer.tokens) == signature[4]
+                and self._virtual_message_key(self.messages) == signature[5]
+                and current_active_index == active_index
             )
 
         def read():
@@ -3433,8 +3471,8 @@ class ChatView:
                 if scroll > value.line_count:
                     top = max(0, value.line_count - viewport_height)
                 value.prefetch(
-                    max(0, top - viewport_height),
-                    min(value.line_count, top + 2 * viewport_height),
+                    top,
+                    min(value.line_count, top + viewport_height),
                     cancelled=lambda: not still_active(),
                 )
             return value
@@ -3444,6 +3482,9 @@ class ChatView:
                 self._virtual_pending_signature = None
             if still_active() and tab.get("tab_id") == tab_id:
                 self._virtual_failed_signature = None
+                previous = getattr(self, "_virtual_transcript", None)
+                if previous is not None and previous is not value:
+                    previous.dispose()
                 self._virtual_transcript = value
                 self._virtual_signature = signature
                 self._virtual_tab_id = tab_id
@@ -4320,6 +4361,9 @@ class ChatView:
                             target_tab["model"] = model
                     if target_tab is self.tabs[self.active_tab]:
                         self._restore_active_tab(focus=False)
+                        previous = getattr(self, "_virtual_transcript", None)
+                        if previous is not None:
+                            previous.dispose()
                         self._virtual_transcript = None
                         self._virtual_signature = None
                         self._virtual_tab_id = target_tab.get("tab_id")

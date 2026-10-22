@@ -349,6 +349,63 @@ def index_transcript(ansi, ranges):
     return tuple(indexed)
 
 
+def index_transcript_window(ansi, ranges, start, stop):
+    """Index only a requested row window without building every row in memory."""
+    if not ranges or stop <= start:
+        return ()
+    start = max(0, start)
+    stop = min(stop, ranges[-1][1])
+    if stop <= start:
+        return ()
+
+    rows, spans = [], []
+    line = 0
+    range_index = 0
+
+    def append_span(style, value, handler):
+        if not value or not start <= line < stop:
+            return
+        if spans and spans[-1][0] == style and spans[-1][2] is handler:
+            spans[-1][1].append(value)
+        else:
+            spans.append([style, [value], handler])
+
+    def finish_row():
+        nonlocal line, range_index, spans
+        while range_index < len(ranges) and line >= ranges[range_index][1]:
+            range_index += 1
+        if start <= line < stop:
+            message = ranges[range_index][2] if range_index < len(ranges) else None
+            rows.append(
+                (
+                    tuple(
+                        (style, "".join(parts), handler) if handler else (style, "".join(parts))
+                        for style, parts, handler in spans
+                    ),
+                    message,
+                )
+            )
+        line += 1
+        spans = []
+
+    for fragment in ansi:
+        style, text = fragment[:2]
+        handler = fragment[2] if len(fragment) > 2 else None
+        offset = 0
+        while offset < len(text):
+            newline = text.find("\n", offset)
+            if newline < 0:
+                append_span(style, text[offset:], handler)
+                break
+            append_span(style, text[offset:newline], handler)
+            finish_row()
+            offset = newline + 1
+
+    if line < stop:
+        finish_row()
+    return tuple(rows)
+
+
 class MessageRenderer:
     def __init__(self):
         self.theme = MARKDOWN_THEME

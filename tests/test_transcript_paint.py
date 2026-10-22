@@ -149,6 +149,14 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rows[1][0], (("t", "c"),))
         self.assertEqual([row[1] for row in rows], [0, 1])
 
+    def test_row_window_matches_full_index_without_retaining_other_rows(self):
+        from cli.markdown import index_transcript_window
+
+        ansi = [("style", "first\nsecond\n"), ("link", "third\nfourth\n", object())]
+        ranges = [(0, 2, 7), (2, 4, 8)]
+        full = index_transcript(ansi, ranges)
+        self.assertEqual(index_transcript_window(ansi, ranges, 1, 3), full[1:3])
+
     def test_oversized_transcript_is_not_retained_in_formatted_cache(self):
         with terminal() as (view, _):
             tab = view.tabs[view.active_tab]
@@ -189,21 +197,67 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(virtual.cache_bytes, virtual.CACHE_BYTES)
         self.assertGreater(virtual.cache_bytes, 0)
 
-    def test_virtual_prefetch_evicts_rows_outside_the_overscan_window(self):
+    def test_virtual_message_snapshot_reuses_source_text_without_copying_it(self):
+        from cli.transcript import VirtualTranscript
+
+        source = "A long answer."
+        virtual = VirtualTranscript(
+            [{"role": "assistant", "text": source}], 48, renderer=MessageRenderer()
+        )
+        self.assertEqual(virtual.messages, (("assistant", source),))
+        self.assertIs(virtual.messages[0][1], source)
+
+    def test_virtual_large_message_indexes_only_the_requested_page(self):
+        from cli.transcript import VirtualTranscript
+
+        message = {"role": "assistant", "text": "\n".join(f"Line {i}" for i in range(300))}
+        with (
+            patch.object(VirtualTranscript, "CACHE_BYTES", 1),
+            patch("cli.transcript.index_transcript", side_effect=AssertionError("full index")),
+        ):
+            virtual = VirtualTranscript([message], 48, renderer=MessageRenderer())
+            rows = [virtual.row(i) for i in range(32)]
+        self.assertTrue(any(row[0] for row in rows))
+
+    def test_virtual_message_key_does_not_scan_the_full_history(self):
+        class NonIteratingList(list):
+            def __iter__(self):
+                raise AssertionError("message-key calculation must stay constant-time")
+
+        with terminal() as (view, _):
+            messages = NonIteratingList(
+                [{"role": "user", "text": "Question"}, {"role": "assistant", "text": "Answer"}]
+            )
+            self.assertEqual(
+                view._virtual_message_key(messages),
+                (
+                    id(messages),
+                    2,
+                    id(messages[0]),
+                    id(messages[-1]),
+                    id(messages[-1]["text"]),
+                ),
+            )
+
+    def test_virtual_prefetch_keeps_scrolled_rows_in_bounded_lru(self):
         from cli.transcript import VirtualTranscript
 
         message = {
             "role": "assistant",
             "text": "\n".join(f"Row {i}  " for i in range(1200)),
         }
-        virtual = VirtualTranscript([message], 48, renderer=MessageRenderer())
-        virtual.prefetch(0, 64)
-        first_pages = set(virtual._pages)
-        self.assertTrue(first_pages)
-        virtual.prefetch(600, 664)
+        with patch("cli.transcript.index_transcript", wraps=index_transcript) as index_rows:
+            virtual = VirtualTranscript([message], 48, renderer=MessageRenderer())
+            virtual.prefetch(0, 64)
+            first_pages = set(virtual._pages)
+            self.assertTrue(first_pages)
+            virtual.prefetch(600, 664)
+            self.assertEqual(index_rows.call_count, 1)
         self.assertTrue(virtual._pages)
-        self.assertTrue(all(page != 0 for _, page in virtual._pages))
-        self.assertNotEqual(set(virtual._pages), first_pages)
+        self.assertIn((0, 0), virtual._pages)
+        self.assertNotEqual(set(virtual._pages), set())
+        self.assertTrue(first_pages.issubset(virtual._pages))
+        self.assertLessEqual(virtual.cache_bytes, virtual.CACHE_BYTES)
 
     def test_selection_tracks_the_same_message_after_older_history_is_inserted(self):
         with terminal(

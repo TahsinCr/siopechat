@@ -7,13 +7,14 @@ from threading import RLock
 from .markdown import (
     MessageRenderer,
     index_transcript,
+    index_transcript_window,
     render_chatgpt_annotations,
     transcript_fragments,
 )
 
 
 class VirtualTranscript:
-    """Keep row counts for navigation and only cache rendered viewport pages."""
+    """Keep row counts for navigation and a bounded LRU of rendered pages."""
 
     PAGE_ROWS = 128
     CACHE_BYTES = 1024 * 1024
@@ -28,17 +29,32 @@ class VirtualTranscript:
         self._pages = OrderedDict()
         self._cache_bytes = 0
         self._cancelled = cancelled
+        self._disposed = False
         self.active_index = active_index
-        self.entries = self._ordered(messages)
+        # Retain only the fields needed for drawing.  In particular, do not
+        # keep a second copy of every full provider message dictionary.
+        self.messages = (
+            messages
+            if isinstance(messages, tuple) and (not messages or isinstance(messages[0], tuple))
+            else tuple(
+                message
+                if isinstance(message, tuple)
+                else (message.get("role"), message.get("text", ""))
+                for message in messages
+            )
+        )
+        self.entries = self._ordered(self.messages)
         if not show_reasoning:
-            self.entries = [entry for entry in self.entries if entry[1].get("role") != "reasoning"]
+            self.entries = [
+                index for index in self.entries if self.messages[index][0] != "reasoning"
+            ]
         self.starts = []
         self.ranges = []
         line = 0
-        for index, message in self.entries:
+        for index in self.entries:
             if cancelled and cancelled():
                 raise InterruptedError("Superseded transcript")
-            rendered = self._render(index, message)
+            rendered = self._render(index)
             count = max(1, rendered.count("\n"))
             self.starts.append(line)
             self.ranges.append((line, line + count, index))
@@ -48,20 +64,22 @@ class VirtualTranscript:
     @staticmethod
     def _ordered(messages):
         ordered, pending = [], []
-        for entry in enumerate(messages):
-            if entry[1].get("role") in ("user", "system"):
-                ordered.extend(sorted(pending, key=lambda item: item[1].get("role") != "reasoning"))
+        for index, message in enumerate(messages):
+            role = message[0]
+            if role in ("user", "system"):
+                ordered.extend(sorted(pending, key=lambda item: messages[item][0] != "reasoning"))
                 pending = []
-                ordered.append(entry)
+                ordered.append(index)
             else:
-                pending.append(entry)
-        ordered.extend(sorted(pending, key=lambda item: item[1].get("role") != "reasoning"))
+                pending.append(index)
+        ordered.extend(sorted(pending, key=lambda item: messages[item][0] != "reasoning"))
         return ordered
 
-    def _render(self, index, message):
+    def _render(self, index):
+        role, text = self.messages[index]
         return self.renderer.render(
-            message["role"],
-            render_chatgpt_annotations(message.get("text", "")),
+            role,
+            render_chatgpt_annotations(text or ""),
             self.width,
             index > 0,
             index == self.active_index,
@@ -74,12 +92,13 @@ class VirtualTranscript:
     def _row_bytes(row):
         return sum(len(span[1].encode("utf-8")) + len(span[0]) * 2 + 48 for span in row[0]) + 64
 
-    def _cache_page(self, entry_index, page, rows):
+    def _cache_page(self, entry_index, page, rows, size=None):
         key = self._page_key(entry_index, page)
         previous = self._pages.pop(key, None)
         if previous is not None:
             self._cache_bytes -= previous[1]
-        size = sum(self._row_bytes(row) for row in rows)
+        if size is None:
+            size = sum(self._row_bytes(row) for row in rows)
         if size > self.CACHE_BYTES:
             return
         self._pages[key] = (rows, size)
@@ -89,20 +108,51 @@ class VirtualTranscript:
             self._cache_bytes -= removed_size
 
     def _render_page(self, entry_index, page):
+        if self._disposed:
+            return ()
         key = self._page_key(entry_index, page)
         cached = self._pages.get(key)
         if cached is not None:
             self._pages.move_to_end(key)
             return cached[0]
-        message_index, message = self.entries[entry_index]
-        rendered = self._render(message_index, message)
+        message_index = self.entries[entry_index]
+        rendered = self._render(message_index)
         fragments = transcript_fragments(rendered)
         count = self.ranges[entry_index][1] - self.ranges[entry_index][0]
-        all_rows = index_transcript(fragments, [(0, count, message_index)])[:count]
         start = page * self.PAGE_ROWS
-        rows = tuple(all_rows[start : start + self.PAGE_ROWS])
-        self._cache_page(entry_index, page, rows)
-        return rows
+        if len(rendered) + count * 128 > self.CACHE_BYTES:
+            rows = index_transcript_window(
+                fragments,
+                [(0, count, message_index)],
+                start,
+                min(count, start + self.PAGE_ROWS),
+            )
+            self._cache_page(entry_index, page, rows)
+            cached = self._pages.get(key)
+            return cached[0] if cached is not None else rows
+
+        all_rows = index_transcript(fragments, [(0, count, message_index)])[:count]
+        page_sizes = []
+        total_size = 0
+        for start in range(0, len(all_rows), self.PAGE_ROWS):
+            stop = min(len(all_rows), start + self.PAGE_ROWS)
+            size = sum(self._row_bytes(all_rows[index]) for index in range(start, stop))
+            page_sizes.append(size)
+            total_size += size
+        if total_size <= self.CACHE_BYTES:
+            for page_number, start in enumerate(range(0, len(all_rows), self.PAGE_ROWS)):
+                rows = tuple(all_rows[start : start + self.PAGE_ROWS])
+                size = page_sizes[page_number]
+                self._cache_page(entry_index, page_number, rows, size)
+        else:
+            start = page * self.PAGE_ROWS
+            rows = tuple(all_rows[start : start + self.PAGE_ROWS])
+            if page < len(page_sizes):
+                self._cache_page(entry_index, page, rows, page_sizes[page])
+        cached = self._pages.get(key)
+        if cached is not None:
+            return cached[0]
+        return tuple(all_rows[start : start + self.PAGE_ROWS])
 
     def _entry_for_line(self, line):
         if line < 0 or line >= self.line_count:
@@ -114,6 +164,8 @@ class VirtualTranscript:
 
     def row(self, line):
         """Blocking access used by explicit text selection and mouse actions."""
+        if self._disposed:
+            return (), None
         entry, local = self._entry_for_line(line)
         if entry is None:
             return (), None
@@ -125,6 +177,8 @@ class VirtualTranscript:
 
     def cached_row(self, line):
         """Non-blocking paint access; a miss is filled by viewport prefetch."""
+        if self._disposed:
+            return None
         entry, local = self._entry_for_line(line)
         if entry is None:
             return (), None
@@ -144,6 +198,8 @@ class VirtualTranscript:
 
     def prefetch(self, start, stop, cancelled=None):
         """Render pages intersecting a viewport plus its caller-selected overscan."""
+        if self._disposed:
+            return
         start = min(max(0, start), max(0, self.line_count - 1))
         stop = min(self.line_count, max(start, stop))
         if stop <= start:
@@ -156,9 +212,8 @@ class VirtualTranscript:
         first, last = self._entry_for_line(first_line)[0], self._entry_for_line(last_line)[0]
         if first is None or last is None:
             return
-        keep = set()
         for entry in range(first, last + 1):
-            if cancelled and cancelled():
+            if self._disposed or (cancelled and cancelled()):
                 return
             entry_start, entry_end, _ = self.ranges[entry]
             local_start = max(start, entry_start) - entry_start
@@ -168,16 +223,10 @@ class VirtualTranscript:
             first_page = local_start // self.PAGE_ROWS
             last_page = (local_end - 1) // self.PAGE_ROWS
             for page in range(first_page, last_page + 1):
-                if cancelled and cancelled():
+                if self._disposed or (cancelled and cancelled()):
                     return
-                keep.add(self._page_key(entry, page))
                 with self._lock:
                     self._render_page(entry, page)
-        with self._lock:
-            for key in tuple(self._pages):
-                if key not in keep:
-                    _, size = self._pages.pop(key)
-                    self._cache_bytes -= size
 
     @property
     def cache_bytes(self):
@@ -187,6 +236,14 @@ class VirtualTranscript:
         with self._lock:
             self._pages.clear()
             self._cache_bytes = 0
+
+    def dispose(self):
+        """Drop rendered pages and stop queued viewport work for a closed view."""
+        with self._lock:
+            self._disposed = True
+            self._pages.clear()
+            self._cache_bytes = 0
+            self.renderer.clear_cache()
 
 
 class VirtualTranscriptRows:

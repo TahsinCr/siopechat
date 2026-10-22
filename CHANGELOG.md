@@ -12,6 +12,10 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 
 - Show a stop button in place of Send while the active chat is generating; pressing Esc twice within three seconds also stops it, with an inline status hint after the first press.
 
+### Changed
+
+- Prioritize the visible transcript before rendering a two-screen buffer above and below it, keep recently visited rows in a one-megabyte LRU, and avoid rescanning the full message list on every terminal paint.
+
 ## [1.3-beta] - 2026-10-22
 
 ### Added
