@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+from array import array
 from collections import OrderedDict
 from io import StringIO
 from threading import RLock
@@ -15,6 +16,7 @@ from urllib.parse import urlsplit
 
 from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.mouse_events import MouseButton, MouseEventType
+from rich.cells import cell_len
 from rich.console import Console
 from rich.markdown import BlockQuote, CodeBlock, Markdown
 from rich.padding import Padding
@@ -33,6 +35,7 @@ WRITING_DIRECTIVE_PATTERN = re.compile(
 )
 
 MARKDOWN_THEME = Theme(DEFAULT_MARKDOWN_STYLE)
+MAX_CODE_HIGHLIGHT_CHARS = 64 * 1024
 
 
 def detect_code_language(code: str) -> str:
@@ -68,10 +71,154 @@ def detect_code_language(code: str) -> str:
 class HighlightedCodeBlock(CodeBlock):
     def __rich_console__(self, console: Console, options: Any) -> Any:
         code = str(self.text).rstrip()
+        if len(code) > MAX_CODE_HIGHLIGHT_CHARS:
+            # Pygments keeps token/style objects for the complete block. Large
+            # provider outputs should remain readable without multiplying their
+            # peak memory and render time by the source length.
+            yield Text(code, style="markdown.code", no_wrap=False, overflow="fold")
+            return
         lexer = self.lexer_name
         if lexer == "text":
             lexer = detect_code_language(code)
         yield Syntax(code, lexer, theme=self.theme, word_wrap=True, padding=(0, 1))
+
+
+def _large_fenced_code_range(text: str) -> tuple[int, int] | None:
+    """Find a lone fenced block's body without copying it or building Markdown tokens."""
+    opening_end = text.find("\n")
+    if opening_end <= 0:
+        return None
+    opening_line = text[:opening_end].rstrip("\r")
+    opening = opening_line.lstrip(" ")
+    if len(opening_line) - len(opening) > 3:
+        return None
+    fence_size = len(opening) - len(opening.lstrip("`"))
+    if fence_size < 3 or "`" in opening[fence_size:]:
+        return None
+
+    end = len(text)
+    while end and text[end - 1] in " \t\r\n":
+        end -= 1
+    closing_start = text.rfind("\n", 0, end) + 1
+    if closing_start <= opening_end:
+        return None
+    closing_line = text[closing_start:end]
+    closing = closing_line.lstrip(" ")
+    if len(closing_line) - len(closing) > 3:
+        return None
+    closing_size = len(closing) - len(closing.lstrip("`"))
+    if closing_size < fence_size or closing[closing_size:].strip():
+        return None
+
+    body_start = opening_end + 1
+    body_end = closing_start
+    if body_end > body_start and text[body_end - 1] == "\n":
+        body_end -= 1
+        if body_end > body_start and text[body_end - 1] == "\r":
+            body_end -= 1
+    return body_start, body_end
+
+
+def _single_large_fenced_code(text: str) -> str | None:
+    """Return a lone large fenced block's body without building Markdown tokens."""
+    bounds = _large_fenced_code_range(text)
+    return text[bounds[0] : bounds[1]] if bounds is not None else None
+
+
+class LargeCodeBlock:
+    """Index and render windows of a large, plain fenced code block."""
+
+    def __init__(self, source: str, bounds: tuple[int, int], width: int, page_rows: int):
+        self.source = source
+        self.start, self.end = bounds
+        self.outer_width = max(1, width)
+        self.width = max(1, width - 2)
+        self.page_rows = page_rows
+        self._wrap_console = Console(width=self.width, force_terminal=False)
+        self.offsets = array("Q", [0])
+        self.parts = array("I", [0])
+        self.line_count = 0
+        self._index_lines()
+
+    def _wrapped(self, line: str):
+        return Text(line, style="markdown.code", no_wrap=False, overflow="fold").wrap(
+            self._wrap_console, self.width, overflow="fold"
+        )
+
+    def _index_lines(self):
+        offset = self.start
+        next_checkpoint = self.page_rows
+        while offset < self.end:
+            line_start = offset
+            newline = self.source.find("\n", offset, self.end)
+            if newline < 0:
+                line_end = self.end
+                offset = self.end
+            else:
+                line_end = newline
+                if line_end > line_start and self.source[line_end - 1] == "\r":
+                    line_end -= 1
+                offset = newline + 1
+            line = self.source[line_start:line_end]
+            if "\t" not in line and cell_len(line) <= self.width:
+                row_count = 1
+            else:
+                row_count = len(self._wrapped(line))
+            line_end = self.line_count + row_count
+            while next_checkpoint <= line_end:
+                if next_checkpoint == line_end:
+                    self.offsets.append(offset)
+                    self.parts.append(0)
+                else:
+                    self.offsets.append(line_start)
+                    self.parts.append(next_checkpoint - self.line_count)
+                next_checkpoint += self.page_rows
+            self.line_count = line_end
+
+        if self.end > self.start and self.source[self.end - 1] in "\n\r":
+            # Rich renders the explicit final newline as an empty visual row.
+            self.line_count += 1
+
+    def rows(self, start: int, stop: int):
+        """Render only visual rows in [start, stop)."""
+        if start < 0 or stop <= start or start >= self.line_count:
+            return ()
+        checkpoint = start // self.page_rows
+        source_offset = self.offsets[checkpoint]
+        skip = self.parts[checkpoint]
+        visual_row = checkpoint * self.page_rows
+        source_offset = max(source_offset, self.start)
+        rows = []
+        while visual_row < stop and source_offset < self.end:
+            newline = self.source.find("\n", source_offset, self.end)
+            if newline < 0:
+                line_end = self.end
+                next_offset = self.end
+            else:
+                line_end = newline
+                if line_end > source_offset and self.source[line_end - 1] == "\r":
+                    line_end -= 1
+                next_offset = newline + 1
+            line = self.source[source_offset:line_end]
+            if "\t" not in line and cell_len(line) <= self.width:
+                wrapped = (Text(line, style="markdown.code"),)
+            else:
+                wrapped = self._wrapped(line)
+            for part in wrapped[skip:]:
+                if visual_row >= start:
+                    rows.append(part)
+                visual_row += 1
+                if visual_row >= stop:
+                    break
+            skip = 0
+            source_offset = next_offset
+        if (
+            len(rows) < stop - start
+            and self.end > self.start
+            and self.source[self.end - 1] in "\n\r"
+        ):
+            rows.append(Text("", style="markdown.code"))
+        return tuple(rows[: stop - start])
 
 
 class CompactBlockQuote(BlockQuote):
@@ -462,7 +609,52 @@ class MessageRenderer:
 
     @staticmethod
     def _cache_entry_bytes(key, value):
-        return 128 + len(key[1].encode("utf-8")) + len(value.encode("utf-8"))
+        # Four bytes per code point is a safe UTF-8 upper bound and avoids
+        # allocating duplicate byte strings just to account for cache memory.
+        return 128 + 4 * (len(key[1]) + len(value))
+
+    def large_code_block(self, text, width, page_rows):
+        if len(text) <= MAX_CODE_HIGHLIGHT_CHARS:
+            return None
+        bounds = _large_fenced_code_range(text)
+        return LargeCodeBlock(text, bounds, width, page_rows) if bounds is not None else None
+
+    def code_prefix_rows(self, role, width):
+        if role != "reasoning":
+            return 0
+        label = Text(self.tokens.get("reasoning_label", "Düşünme özeti"))
+        console = Console(width=width, force_terminal=False)
+        return len(label.wrap(console, max(1, width), overflow="fold"))
+
+    def render_large_code_window(self, role, block, start, stop, *, include_label=False):
+        """Format only a bounded visible window from a large plain code block."""
+        buffer = StringIO()
+        width = block.outer_width
+        console = Console(
+            file=buffer,
+            force_terminal=True,
+            color_system="truecolor",
+            no_color=False,
+            width=width,
+            soft_wrap=False,
+            theme=self.theme,
+            legacy_windows=False,
+        )
+        background = self.tokens.get(
+            role + "_background", "#1c2732" if role == "reasoning" else "#181818"
+        )
+        if include_label and role == "reasoning":
+            console.print(
+                Text(
+                    self.tokens.get("reasoning_label", "Düşünme özeti"),
+                    style=f"{self.tokens.get('reasoning_marker', '#75b5ef')} on {background}",
+                )
+            )
+        rows = block.rows(start, stop)
+        if rows:
+            content = Text("\n", style="markdown.code").join(rows)
+            console.print(Padding(content, (0, 1), style=f"#dedede on {background}", expand=True))
+        return buffer.getvalue()
 
     def transcript(self, messages, width, show_reasoning=True, cancelled=None, active_index=None):
         """Prepare immutable transcript text and line ranges off the UI thread."""
@@ -531,9 +723,15 @@ class MessageRenderer:
                 )
             )
         if text:
+            code = _single_large_fenced_code(text) if len(text) > MAX_CODE_HIGHLIGHT_CHARS else None
+            content = (
+                Text(code, style="markdown.code", no_wrap=False, overflow="fold")
+                if code is not None
+                else ChatMarkdown(text, code_theme="monokai")
+            )
             console.print(
                 Padding(
-                    ChatMarkdown(text, code_theme="monokai"),
+                    content,
                     (0, 1),
                     style=f"#dedede on {background}",
                     expand=True,

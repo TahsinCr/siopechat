@@ -76,7 +76,7 @@ class SplitTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(v.follow_output)
             self.assertEqual(v.transcript_window.vertical_scroll, 12)
 
-    async def test_inactive_busy_pane_keeps_old_message_render_cache(self):
+    async def test_inactive_busy_pane_keeps_bounded_virtual_render_cache(self):
         with interaction.terminal(layout_factory=SplitLayout) as (v, _):
             v.tabs[0]["messages"] = [
                 {"role": "user", "text": "Old"},
@@ -88,8 +88,10 @@ class SplitTests(unittest.IsolatedAsyncioTestCase):
                 pane.render()
                 self.assertFalse(render.call_args_list[0].args[-1])
                 self.assertTrue(render.call_args_list[-1].args[-1])
+                calls = render.call_count
+                self.assertLessEqual(pane.layout.cache_bytes, 1024 * 1024)
                 pane.render()
-                self.assertEqual(render.call_count, 2)
+                self.assertEqual(render.call_count, calls)
 
     async def test_pending_split_can_cancel_and_cannot_duplicate_same_tab(self):
         with interaction.terminal(layout_factory=SplitLayout) as (v, _):

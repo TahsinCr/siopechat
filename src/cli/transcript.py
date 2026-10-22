@@ -32,6 +32,7 @@ class VirtualTranscript:
         self._disposed = False
         self._release_renderer = True
         self.active_index = active_index
+        self._large_code = {}
         # Retain only the fields needed for drawing.  In particular, do not
         # keep a second copy of every full provider message dictionary.
         self.messages = (
@@ -52,11 +53,18 @@ class VirtualTranscript:
         self.starts = []
         self.ranges = []
         line = 0
-        for index in self.entries:
+        for entry_index, index in enumerate(self.entries):
             if cancelled and cancelled():
                 raise InterruptedError("Superseded transcript")
-            rendered = self._render(index)
-            count = max(1, rendered.count("\n"))
+            role, text = self.messages[index]
+            block = self.renderer.large_code_block(text or "", self.width, self.PAGE_ROWS)
+            if block is None:
+                rendered = self._render(index)
+                count = max(1, rendered.count("\n"))
+            else:
+                prefix = self.renderer.code_prefix_rows(role, self.width)
+                self._large_code[entry_index] = (block, prefix)
+                count = prefix + block.line_count + 2
             self.starts.append(line)
             self.ranges.append((line, line + count, index))
             line += count
@@ -103,13 +111,37 @@ class VirtualTranscript:
             self._pages.move_to_end(key)
             return cached[0]
         message_index = self.entries[entry_index]
+        count = self.ranges[entry_index][1] - self.ranges[entry_index][0]
+        start = page * self.PAGE_ROWS
+        large_code = self._large_code.get(entry_index)
+        if large_code is not None:
+            block, prefix = large_code
+            stop = min(count, start + self.PAGE_ROWS)
+            code_start = max(0, start - prefix)
+            code_stop = min(block.line_count, max(0, stop - prefix))
+            rendered = self.renderer.render_large_code_window(
+                self.messages[message_index][0],
+                block,
+                code_start,
+                code_stop,
+                include_label=start == 0,
+            )
+            suffix_start = prefix + block.line_count
+            suffix_rows = max(0, min(stop, suffix_start + 2) - max(start, suffix_start))
+            if suffix_rows:
+                rendered += "\n" * suffix_rows
+            rows = index_transcript(
+                transcript_fragments(rendered), [(0, stop - start, message_index)]
+            )[: stop - start]
+            self._cache_page(entry_index, page, rows)
+            cached = self._pages.get(key)
+            return cached[0] if cached is not None else rows
+
         rendered = self._render(message_index)
         if self._disposed:
             self._release()
             return ()
         fragments = transcript_fragments(rendered)
-        count = self.ranges[entry_index][1] - self.ranges[entry_index][0]
-        start = page * self.PAGE_ROWS
         if len(rendered) + count * 128 > self.CACHE_BYTES:
             rows = index_transcript_window(
                 fragments,
@@ -241,6 +273,7 @@ class VirtualTranscript:
     def _release(self):
         self._pages.clear()
         self._cache_bytes = 0
+        self._large_code.clear()
         self.messages = ()
         if self._release_renderer:
             self.renderer.clear_cache(wait=False)

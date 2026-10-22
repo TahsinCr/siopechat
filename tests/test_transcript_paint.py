@@ -219,6 +219,53 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
             rows = [virtual.row(i) for i in range(32)]
         self.assertTrue(any(row[0] for row in rows))
 
+    def test_large_code_block_skips_expensive_syntax_highlighting(self):
+        from rich.syntax import Syntax as RichSyntax
+
+        large = "```python\n" + "value = 1\n" * 8000 + "```"
+        with (
+            patch("cli.markdown.Syntax", side_effect=AssertionError("large block highlighted")),
+            patch("cli.markdown.ChatMarkdown", side_effect=AssertionError("large block parsed")),
+        ):
+            rendered = MessageRenderer().render("assistant", large, 80, False, False)
+        self.assertIn("value = 1", rendered)
+
+        small = "```python\nprint(1)\n```"
+        with patch("cli.markdown.Syntax", wraps=RichSyntax) as syntax:
+            MessageRenderer().render("assistant", small, 80, False, False)
+        syntax.assert_called_once()
+
+    def test_virtual_large_code_message_indexes_and_renders_only_requested_rows(self):
+        from cli.transcript import VirtualTranscript
+
+        text = "```text\n" + "\n".join(f"row-{index:05}" for index in range(8000)) + "\n```"
+        renderer = MessageRenderer()
+        with patch.object(renderer, "render", side_effect=AssertionError("full message render")):
+            virtual = VirtualTranscript(
+                [{"role": "assistant", "text": text}], 80, renderer=renderer
+            )
+            row, message_index = virtual.row(128 * 20)
+
+        self.assertEqual(message_index, 0)
+        self.assertIn("row-02560", "".join(span[1] for span in row))
+        self.assertLessEqual(virtual.cache_bytes, virtual.CACHE_BYTES)
+        self.assertEqual(len(virtual._pages), 1)
+        virtual.dispose()
+        self.assertEqual(virtual.messages, ())
+
+    def test_large_code_window_checkpoints_preserve_wrapped_rows(self):
+        from cli.markdown import LargeCodeBlock
+
+        source = "abcdefghij " * 40
+        block = LargeCodeBlock(source, (0, len(source)), 12, 3)
+        expected = block._wrapped(source)
+        actual = tuple(
+            row
+            for page in range((block.line_count + 2) // 3)
+            for row in block.rows(page * 3, min(block.line_count, (page + 1) * 3))
+        )
+        self.assertEqual([row.plain for row in actual], [row.plain for row in expected])
+
     def test_virtual_message_key_does_not_scan_the_full_history(self):
         class NonIteratingList(list):
             def __iter__(self):

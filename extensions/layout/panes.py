@@ -1,14 +1,21 @@
 """Optional terminal split layouts; no provider operations or background app loops."""
 
 from prompt_toolkit.data_structures import Point
-from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.layout import DynamicContainer, HSplit, VSplit, Window
 from prompt_toolkit.layout.margins import ScrollbarMargin
 from prompt_toolkit.mouse_events import MouseButton, MouseEventType
 
-from cli.history import prepare_transcript
-from cli.markdown import MessageRenderer, transcript_fragments
-from cli.widgets import BoundedTextControl, TranscriptGutter, TranscriptWindow, fit_text, on_click
+from cli.history import prepare_virtual_transcript
+from cli.markdown import MessageRenderer
+from cli.transcript import VirtualTranscriptRows
+from cli.widgets import (
+    BoundedTextControl,
+    TranscriptControl,
+    TranscriptGutter,
+    TranscriptWindow,
+    fit_text,
+    on_click,
+)
 
 
 class SplitLayout:
@@ -211,11 +218,7 @@ class SplitLayout:
             if key not in self._panes:
                 self._panes[key] = _Pane(v, key)
             pane = self._panes[key]
-            body = DynamicContainer(
-                lambda key=key, pane=pane: (
-                    active if v.tabs[v.active_tab]["tab_id"] == key else pane.body
-                )
-            )
+            body = DynamicContainer(lambda key=key, pane=pane: self._active_body(active, key, pane))
             panes.append(
                 _ClickablePane(
                     pane, [Window(content=pane.header, height=1, style="class:pane.header"), body]
@@ -250,6 +253,12 @@ class SplitLayout:
         self._layout_signature = signature
         self._layout_container = result
         return result
+
+    def _active_body(self, active, key, pane):
+        if self.view.tabs[self.view.active_tab]["tab_id"] == key:
+            pane.release_render_cache()
+            return active
+        return pane.body
 
 
 class _ClickablePane(HSplit):
@@ -297,15 +306,18 @@ class _Pane:
         self.view, self.key = view, key
         self.renderer = MessageRenderer()
         self.cache_key = None
-        self.cached = ANSI("")
+        self.layout = None
         self.follow = True
         self.messages = []
         self.message_ranges = []
+        self._transcript_roles = ()
         self.line_count = 1
         self._pending = None
+        self._prefetch_key = None
+        self._prefetch_running = False
         self._disposed = False
         self.header = BoundedTextControl(self.render_header)
-        self.control = BoundedTextControl(self.render, get_cursor_position=self.cursor)
+        self.control = TranscriptControl(self)
         self.body = TranscriptWindow(
             content=self.control,
             wrap_lines=True,
@@ -347,100 +359,180 @@ class _Pane:
     def cursor(self):
         return Point(0, max(0, self.line_count - 1) if self.follow else self.body.vertical_scroll)
 
+    def transcript_cursor_position(self):
+        return self.cursor()
+
     def render(self):
+        """Keep compatibility with existing layout callers; rows stay virtual."""
+        return self.transcript_rows(1)
+
+    @property
+    def app(self):
+        return self.view.app
+
+    @property
+    def message_selection(self):
+        return self.view.message_selection
+
+    @property
+    def selected_message(self):
+        return self.view.selected_message
+
+    def select_message(self, index):
+        self.activate()
+        self.view.select_message(index)
+
+    def open_message_link(self, url, message_id=None):
+        self.activate()
+        self.view.open_message_link(url, message_id)
+
+    def _current_key(self, tab, width, messages):
+        return (
+            width,
+            self.view._virtual_message_key(messages),
+            self.view.show_reasoning,
+            bool(tab.get("busy")),
+            tab.get("render_revision", 0),
+            repr(self.view.renderer.tokens),
+        )
+
+    def _release_layout(self):
+        layout, self.layout = self.layout, None
+        if layout is not None:
+            layout.dispose()
+        self._prefetch_key = None
+        self._prefetch_running = False
+        self.message_ranges = []
+        self.line_count = 1
+        self.renderer.clear_cache(wait=False)
+
+    def release_render_cache(self):
+        """Drop the inactive-pane pages when the main view owns this tab."""
+        self.cache_key = None
+        self._pending = None
+        self._prefetch_key = None
+        self._release_layout()
+
+    def _request_layout(self, tab, key, messages, width, tokens, active_index):
+        if self._pending == key:
+            return
+        self._pending = key
+        renderer = self.renderer
+
+        def cancelled():
+            return (
+                self._disposed
+                or self.view.tabs[self.view.active_tab].get("tab_id") == self.key
+                or self.tab() is not tab
+                or self._current_key(tab, self.view.transcript_width(), tab.get("messages", []))
+                != key
+            )
+
+        def ready(layout):
+            self._pending = None
+            if cancelled() or self.renderer is not renderer:
+                layout.dispose()
+            else:
+                self._release_layout()
+                self.layout = layout
+                self.cache_key = key
+                self.message_ranges = layout.ranges
+                self.line_count = layout.line_count
+                self._transcript_roles = tuple(role for role, _text in messages)
+            self.view.app.invalidate()
+
+        def failed(_reason):
+            self._pending = None
+            self.view.app.invalidate()
+
+        self.view._read_in_background(
+            lambda: prepare_virtual_transcript(
+                messages,
+                width,
+                tokens,
+                key[2],
+                cancelled,
+                active_index,
+                renderer,
+            ),
+            ready,
+            failed,
+            session_bound=False,
+            cpu=True,
+        )
+
+    def _prefetch(self, layout, scroll, viewport_height):
+        overscan = max(1, viewport_height) * 2
+        start = max(0, scroll - overscan)
+        stop = min(layout.line_count, scroll + viewport_height + overscan)
+        key = (id(layout), start, stop)
+        if key == self._prefetch_key or self._prefetch_running:
+            return
+        self._prefetch_key = key
+        self._prefetch_running = True
+
+        def cancelled():
+            return self._disposed or self.layout is not layout or self._prefetch_key != key
+
+        def finished(_result=None):
+            if self._prefetch_key == key:
+                self._prefetch_running = False
+                self.view.app.invalidate()
+
+        self.view._read_in_background(
+            lambda: layout.prefetch(start, stop, cancelled),
+            finished,
+            lambda _reason: finished(),
+            session_bound=False,
+            cpu=True,
+        )
+
+    def transcript_rows(self, viewport_height=1):
         if self._disposed:
-            return []
+            return (([("class:sidebar.muted", " · ")], None),)
         tab = self.tab()
         width = self.view.transcript_width()
-        if self._disposed:
-            return []
         self.messages = tab.get("messages", [])
         if self.renderer.theme is not self.view.renderer.theme:
             self.renderer = MessageRenderer()
             self.renderer.theme = self.view.renderer.theme
             self.renderer.tokens = self.view.renderer.tokens
             self.cache_key = None
-        key = (
-            width,
-            self.view._virtual_message_key(self.messages),
-            self.view.show_reasoning,
-            bool(tab.get("busy")),
-            tab.get("render_revision", 0),
-            repr(self.view.renderer.tokens),
-        )
+        key = self._current_key(tab, width, self.messages)
         if key != self.cache_key:
+            self._release_layout()
             active = len(self.messages) - 1 if tab.get("busy") else None
+            messages = tuple(
+                (message.get("role"), message.get("text", "")) for message in self.messages
+            )
+            tokens = dict(self.view.renderer.tokens)
             if self.view.app.is_running:
-                if self._pending is None:
-                    self._pending = key
-                    messages = tuple(dict(m) for m in self.messages)
-                    renderer, tokens = self.renderer, dict(self.view.renderer.tokens)
-
-                    def cancelled():
-                        return self._disposed or self.tab() is not tab
-
-                    def ready(result):
-                        self._pending = None
-                        if (
-                            not cancelled()
-                            and self.view._virtual_message_key(tab.get("messages", [])) == key[1]
-                            and tab.get("render_revision", 0) == key[4]
-                            and repr(self.view.renderer.tokens) == key[5]
-                            and self.renderer is renderer
-                            and self.view.transcript_width() == width
-                            and self.view.show_reasoning == key[2]
-                            and bool(tab.get("busy")) == key[3]
-                        ):
-                            text, self.message_ranges, ansi, _ = result
-                            self.line_count = text.count("\n") + 1
-                            self._set_fragments(ansi)
-                            self.cache_key = key
-                        self.view.app.invalidate()
-
-                    def failed(_reason):
-                        self._pending = None
-                        self.view.app.invalidate()
-
-                    self.view._read_in_background(
-                        lambda: prepare_transcript(
-                            messages,
-                            width,
-                            tokens,
-                            key[2],
-                            cancelled,
-                            renderer=renderer,
-                            active_index=active,
-                            index_rows=False,
-                        ),
-                        ready,
-                        failed,
-                        session_bound=False,
-                        cpu=True,
-                    )
-                return self.cached
-            text, self.message_ranges = self.renderer.transcript(
-                self.messages, width, self.view.show_reasoning, active_index=active
-            )
-            self.line_count = text.count("\n") + 1
-            self._set_fragments(transcript_fragments(text))
-            self.cache_key = key
-        return self.cached
-
-    def _set_fragments(self, fragments):
-        self.cached = [
-            (
-                span[0],
-                span[1],
-                on_click(lambda url=getattr(span[2], "url", ""): self.open_link(url)),
-            )
-            if len(span) > 2 and getattr(span[2], "url", None)
-            else span
-            for span in fragments
-        ]
+                self._request_layout(tab, key, messages, width, tokens, active)
+            else:
+                self.layout = prepare_virtual_transcript(
+                    messages,
+                    width,
+                    tokens,
+                    key[2],
+                    active_index=active,
+                    renderer=self.renderer,
+                )
+                self.cache_key = key
+                self.message_ranges = self.layout.ranges
+                self.line_count = self.layout.line_count
+                self._transcript_roles = tuple(role for role, _text in messages)
+        if self.layout is None:
+            return (([("class:sidebar.muted", " · ")], None),)
+        scroll = self.body.vertical_scroll
+        if scroll > self.layout.line_count:
+            scroll = max(0, self.layout.line_count - viewport_height)
+        self._prefetch(self.layout, scroll, max(1, viewport_height))
+        return VirtualTranscriptRows(self.layout)
 
     def dispose(self):
         self._disposed = True
         self._pending = self.cache_key = None
-        self.messages, self.message_ranges = [], []
-        self.cached = ANSI("")
+        self._prefetch_key = None
+        self.messages, self.message_ranges, self._transcript_roles = [], [], ()
+        self._release_layout()
         self.renderer.clear_cache(wait=False)
