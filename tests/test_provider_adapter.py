@@ -206,6 +206,46 @@ class ProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.client.closed.is_set())
         await runtime.close()
 
+    async def test_upload_cancellation_signals_transport_and_waits_for_worker(self):
+        import threading
+        import time
+
+        started, stopped = threading.Event(), threading.Event()
+        closed = threading.Event()
+
+        class UploadClient:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                self.close()
+
+            def close(self):
+                closed.set()
+
+            def upload_file(self, _name, _mime, _path, *, cancel_event=None):
+                started.set()
+                while not (cancel_event and cancel_event.is_set()) and not closed.is_set():
+                    time.sleep(0.002)
+                stopped.set()
+                raise RuntimeError("upload stopped")
+
+        client = UploadClient()
+        provider = ChatGPTProvider(self.session, client_factory=lambda _session: client)
+        cancel_event = threading.Event()
+        task = asyncio.create_task(
+            provider.upload_file(
+                Path(self.directory.name) / "cancel.txt", cancel_event=cancel_event
+            )
+        )
+        self.assertTrue(await asyncio.to_thread(started.wait, 2))
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 2)
+        self.assertTrue(cancel_event.is_set())
+        self.assertTrue(stopped.is_set())
+        self.assertTrue(closed.is_set())
+
     async def test_rate_limit_survives_adapter_and_is_not_retried(self):
         self.client.closed.set()
         self.client.failure = RateLimited(30)

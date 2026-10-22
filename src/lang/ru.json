@@ -111,6 +111,7 @@
   "ui.Describe the attached image.": "Опишите прикреплённое изображение.",
   "ui.Please review the attached files.": "Проверьте прикреплённые файлы.",
   "ui.Dosyalar kontrol ediliyor…": "Проверка файлов…",
+  "ui.Sekme veya hesap değişti; dosya eklemeyi yeniden başlatın": "Вкладка или аккаунт изменились; начните добавление файлов заново.",
   "ui.Save the conversation before renaming it": "Сохраните чат перед переименованием",
   "ui.Usage: /rename TITLE": "Использование: /rename НАЗВАНИЕ",
   "ui.Conversation rename is unavailable": "Переименование чата недоступно",

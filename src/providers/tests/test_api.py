@@ -83,6 +83,38 @@ class PublicAPITests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(RuntimeError):
             client.account("claude")
 
+    async def test_concurrent_close_retries_only_backend_that_failed_to_close(self):
+        client = ProviderClient()
+        flaky = FakeBackend("first")
+        flaky.id = "flaky"
+        healthy = FakeBackend("second")
+        healthy.id = "healthy"
+        flaky_attempts = 0
+
+        async def fail_once():
+            nonlocal flaky_attempts
+            flaky_attempts += 1
+            if flaky_attempts == 1:
+                raise RuntimeError("transient close failure")
+            flaky.closed += 1
+
+        flaky.close = fail_once
+        client.add(flaky)
+        client.add(healthy)
+        results = await asyncio.gather(client.close(), client.close(), return_exceptions=True)
+        self.assertTrue(all(isinstance(result, RuntimeError) for result in results))
+        self.assertEqual(flaky_attempts, 1)
+        self.assertEqual(healthy.closed, 1)
+        self.assertEqual(client.accounts, (("flaky", "first"),))
+        with self.assertRaises(RuntimeError):
+            client.account("flaky", "first")
+
+        await client.close()
+        self.assertEqual(flaky_attempts, 2)
+        self.assertEqual(flaky.closed, 1)
+        self.assertEqual(healthy.closed, 1)
+        self.assertEqual(client.accounts, ())
+
     async def test_early_stop_in_caller_task_can_close_suspended_iterator(self):
         client = ProviderClient()
         backend = client.add(FakeBackend("default"))

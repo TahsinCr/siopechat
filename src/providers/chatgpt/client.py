@@ -808,79 +808,118 @@ class ChatGPTClient:
         return body
 
     def upload_file(
-        self, file_name: str, mime_type: str, data, *, project_id=None
+        self, file_name: str, mime_type: str, data, *, project_id=None, cancel_event=None
     ) -> dict[str, Any]:
+        import os
+        import time
         from pathlib import Path
 
         path = data if isinstance(data, Path) else None
-        if path is not None:
-            size = path.stat().st_size
-        else:
-            size = len(data)
-        max_bytes = 512 * 1024 * 1024
-        if mime_type.startswith("image/"):
-            max_bytes = min(max_bytes, 20 * 1024 * 1024)
-        if Path(file_name).suffix.lower() in {".csv", ".tsv", ".xls", ".xlsx"}:
-            max_bytes = min(max_bytes, 50 * 1024 * 1024)
-        if not 0 < size <= max_bytes:
-            raise ChatGPTWebError("file exceeds the ChatGPT web upload size limit")
-        if mime_type == "image/png" and project_id is None:
-            if path is not None:
-                data = path.read_bytes()
-            if not data.startswith(b"\x89PNG\r\n\x1a\n") or len(data) < 24:
-                raise ChatGPTWebError("invalid PNG file")
-            return self.upload_image(
-                file_name,
-                mime_type,
-                data,
-                int.from_bytes(data[16:20], "big"),
-                int.from_bytes(data[20:24], "big"),
-            )
-        slot = self.request(
-            "POST",
-            urljoin(CHATGPT_ORIGIN, "/backend-api/files"),
-            json={
-                "file_name": file_name,
-                "file_size": size,
-                "use_case": "gizmo" if project_id else "ace_upload",
-                **({"gizmo_id": project_id, "mime_type": mime_type} if project_id else {}),
-            },
-        ).json()
-        file_id, upload_url = slot.get("file_id"), slot.get("upload_url")
-        if not isinstance(file_id, str) or not isinstance(upload_url, str):
-            raise ChatGPTWebError("invalid file upload slot")
-        headers = {"content-type": mime_type, "x-ms-blob-type": "BlockBlob"}
-        if path is not None:
-            headers["content-length"] = str(size)
+        stream = path.open("rb") if path is not None else None
+        try:
+            before = os.fstat(stream.fileno()) if stream is not None else None
+            size = before.st_size if before is not None else len(data)
+            max_bytes = 512 * 1024 * 1024
+            if mime_type.startswith("image/"):
+                max_bytes = min(max_bytes, 20 * 1024 * 1024)
+            if Path(file_name).suffix.lower() in {".csv", ".tsv", ".xls", ".xlsx"}:
+                max_bytes = min(max_bytes, 50 * 1024 * 1024)
+            if not 0 < size <= max_bytes:
+                raise ChatGPTWebError("file exceeds the ChatGPT web upload size limit")
 
-            def chunks():
-                with path.open("rb") as stream:
-                    while block := stream.read(1024 * 1024):
+            deadline = time.monotonic() + max(60, min(3600, size / (512 * 1024)))
+
+            def ensure_active():
+                if cancel_event is not None and cancel_event.is_set():
+                    raise ChatGPTWebError("file upload cancelled")
+                if time.monotonic() >= deadline:
+                    raise ChatGPTWebError("file upload timed out")
+
+            ensure_active()
+            if mime_type == "image/png" and project_id is None:
+                if stream is not None:
+                    data = stream.read()
+                ensure_active()
+                if not data.startswith(b"\x89PNG\r\n\x1a\n") or len(data) < 24:
+                    raise ChatGPTWebError("invalid PNG file")
+                return self.upload_image(
+                    file_name,
+                    mime_type,
+                    data,
+                    int.from_bytes(data[16:20], "big"),
+                    int.from_bytes(data[20:24], "big"),
+                )
+
+            ensure_active()
+            slot = self.request(
+                "POST",
+                urljoin(CHATGPT_ORIGIN, "/backend-api/files"),
+                json={
+                    "file_name": file_name,
+                    "file_size": size,
+                    "use_case": "gizmo" if project_id else "ace_upload",
+                    **({"gizmo_id": project_id, "mime_type": mime_type} if project_id else {}),
+                },
+            ).json()
+            ensure_active()
+            file_id, upload_url = slot.get("file_id"), slot.get("upload_url")
+            if not isinstance(file_id, str) or not isinstance(upload_url, str):
+                raise ChatGPTWebError("invalid file upload slot")
+            headers = {"content-type": mime_type, "x-ms-blob-type": "BlockBlob"}
+            if stream is not None:
+                headers["content-length"] = str(size)
+
+                def chunks():
+                    while True:
+                        ensure_active()
+                        block = stream.read(256 * 1024)
+                        if not block:
+                            return
                         yield block
 
-            content = chunks()
-        else:
-            content = data
-        timeout = max(60, min(3600, size / (512 * 1024)))
-        response = self.http.put(upload_url, content=content, headers=headers, timeout=timeout)
-        response.raise_for_status()
-        result = self.request(
-            "POST",
-            urljoin(CHATGPT_ORIGIN, f"/backend-api/files/{quote(file_id, safe='')}/uploaded"),
-            json={
-                "gizmo_id": project_id,
-                "use_case": "gizmo",
-                "entry_surface": "project_sources",
-                "file_name": file_name,
-                "mime_type": mime_type,
-                "index_for_retrieval": True,
-            }
-            if project_id
-            else {},
-        ).json()
-        if result.get("status") != "success":
-            raise ChatGPTWebError("provider did not finalize the file upload")
-        return {"id": file_id, "name": file_name, "mime_type": mime_type, "size_bytes": size}
+                content = chunks()
+            else:
+                content = data
+            import httpx
+
+            timeout = httpx.Timeout(connect=30, read=15, write=15, pool=30)
+            response = self.http.put(upload_url, content=content, headers=headers, timeout=timeout)
+            response.raise_for_status()
+            ensure_active()
+            if stream is not None:
+                after = os.fstat(stream.fileno())
+
+                def signature(value):
+                    return (
+                        value.st_dev,
+                        value.st_ino,
+                        value.st_size,
+                        value.st_mtime_ns,
+                        value.st_ctime_ns,
+                    )
+
+                if signature(before) != signature(after):
+                    raise ChatGPTWebError("file changed while it was being uploaded")
+            result = self.request(
+                "POST",
+                urljoin(CHATGPT_ORIGIN, f"/backend-api/files/{quote(file_id, safe='')}/uploaded"),
+                json={
+                    "gizmo_id": project_id,
+                    "use_case": "gizmo",
+                    "entry_surface": "project_sources",
+                    "file_name": file_name,
+                    "mime_type": mime_type,
+                    "index_for_retrieval": True,
+                }
+                if project_id
+                else {},
+            ).json()
+            if result.get("status") != "success":
+                raise ChatGPTWebError("provider did not finalize the file upload")
+            return {"id": file_id, "name": file_name, "mime_type": mime_type, "size_bytes": size}
+        finally:
+            if stream is not None:
+                stream.close()
 
     def upload_image(
         self,

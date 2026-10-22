@@ -138,7 +138,14 @@ class AttachmentPicker:
             if stat.st_size > (int(limit) if limit else max_bytes):
                 rejected.append((path.name, view.tr("dosya boyutu sınırı aşıyor")))
                 continue
-            accepted.append({"path": str(path), "name": path.name, "size_bytes": stat.st_size})
+            accepted.append(
+                {
+                    "path": str(path),
+                    "name": path.name,
+                    "size_bytes": stat.st_size,
+                    "source_signature": self._stat_signature(stat),
+                }
+            )
 
         if remaining <= 0:
             rejected.extend(
@@ -167,6 +174,16 @@ class AttachmentPicker:
         """Compare queued and selected files across symlinks and OS path rules."""
         return os.path.normcase(os.path.realpath(os.path.expanduser(str(path))))
 
+    @staticmethod
+    def _stat_signature(stat):
+        return (
+            stat.st_dev,
+            stat.st_ino,
+            stat.st_size,
+            stat.st_mtime_ns,
+            stat.st_ctime_ns,
+        )
+
     def _review(self, value, policy):
         self._prepare_in_background(
             value,
@@ -176,6 +193,13 @@ class AttachmentPicker:
 
     def _prepare_in_background(self, value, policy, ready):
         view = self.view
+        target = (
+            view.tabs[view.active_tab]
+            if hasattr(view, "tabs") and getattr(view, "active_tab", None) is not None
+            else {}
+        )
+        target_tab_id = target.get("tab_id")
+        target_account_key = getattr(view, "account_key", None)
         pending = [dict(item) for item in view.pending_attachments]
         view.attachment_preflight = True
         view.background_jobs += 1
@@ -193,6 +217,19 @@ class AttachmentPicker:
 
         def success(result):
             release()
+            current_tab = (
+                view.tabs[view.active_tab]
+                if hasattr(view, "tabs") and getattr(view, "active_tab", None) is not None
+                else {}
+            )
+            if target_tab_id is not None and current_tab.get("tab_id") != target_tab_id:
+                view.status = view.tr("Sekme veya hesap değişti; dosya eklemeyi yeniden başlatın")
+                view.app.invalidate()
+                return
+            if target_account_key is not None and view.account_key != target_account_key:
+                view.status = view.tr("Sekme veya hesap değişti; dosya eklemeyi yeniden başlatın")
+                view.app.invalidate()
+                return
             ready(result)
 
         def failure(reason):
@@ -314,6 +351,9 @@ class AttachmentPicker:
                     )
                 )
                 try:
+                    current = Path(item["path"]).stat()
+                    if self._stat_signature(current) != item.get("source_signature"):
+                        raise ValueError("Dosya ön kontrolden sonra değişti; yeniden seçin")
                     result = callback(item["path"])
                     if not isinstance(result, dict):
                         raise TypeError("Sağlayıcı dosya kaydı döndürmedi")

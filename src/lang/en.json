@@ -111,6 +111,7 @@
   "ui.Describe the attached image.": "Describe the attached image.",
   "ui.Please review the attached files.": "Please review the attached files.",
   "ui.Dosyalar kontrol ediliyor…": "Checking files…",
+  "ui.Sekme veya hesap değişti; dosya eklemeyi yeniden başlatın": "The tab or account changed; restart file attachment.",
   "ui.Save the conversation before renaming it": "Save the conversation before renaming it",
   "ui.Usage: /rename TITLE": "Usage: /rename TITLE",
   "ui.Conversation rename is unavailable": "Conversation rename is unavailable",

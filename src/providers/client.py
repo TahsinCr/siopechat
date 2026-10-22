@@ -16,7 +16,9 @@ class ProviderClient:
     projects, sources, uploads and downloads. stream() routes a SendRequest using
     both provider_id and account_id; chat/project remote IDs remain provider-owned.
     Closing the client cancels its active streams and closes every owned backend.
-    Use one instance per asyncio event loop; application persistence is external.
+    If a backend close fails, the client stays terminal and a later close() retries
+    only that backend. Use one instance per asyncio event loop; application
+    persistence is external.
     """
 
     def __init__(self):
@@ -75,8 +77,13 @@ class ProviderClient:
                     self._streams.pop(task, None)
 
     async def close(self) -> None:
-        if self._closing is None:
-            self._closed = True
+        self._closed = True
+        retry_failed_close = (
+            self._closing is not None
+            and self._closing.done()
+            and (self._closing.cancelled() or self._closing.exception() is not None)
+        )
+        if self._closing is None or retry_failed_close:
             caller = asyncio.current_task()
 
             async def finish():
@@ -90,13 +97,18 @@ class ProviderClient:
                 )
                 self._iterators.clear()
                 self._streams.clear()
-                backends, self._accounts = tuple(self._accounts.values()), {}
+                backends = tuple(self._accounts.items())
                 results = await asyncio.gather(
-                    *(backend.close() for backend in backends), return_exceptions=True
+                    *(backend.close() for _, backend in backends), return_exceptions=True
                 )
-                for result in results:
-                    if isinstance(result, BaseException):
-                        raise result
+                failures = [
+                    (key, backend, result)
+                    for (key, backend), result in zip(backends, results, strict=True)
+                    if isinstance(result, BaseException)
+                ]
+                self._accounts = {key: backend for key, backend, _ in failures}
+                if failures:
+                    raise failures[0][2]
 
             self._closing = asyncio.create_task(finish())
         await asyncio.shield(self._closing)

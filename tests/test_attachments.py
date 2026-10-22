@@ -437,14 +437,45 @@ class ChatGPTStreamingUploadTests(unittest.TestCase):
                     SimpleNamespace(json=lambda: {"status": "success"}),
                 ]
             )
-            client.http = SimpleNamespace(
-                put=Mock(return_value=SimpleNamespace(raise_for_status=Mock()))
-            )
+            uploaded = []
+
+            def put(_url, *, content, **_kwargs):
+                uploaded.extend(content)
+                return SimpleNamespace(raise_for_status=Mock())
+
+            client.http = SimpleNamespace(put=Mock(side_effect=put))
             with patch.object(Path, "read_bytes", side_effect=AssertionError("full file read")):
                 result = client.upload_file(path.name, "text/plain", path)
-            chunks = client.http.put.call_args.kwargs["content"]
-            self.assertEqual(b"".join(chunks), b"a" * (2 * 1024 * 1024 + 7))
+            self.assertEqual(b"".join(uploaded), b"a" * (2 * 1024 * 1024 + 7))
             self.assertEqual(result["size_bytes"], path.stat().st_size)
+
+    def test_path_upload_cancel_stops_later_chunks_and_skips_finalization(self):
+        import threading
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "cancel.txt"
+            path.write_bytes(b"a" * (512 * 1024))
+            cancel_event = threading.Event()
+            client = object.__new__(ChatGPTClient)
+            client.request = Mock(
+                return_value=SimpleNamespace(
+                    json=lambda: {"file_id": "file-id", "upload_url": "https://upload"}
+                )
+            )
+
+            def put(_url, *, content, **_kwargs):
+                chunks = iter(content)
+                self.assertEqual(len(next(chunks)), 256 * 1024)
+                cancel_event.set()
+                with self.assertRaisesRegex(ChatGPTWebError, "cancelled"):
+                    next(chunks)
+                return SimpleNamespace(raise_for_status=Mock())
+
+            client.http = SimpleNamespace(put=Mock(side_effect=put))
+            with self.assertRaisesRegex(ChatGPTWebError, "cancelled"):
+                client.upload_file(path.name, "text/plain", path, cancel_event=cancel_event)
+            self.assertEqual(client.request.call_count, 1)
+            client.http.put.assert_called_once()
 
     def test_chatgpt_client_rejects_files_above_documented_ceiling_before_network(self):
         client = object.__new__(ChatGPTClient)

@@ -1546,11 +1546,14 @@ class Accounts:
         upload = getattr(provider, "upload_file", None)
         if upload is None:
             raise ValueError("Sağlayıcının dosya yükleme işlemi hazır değil")
-        result = (
-            self.call(upload(path))
-            if cancel_event is None
-            else self._call_cancellable(upload(path), 45, cancel_event)
-        )
+        if cancel_event is None:
+            result = self.call(upload(path))
+        elif key.startswith("chatgpt/"):
+            result = self._call_cancellable(
+                upload(path, cancel_event=cancel_event), 45, cancel_event
+            )
+        else:
+            result = self._call_cancellable(upload(path), 45, cancel_event)
         if key.startswith("gemini/"):
             return result
         remote = result.get("id") or result.get("file_id")

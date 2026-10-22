@@ -83,18 +83,54 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
 
         return policy_for(self.id).as_dict()
 
-    async def upload_file(self, path):
+    async def upload_file(self, path, *, cancel_event=None):
         import mimetypes
+        import threading
         from pathlib import Path
 
         path = Path(path)
         mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        cancelled = cancel_event or threading.Event()
+        holder = []
 
         def upload():
             with self._factory(self.session) as client:
-                return client.upload_file(path.name, mime, path)
+                holder.append(client)
+                try:
+                    return client.upload_file(path.name, mime, path, cancel_event=cancelled)
+                except Exception:
+                    if cancelled.is_set():
+                        return None
+                    raise
 
-        return await asyncio.to_thread(upload)
+        worker = asyncio.create_task(asyncio.to_thread(upload))
+
+        def consume_failure(task):
+            if not task.cancelled():
+                task.exception()
+
+        worker.add_done_callback(consume_failure)
+        waiter = asyncio.shield(worker)
+        waiter.add_done_callback(consume_failure)
+        try:
+            return await waiter
+        except asyncio.CancelledError:
+            cancelled.set()
+            # This dedicated client only serves this upload. Closing its transport
+            # interrupts an in-flight PUT; chunk checks stop the worker if it is
+            # between writes. Wait for the worker so cancellation cannot leak it.
+            if holder:
+                try:
+                    holder[0].close()
+                except Exception:
+                    pass
+            try:
+                cleanup = asyncio.shield(worker)
+                cleanup.add_done_callback(consume_failure)
+                await cleanup
+            except BaseException:
+                pass
+            raise
 
     async def close(self):
         await self.editor.close()
