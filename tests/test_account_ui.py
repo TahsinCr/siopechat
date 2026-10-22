@@ -1,6 +1,7 @@
 """Multi-provider UI states and shared forms, with in-memory backends."""
 
 import asyncio
+import tempfile
 import unittest
 from unittest.mock import Mock
 
@@ -207,15 +208,26 @@ class AccountUiTests(unittest.IsolatedAsyncioTestCase):
     async def test_file_form_focus_and_attach_action(self):
         with interaction.terminal(account_service=Accounts()) as (v, pipe):
             v._read_in_background = immediate
+            v.attachment_policy_callback = lambda: {
+                "max_files": 10,
+                "max_bytes": 1024 * 1024,
+                "allowed_extensions": (),
+            }
             run = asyncio.create_task(v.app.run_async())
             try:
                 await self.settle(lambda: v.app.is_running)
-                v.open_attachment()
-                self.assertIs(v.app.layout.current_control, v.forms.fields["path"].control)
-                pipe.send_text("/tmp/demo.pdf")
-                pipe.send_bytes(b"\x13")
-                await self.settle(lambda: not v.forms.visible)
-                self.assertEqual(v.pending_attachments[0]["name"], "demo.pdf")
+                with tempfile.NamedTemporaryFile(suffix=".pdf") as document:
+                    document.write(b"pdf")
+                    document.flush()
+                    v.open_attachment()
+                    self.assertIs(v.app.layout.current_control, v.forms.fields["files"].control)
+                    path_form = v.forms.container
+                    pipe.send_text(document.name)
+                    pipe.send_bytes(b"\x13")
+                    await self.settle(lambda: v.forms.container is not path_form)
+                    pipe.send_bytes(b"\x13")
+                    await self.settle(lambda: bool(v.pending_attachments) and not v.forms.visible)
+                    self.assertEqual(v.pending_attachments[0]["name"], "demo.pdf")
                 self.assertFalse(v.uploading_image)
             finally:
                 v.app.exit()

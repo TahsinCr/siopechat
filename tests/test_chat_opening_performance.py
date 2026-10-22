@@ -1,5 +1,6 @@
 """UI navigation must not wait for local storage, Markdown rendering or pointer fsync."""
 
+import asyncio
 import tempfile
 import threading
 import time
@@ -12,12 +13,12 @@ from tests.account_fixture import configured_application as create_application
 from tests.test_cli_interaction import terminal
 
 
-class OpeningPerformanceTests(unittest.TestCase):
-    def test_cached_open_does_not_block_ui_and_prepares_the_complete_transcript(self):
+class OpeningPerformanceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cached_open_does_not_block_ui_and_prepares_viewport_off_thread(self):
         with tempfile.TemporaryDirectory() as folder:
             api = create_application(Path(folder))
             accounts = api.get("accounts")
-            entered, release, completed = threading.Event(), threading.Event(), threading.Event()
+            entered, release = threading.Event(), threading.Event()
             ui_thread = threading.get_ident()
             threads = []
             original = MessageRenderer.render
@@ -41,34 +42,44 @@ class OpeningPerformanceTests(unittest.TestCase):
                     terminal(account_service=accounts) as (v, _),
                     patch.object(accounts, "cached", cached),
                     patch.object(v, "refresh_provider_catalog"),
-                    patch.object(
-                        v, "_read_in_background", side_effect=lambda *a, **k: completed.set()
-                    ),
                     patch.object(MessageRenderer, "render", render),
                 ):
-                    start = time.monotonic()
-                    v.resume_conversation("@chatgpt/default/one")
-                    self.assertLess(time.monotonic() - start, 0.15)
-                    self.assertTrue(entered.wait(1))
-                    v.input.text = "Still typing"
-                    release.set()
-                    self.assertTrue(completed.wait(3))
-                    self.assertEqual(v.input.text, "Still typing")
-                    self.assertIn("Saved answer", v.render_transcript())
-                    self.assertTrue(threads)
-                    self.assertNotIn(ui_thread, threads)
-                    v._save_active_tab()
-                    v.new_tab()
-                    v.render_transcript()
-                    v.active_tab = 0
-                    v._restore_active_tab(focus=False)
-                    with patch.object(
-                        v.renderer, "render", side_effect=AssertionError("UI Markdown render")
-                    ):
-                        self.assertIn("Saved answer", v.render_transcript())
+                    run = asyncio.create_task(v.app.run_async())
+                    try:
+                        await self.settle(lambda: v.app.is_running)
+                        start = time.monotonic()
+                        v.resume_conversation("@chatgpt/default/one")
+                        self.assertLess(time.monotonic() - start, 0.15)
+                        await self.settle(entered.is_set)
+                        v.input.text = "Still typing"
+                        release.set()
+                        await self.settle(
+                            lambda: (
+                                bool(v.tabs[0].get("messages"))
+                                and v.tabs[0]["messages"][0].get("text") == "**Saved answer**"
+                            )
+                        )
+                        await self.settle(
+                            lambda: getattr(v, "_virtual_transcript", None) is not None
+                        )
+                        self.assertEqual(v.input.text, "Still typing")
+                        self.assertTrue(threads)
+                        self.assertNotIn(ui_thread, threads)
+                        self.assertLessEqual(v._virtual_transcript.cache_bytes, 1024 * 1024)
+                    finally:
+                        release.set()
+                        v.app.exit()
+                        await run
             finally:
                 release.set()
-                api.runtime.close()
+                await api.runtime.aclose()
+
+    async def settle(self, predicate):
+        deadline = asyncio.get_running_loop().time() + 3
+        while not predicate():
+            if asyncio.get_running_loop().time() >= deadline:
+                self.fail("background UI operation did not complete")
+            await asyncio.sleep(0.005)
 
     def test_pointer_writes_are_off_thread_coalesced_and_drained_on_close(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -4,6 +4,8 @@ from accounts import origin
 from providers import Capability
 from providers.registry import PROVIDERS
 
+from .file_selection import browse_form_field
+
 
 class ProjectPanel:
     def __init__(self, view):
@@ -215,8 +217,26 @@ class ProjectPanel:
                         self.updated,
                     )
 
+                actions = (
+                    [
+                        (
+                            self.view.tr("Dosya yöneticisi"),
+                            lambda: browse_form_field(
+                                self.view,
+                                "path",
+                                source.get("accept"),
+                                multiple=False,
+                            ),
+                        )
+                    ]
+                    if kind == "file"
+                    else []
+                )
                 self.view.forms.open(
-                    self.view.tr("Kaynak ekle · ") + self.label(key), fields, submit
+                    self.view.tr("Kaynak ekle · ") + self.label(key),
+                    fields,
+                    submit,
+                    actions=actions,
                 )
 
             self.view.forms.open(

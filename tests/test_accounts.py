@@ -9,6 +9,7 @@ import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Event
 from unittest.mock import AsyncMock, Mock, patch
 
 from accounts import Accounts, identity, origin
@@ -46,6 +47,21 @@ class AccountTests(unittest.TestCase):
 
         self.assertTrue(self.accounts.closed)
         self.assertFalse(thread.is_alive())
+
+    def test_shutdown_drains_background_persistence_before_stopping_loop(self):
+        persisted = Event()
+
+        async def write_later():
+            await asyncio.sleep(0.02)
+            persisted.set()
+
+        async def schedule_write():
+            asyncio.create_task(write_later(), name="siope-persist:test")
+
+        self.accounts.call(schedule_write())
+        self.api.runtime.close()
+
+        self.assertTrue(persisted.is_set())
 
     def test_shutdown_keeps_a_live_event_loop_open_for_retry(self):
         loop, thread = Mock(), Mock()

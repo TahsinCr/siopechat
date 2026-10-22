@@ -4,19 +4,35 @@ All notable changes to SiopeChat are documented here.
 
 The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
-Python distributions use the corresponding PEP 440 version (`1.2b0` for `v1.2-beta`).
+Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-beta`).
 
 ## [Unreleased]
 
+## [1.3-beta] - 2026-10-22
+
+### Added
+
+- Provider-aware attachment selection with a desktop file chooser, path-based fallback, size/type/count preflight and review, removal of excess files, and background uploads.
+- Keep staged attachments in a shared queue across chat tabs, show the queued file count beside the composer action, and allow clearing the entire queue.
+- Use the same provider-aware desktop file picker for project sources and chat attachments, with an all-files filter available on desktop platforms.
+
 ### Changed
 
+- Bound formatted transcript memory to a one-megabyte cache, discard closed-tab render entries, and prepare only viewport pages in background workers.
 - Coalesce redundant streaming scroll updates while retaining every response and reasoning fragment.
+- Re-upload staged files for the destination account when a message is sent from another provider; keep queued files after failed sends and remove them only after success or explicit clearing.
 - Use `uv.lock` for the cross-platform CI matrix and check upgraded dependency versions separately on Linux.
 - Render only visible download-history rows and cache formatted fragments until their content changes.
 - Reconcile download history with revision-guarded bulk SQLite writes, avoiding full-history rewrites on startup; check each download directory once when refreshing file status.
 
 ### Fixed
 
+- Serialize concurrent writes to each provider session file so Windows cannot reject overlapping atomic replacements with `WinError 5`.
+- Match queued file paths using normalized filesystem identities, including macOS symlink aliases and Windows path casing, so selecting an already queued file does not add it twice.
+- Drain account persistence writes before stopping provider workers, and await archive workers during async shutdown so SQLite files are not left in use after runtime teardown.
+- Keep expected provider failures during cancellation from turning a clean shutdown into an error.
+- Clear submitted files from the composer immediately when sending starts, restore them if the send fails, and retain their local data until the provider finishes using it.
+- Clear the exact attachment snapshot after a successful send even when a provider omits file IDs, while preserving files queued during that send; allow switching to existing or loading chats during background attachment uploads.
 - Isolate task observer failures from provider streaming and completed-response persistence.
 - Keep a provider event loop open when cleanup times out or its thread misses the shutdown deadline, allowing a later retry.
 - Reject HTML login or verification pages returned in place of named downloads, while allowing explicit HTML attachments.

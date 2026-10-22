@@ -38,7 +38,7 @@ from utils import clipboard
 
 from .actions import action_order, action_title
 from .bindings import key_bindings
-from .history import prepare_archive_snapshot, prepare_transcript
+from .history import prepare_archive_snapshot, prepare_transcript, prepare_virtual_transcript
 from .layout import render_tab_bar, workspace_layout
 from .library import SORT_OPTIONS, build_sidebar_rows
 from .markdown import (
@@ -136,6 +136,7 @@ class ChatView:
         self._archive_page_ids = {}
         self._model_picker_requests = set()
         self.attach_file_callback = None
+        self.attachment_policy_callback = None
         self.settings_rows_callback = settings_rows
         self.change_setting = change_setting
         self.load_preferences = load_preferences
@@ -205,6 +206,8 @@ class ChatView:
         self.uploading_image = False
         self.upload_started: float | None = None
         self.pending_attachments: list[dict[str, Any]] = []
+        self._attachments_in_flight = False
+        self._inflight_attachments: list[dict[str, Any]] = []
         self.status = "Ready"
         self.cancel_connection: Any = None
         from .background import BackgroundReads
@@ -826,39 +829,19 @@ class ChatView:
         self.project_panel.create()
 
     def open_attachment(self):
-        if self.attach_file_callback is None:
-            self.status = self.tr("Bu sağlayıcıda dosya ekleme kullanılamıyor")
-            self.app.invalidate()
+        from .attachments import AttachmentPicker
+
+        AttachmentPicker(self).open()
+
+    def _release_staged_attachments(self, attachments):
+        release = getattr(self.account_service, "release_attachment", None)
+        if not callable(release):
             return
-        callback = self.attach_file_callback
-
-        def submit(values):
-            if self.uploading_image or self.loading_conversation or self.busy:
-                raise ValueError(self.tr("Devam eden işlem tamamlanınca dosya ekleyin"))
-            self.uploading_image = True
-            self.background_jobs += 1
-            self.status = self.tr("Dosya hazırlanıyor…")
-
-            def success(attachment):
-                self.uploading_image = False
-                self.background_jobs -= 1
-                self.pending_attachments.append(attachment)
-                self.status = self.tr("Dosya eklendi · ") + attachment.get("name", "")
-                self.app.invalidate()
-
-            def failure(reason):
-                self.uploading_image = False
-                self.background_jobs -= 1
-                self.status = str(reason)
-                self.app.invalidate()
-
-            self._read_in_background(lambda: callback(values["path"]), success, failure)
-
-        self.forms.open(
-            self.tr("Dosya ekle"),
-            [("path", self.tr("Dosya yolu · Tab ile tamamla · en fazla 20 MiB"), "", None)],
-            submit,
-        )
+        for attachment in attachments:
+            try:
+                release(attachment)
+            except OSError:
+                continue
 
     def _new_tab_state(self) -> dict[str, Any]:
         return {
@@ -875,7 +858,6 @@ class ChatView:
             "draft": self.input.text if hasattr(self, "input") else "",
             "project": self.current_project,
             "temporary": self.temporary,
-            "pending_attachments": self.pending_attachments,
             "follow_output": self.follow_output,
             "scroll": self.transcript_window.vertical_scroll
             if hasattr(self, "transcript_window")
@@ -1215,20 +1197,16 @@ class ChatView:
                 ),
             )
         ]
-        if self.attach_file_callback:
+        if self.attach_file_callback or self.pending_attachments:
             controls.append(
                 (
                     "class:button",
-                    " ＋ " if compact else self.tr(" ＋ Dosya "),
+                    f" {len(self.pending_attachments)} 📎 "
+                    if self.pending_attachments
+                    else " ＋ "
+                    if compact
+                    else self.tr(" ＋ Dosya "),
                     on_click(self.open_attachment),
-                )
-            )
-        if self.pending_attachments:
-            controls.append(
-                (
-                    "class:chat.context",
-                    f" {len(self.pending_attachments)} ek × ",
-                    on_click(lambda: self.handle_command("/remove")),
                 )
             )
         if self.layout_enabled:
@@ -1427,6 +1405,7 @@ class ChatView:
         self.messages = []
         self.current_project = {}
         self.temporary = False
+        self._release_staged_attachments(self.pending_attachments)
         self.pending_attachments = []
         self.input.text = ""
         settings_open = self.settings_dialog.visible
@@ -2300,10 +2279,6 @@ class ChatView:
                 return
             conversation_id = item.get("id")
             if isinstance(conversation_id, str) and conversation_id:
-                if self.background_jobs or self.uploading_image:
-                    self.status = self.tr("Finish the active operation before loading another chat")
-                    self.app.invalidate()
-                    return
                 existing_tab = next(
                     (
                         index
@@ -2318,6 +2293,11 @@ class ChatView:
                     self._restore_active_tab()
                     if self.layout_controller:
                         self.layout_controller.attach()
+                    return
+                upload_is_only_background_work = self.uploading_image and self.background_jobs == 1
+                if self.background_jobs and not upload_is_only_background_work:
+                    self.status = self.tr("Finish the active operation before loading another chat")
+                    self.app.invalidate()
                     return
                 if conversation_id != self.conversation_id and (
                     self.conversation_id or self.messages
@@ -2639,8 +2619,8 @@ class ChatView:
 
     def new_tab(self) -> None:
         self.close_overlays()
-        if (self.loading_conversation and not self.account_service) or self.uploading_image:
-            self.status = self.tr("Wait for the current load or upload before creating a tab")
+        if self.loading_conversation and not self.account_service:
+            self.status = self.tr("Wait for the current load before creating a tab")
             self.app.invalidate()
             return
         self._save_active_tab()
@@ -2655,7 +2635,6 @@ class ChatView:
                 "model": self.model,
                 "effort": self.effort,
                 "project": {},
-                "pending_attachments": [],
                 "busy": False,
                 "completed_pending": False,
             }
@@ -2681,13 +2660,9 @@ class ChatView:
 
     def switch_tab(self, offset: int) -> None:
         self.close_overlays()
-        if (
-            (self.loading_conversation and not self.account_service)
-            or self.uploading_image
-            or len(self.tabs) < 2
-        ):
-            if self.loading_conversation or self.uploading_image:
-                self.status = self.tr("Wait for the current load or upload before switching tabs")
+        if (self.loading_conversation and not self.account_service) or len(self.tabs) < 2:
+            if self.loading_conversation:
+                self.status = self.tr("Wait for the current load before switching tabs")
                 self.app.invalidate()
             return
         self._save_active_tab()
@@ -2727,7 +2702,6 @@ class ChatView:
         tab.update(model=self.model, effort=self.effort, catalog=self.catalog)
         self.input.text = tab.get("draft", "")
         self.current_project = dict(tab.get("project") or {})
-        self.pending_attachments = list(tab.get("pending_attachments") or [])
         self._sync_activity()
         completed_pending = bool(tab.get("completed_pending"))
         tab["completed_pending"] = False
@@ -2769,8 +2743,26 @@ class ChatView:
             self.status = self.tr("Wait for active work to finish before closing a tab")
             self.app.invalidate()
             return
+        closing_id = self.tabs[self.active_tab].get("tab_id")
+        protected_attachments = self.pending_attachments + self._inflight_attachments
+        if self._attachments_in_flight and any(
+            item.get("source_tab_id") == closing_id for item in protected_attachments
+        ):
+            self.status = self.tr("Ekler gönderilirken kaynak sekme kapatılamaz")
+            self.app.invalidate()
+            return
         self._save_active_tab()
         closing = self.tabs[self.active_tab]
+        closing_id = closing.get("tab_id")
+        discarded = [
+            item for item in self.pending_attachments if item.get("source_tab_id") == closing_id
+        ]
+        if discarded:
+            self.pending_attachments = [
+                item for item in self.pending_attachments if item.get("source_tab_id") != closing_id
+            ]
+            self._release_staged_attachments(discarded)
+        self._discard_tab_render_cache(closing)
         if closing.get("busy"):
             self.background_tabs.append(closing)
         if (
@@ -2794,7 +2786,6 @@ class ChatView:
                 "model": self.model,
                 "effort": self.effort,
                 "project": {},
-                "pending_attachments": [],
                 "busy": False,
                 "completed_pending": False,
             }
@@ -2819,6 +2810,10 @@ class ChatView:
             self.app.invalidate()
             return
         cleanup = []
+        self._release_staged_attachments(self.pending_attachments)
+        self.pending_attachments.clear()
+        for tab in self.tabs:
+            self._discard_tab_render_cache(tab)
         for tab in self.tabs:
             if tab.get("temporary") and tab.get("conversation_id"):
                 callback = (
@@ -2840,7 +2835,6 @@ class ChatView:
                 "model": self.model,
                 "effort": self.effort,
                 "project": {},
-                "pending_attachments": [],
                 "busy": False,
                 "completed_pending": False,
             }
@@ -2861,6 +2855,30 @@ class ChatView:
             self.layout_controller.active_group()
         self.status = self.tr("Sekmeler kapatıldı")
         self.app.invalidate()
+
+    def _discard_tab_render_cache(self, tab):
+        """Drop formatted output for a closed tab while retaining its source messages."""
+        retry_handle = getattr(self, "_virtual_retry_handle", None)
+        if retry_handle is not None:
+            retry_handle.cancel()
+            self._virtual_retry_handle = None
+        tab_id = tab.get("tab_id")
+        getattr(self, "_prepared_transcripts", {}).pop(tab_id, None)
+        self.renderer.clear_cache()
+        if getattr(self, "_virtual_tab_id", None) == tab_id:
+            self._virtual_transcript = None
+            self._virtual_tab_id = None
+            self._virtual_conversation_id = None
+            self._virtual_signature = None
+            self._virtual_prefetch_key = None
+            self._virtual_prefetch_done_key = None
+            self.transcript_control.rows = ()
+        self._transcript_cache = ""
+        self._transcript_signature = None
+        self._transcript_lines = ()
+        self._line_render_key = None
+        self._ansi_fragments = ()
+        self._ansi_render_key = None
 
     def viewport_height(self) -> D:
         try:
@@ -2954,8 +2972,16 @@ class ChatView:
         if self.status not in ("Ready", ""):
             return FormattedText([("", f" • {self.status} ")])
         if self.pending_attachments:
-            names = ", ".join(item["name"] for item in self.pending_attachments)
-            return FormattedText([("", f" 📎 {names} ")])
+            return FormattedText(
+                [
+                    (
+                        "",
+                        " 📎 "
+                        + self.tr("{0} dosya hazır").format(len(self.pending_attachments))
+                        + " ",
+                    )
+                ]
+            )
         if self.last_elapsed is not None:
             return FormattedText(
                 [
@@ -2977,10 +3003,13 @@ class ChatView:
         key = tab["tab_id"]
         cache.pop(key, None)
         cost = (
-            len(text) + sum(len(part[1]) for part in ansi) + sum(len(m["text"]) for m in messages)
+            len(text.encode("utf-8"))
+            + sum(len(part[1].encode("utf-8")) for part in ansi)
+            + sum(len(m["text"].encode("utf-8")) for m in messages)
         )
-        if cost > 4_000_000:
-            cache.clear()  # Keep one renderable oversized view; never loop on a placeholder.
+        budget = 1_000_000
+        if cost > budget:
+            return
         cache[key] = dict(
             width=width,
             conversation_id=tab.get("conversation_id"),
@@ -2993,7 +3022,7 @@ class ChatView:
             lines=lines if lines is not None else index_transcript(ansi, ranges),
             cost=cost,
         )
-        while len(cache) > 1 and sum(item["cost"] for item in cache.values()) > 4_000_000:
+        while cache and sum(item["cost"] for item in cache.values()) > budget:
             cache.pop(next(iter(cache)))
 
     def render_transcript(self) -> str:
@@ -3172,7 +3201,9 @@ class ChatView:
             max(8, self.main_width() - 5),
         )
 
-    def transcript_rows(self):
+    def transcript_rows(self, viewport_height=None):
+        if self.app.is_running and self.messages:
+            return self._virtual_transcript_rows(viewport_height or 1)
         rendered = self.render_transcript()
         reference = getattr(self, "selected_message_ref", None)
         if reference is not None:
@@ -3189,6 +3220,185 @@ class ChatView:
             self._transcript_lines = index_transcript(self._ansi_fragments, self.message_ranges)
             self._line_render_key = rendered
         return self._transcript_lines
+
+    def _virtual_transcript_rows(self, viewport_height):
+        """Prepare transcript layout off-thread and retain only viewport pages."""
+        from .transcript import VirtualTranscriptRows
+
+        tab = self.tabs[self.active_tab]
+        tab_id = tab.get("tab_id")
+        width = self.transcript_width()
+        reasoning = self.show_reasoning
+        messages = [dict(message) for message in self.messages]
+        content = tuple((message.get("role"), message.get("text")) for message in messages)
+        active_index = (
+            len(messages) - 1
+            if self.busy and self.busy_tab_index == self.active_tab and messages
+            else None
+        )
+        conversation_id = tab.get("conversation_id")
+        signature = (
+            tab_id,
+            conversation_id,
+            width,
+            reasoning,
+            repr(self.renderer.tokens),
+            content,
+            active_index,
+        )
+        layout = getattr(self, "_virtual_transcript", None)
+        layout_is_current = (
+            layout is not None and getattr(self, "_virtual_signature", None) == signature
+        )
+        if not layout_is_current:
+            if (
+                getattr(self, "_virtual_tab_id", None) != tab_id
+                or getattr(self, "_virtual_conversation_id", None) != conversation_id
+            ):
+                self._virtual_transcript = None
+                layout = None
+            self._virtual_tab_id = tab_id
+            self._virtual_conversation_id = conversation_id
+            self._request_virtual_transcript(
+                tab, messages, width, reasoning, signature, active_index, viewport_height
+            )
+            layout = getattr(self, "_virtual_transcript", None)
+        if layout is None:
+            self.message_ranges = []
+            self.transcript_line_count = 1
+            return (([("class:sidebar.muted", self.tr("Sohbet görünümü hazırlanıyor…"))], None),)
+
+        self.message_ranges = layout.ranges
+        self.transcript_line_count = layout.line_count
+        self._transcript_roles = tuple(message.get("role") for message in self.messages)
+        reference = getattr(self, "selected_message_ref", None)
+        if reference is not None:
+            self.selected_message = next(
+                (i for i, item in enumerate(self.messages) if item is reference),
+                self.selected_message,
+            )
+        rows = VirtualTranscriptRows(layout)
+        scroll = self.transcript_window.vertical_scroll
+        if scroll > layout.line_count:
+            scroll = max(0, layout.line_count - viewport_height)
+        start = max(0, scroll - viewport_height)
+        stop = min(layout.line_count, scroll + 2 * viewport_height)
+        prefetch_key = (id(layout), start, stop)
+        self._virtual_prefetch_key = prefetch_key
+        if prefetch_key != getattr(self, "_virtual_prefetch_done_key", None) and not getattr(
+            self, "_virtual_prefetch_inflight", False
+        ):
+            self._virtual_prefetch_inflight = True
+            self._virtual_prefetch_running_key = prefetch_key
+
+            def prefetch_finished(_result=None):
+                if self._virtual_prefetch_running_key == prefetch_key:
+                    self._virtual_prefetch_inflight = False
+                    self._virtual_prefetch_done_key = (
+                        prefetch_key if self._virtual_prefetch_key == prefetch_key else None
+                    )
+                    self.app.invalidate()
+
+            self._read_in_background(
+                lambda: layout.prefetch(
+                    start,
+                    stop,
+                    cancelled=lambda: (
+                        self._virtual_prefetch_key != prefetch_key
+                        or getattr(self, "_virtual_transcript", None) is not layout
+                    ),
+                ),
+                prefetch_finished,
+                lambda _: prefetch_finished(),
+                session_bound=False,
+                cpu=True,
+            )
+        return rows
+
+    def _request_virtual_transcript(
+        self, tab, messages, width, reasoning, signature, active_index, viewport_height
+    ):
+        if getattr(
+            self, "_virtual_failed_signature", None
+        ) == signature and time.monotonic() < getattr(self, "_virtual_retry_after", 0):
+            return
+        pending = getattr(self, "_virtual_pending_signature", None)
+        if pending is not None:
+            return
+        if self.busy:
+            elapsed = time.monotonic() - getattr(self, "_virtual_last_request_at", 0)
+            delay = 0.08 - elapsed
+            if delay > 0:
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    pass
+                else:
+                    if getattr(self, "_virtual_retry_handle", None) is not None:
+                        return
+
+                    def retry():
+                        self._virtual_retry_handle = None
+                        self.app.invalidate()
+
+                    self._virtual_retry_handle = loop.call_later(delay, retry)
+                    return
+        self._virtual_last_request_at = time.monotonic()
+        self._virtual_pending_signature = signature
+        conversation_id = tab.get("conversation_id")
+        scroll = self.transcript_window.vertical_scroll
+        tab_id = tab.get("tab_id")
+        tokens = dict(self.renderer.tokens)
+
+        def still_active():
+            return (
+                any(item is tab for item in self.tabs)
+                and self.tabs[self.active_tab] is tab
+                and self.transcript_width() == width
+                and self.show_reasoning == reasoning
+            )
+
+        def read():
+            value = prepare_virtual_transcript(
+                messages,
+                width,
+                tokens,
+                reasoning,
+                cancelled=lambda: not still_active(),
+                active_index=active_index,
+            )
+            if value.line_count:
+                top = max(0, min(scroll, value.line_count - viewport_height))
+                if scroll > value.line_count:
+                    top = max(0, value.line_count - viewport_height)
+                value.prefetch(
+                    max(0, top - viewport_height),
+                    min(value.line_count, top + 2 * viewport_height),
+                    cancelled=lambda: not still_active(),
+                )
+            return value
+
+        def ready(value):
+            if self._virtual_pending_signature == signature:
+                self._virtual_pending_signature = None
+            if still_active() and tab.get("tab_id") == tab_id:
+                self._virtual_failed_signature = None
+                self._virtual_transcript = value
+                self._virtual_signature = signature
+                self._virtual_tab_id = tab_id
+                self._virtual_conversation_id = conversation_id
+                self._virtual_prefetch_key = None
+                self._virtual_prefetch_done_key = None
+                self.app.invalidate()
+
+        def failed(_reason):
+            if self._virtual_pending_signature == signature:
+                self._virtual_pending_signature = None
+            self._virtual_failed_signature = signature
+            self._virtual_retry_after = time.monotonic() + 1
+            self.app.invalidate()
+
+        self._read_in_background(read, ready, failed, session_bound=False, cpu=True)
 
     def open_message_link(self, url, index=None):
         from .markdown import open_link
@@ -3403,6 +3613,10 @@ class ChatView:
             return
         prompt = self.input.text.strip()
         attachments = list(self.pending_attachments)
+        if attachments and self._attachments_in_flight:
+            self.status = self.tr("Ekler başka bir sohbete gönderiliyor · bekleyin")
+            self.app.invalidate()
+            return
         if not prompt and not attachments:
             return
         if self.tab_kind == "project":
@@ -3418,14 +3632,24 @@ class ChatView:
             self.model, self.effort = model, effort
             self.current_project = project
             self.temporary = False
-            self.pending_attachments = attachments
             # The details tab keeps its content; its submitted draft belongs to the new chat.
-            source_tab.update(draft="", pending_attachments=[])
+            source_tab.update(draft="")
         self.input.text = ""
         if prompt.startswith("/"):
             self.handle_command(prompt)
             return
-        self.pending_attachments.clear()
+        for item in self.pending_attachments:
+            item.setdefault("queue_id", uuid.uuid4().hex)
+        attachments = list(self.pending_attachments)
+        if attachments:
+            submitted_ids = {str(item["queue_id"]) for item in attachments}
+            self.pending_attachments = [
+                item
+                for item in self.pending_attachments
+                if str(item.get("queue_id") or "") not in submitted_ids
+            ]
+            self._attachments_in_flight = True
+            self._inflight_attachments = attachments
         prompt = prompt or self.tr("Describe the attached image.")
         display_prompt = prompt
         if attachments:
@@ -3585,9 +3809,12 @@ class ChatView:
         elif name == "/copy":
             self.copy_latest_response()
         elif name == "/remove":
-            if self.pending_attachments:
+            if self.pending_attachments and not self._attachments_in_flight:
                 removed = self.pending_attachments.pop()
+                self._release_staged_attachments([removed])
                 self.status = self.tr("Removed {0}").format(removed["name"])
+            elif self._attachments_in_flight:
+                self.status = self.tr("Dosyalar gönderilirken ek listesi değiştirilemiyor")
             else:
                 self.status = self.tr("No pending image to remove")
             self.app.invalidate()
@@ -3741,6 +3968,9 @@ class ChatView:
             self.status = self.tr("Image upload is unavailable")
             self.app.invalidate()
             return
+        upload_image = self.upload_image
+        source_account_key = self.account_key
+        source_tab_id = self.tabs[self.active_tab].get("tab_id")
         self.uploading_image = True
         self.background_jobs += 1
         self.upload_started = time.monotonic()
@@ -3757,7 +3987,7 @@ class ChatView:
                 if width < 1 or height < 1:
                     raise RuntimeError("clipboard PNG has invalid dimensions")
                 name = datetime.now().strftime("clipboard-%Y%m%d-%H%M%S.png")
-                attachment = self.upload_image(data, name, "image/png", width, height)
+                attachment = upload_image(data, name, "image/png", width, height)
                 if not isinstance(attachment, dict) or not attachment.get("id"):
                     raise RuntimeError("image upload returned no file ID")
                 message = None
@@ -3771,8 +4001,13 @@ class ChatView:
                     self.uploading_image = False
                     self.upload_started = None
                     if attachment is not None:
-                        self.pending_attachments.append(attachment)
-                        self.status = "Ready"
+                        queued = dict(attachment)
+                        queued["queue_id"] = uuid.uuid4().hex
+                        queued["source_account_key"] = source_account_key
+                        queued["source_tab_id"] = source_tab_id
+                        queued.setdefault("size_bytes", len(data))
+                        self.pending_attachments.append(queued)
+                        self.status = self.tr("{0} dosya eklendi").format(1)
                     else:
                         self.status = self.tr("Image paste failed: {0}").format(message)
                     self.app.invalidate()
@@ -3903,7 +4138,7 @@ class ChatView:
             self.new_tab()
             if len(self.tabs) == count:
                 return
-        if self.loading_conversation or self.uploading_image:
+        if self.loading_conversation:
             self.status = self.tr("Yükleme tamamlanınca başka bir sohbet açabilirsiniz")
             self.app.invalidate()
             return
@@ -3958,10 +4193,6 @@ class ChatView:
         self.app.layout.focus(self.input)
         self.app.invalidate()
 
-        render_width = self.transcript_width()
-        render_reasoning = self.show_reasoning
-        render_tokens = dict(self.renderer.tokens)
-
         def load_selected(use_cache=True) -> None:
             try:
                 cached = (
@@ -3979,26 +4210,6 @@ class ChatView:
                     visible = visible_chat_message(message)
                     if visible is not None:
                         messages.append(visible)
-
-                try:
-                    prepared = prepare_transcript(
-                        messages,
-                        render_width,
-                        render_tokens,
-                        render_reasoning,
-                        cancelled=lambda: (
-                            target_tab.get("load_token") != token
-                            or self.tabs[self.active_tab] is not target_tab
-                        ),
-                    )
-                except InterruptedError:
-                    prepared = None
-                prepared_text, prepared_ranges, prepared_ansi, prepared_lines = prepared or (
-                    None,
-                    [],
-                    [],
-                    [],
-                )
 
                 def apply_conversation() -> None:
                     if (
@@ -4042,42 +4253,11 @@ class ChatView:
                             target_tab["response_model"] = model
                         else:
                             target_tab["model"] = model
-                    if prepared is not None:
-                        self.remember_transcript(
-                            target_tab,
-                            messages,
-                            render_width,
-                            render_tokens,
-                            render_reasoning,
-                            *prepared,
-                        )
                     if target_tab is self.tabs[self.active_tab]:
                         self._restore_active_tab(focus=False)
-                        if (
-                            prepared is not None
-                            and self.messages == messages
-                            and self.transcript_width() == render_width
-                            and self.show_reasoning == render_reasoning
-                        ):
-                            self._transcript_signature = (
-                                render_width,
-                                self.busy,
-                                self.busy_tab_index,
-                                self.active_tab,
-                                self.show_reasoning,
-                                tuple((m.get("role"), m.get("text")) for m in self.messages),
-                            )
-                            self._transcript_cache = prepared_text
-                            self.message_ranges = prepared_ranges
-                            self.transcript_line_count = prepared_text.count("\n") + 1
-                            self._ansi_render_key, self._ansi_fragments = (
-                                prepared_text,
-                                prepared_ansi,
-                            )
-                            self._line_render_key, self._transcript_lines = (
-                                prepared_text,
-                                prepared_lines,
-                            )
+                        self._virtual_transcript = None
+                        self._virtual_signature = None
+                        self._virtual_tab_id = target_tab.get("tab_id")
                         self.status = (
                             self.tr("Kayıtlı geçmiş · arka planda eşitleniyor")
                             if cached is not None
@@ -4149,6 +4329,10 @@ class ChatView:
         final_message_id = None
         elapsed = None
         final_status = "Ready"
+        send_succeeded = False
+        submitted_attachment_ids = {
+            str(item["queue_id"]) for item in attachments if item.get("queue_id")
+        }
         resolved_id = conversation_id
         resolved_title: str | None = None
         resolved_model: str | None = None
@@ -4237,6 +4421,12 @@ class ChatView:
                 **({"project_id": project_id} if project_id else {}),
                 **({"temporary": True} if temporary else {}),
             )
+            send_succeeded = True
+            omitted_count = int(result.get("attachment_omitted_count") or 0)
+            if omitted_count:
+                final_status = self.tr(
+                    "Yanıt tamamlandı · {0} dosya gönderilemedi ve listeden kaldırıldı"
+                ).format(omitted_count)
             if result.get("cache_warning"):
                 final_status = result["cache_warning"]
             result_id = result.get("conversation_id")
@@ -4286,12 +4476,32 @@ class ChatView:
                 with self.lock:
                     messages[-1]["text"] = "*" + self.tr("Request stopped: {0}").format(error) + "*"
             final_status = self.tr("Response stopped")
-            target_tab["pending_attachments"] = list(attachments)
         finally:
             if started is not None:
                 elapsed = time.monotonic() - started
 
             def finish_turn() -> None:
+                if attachments:
+                    submitted_ids = submitted_attachment_ids
+                    self.pending_attachments = [
+                        item
+                        for item in self.pending_attachments
+                        if str(item.get("queue_id") or "") not in submitted_ids
+                    ]
+                    if send_succeeded:
+                        self._release_staged_attachments(attachments)
+                    else:
+                        queued_ids = {
+                            str(item.get("queue_id") or "") for item in self.pending_attachments
+                        }
+                        restored = [
+                            item
+                            for item in attachments
+                            if str(item.get("queue_id") or "") not in queued_ids
+                        ]
+                        self.pending_attachments = restored + self.pending_attachments
+                    self._attachments_in_flight = False
+                    self._inflight_attachments = []
                 tab = target_tab
                 tab["temporary"] = temporary
                 tab["conversation_id"] = resolved_id
@@ -4331,7 +4541,6 @@ class ChatView:
                     self.model = tab["model"]
                     self.last_response_model = resolved_model
                     self.effort = effort
-                    self.pending_attachments = list(tab.get("pending_attachments") or [])
                     self.last_elapsed = elapsed
                     self.status = final_status
                     if self.set_active_conversation is not None:

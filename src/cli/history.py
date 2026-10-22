@@ -7,8 +7,31 @@ from accounts import origin
 from providers.history import merge_conversation
 
 from .markdown import MessageRenderer, index_transcript, transcript_fragments, visible_chat_message
+from .transcript import VirtualTranscript
 
 _render_gate = threading.Semaphore(1)
+
+
+def prepare_virtual_transcript(
+    messages, width, tokens, reasoning, cancelled=None, active_index=None
+):
+    """Build line metadata off-thread; retain only pages requested by the viewport."""
+    with _render_gate:
+        if cancelled and cancelled():
+            raise InterruptedError("Superseded transcript")
+        renderer = MessageRenderer()
+        renderer.configure(tokens)
+        renderer.cache_byte_limit = 256_000
+        renderer.cache_limit = 512
+        transcript = VirtualTranscript(
+            messages,
+            width,
+            reasoning,
+            renderer=renderer,
+            cancelled=cancelled,
+            active_index=active_index,
+        )
+        return transcript
 
 
 def prepare_transcript(messages, width, tokens, reasoning, cancelled=None):
@@ -71,11 +94,8 @@ def prepare_archive_snapshot(
                 m for x in value.get("messages", []) if (m := visible_chat_message(x)) is not None
             ]
             messages = merge_conversation({"messages": messages}, {"messages": local})["messages"]
-            if active_tab is None or tab is active_tab:
-                text, ranges, ansi, lines = prepare_transcript(messages, width, tokens, reasoning)
-                prepared.append(
-                    (tab, messages, width, tokens, reasoning, text, ranges, ansi, lines)
-                )
+            # Transcript views are prepared lazily for the active viewport.
+            # Building a complete ANSI copy for every open tab retains large chats.
     for cid, kind in identities:
         if cid:
             key, remote = origin(cid, default_account)

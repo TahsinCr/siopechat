@@ -76,6 +76,31 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
             Capability.RESOURCES,
         }
 
+    def attachment_policy(self):
+        from ..attachments import policy_for
+
+        return policy_for(self.id).as_dict()
+
+    async def upload_file(self, path):
+        import mimetypes
+
+        path = Path(path).expanduser().resolve(strict=True)
+        if not path.is_file():
+            raise ValueError("Dosya bulunamadı")
+        mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        size = path.stat().st_size
+        limit = 2 * 1024 * 1024 * 1024 if mime.startswith("video/") else 100 * 1024 * 1024
+        if not 0 < size <= limit:
+            raise ValueError("Gemini dosya boyutu sınırı aşıldı")
+        return {
+            "id": path.name,
+            "path": str(path),
+            "name": path.name,
+            "mime_type": mime,
+            "size_bytes": size,
+            "deferred_upload": True,
+        }
+
     async def _connect(self):
         async with self._connect_gate:
             return await self._connect_once()
@@ -404,7 +429,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
         from contextlib import nullcontext
 
         from .notebooks import field
-        from .transport import notebook_transport
+        from .transport import notebook_transport, stream_local_files
 
         async with self._gate:
             client = await self._connect()
@@ -429,12 +454,14 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
             visible_output = False
             try:
                 with notebook_transport(client, project, context) if project else nullcontext():
-                    async for chunk in chat.send_message_stream(
+                    async for chunk in stream_local_files(
+                        client,
+                        chat,
                         request.prompt,
-                        files=[item["path"] for item in request.attachments],
+                        [item["path"] for item in request.attachments],
+                        model=model,
                         temporary=request.temporary,
                         extended_thinking=request.effort == "extended",
-                        current_retry=0,
                     ):
                         if chat.cid and not bound:
                             yield ConversationBound(chat.cid)

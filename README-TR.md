@@ -1,4 +1,4 @@
-[![Sürüm: v1.2-beta][version-shield]](CHANGELOG.md)
+[![Sürüm: v1.3-beta][version-shield]](CHANGELOG.md)
 [![Python 3.10+][python-shield]](https://www.python.org/downloads/)
 [![GPL-3.0-only][license-shield]](LICENSE)
 
@@ -24,7 +24,7 @@ Uygulama, giriş yaptığınız kendi web oturumlarınızı kullanır. API anaht
 - Komut paleti, değiştirilebilir kısayollar, fare desteği, yerel eklentiler ve JSON/Python temaları.
 - İngilizce, Türkçe ve Rusça arayüz katalogları.
 
-**v1.2-beta**, canlı aktarım durumunu, kalıcı indirme geçmişini ve kaynak sohbete dönüşü içeren aranabilir bir İndirmeler çalışma alanı ekler. Bu sürüm ayrıca iş iptalini, sağlayıcı yanıt doğrulamasını, arşiv güvenliğini ve kaydedilmiş bölünmüş çalışma alanlarını geliştirir. Temel akışlar otomatik testlerle kontrol edilir; sağlayıcı uyumluluğu ve farklı sistemlerdeki yerel davranışlar günlük kullanımda da sınanmalıdır. Python paket sürümü `1.2b0` olur.
+**v1.3-beta**, sağlayıcıya göre dosya seçimi, yükleme öncesi limit kontrolü ve sekmeler arasında korunan ortak ek kuyruğu sunar. Gönderim başlar başlamaz ekleme alanı temizlenir; istek başarısız olursa dosyalar kuyruğa geri gelir. Bu sürüm akış yanıtlarının tepkisini, transcript bellek kullanımını ve arşiv işlemlerini de iyileştirir. Temel akışlar otomatik testlerle kontrol edilir; sağlayıcı uyumluluğu ve farklı sistemlerdeki yerel davranışlar günlük kullanımda da sınanmalıdır. Python paket sürümü `1.3b0` olur.
 
 ## Kurulum ve giriş
 
@@ -210,6 +210,6 @@ GitHub Actions, Linux, Windows ve macOS üzerinde kilitli bağımlılıklarla Py
 
 Telif hakkı © TahsinCr. [GPL-3.0-only](LICENSE) ile lisanslanmıştır. Dahil edilen üçüncü taraf bileşenlerin bildirimleri `src/utils/` altında korunur.
 
-[version-shield]: https://img.shields.io/badge/version-v1.2--beta-b7a3e3.svg?style=for-the-badge
+[version-shield]: https://img.shields.io/badge/version-v1.3--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge

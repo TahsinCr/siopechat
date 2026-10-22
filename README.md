@@ -1,4 +1,4 @@
-[![Version: v1.2-beta][version-shield]](CHANGELOG.md)
+[![Version: v1.3-beta][version-shield]](CHANGELOG.md)
 [![Python 3.10+][python-shield]](https://www.python.org/downloads/)
 [![GPL-3.0-only][license-shield]](LICENSE)
 
@@ -24,7 +24,7 @@ It uses your own signed-in web sessions. There are no API keys to configure, and
 - A command palette, configurable shortcuts, mouse controls, local extensions and JSON/Python themes.
 - English, Turkish and Russian interface catalogs.
 
-**v1.2-beta** adds a searchable downloads workspace with persistent history, live transfer progress and source chat links. The release also improves task cancellation, provider response validation, archive safety and saved split workspaces. Automated tests cover core workflows; provider compatibility and native behavior across platforms still benefit from everyday use. The Python package version is `1.2b0`.
+**v1.3-beta** adds provider-aware file attachments with desktop file selection, preflight checks and a shared queue across chat tabs. Sent files leave the composer immediately and return if a request fails. This release also improves streaming responsiveness, transcript memory use and archive handling. Core workflows are covered by automated tests; provider compatibility and native behavior across platforms still benefit from everyday use. The Python package version is `1.3b0`.
 
 ## Install and sign in
 
@@ -210,6 +210,6 @@ The GitHub Actions workflow runs the locked Python 3.10/3.14 and Node 22/24 matr
 
 Copyright © TahsinCr. Licensed under [GPL-3.0-only](LICENSE). Vendored components retain their own notices in `src/utils/`.
 
-[version-shield]: https://img.shields.io/badge/version-v1.2--beta-b7a3e3.svg?style=for-the-badge
+[version-shield]: https://img.shields.io/badge/version-v1.3--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge

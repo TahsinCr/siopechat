@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 from bootstrap import create_application
+from cli.projects import ProjectPanel
 from providers import Capability
 from providers.models import Origin, Project, Resource
 from providers.projects import ProjectEditing, ProjectOptions
@@ -109,6 +110,33 @@ class ProjectFormTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 v.app.exit()
                 await run
+
+    async def test_project_file_source_uses_shared_provider_filtered_file_picker(self):
+        opened = []
+        view = Mock()
+        view.tr = lambda value: value
+        view.forms.open = lambda *args, **kwargs: opened.append((args, kwargs))
+        panel = ProjectPanel(view)
+        panel.label = lambda _key: "ChatGPT · test"
+        options = ProjectOptions(
+            sources=({"id": "file", "title": "PDF", "accept": "application/pdf"},),
+            remove_sources=True,
+        )
+        panel.context = lambda callback, value=None: callback(
+            "chatgpt/default", "project-one", {}, options
+        )
+
+        panel.add_source()
+        first_args, _ = opened.pop()
+        next_form = first_args[2]({"kind": "file"})
+        next_form()
+        second_args, second_kwargs = opened.pop()
+
+        self.assertEqual(second_args[1][0][0], "path")
+        self.assertEqual(len(second_kwargs["actions"]), 1)
+        with patch("cli.projects.browse_form_field") as browse:
+            second_kwargs["actions"][0][1]()
+        browse.assert_called_once_with(view, "path", "application/pdf", multiple=False)
 
 
 class ProjectArchiveTests(unittest.TestCase):

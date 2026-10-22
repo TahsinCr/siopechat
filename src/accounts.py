@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import mimetypes
 import os
 import subprocess
 import sys
@@ -431,10 +430,17 @@ class Accounts:
                 errors.append(error)
             current = asyncio.current_task()
             pending = [task for task in asyncio.all_tasks() if task is not current]
-            for task in pending:
-                if not task.get_name().startswith("siope-persist:"):
-                    task.cancel()
-            results = await asyncio.gather(*pending, return_exceptions=True)
+            persistence = [task for task in pending if task.get_name().startswith("siope-persist:")]
+            background = [task for task in pending if task not in persistence]
+            for task in background:
+                task.cancel()
+            # Provider/catalog tasks can finish with ordinary account or network
+            # errors while cancellation is in flight. Those outcomes belong to
+            # their callers; they are not cleanup failures.
+            await asyncio.gather(*background, return_exceptions=True)
+            # Atomic writes are deliberately allowed to finish before the loop
+            # stops so callers can safely remove their temporary data directory.
+            results = await asyncio.gather(*persistence, return_exceptions=True)
             errors.extend(result for result in results if isinstance(result, Exception))
             for provider in self._providers.values():
                 close = getattr(provider, "close", None)
@@ -982,6 +988,22 @@ class Accounts:
         project_context, project = origin(options.get("project_id"), key)
         if context != key or project_context != key:
             raise ValueError("Sohbet ve proje seçili hesaba ait olmalı")
+        attachments, omitted_attachments = self._prepare_attachments(key, attachments)
+        provider_attachments = tuple(
+            {
+                name: value
+                for name, value in attachment.items()
+                if name
+                not in {
+                    "path",
+                    "queue_id",
+                    "source_account_key",
+                    "source_tab_id",
+                    "temporary_local",
+                }
+            }
+            for attachment in attachments
+        )
         archive = self.archive()
         if remote and archive and archive.deleted(key, "conversation", remote):
             raise RemoteNotFound("Silinmiş bir sohbete mesaj gönderilemez")
@@ -995,7 +1017,7 @@ class Accounts:
             effort,
             project,
             options.get("temporary", False),
-            tuple(attachments),
+            provider_attachments,
         )
         self.provider(key)
         stream_id = uuid.uuid4().hex
@@ -1050,6 +1072,13 @@ class Accounts:
                 if archive and not request.temporary:
                     for attachment in attachments:
                         resource = dict(attachment)
+                        for internal in (
+                            "queue_id",
+                            "source_tab_id",
+                            "source_account_key",
+                            "temporary_local",
+                        ):
+                            resource.pop(internal, None)
                         path = resource.get("path") or self._attachment_paths.get(
                             (key, resource.get("id") or resource.get("file_id"))
                         )
@@ -1122,6 +1151,10 @@ class Accounts:
                 return {
                     "conversation_id": identity(key, remote_id),
                     "cache_warning": cache_warning,
+                    "sent_attachment_ids": [
+                        item["queue_id"] for item in attachments if item.get("queue_id")
+                    ],
+                    "attachment_omitted_count": len(omitted_attachments),
                     "conversation": {"title": title, "default_model_slug": model, "messages": []},
                 }
 
@@ -1136,6 +1169,10 @@ class Accounts:
                     return {
                         "conversation_id": identity(key, remote_id),
                         "cache_warning": "Yanıt alındı ancak yerel arşive kaydedilemedi",
+                        "sent_attachment_ids": [
+                            item["queue_id"] for item in attachments if item.get("queue_id")
+                        ],
+                        "attachment_omitted_count": len(omitted_attachments),
                         "conversation": {
                             "title": prompt[:60],
                             "default_model_slug": model,
@@ -1220,6 +1257,65 @@ class Accounts:
             with self._lock:
                 self._sending[key] -= 1
 
+    def _prepare_attachments(self, key, attachments):
+        """Fit staged files to the destination account and re-upload foreign IDs."""
+        if not attachments:
+            return [], []
+        import mimetypes
+
+        from providers.attachments import fit_attachments
+
+        policy = self.attachment_policy(key)
+        if policy is None:
+            raise ValueError("Bu sağlayıcı dosya eklerini desteklemiyor")
+        normalized = []
+        for attachment in attachments:
+            resource = dict(attachment)
+            remote = resource.get("id") or resource.get("file_id")
+            path = resource.get("path") or self._attachment_paths.get((key, remote))
+            if path:
+                try:
+                    local = Path(path)
+                    size = local.stat().st_size
+                except (OSError, TypeError, ValueError):
+                    pass
+                else:
+                    resource.setdefault("path", str(local))
+                    resource.setdefault("name", local.name)
+                    resource.setdefault("mime_type", mimetypes.guess_type(local.name)[0] or "")
+                    if resource.get("size_bytes") is None:
+                        resource["size_bytes"] = size
+            normalized.append(resource)
+        selected, omitted = fit_attachments(normalized, policy)
+        if not selected:
+            raise ValueError("Ekler bu sağlayıcının tür veya boyut sınırlarına uymuyor")
+
+        prepared = []
+        for attachment in selected:
+            resource = dict(attachment)
+            source_key = resource.get("source_account_key") or key
+            if source_key != key:
+                path = resource.get("path")
+                if not path or not Path(path).is_file():
+                    raise ValueError(
+                        f"{resource.get('name') or 'Dosya'} hedef hesap için yeniden yüklenemiyor"
+                    )
+                uploaded = dict(self.attach_file(key, path))
+                for name in (
+                    "queue_id",
+                    "source_tab_id",
+                    "path",
+                    "name",
+                    "size_bytes",
+                    "mime_type",
+                ):
+                    if name in resource:
+                        uploaded[name] = resource[name]
+                uploaded["source_account_key"] = key
+                resource = uploaded
+            prepared.append(resource)
+        return prepared, omitted
+
     def resolve_download(self, key, url, conversation_id=None, message_id=None):
         from urllib.parse import urlsplit
 
@@ -1245,35 +1341,98 @@ class Accounts:
     def upload_image(self, key, data, name, mime, width, height):
         if key.startswith("claude/") and Capability.ATTACHMENTS not in self.capabilities(key):
             raise ValueError("Claude dosya ekleme henüz kullanılamıyor")
-        if not data or len(data) > 20 * 1024 * 1024:
+        limit = 30 if key.startswith("claude/") else 20
+        if not data or len(data) > limit * 1024 * 1024:
             raise ValueError("Görsel boyutu geçersiz")
         if key.startswith("chatgpt/"):
-            with ChatGPTClient(self.session(key)) as client:
-                return client.upload_image(name, mime, data, width, height)
+            path = self.directory(key) / "attachments" / (uuid.uuid4().hex + ".png")
+            path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+            path.write_bytes(data)
+            try:
+                with ChatGPTClient(self.session(key)) as client:
+                    result = client.upload_image(name, mime, data, width, height)
+                result.update(
+                    path=str(path),
+                    size_bytes=len(data),
+                    temporary_local=True,
+                )
+                remote = result.get("id") or result.get("file_id")
+                if remote:
+                    self._attachment_paths[key, remote] = str(path)
+                return result
+            except BaseException:
+                path.unlink(missing_ok=True)
+                raise
         path = self.directory(key) / "attachments" / (uuid.uuid4().hex + ".png")
         path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
         with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as stream:
             stream.write(data)
-        return {"id": path.stem, "name": name, "path": str(path), "mime_type": mime}
+        if key.startswith("claude/"):
+            try:
+                result = self.attach_file(key, path)
+                result["name"] = name
+                result["mime_type"] = mime
+                result["size_bytes"] = len(data)
+                result["temporary_local"] = True
+                return result
+            except BaseException:
+                path.unlink(missing_ok=True)
+                raise
+        return {
+            "id": path.stem,
+            "name": name,
+            "path": str(path),
+            "mime_type": mime,
+            "size_bytes": len(data),
+            "temporary_local": True,
+        }
 
     def attach_file(self, key, path):
         path = Path(path).expanduser().resolve(strict=True)
-        if not path.is_file() or not 0 < path.stat().st_size <= 20 * 1024 * 1024:
-            raise ValueError("Dosya boş olmamalı ve 20 MiB sınırını aşmamalı")
-        mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-        if key.startswith("claude/"):
-            if Capability.ATTACHMENTS not in self.capabilities(key):
-                raise ValueError("Claude dosya ekleme henüz kullanılamıyor")
+        if not path.is_file() or path.stat().st_size <= 0:
+            raise ValueError("Dosya boş olmamalı")
+        provider = self.provider(key)
+        if Capability.ATTACHMENTS not in provider.capabilities:
+            raise ValueError("Bu sağlayıcıda dosya ekleme kullanılamıyor")
+        upload = getattr(provider, "upload_file", None)
+        if upload is None:
+            raise ValueError("Sağlayıcının dosya yükleme işlemi hazır değil")
+        result = self.call(upload(path))
         if key.startswith("gemini/"):
-            return {"id": uuid.uuid4().hex, "path": str(path), "name": path.name, "mime_type": mime}
-        with ChatGPTClient(self.session(key)) as client:
-            result = client.upload_file(path.name, mime, path.read_bytes())
+            return result
         remote = result.get("id") or result.get("file_id")
         if remote:
             self._attachment_paths[key, remote] = str(path)
             if len(self._attachment_paths) > 64:
                 self._attachment_paths.pop(next(iter(self._attachment_paths)))
         return result
+
+    def release_attachment(self, attachment):
+        """Remove an app-owned temporary clipboard image after its queue ends."""
+        if not isinstance(attachment, dict) or not attachment.get("temporary_local"):
+            return
+        key = attachment.get("source_account_key")
+        path_value = attachment.get("path")
+        if not key or not path_value:
+            return
+        try:
+            path = Path(path_value).resolve()
+            directory = (self.directory(key) / "attachments").resolve()
+        except (OSError, RuntimeError, KeyError, ValueError):
+            return
+        if directory not in path.parents:
+            return
+        path.unlink(missing_ok=True)
+        remote = attachment.get("id") or attachment.get("file_id")
+        if remote:
+            self._attachment_paths.pop((key, remote), None)
+
+    def attachment_policy(self, key):
+        provider = self.provider(key)
+        if Capability.ATTACHMENTS not in provider.capabilities:
+            return None
+        describe = getattr(provider, "attachment_policy", None)
+        return describe() if describe else None
 
     def synchronize(self, scope="all", key=None, conversation_id=None):
         """One explicit revalidation entry point for every frontend."""
@@ -1483,6 +1642,7 @@ class Accounts:
                 ),
                 "forget_temporary": None,
                 "attach_file_callback": None,
+                "attachment_policy_callback": None,
             }
         provider = self.provider(key)
 
@@ -1544,4 +1704,5 @@ class Accounts:
             "session_action": lambda action: self.session_action(key, action),
             "forget_temporary": forget,
             "attach_file_callback": lambda path: self.attach_file(key, path),
+            "attachment_policy_callback": lambda: self.attachment_policy(key),
         }

@@ -1,7 +1,10 @@
 """Small, scoped compatibility layer for native Gemini notebook requests."""
 
+import inspect
 import json
+import mimetypes
 from contextlib import contextmanager
+from pathlib import Path
 from urllib.parse import urlparse
 
 from ..errors import ProviderError
@@ -76,3 +79,93 @@ def notebook_transport(client, remote, context):
         yield
     finally:
         client._siope_notebook = original
+
+
+async def stream_local_files(
+    client, chat, prompt, paths, *, model=None, temporary=False, extended_thinking=False
+):
+    """Upload paths one at a time from disk, then stream through the SDK's request builder.
+
+    gemini-webapi 2.1.x reads every selected path into memory and uploads them with
+    asyncio.gather. CurlMime's local_path keeps one file at a time on disk instead.
+    """
+    paths = [Path(path) for path in paths]
+    if not paths:
+        async for chunk in chat.send_message_stream(
+            prompt,
+            temporary=temporary,
+            extended_thinking=extended_thinking,
+            current_retry=0,
+        ):
+            yield chunk
+        return
+
+    if not (
+        hasattr(client, "_live_client")
+        and inspect.iscoroutinefunction(getattr(type(client), "_sync_activity", None))
+        and inspect.isasyncgenfunction(getattr(type(client), "_generate", None))
+    ):
+        # Test doubles and compatible client wrappers can retain their own upload method.
+        async for chunk in chat.send_message_stream(
+            prompt,
+            files=[str(path) for path in paths],
+            temporary=temporary,
+            extended_thinking=extended_thinking,
+            current_retry=0,
+        ):
+            yield chunk
+        return
+
+    from curl_cffi import CurlMime
+    from gemini_webapi.constants import Endpoint, Headers
+    from gemini_webapi.utils.upload_file import parse_file_name
+
+    if getattr(client, "auto_close", False) is True:
+        await client.reset_close_task()
+    client._check_account_status(raise_error=True)
+    await client._sync_activity()
+    file_data = []
+    for path in paths:
+        mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        mime_part = CurlMime()
+        try:
+            mime_part.addpart(
+                name="file",
+                content_type=mime,
+                filename=path.name,
+                local_path=str(path),
+            )
+            response = await client._live_client.post(
+                url=Endpoint.UPLOAD,
+                headers={
+                    **Headers.REFERER.value,
+                    **Headers.UPLOAD.value,
+                    "Push-ID": client.push_id,
+                },
+                multipart=mime_part,
+                allow_redirects=True,
+            )
+            response.raise_for_status()
+            file_data.append([[response.text], parse_file_name(path)])
+        finally:
+            mime_part.close()
+
+    await client._sync_activity()
+    output = None
+    async for chunk in client._generate(
+        prompt=prompt,
+        req_file_data=file_data,
+        model=model,
+        gem=None,
+        chat=chat,
+        temporary=temporary,
+        session_state={"last_texts": {}, "last_thoughts": {}},
+        deep_research=False,
+        extended_thinking=extended_thinking,
+        current_retry=0,
+    ):
+        output = chunk
+        yield chunk
+    if output is not None and hasattr(output, "metadata") and hasattr(chat, "metadata"):
+        output.metadata = chat.metadata
+        chat.last_output = output

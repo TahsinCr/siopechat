@@ -1,7 +1,9 @@
 """Account-scoped Claude HTTPS operations and completion streams."""
 
 import json
+import mimetypes
 import uuid
+from pathlib import Path
 from urllib.parse import quote
 
 from ..contracts import confirm_deleted
@@ -59,6 +61,57 @@ class ClaudeTransport:
 
     async def close(self):
         await self.session.close()
+
+    async def upload_file(self, path):
+        """Upload a local file through Claude's web document conversion endpoint."""
+        from curl_cffi import CurlMime
+
+        path = Path(path).expanduser().resolve(strict=True)
+        if (
+            not path.is_file()
+            or path.suffix.lower()
+            not in {
+                ".pdf",
+                ".docx",
+                ".csv",
+                ".txt",
+                ".html",
+                ".htm",
+                ".odt",
+                ".rtf",
+                ".epub",
+                ".json",
+                ".xlsx",
+                ".png",
+                ".jpg",
+                ".jpeg",
+                ".gif",
+                ".webp",
+            }
+            or not 0 < path.stat().st_size <= 30 * 1024 * 1024
+        ):
+            raise ValueError("Claude dosyaları 30 MB sınırını aşmamalı")
+        mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        body = CurlMime()
+        try:
+            body.addpart(name="file", filename=path.name, local_path=str(path), content_type=mime)
+            result = await self.session.request(
+                "POST", await self.base() + "/convert_document", multipart=body
+            )
+        finally:
+            body.close()
+        if not isinstance(result, dict):
+            raise ProviderError("Claude dosya yükleme yanıtı geçersiz")
+        file_id = result.get("file_uuid") or result.get("uuid") or result.get("id")
+        if not isinstance(file_id, str) or not file_id:
+            raise ProviderError("Claude dosya yüklemesi kimlik döndürmedi")
+        return {
+            "id": file_id,
+            "name": path.name,
+            "mime_type": mime,
+            "size_bytes": path.stat().st_size,
+            "provider": "claude",
+        }
 
     async def request(self, mode, **v):
         if mode in ("status", "models"):
@@ -160,7 +213,7 @@ class ClaudeTransport:
             "model": model,
             "timezone": "UTC",
             "attachments": [],
-            "files": [],
+            "files": [item["id"] for item in v.get("attachments", []) if item.get("id")],
             "rendering_mode": "messages",
         }
         if parent:

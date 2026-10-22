@@ -1,5 +1,6 @@
 """Bounded hot cache and single-flight stale-while-revalidate coordination."""
 
+import asyncio
 import copy
 import json
 import threading
@@ -361,13 +362,23 @@ class Archive:
                 self._repository_closed = True
             self.repository.close()
 
-    def close(self):
+    def _mark_closed(self):
         with self._lock:
             self.closed = True
             self._hot.clear()
             self._size = 0
             self._fetchers.clear()
+
+    def close(self):
+        self._mark_closed()
         self._pool.shutdown(wait=False, cancel_futures=True)
         # Fetches already running may still need repository.state(). The last
         # completion closes the backend; queued work is cancelled immediately.
+        self._maybe_close_repository()
+
+    async def aclose(self):
+        self._mark_closed()
+        # Async application shutdown must not leave SQLite worker threads using
+        # a temporary or user data directory after the runtime has stopped.
+        await asyncio.to_thread(self._pool.shutdown, wait=True, cancel_futures=True)
         self._maybe_close_repository()

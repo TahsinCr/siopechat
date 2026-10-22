@@ -19,7 +19,7 @@ class Forms:
         self.fields = {}
         self.error = ""
 
-    def open(self, title, fields, submit, *, inline_project=None):
+    def open(self, title, fields, submit, *, inline_project=None, actions=None):
         self.inline_project = inline_project
         self.fields, body, self.error = {}, [], ""
         single_line_controls = []
@@ -35,20 +35,22 @@ class Forms:
             else:
                 widget = TextArea(
                     text=str(value),
-                    multiline=key in ("instructions", "text"),
-                    height=5 if key in ("instructions", "text") else 1,
-                    scrollbar=key in ("instructions", "text"),
-                    completer=PathCompleter(expanduser=True) if key == "path" else None,
+                    multiline=key in ("instructions", "text", "files"),
+                    height=8 if key == "files" else 5 if key in ("instructions", "text") else 1,
+                    scrollbar=key in ("instructions", "text", "files"),
+                    completer=PathCompleter(expanduser=True) if key in ("path", "files") else None,
                     style="class:settings.editor",
                 )
                 widget.control.focus_on_click = Condition(lambda: True)
-                if key not in ("instructions", "text"):
+                if key not in ("instructions", "text", "files"):
                     single_line_controls.append(widget.control)
             content_height += 2 + (
                 len(choices)
                 if choices
                 else len(value[0])
                 if key in ("providers", "accounts")
+                else 8
+                if key == "files"
                 else 5
                 if key in ("instructions", "text")
                 else 1
@@ -96,6 +98,7 @@ class Forms:
             ),
         )
         buttons = [
+            *[Button(label, handler=handler) for label, handler in (actions or ())],
             Button(
                 self.view.tr("Kaydet") if inline_project else self.view.tr("Uygula"), handler=save
             ),

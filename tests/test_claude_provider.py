@@ -199,15 +199,41 @@ class ClaudeProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(result[1], ReplaceText)
         self.assertEqual(result[1].channel, "analysis")
 
-    async def test_unsupported_attachments_are_explicit(self):
-        self.assertNotIn(Capability.ATTACHMENTS, self.provider.capabilities)
-        with self.assertRaises(FeatureUnavailable):
-            _ = [
-                x
-                async for x in self.provider.stream(
-                    SendRequest("claude", "account", "local", "Q", attachments=({"path": "file"},))
-                )
-            ]
+    async def test_attachments_are_forwarded_as_provider_file_ids(self):
+        captured = {}
+
+        async def events(*args, **kwargs):
+            captured.update(kwargs)
+            yield {"type": "bound", "id": CHAT}
+            yield {"type": "done"}
+
+        self.provider.transport.events = events
+        _ = [
+            x
+            async for x in self.provider.stream(
+                SendRequest("claude", "account", "local", "Q", attachments=({"id": "file-id"},))
+            )
+        ]
+        self.assertIn(Capability.ATTACHMENTS, self.provider.capabilities)
+        self.assertEqual(captured["attachments"], ({"id": "file-id"},))
+
+    async def test_claude_upload_uses_local_file_multipart_and_checks_response(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "notes.pdf"
+            path.write_bytes(b"pdf")
+            transport = self.provider.transport
+            transport.organization = PROJECT
+            transport.session.request = AsyncMock(return_value={"file_uuid": "remote-file"})
+            with patch("curl_cffi.CurlMime") as mime_type:
+                result = await transport.upload_file(path)
+            self.assertEqual(result["id"], "remote-file")
+            transport.session.request.assert_awaited_once()
+            self.assertEqual(
+                transport.session.request.await_args.args[:2],
+                ("POST", f"/api/organizations/{PROJECT}/convert_document"),
+            )
+            mime_type.return_value.addpart.assert_called_once()
+            mime_type.return_value.close.assert_called_once()
 
 
 class ClaudeAccountsTests(unittest.TestCase):

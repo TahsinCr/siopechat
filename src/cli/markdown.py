@@ -354,9 +354,9 @@ class MessageRenderer:
         self.theme = MARKDOWN_THEME
         self.tokens = {}
         self.cache: OrderedDict[tuple[str, str, int, bool], str] = OrderedDict()
-        self.cache_limit = 4096
-        self.cache_character_limit = 4_000_000
-        self.cache_characters = 0
+        self.cache_limit = 1024
+        self.cache_byte_limit = 1_000_000
+        self.cache_bytes = 0
 
     def configure(self, tokens):
         styles = dict(DEFAULT_MARKDOWN_STYLE)
@@ -372,8 +372,16 @@ class MessageRenderer:
         styles.update(tokens.get("markdown", {}))
         self.theme = Theme(styles)
         self.tokens = dict(tokens)
+        self.clear_cache()
+
+    def clear_cache(self):
+        """Release all formatted message strings held by this renderer."""
         self.cache.clear()
-        self.cache_characters = 0
+        self.cache_bytes = 0
+
+    @staticmethod
+    def _cache_entry_bytes(key, value):
+        return 128 + len(key[1].encode("utf-8")) + len(value.encode("utf-8"))
 
     def transcript(self, messages, width, show_reasoning=True, cancelled=None):
         """Prepare immutable transcript text and line ranges off the UI thread."""
@@ -463,13 +471,10 @@ class MessageRenderer:
         if not active:
             previous = self.cache.pop(key, None)
             if previous is not None:
-                self.cache_characters -= len(key[1]) + len(previous)
+                self.cache_bytes -= self._cache_entry_bytes(key, previous)
             self.cache[key] = value
-            self.cache_characters += len(key[1]) + len(value)
-            while (
-                len(self.cache) > self.cache_limit
-                or self.cache_characters > self.cache_character_limit
-            ):
+            self.cache_bytes += self._cache_entry_bytes(key, value)
+            while len(self.cache) > self.cache_limit or self.cache_bytes > self.cache_byte_limit:
                 removed_key, removed_value = self.cache.popitem(last=False)
-                self.cache_characters -= len(removed_key[1]) + len(removed_value)
+                self.cache_bytes -= self._cache_entry_bytes(removed_key, removed_value)
         return value

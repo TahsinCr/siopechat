@@ -40,6 +40,7 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
             Capability.PROJECT_MEMBERSHIP,
             Capability.DELETE,
             Capability.RENAME,
+            Capability.ATTACHMENTS,
         }
     )
 
@@ -60,6 +61,15 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
     async def close(self):
         await self.editor.close()
         await self.transport.close()
+
+    def attachment_policy(self):
+        from ..attachments import policy_for
+
+        return policy_for(self.id).as_dict()
+
+    async def upload_file(self, path):
+        async with self._gate:
+            return await self.transport.upload_file(path)
 
     def _origin(self, remote):
         return Origin(self.id, self.account_id, remote)
@@ -256,9 +266,9 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
             )
 
     async def stream(self, request):
-        if request.temporary or request.attachments:
+        if request.temporary:
             raise FeatureUnavailable(
-                Capability.TEMPORARY if request.temporary else Capability.ATTACHMENTS,
+                Capability.TEMPORARY,
                 "not_available",
             )
         if not self.credential_file.is_file() and not self.transport.authenticated:
@@ -272,6 +282,7 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
                 project_id=request.project_id,
                 model=request.model,
                 effort=request.effort,
+                attachments=request.attachments,
             ):
                 if event["type"] == "bound":
                     yield ConversationBound(event["id"])

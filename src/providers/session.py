@@ -4,11 +4,21 @@ import asyncio
 import json
 import os
 import tempfile
+import threading
 import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from .errors import AccountPaused, ProviderError, RateLimited, RemoteNotFound
+
+_SESSION_WRITE_LOCKS = {}
+_SESSION_WRITE_LOCKS_GUARD = threading.Lock()
+
+
+def _session_write_lock(path):
+    key = os.path.normcase(os.path.abspath(path))
+    with _SESSION_WRITE_LOCKS_GUARD:
+        return _SESSION_WRITE_LOCKS.setdefault(key, threading.Lock())
 
 
 def _replace_with_retry(source, destination):
@@ -39,24 +49,25 @@ def read_session(path):
 
 def save_session(path, value, *, ensure_ascii=False, newline=False):
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    name = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", dir=path.parent, delete=False
-        ) as output:
-            name = output.name
-            if os.name != "nt":
-                os.chmod(name, 0o600)
-            json.dump(value, output, ensure_ascii=ensure_ascii)
-            if newline:
-                output.write("\n")
-            output.flush()
-            os.fsync(output.fileno())
-        _replace_with_retry(name, path)
-    finally:
-        if name and os.path.exists(name):
-            os.unlink(name)
+    with _session_write_lock(path):
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        name = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=path.parent, delete=False
+            ) as output:
+                name = output.name
+                if os.name != "nt":
+                    os.chmod(name, 0o600)
+                json.dump(value, output, ensure_ascii=ensure_ascii)
+                if newline:
+                    output.write("\n")
+                output.flush()
+                os.fsync(output.fileno())
+            _replace_with_retry(name, path)
+        finally:
+            if name and os.path.exists(name):
+                os.unlink(name)
 
 
 class WebSession:

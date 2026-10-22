@@ -333,10 +333,10 @@ class CliComponentTests(unittest.TestCase):
         self.assertIsNone(visible_chat_message({"role": "tool", "text": "Internal tool message"}))
 
         renderer = MessageRenderer()
-        renderer.cache_character_limit = 1
+        renderer.cache_byte_limit = 1
         renderer.render("assistant", "cached markdown", 60, False, False)
         self.assertEqual(renderer.cache, {})
-        self.assertEqual(renderer.cache_characters, 0)
+        self.assertEqual(renderer.cache_bytes, 0)
 
     def test_clipboard_uses_platform_helper_and_retains_terminal_fallback(self):
         with patch.object(clipboard.shutil, "which", return_value="/bin/tool"):

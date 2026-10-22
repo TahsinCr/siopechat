@@ -126,6 +126,39 @@ class SyncConcurrencyTests(unittest.TestCase):
             self.assertTrue(closed.wait(2))
             self.assertIsNone(self.repo.get("gemini/a", "conversation", "one"))
 
+    def test_async_close_waits_for_running_fetches(self):
+        entered, release, repository_closed = (
+            threading.Event(),
+            threading.Event(),
+            threading.Event(),
+        )
+
+        def fetch():
+            entered.set()
+            if not release.wait(3):
+                raise TimeoutError("test barrier")
+            return {"title": "remote"}
+
+        real_close = self.repo.close
+
+        def close_repository():
+            repository_closed.set()
+            real_close()
+
+        with patch.object(self.repo, "close", side_effect=close_repository):
+            self.archive.read("gemini/a", "conversation", "async-close", fetch, wait=False)
+            self.assertTrue(entered.wait(1))
+            timer = threading.Timer(0.05, release.set)
+            timer.start()
+            try:
+                asyncio.run(self.archive.aclose())
+            finally:
+                release.set()
+                timer.join()
+
+        self.assertTrue(repository_closed.is_set())
+        self.assertFalse(self.archive._pending)
+
     def test_worker_and_queue_limits_hold_during_a_refresh_burst(self):
         release = threading.Event()
         counter_lock = threading.Lock()

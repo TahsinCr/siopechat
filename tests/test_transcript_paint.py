@@ -149,13 +149,61 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rows[1][0], (("t", "c"),))
         self.assertEqual([row[1] for row in rows], [0, 1])
 
-    def test_oversized_transcript_is_retained_instead_of_repeating_placeholder(self):
+    def test_oversized_transcript_is_not_retained_in_formatted_cache(self):
         with terminal() as (view, _):
             tab = view.tabs[view.active_tab]
             text = "x" * 4_000_001
             messages = [{"role": "user", "text": "large"}]
             view.remember_transcript(tab, messages, 80, {}, True, text, [(0, 1, 0)], [("", text)])
-            self.assertEqual(view._prepared_transcripts[tab["tab_id"]]["text"], text)
+            self.assertNotIn(tab["tab_id"], view._prepared_transcripts)
+
+    def test_closing_tab_discards_formatted_rows_but_keeps_no_archive_mutation(self):
+        with terminal(initial_messages=[{"role": "user", "text": "Retained source"}]) as (
+            view,
+            _,
+        ):
+            tab = view.tabs[view.active_tab]
+            tab_id = tab["tab_id"]
+            view.renderer.render("user", "Retained source", 40, False, False)
+            view._prepared_transcripts = {tab_id: {"cost": 1}}
+            view._transcript_cache = "formatted snapshot"
+            view.close_tab()
+            self.assertNotIn(tab_id, view._prepared_transcripts)
+            self.assertFalse(view.renderer.cache)
+            self.assertEqual(view._transcript_cache, "")
+
+    def test_virtual_rows_match_complete_transcript_and_cache_only_prefetched_rows(self):
+        from cli.history import prepare_transcript
+        from cli.transcript import VirtualTranscript, VirtualTranscriptRows
+
+        messages = [
+            {"role": "user", "text": "Question"},
+            {"role": "reasoning", "text": "Brief thought"},
+            {"role": "assistant", "text": "Answer with **formatting**\n\nSecond paragraph"},
+        ]
+        _, _, _, expected = prepare_transcript(messages, 48, {}, True)
+        virtual = VirtualTranscript(messages, 48, True, renderer=MessageRenderer())
+        rows = VirtualTranscriptRows(virtual)
+        virtual.prefetch(0, len(rows))
+        self.assertEqual(tuple(rows), tuple(expected))
+        self.assertLessEqual(virtual.cache_bytes, virtual.CACHE_BYTES)
+        self.assertGreater(virtual.cache_bytes, 0)
+
+    def test_virtual_prefetch_evicts_rows_outside_the_overscan_window(self):
+        from cli.transcript import VirtualTranscript
+
+        message = {
+            "role": "assistant",
+            "text": "\n".join(f"Row {i}  " for i in range(1200)),
+        }
+        virtual = VirtualTranscript([message], 48, renderer=MessageRenderer())
+        virtual.prefetch(0, 64)
+        first_pages = set(virtual._pages)
+        self.assertTrue(first_pages)
+        virtual.prefetch(600, 664)
+        self.assertTrue(virtual._pages)
+        self.assertTrue(all(page != 0 for _, page in virtual._pages))
+        self.assertNotEqual(set(virtual._pages), first_pages)
 
     def test_selection_tracks_the_same_message_after_older_history_is_inserted(self):
         with terminal(
@@ -203,7 +251,6 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
                 with (
                     terminal(account_service=app.get("accounts")) as (view, _),
                     patch.object(view, "refresh_provider_catalog"),
-                    patch.object(view, "_read_in_background"),
                     patch.object(MessageRenderer, "render", checked),
                 ):
                     task = asyncio.create_task(view.app.run_async())

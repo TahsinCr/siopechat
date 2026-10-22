@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from extensions.archive.repository import Files, SQLiteRepository
 from extensions.archive.sync import Archive
+from providers import Capability
 from providers.models import Choice, FeatureState, Model, ModelCatalog
 from tests.account_fixture import configured_application as create_application
 from tests.test_cli_interaction import terminal
@@ -387,7 +388,13 @@ class ArchiveIntegrationTests(unittest.TestCase):
             yield ReplaceText("Answer")
             yield ConversationBound("one")
 
-        self.accounts._providers["chatgpt/default"] = Mock(stream=stream, close=AsyncMock())
+        provider = Mock(
+            stream=stream,
+            close=AsyncMock(),
+            capabilities=frozenset({Capability.ATTACHMENTS}),
+        )
+        provider.attachment_policy.return_value = {"max_files": 10, "max_bytes": 1024}
+        self.accounts._providers["chatgpt/default"] = provider
         self.accounts._attachment_paths["chatgpt/default", "file1"] = str(source)
         self.accounts.send(
             "chatgpt/default",

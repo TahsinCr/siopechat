@@ -56,13 +56,19 @@ class TranscriptControl(UIControl):
         return True
 
     def create_content(self, width, height):
-        self.rows = self.view.transcript_rows()
+        self.rows = self.view.transcript_rows(viewport_height=height)
         rows = self.rows
         cursor = self.view.transcript_cursor_position()
         cursor = Point(0, min(max(0, cursor.y), max(0, len(rows) - 1)))
 
         def get_line(number):
-            spans, message = rows[number]
+            if hasattr(rows, "paint_row"):
+                row = rows.paint_row(number)
+                if row is None:
+                    return [("class:sidebar.muted", " · ")]
+                spans, message = row
+            else:
+                spans, message = rows[number]
             selected = self.view.message_selection and message == self.view.selected_message
             bounds = self._bounds(number)
             result, position = [], 0

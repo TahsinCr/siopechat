@@ -71,6 +71,24 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
         self._gate = asyncio.Lock()
         self.editor = ChatGPTProjectEditor(self.session, self._factory)
 
+    def attachment_policy(self):
+        from ..attachments import policy_for
+
+        return policy_for(self.id).as_dict()
+
+    async def upload_file(self, path):
+        import mimetypes
+        from pathlib import Path
+
+        path = Path(path)
+        mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+
+        def upload():
+            with self._factory(self.session) as client:
+                return client.upload_file(path.name, mime, path)
+
+        return await asyncio.to_thread(upload)
+
     async def close(self):
         await self.editor.close()
 
