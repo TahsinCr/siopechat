@@ -42,6 +42,7 @@ DEFAULT_KEYBINDINGS = {
     "chat.newline_lf": "c-j",
     "chat.paste_image": "c-v",
     "chat.interrupt": "c-c",
+    "chat.stop": "escape escape",
     "chat.clear_transcript": "c-l",
     "chat.reload": "f8",
     "chat.copy_response": "f2",

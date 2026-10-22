@@ -7,6 +7,7 @@ _ACTION_NAMES = {
     "chat.attach": "Dosya ekle",
     "chat.resume": "Geçmişten sohbet aç",
     "chat.interrupt": "Yanıtı durdur / seçimi kopyala",
+    "chat.stop": "Yanıtı durdur",
     "chat.newline": "Yeni satır · Alt+Enter",
     "chat.newline_shift": "Yeni satır · Shift+Enter",
     "chat.newline_lf": "Yeni satır · Ctrl+J",

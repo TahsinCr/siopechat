@@ -144,17 +144,7 @@ def key_bindings(view) -> KeyBindings:
         ):
             control.buffer.reset()
         elif view.active_busy():
-            view.status = view.tr("Stopping response…")
-            connection = view.cancel_connection
-            if connection is not None:
-                try:
-                    connection.shutdown(2)
-                except OSError:
-                    pass
-                try:
-                    connection.close()
-                except OSError:
-                    pass
+            view.stop_active_response()
         elif view.input.text and control is view.input.control:
             view.input.buffer.reset()
             view.status = view.tr("Prompt cleared")
@@ -230,6 +220,8 @@ def key_bindings(view) -> KeyBindings:
             view.close_palette()
         elif view.resume_visible:
             view.close_resume()
+        elif view.handle_stop_escape():
+            return
         else:
             if view.layout_controller:
                 view.layout_controller.pending = None
@@ -314,6 +306,7 @@ def key_bindings(view) -> KeyBindings:
         ("command.refresh", refresh_action),
     ):
         bind(action_id, callback)
+    bind("chat.stop", lambda _: view.stop_active_response(), Condition(view.active_busy))
     composer_focused = Condition(lambda: view.app.layout.current_control is view.input.control)
     bind("chat.newline_shift", newline, composer_focused)
     bind("chat.newline_lf", newline, composer_focused)

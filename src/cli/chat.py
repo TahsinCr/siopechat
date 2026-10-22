@@ -210,6 +210,8 @@ class ChatView:
         self._inflight_attachments: list[dict[str, Any]] = []
         self.status = "Ready"
         self.cancel_connection: Any = None
+        self.stop_confirmation_until = 0.0
+        self.stop_confirmation_tab_id: str | None = None
         from .background import BackgroundReads
 
         self._reads = BackgroundReads()
@@ -1219,13 +1221,22 @@ class ChatView:
             )
         if not self.follow_output:
             controls.append(("class:button", " ↓ ", on_click(self.scroll_bottom)))
-        controls.append(
-            (
-                "class:button",
-                " ↑ " if compact else self.tr(" Gönder ↑ "),
-                on_click(self.submit_prompt),
+        if self.active_busy():
+            controls.append(
+                (
+                    "class:button",
+                    " ■ " if compact else " ■ " + self.tr("Durdur") + " ",
+                    on_click(self.stop_active_response),
+                )
             )
-        )
+        else:
+            controls.append(
+                (
+                    "class:button",
+                    " ↑ " if compact else self.tr(" Gönder ↑ "),
+                    on_click(self.submit_prompt),
+                )
+            )
         used = sum(get_cwidth(f[1]) for f in controls)
         return FormattedText([("", " " * max(0, self.main_width() - used))] + controls)
 
@@ -2601,6 +2612,47 @@ class ChatView:
             (tabs and tabs[index].get("busy")) or (self.busy and self.busy_tab_index == index)
         )
 
+    @staticmethod
+    def _cancel_connection(connection: Any) -> None:
+        if connection is None:
+            return
+        try:
+            connection.shutdown(2)
+        except OSError:
+            pass
+        try:
+            connection.close()
+        except OSError:
+            pass
+
+    def stop_active_response(self) -> bool:
+        if not self.active_busy():
+            return False
+        tab = self.tabs[self.active_tab]
+        tab["cancel_requested"] = True
+        self.stop_confirmation_until = 0.0
+        self.stop_confirmation_tab_id = None
+        self.status = self.tr("Yanıt durduruluyor…")
+        self._cancel_connection(tab.get("connection"))
+        self.app.invalidate()
+        return True
+
+    def handle_stop_escape(self) -> bool:
+        if not self.active_busy():
+            self.stop_confirmation_until = 0.0
+            self.stop_confirmation_tab_id = None
+            return False
+        now = time.monotonic()
+        tab_id = self.tabs[self.active_tab].get("tab_id")
+        if tab_id == self.stop_confirmation_tab_id and now <= self.stop_confirmation_until:
+            self.stop_active_response()
+            return True
+        self.stop_confirmation_until = now + 3.0
+        self.stop_confirmation_tab_id = tab_id
+        self.status = self.tr("Yanıtı durdurmak için Esc'ye tekrar basın · 3 sn")
+        self.app.invalidate()
+        return True
+
     def _sync_activity(self) -> None:
         running = [i for i, tab in enumerate(self.tabs) if tab.get("busy")]
         self.busy = bool(running) or any(tab.get("busy") for tab in self.background_tabs)
@@ -2895,6 +2947,14 @@ class ChatView:
         return f"{total // 60}m {total % 60:02d}s"
 
     def render_activity(self) -> FormattedText:
+        stop_hint = self.tr("Yanıtı durdurmak için Esc'ye tekrar basın · 3 sn")
+        if self.active_busy() and self.stop_confirmation_tab_id == self.tabs[self.active_tab].get(
+            "tab_id"
+        ):
+            if time.monotonic() <= self.stop_confirmation_until:
+                return FormattedText([("", f" {stop_hint} ")])
+            self.stop_confirmation_until = 0.0
+            self.stop_confirmation_tab_id = None
         if self.busy and self.busy_tab_index is None:
             return FormattedText([("class:sidebar.running", self.tr("Yanıt arka planda sürüyor"))])
         if self.busy and self.busy_tab_index != self.active_tab:
@@ -2927,7 +2987,8 @@ class ChatView:
                 if self.loading_conversation
                 else self.tr("Dosya yükleniyor")
             )
-            return FormattedText([("", f" {frame} {phase} · {elapsed} · {self.status} ")])
+            detail = "" if self.status == stop_hint else " · " + self.status
+            return FormattedText([("", f" {frame} {phase} · {elapsed}{detail} ")])
         archive = self.archive_service()
         if archive:
             states = self.sync_states(archive)
@@ -3662,6 +3723,9 @@ class ChatView:
         self.busy = True
         self.busy_tab_index = self.active_tab
         self.tabs[self.active_tab]["busy"] = True
+        self.tabs[self.active_tab]["cancel_requested"] = False
+        self.stop_confirmation_until = 0.0
+        self.stop_confirmation_tab_id = None
         self._invalidate_sidebar_rows()
         if not self.conversation_id:
             self.title = self.tabs[self.active_tab]["title"] = prompt[:60]
@@ -3851,6 +3915,7 @@ class ChatView:
                 "edit.cut": self.tr("Seçili metni kes"),
                 "chat.temporary": self.tr("Yeni geçici sohbet"),
                 "chat.interrupt": self.tr("Yanıtı durdur veya taslağı temizle"),
+                "chat.stop": self.tr("Yanıtı durdur"),
                 "chat.clear_transcript": self.tr("Görünen konuşmayı temizle"),
                 "chat.reload": self.tr("Sohbeti eşitle"),
                 "chat.copy_response": self.tr("Son yanıtı kopyala"),
@@ -4366,6 +4431,8 @@ class ChatView:
             target_tab["job_id"] = getattr(connection, "id", None)
             if is_active():
                 self.cancel_connection = connection
+            if target_tab.get("cancel_requested"):
+                self._cancel_connection(connection)
 
         def on_event(event: dict[str, Any]) -> None:
             nonlocal rendered, final_message_id
@@ -4514,6 +4581,7 @@ class ChatView:
                 tab["completed_pending"] = not is_active()
                 tab["started"] = None
                 tab["connection"] = None
+                tab["cancel_requested"] = False
                 if resolved_id and not temporary:
                     record = next(
                         (item for item in self.sidebar_items if item.get("id") == resolved_id), None
@@ -4535,6 +4603,8 @@ class ChatView:
                     ]
                 self._sync_activity()
                 if is_active():
+                    self.stop_confirmation_until = 0.0
+                    self.stop_confirmation_tab_id = None
                     self.conversation_id = resolved_id
                     self.title = tab["title"]
                     self.messages = messages

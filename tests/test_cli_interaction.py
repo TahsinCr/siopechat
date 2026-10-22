@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 from prompt_toolkit.application import Application
 from prompt_toolkit.data_structures import Size
 from prompt_toolkit.input import create_pipe_input
+from prompt_toolkit.mouse_events import MouseButton, MouseEventType
 from prompt_toolkit.output import DummyOutput
 
 from cli.chat import ChatView
@@ -38,12 +39,12 @@ def immediate(read, success, failure, **kwargs):
 
 
 class InputTests(unittest.IsolatedAsyncioTestCase):
-    async def settle(self, predicate):
+    async def settle(self, predicate, timeout=1):
         async def wait():
             while not predicate():
                 await asyncio.sleep(0.01)
 
-        await asyncio.wait_for(wait(), 1)
+        await asyncio.wait_for(wait(), timeout)
 
     async def test_settings_tab_can_switch_reopen_and_close_with_global_keys(self):
         with terminal(settings_rows=lambda: []) as (view, pipe):
@@ -86,6 +87,59 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
                     view.app.invalidate()
                     await asyncio.sleep(0.08)
                     self.assertEqual(view.messages[0]["text"], "Original reply")
+            finally:
+                view.app.exit()
+                await run
+
+    async def test_active_chat_shows_a_stop_button_that_cancels_the_current_response(self):
+        with terminal() as (view, _pipe):
+            connection = Mock()
+            tab = view.tabs[view.active_tab]
+            tab.update(busy=True, connection=connection)
+            view._sync_activity()
+            stop = next(
+                fragment for fragment in view.render_composer_actions() if "Durdur" in fragment[1]
+            )
+            stop[2](
+                type(
+                    "MouseUp",
+                    (),
+                    {"event_type": MouseEventType.MOUSE_UP, "button": MouseButton.LEFT},
+                )()
+            )
+            self.assertTrue(tab["cancel_requested"])
+            self.assertEqual(view.status, view.tr("Yanıt durduruluyor…"))
+            connection.shutdown.assert_called_once_with(2)
+            connection.close.assert_called_once_with()
+
+    async def test_escape_arms_stop_and_second_escape_cancels_active_response(self):
+        with terminal() as (view, _pipe):
+            connection = Mock()
+            tab = view.tabs[view.active_tab]
+            tab.update(busy=True, connection=connection)
+            view._sync_activity()
+            self.assertTrue(view.handle_stop_escape())
+            self.assertIn("Esc'ye tekrar", view.status)
+            self.assertIn("Esc'ye tekrar", "".join(f[1] for f in view.render_activity()))
+            self.assertFalse(tab.get("cancel_requested", False))
+            self.assertTrue(view.handle_stop_escape())
+            self.assertTrue(tab["cancel_requested"])
+            connection.shutdown.assert_called_once_with(2)
+
+    async def test_double_escape_key_sequence_stops_active_response(self):
+        with terminal() as (view, pipe):
+            connection = Mock()
+            tab = view.tabs[view.active_tab]
+            tab.update(busy=True, connection=connection)
+            view._sync_activity()
+            run = asyncio.create_task(view.app.run_async())
+            try:
+                await self.settle(lambda: view.app.is_running)
+                pipe.send_bytes(b"\x1b")
+                await self.settle(lambda: "Esc'ye tekrar" in view.status, timeout=3)
+                pipe.send_bytes(b"\x1b")
+                await self.settle(lambda: tab.get("cancel_requested", False), timeout=3)
+                connection.shutdown.assert_called_once_with(2)
             finally:
                 view.app.exit()
                 await run
