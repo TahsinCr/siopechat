@@ -103,7 +103,9 @@ class NotebookStreamTests(unittest.IsolatedAsyncioTestCase):
         provider._stream = stalled
         provider.stream_idle_timeout = 0.01
         with self.assertRaisesRegex(ProviderError, "120 saniye"):
-            _ = [e async for e in provider.stream(None)]
+            _ = [
+                e async for e in provider.stream(SendRequest("gemini", "default", "test", "Hello"))
+            ]
         self.assertEqual(closed, [True])
 
     def test_transport_restores_session_on_failure(self):
@@ -177,5 +179,7 @@ class NotebookStreamTests(unittest.IsolatedAsyncioTestCase):
         provider._stream = endless
         provider.stream_total_timeout = 0.015
         with self.assertRaisesRegex(ProviderError, "10 dakikalık"):
-            _ = [e async for e in provider.stream(None)]
+            _ = [
+                e async for e in provider.stream(SendRequest("gemini", "default", "test", "Hello"))
+            ]
         self.assertEqual(closed, [True])

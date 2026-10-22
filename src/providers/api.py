@@ -74,6 +74,12 @@ class Provider(Protocol):
         ...
 
 
+def validate_request(provider, request: SendRequest) -> None:
+    """Reject cross-account requests before a transport is opened."""
+    if request.provider_id != provider.id or request.account_id != provider.account_id:
+        raise ValueError("send request belongs to a different provider/account")
+
+
 __all__ = [
     "AccountPaused",
     "CompatibilityError",

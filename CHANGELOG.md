@@ -10,6 +10,7 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 
 ### Added
 
+- Publish a host-independent provider client, account factory and complete typed backend contract; the provider directory includes standalone packaging and portable API tests.
 - Show a stop button in place of Send while the active chat is generating; pressing Esc twice within three seconds also stops it, with an inline status hint after the first press.
 
 ### Changed

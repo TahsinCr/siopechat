@@ -188,6 +188,8 @@ Bundled providers use their HTTPS transports for conversations and projects. Pac
 
 The provider library is independent of the terminal, archive and application runtime. `accounts.py` routes provider/account work; `runtime.py`, `actions.py` and `extension.py` manage shared services and contributions. Terminal-specific code stays in `src/cli/`, with tab rendering in `layout.py` and library filtering/rows in `library.py`. Optional features live in `extensions/`, common helpers in `src/utils/`. A GUI can consume the same services; no GUI is included in this beta.
 
+The provider directory is also an independently installable package: `python -m pip install ./src/providers`. `ProviderClient` routes accounts by provider and account identity, manages stream cancellation and closes owned connections. The same `create_provider` factory is used by the application. The typed `Backend` API covers models, chats, projects, sources, uploads and download resolution. See the [provider package documentation](src/providers/README.md) for usage and its portable tests; the directory can become a separate repository or submodule.
+
 Tests run without requiring your personal account sessions. Install [uv](https://docs.astral.sh/uv/) first; the first command creates the lockfile-backed development environment:
 
 ```sh

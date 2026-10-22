@@ -11,6 +11,11 @@ from .projects import ProjectOptions
 
 
 class Backend(Provider, Protocol):
+    account_id: str
+
+    async def close(self) -> None: ...
+    def attachment_policy(self) -> dict | None: ...
+    async def upload_file(self, path) -> dict: ...
     async def login(self) -> SessionStatus: ...
     async def authenticate(self) -> SessionStatus: ...
     async def session_status(self) -> SessionStatus: ...
@@ -49,6 +54,12 @@ class OptionalFeatures:
     async def resolve_download(self, url, conversation_id=None, message_id=None):
         return None
 
+    def attachment_policy(self):
+        return None
+
+    async def upload_file(self, path):
+        raise FeatureUnavailable(Capability.ATTACHMENTS, "not_implemented")
+
     async def delete_chat(self, conversation_id: str) -> None:
         raise FeatureUnavailable(Capability.DELETE, "not_implemented")
 
@@ -69,7 +80,7 @@ class OptionalFeatures:
         raise FeatureUnavailable(Capability.PROJECT_CREATE, "not_implemented")
 
     async def update_project(self, project: Project) -> Project:
-        raise FeatureUnavailable(Capability.PROJECTS, "not_implemented")
+        raise FeatureUnavailable(Capability.PROJECT_UPDATE, "not_implemented")
 
     async def project_options(self, project_id=None):
         return ProjectOptions()

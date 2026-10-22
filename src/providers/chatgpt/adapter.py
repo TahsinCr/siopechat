@@ -6,7 +6,14 @@ import threading
 from collections import OrderedDict
 from typing import Callable
 
-from ..api import Capability, ConversationBound, ReplaceText, SendRequest, TextDelta
+from ..api import (
+    Capability,
+    ConversationBound,
+    ReplaceText,
+    SendRequest,
+    TextDelta,
+    validate_request,
+)
 from ..contracts import OptionalFeatures, confirm_deleted
 from ..errors import AccountPaused, CompatibilityError, RateLimited
 from ..models import (
@@ -394,8 +401,7 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
             await asyncio.to_thread(move)
 
     async def stream(self, request: SendRequest):
-        if request.provider_id != self.id or request.account_id != self.account_id:
-            raise ValueError("request does not belong to this provider/account")
+        validate_request(self, request)
         loop = asyncio.get_running_loop()
         queue = asyncio.Queue(maxsize=32)
         stopped = threading.Event()

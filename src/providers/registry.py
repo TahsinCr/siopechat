@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from .api import Capability, Provider
+from .contracts import Backend
 
 PROVIDERS = {
     "chatgpt": ("ChatGPT", "◎", "https://chatgpt.com/"),
@@ -29,7 +30,7 @@ class ProviderRegistry:
             raise ValueError("provider ID must be nonempty and unique")
         self._providers[provider.id] = _Entry(provider, account_factory)
 
-    def create_account(self, provider_id, account_id, **configuration):
+    def create_account(self, provider_id: str, account_id: str, **configuration) -> Backend:
         """Construct an independent account adapter using host-supplied configuration."""
         factory = self._providers[provider_id].account_factory
         if factory is None:
@@ -97,3 +98,51 @@ class ProviderRegistry:
                 for feature in result.features
             ),
         )
+
+
+def create_provider(
+    provider_id: str,
+    account_id: str = "default",
+    *,
+    credential_file=None,
+    session=None,
+    cache_directory=None,
+    profile_directory=None,
+    **options,
+) -> Backend:
+    """Construct a bundled account backend without application state or network I/O.
+
+    Callers own credentials and their locations. ChatGPT callers may supply an
+    existing BrowserSession, or a credential path and optional cache/profile paths.
+    Other keyword options are passed to the selected adapter (e.g. client_factory).
+    """
+    from pathlib import Path
+
+    if not account_id:
+        raise ValueError("account ID must be nonempty")
+    if provider_id not in PROVIDERS:
+        raise ValueError("unknown provider")
+    if provider_id == "chatgpt":
+        from .chatgpt import BrowserSession, ChatGPTProvider, SessionPaths
+
+        if session is None:
+            if credential_file is None:
+                raise ValueError("credential_file or session is required")
+            path = Path(credential_file)
+            session = BrowserSession(
+                SessionPaths(
+                    path,
+                    Path(cache_directory) if cache_directory else path.parent / "cache",
+                    Path(profile_directory) if profile_directory else path.parent / "profile",
+                )
+            )
+        return ChatGPTProvider(session, account_id, **options)
+    if credential_file is None:
+        raise ValueError("credential_file is required")
+    if provider_id == "gemini":
+        from .gemini import GeminiProvider
+
+        return GeminiProvider(Path(credential_file), account_id, **options)
+    from .claude import ClaudeProvider
+
+    return ClaudeProvider(Path(credential_file), account_id, **options)

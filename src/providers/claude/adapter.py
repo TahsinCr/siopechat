@@ -3,7 +3,7 @@
 import asyncio
 from pathlib import Path
 
-from ..api import Capability, ConversationBound, ReplaceText, TextDelta
+from ..api import Capability, ConversationBound, ReplaceText, TextDelta, validate_request
 from ..contracts import OptionalFeatures
 from ..errors import AccountPaused, FeatureUnavailable, ProviderError
 from ..models import (
@@ -266,6 +266,7 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
             )
 
     async def stream(self, request):
+        validate_request(self, request)
         if request.temporary:
             raise FeatureUnavailable(
                 Capability.TEMPORARY,

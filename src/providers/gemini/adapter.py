@@ -4,7 +4,7 @@ import asyncio
 import inspect
 from pathlib import Path
 
-from ..api import Capability, ConversationBound, ReplaceText, SendRequest
+from ..api import Capability, ConversationBound, ReplaceText, SendRequest, validate_request
 from ..contracts import OptionalFeatures, confirm_deleted
 from ..errors import AccountPaused, FeatureUnavailable, ProviderError
 from ..models import (
@@ -392,6 +392,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
     stream_total_timeout = 600
 
     async def stream(self, request: SendRequest):
+        validate_request(self, request)
         iterator = self._stream(request)
         deadline = asyncio.get_running_loop().time() + self.stream_total_timeout
         try:

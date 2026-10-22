@@ -188,6 +188,8 @@ Yerleşik sağlayıcılar sohbet ve proje işlemlerinde kendi HTTPS taşıyıcı
 
 Sağlayıcı kütüphanesi terminalden, arşivden ve uygulama çalışma zamanından bağımsızdır. `accounts.py` sağlayıcı/hesap işlerini yönlendirir; `runtime.py`, `actions.py` ve `extension.py` ortak servis ve katkıları yönetir. Terminal kodu `src/cli/` altında; sekme çizimi `layout.py`, kütüphane filtreleri ve satırları `library.py` içindedir. İsteğe bağlı özellikler `extensions/`, ortak yardımcılar `src/utils/` altındadır. Aynı servisler bir GUI tarafından kullanılabilir; bu betada GUI bulunmuyor.
 
+Sağlayıcı dizini ayrıca bağımsız kurulabilen bir pakettir: `python -m pip install ./src/providers`. `ProviderClient`, hesapları sağlayıcı ve hesap kimliğiyle yönlendirir, akış iptalini ve bağlantıların kapanmasını yönetir. Uygulama da aynı `create_provider` fonksiyonunu kullanır. Tipli `Backend` API’si modelleri, sohbetleri, projeleri, kaynakları, yüklemeleri ve indirme çözümlemesini kapsar. Kullanım ve uygulamadan bağımsız testler için [sağlayıcı paketi belgesine](src/providers/README.md) bakın; dizin ayrı bir depoya veya submodule’e taşınabilir.
+
 Testler kişisel hesap oturumlarınızı gerektirmez. Önce [uv](https://docs.astral.sh/uv/) kurun; ilk komut kilit dosyasına bağlı geliştirme ortamını oluşturur:
 
 ```sh

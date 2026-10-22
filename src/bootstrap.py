@@ -35,7 +35,7 @@ def create_application(root: Path | None = None):
     from extension import ExtensionAPI, ExtensionManager
     from extensions import __file__ as extensions_file
     from lang import __file__ as language_file
-    from providers.chatgpt import ChatGPTProvider
+    from providers import create_provider
     from settings import Settings, SettingsCatalog
     from utils.paths import project_root
     from views import View
@@ -47,22 +47,26 @@ def create_application(root: Path | None = None):
     backend = BackendService(root)
     api.provide("application", "backend", backend)
     api.providers.register(
-        ChatGPTProvider(backend.create_session()),
-        account_factory=lambda account_id, session, **_: ChatGPTProvider(session, account_id),
+        create_provider("chatgpt", session=backend.create_session()),
+        account_factory=lambda account_id, **config: create_provider(
+            "chatgpt", account_id, **config
+        ),
     )
-    from providers.claude import ClaudeProvider
-    from providers.gemini import GeminiProvider
 
     api.providers.register(
-        GeminiProvider(root / "data" / "accounts" / "gemini" / "default" / "cookies.json"),
-        account_factory=lambda account_id, credential_file, **_: GeminiProvider(
-            credential_file, account_id
+        create_provider(
+            "gemini", credential_file=root / "data/accounts/gemini/default/cookies.json"
+        ),
+        account_factory=lambda account_id, **config: create_provider(
+            "gemini", account_id, **config
         ),
     )
     api.providers.register(
-        ClaudeProvider(root / "data" / "accounts" / "claude" / "default" / "native.json"),
-        account_factory=lambda account_id, credential_file, **_: ClaudeProvider(
-            credential_file, account_id
+        create_provider(
+            "claude", credential_file=root / "data/accounts/claude/default/native.json"
+        ),
+        account_factory=lambda account_id, **config: create_provider(
+            "claude", account_id, **config
         ),
     )
     accounts = Accounts(api)
