@@ -204,6 +204,8 @@ uv run --locked python -m build
 uv run --locked python -m twine check dist/*
 ```
 
+Uygulamayı kullanırken süreç ağacının CPU, yerleşik bellek ve thread sayılarını kaydetmek için `uv run --group performance python tools/measure_performance.py` komutunu çalıştırın. Ölçümler Git tarafından yok sayılan `performance/` klasörüne CSV olarak yazılır. `--interval 0.5` örnekleme sıklığını saniyede ikiye çıkarır; `-- --help` parametreleri SiopeChat'e iletir. CPU değeri süreçlerin toplamıdır; birden fazla çekirdek yoğun kullanıldığında %100'ü aşabilir.
+
 Hata bildirirken sağlayıcıyı, işlemi, terminali, işletim sistemini ve hata mesajını belirtin. Kimlik bilgilerini ve özel sohbet içeriğini çıkarın. Sürüm değişiklikleri [CHANGELOG.md](CHANGELOG.md) içinde yer alır.
 
 `Accounts` gönderimleri hesap çözümleyicisi, yanıt sınırı ve hesap kuyruğu içindeki kayıt işlemiyle ortak `TaskService` üzerinden çalışır. İptal, taşıyıcı temizliği ve kabul edilmiş yanıtın yazımı bittikten sonra hesabı serbest bırakır. Sağlayıcı kaydındaki `account_factory`, hesaplara bağımsız adaptör örnekleri oluşturur. Terminal okumaları, değişiklik işlemleri ve Markdown hazırlığı ayrı, sınırlı iş havuzları kullanır; sekmeyi kapatmak yanıtı iptal etmez.

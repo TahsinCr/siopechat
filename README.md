@@ -204,6 +204,8 @@ uv run --locked python -m build
 uv run --locked python -m twine check dist/*
 ```
 
+To collect process-tree CPU, resident-memory and thread samples while using the app, run `uv run --group performance python tools/measure_performance.py`. Samples are written to an ignored `performance/` CSV file; pass `--interval 0.5` to sample twice per second or `-- --help` to pass arguments to SiopeChat. CPU is reported as a process-tree sum, so it can exceed 100% when several cores are busy.
+
 Before reporting an issue, note the provider, operation, terminal, operating system and error message. Remove credentials and private conversation content. The [changelog](CHANGELOG.md) records release changes.
 
 `Accounts` sends use the shared `TaskService`, with an account resolver, response limits and persistence inside the account queue. Cancellation releases the account after transport cleanup and accepted-response writes finish. Provider registration accepts an `account_factory` for isolated adapter instances. Terminal reads, mutations and Markdown preparation use separate bounded worker pools; closing a tab does not cancel its response.
