@@ -3781,7 +3781,7 @@ class ChatView:
             ]
             self._attachments_in_flight = True
             self._inflight_attachments = attachments
-        prompt = prompt or self.tr("Describe the attached image.")
+        prompt = prompt or self.tr("Please review the attached files.")
         display_prompt = prompt
         if attachments:
             labels = " ".join(f"[📎 {item['name']}]" for item in attachments)

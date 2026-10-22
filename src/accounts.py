@@ -19,7 +19,7 @@ from pathlib import Path
 from urllib.parse import quote, unquote
 
 from backend import BackendService
-from providers import Capability, ConversationBound, ReplaceText, SendRequest, TextDelta
+from providers import Capability, ReplaceText, SendRequest, TextDelta
 from providers.chatgpt import BrowserSession, ChatGPTClient, ChatGPTProvider, SessionPaths
 from providers.claude import ClaudeProvider
 from providers.errors import AccountPaused, ProviderError, RemoteNotFound
@@ -324,6 +324,68 @@ class Accounts:
             raise TimeoutError(
                 "Sağlayıcı işlemi zaman aşımına uğradı; yeniden deneyebilirsiniz"
             ) from None
+
+    def _call_cancellable(self, coroutine, timeout, cancel_event):
+        if cancel_event.is_set():
+            coroutine.close()
+            raise CancelledError()
+
+        completion = Future()
+        task_ref = []
+
+        async def bounded():
+            return await asyncio.wait_for(coroutine, timeout)
+
+        def finish(task):
+            if completion.done():
+                return
+            if task.cancelled():
+                completion.cancel()
+                return
+            error = task.exception()
+            if error is not None:
+                completion.set_exception(error)
+            else:
+                completion.set_result(task.result())
+
+        def start():
+            task = self._loop.create_task(bounded())
+            task_ref.append(task)
+            task.add_done_callback(finish)
+            if cancel_event.is_set():
+                task.cancel()
+
+        try:
+            self._loop.call_soon_threadsafe(start)
+        except BaseException:
+            coroutine.close()
+            raise
+
+        deadline = time.monotonic() + timeout + 1
+        while True:
+            if cancel_event.is_set():
+                if not completion.done():
+                    self._loop.call_soon_threadsafe(lambda: task_ref and task_ref[0].cancel())
+                try:
+                    completion.result(timeout=timeout + 1)
+                except CancelledError:
+                    pass
+                except FutureTimeout:
+                    raise TimeoutError(
+                        "Sağlayıcı dosya yüklemesi iptal edilirken zaman aşımına uğradı"
+                    ) from None
+                raise CancelledError()
+            if completion.done():
+                return completion.result()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                cancel_event.set()
+                if task_ref:
+                    self._loop.call_soon_threadsafe(task_ref[0].cancel)
+                raise TimeoutError(
+                    "Sağlayıcı işlemi zaman aşımına uğradı; yeniden deneyebilirsiniz"
+                )
+            cancel_event.wait(min(0.05, remaining))
 
     def cached_models(self, key):
         cached = self._catalogs.get(key)
@@ -1010,7 +1072,56 @@ class Accounts:
         project_context, project = origin(options.get("project_id"), key)
         if context != key or project_context != key:
             raise ValueError("Sohbet ve proje seçili hesaba ait olmalı")
-        attachments, omitted_attachments = self._prepare_attachments(key, attachments)
+        self._start()
+        with self._lock:
+            if key in self._session_changes:
+                raise RuntimeError("Profil doğrulaması tamamlanana kadar bekleyin")
+            self._sending[key] = self._sending.get(key, 0) + 1
+        cancel_event = threading.Event()
+        task = None
+        job_id = None
+        cancel_requested = False
+        self_loop = self._loop
+
+        def cancel():
+            nonlocal cancel_requested
+            cancel_event.set()
+            if not cancel_requested:
+                cancel_requested = True
+                if task is not None and not task.done():
+                    task.cancel()
+
+        class Cancellation:
+            @property
+            def id(self):
+                return job_id
+
+            def shutdown(self, *_):
+                self.close()
+
+            def close(self):
+                cancel_event.set()
+                try:
+                    self_loop.call_soon_threadsafe(cancel)
+                except RuntimeError:
+                    pass
+
+        connection = Cancellation()
+        try:
+            on_connection(connection)
+            if cancel_event.is_set():
+                raise CancelledError()
+            attachments, omitted_attachments = self._prepare_attachments(
+                key, attachments, conversation_id=remote, cancel_event=cancel_event
+            )
+            if cancel_event.is_set():
+                raise CancelledError()
+        except BaseException:
+            connection.close()
+            raise
+        finally:
+            with self._lock:
+                self._sending[key] -= 1
         provider_attachments = tuple(
             {
                 name: value
@@ -1047,13 +1158,9 @@ class Accounts:
         stream_id = uuid.uuid4().hex
 
         completion = Future()
-        task = None
-        job_id = None
-        cancel_requested = False
 
         async def consume():
             nonlocal job_id
-            remote_id, text, reasoning = remote, [], []
 
             def guard():
                 current_archive = self.archive()
@@ -1064,10 +1171,7 @@ class Accounts:
                     raise RemoteNotFound("Sohbet veya proje bu sırada silindi")
 
             def deliver(event):
-                nonlocal remote_id
-                if isinstance(event, ConversationBound):
-                    remote_id = event.conversation_id
-                elif isinstance(event, (TextDelta, ReplaceText)):
+                if isinstance(event, (TextDelta, ReplaceText)):
                     on_event(
                         {
                             "type": "delta" if isinstance(event, TextDelta) else "replace",
@@ -1076,12 +1180,9 @@ class Accounts:
                             "message_id": stream_id + ":" + (event.channel or "final"),
                         }
                     )
-                    chunks = reasoning if event.channel == "analysis" else text
-                    if isinstance(event, ReplaceText):
-                        chunks.clear()
-                    chunks.append(event.text)
 
-            def persist():
+            def persist(snapshot):
+                remote_id = snapshot.conversation_id or remote
                 if not remote_id:
                     raise RuntimeError("Sağlayıcı sohbet kimliği döndürmedi")
                 cache_warning = None
@@ -1121,8 +1222,8 @@ class Accounts:
                             and Path(path).stat().st_size <= 20 * 1024 * 1024
                         ):
                             try:
-                                resource["path"], resource["sha256"] = archive.files.save(
-                                    Path(path).read_bytes()
+                                resource["path"], resource["sha256"] = archive.files.save_file(
+                                    Path(path)
                                 )
                             except OSError:
                                 cache_warning = "Yanıt alındı ancak ek dosya arşivlenemedi"
@@ -1137,7 +1238,7 @@ class Accounts:
                         "resources": resources,
                     }
                 ]
-                reasoning_text = "".join(reasoning)
+                reasoning_text = snapshot.reasoning
                 if reasoning_text:
                     messages.append(
                         {
@@ -1152,7 +1253,7 @@ class Accounts:
                         "id": stream_id + ":final",
                         "local_pending": True,
                         "role": "assistant",
-                        "text": "".join(text),
+                        "text": snapshot.text,
                     }
                 )
                 title = prior.get("title") or prompt[:60]
@@ -1195,16 +1296,16 @@ class Accounts:
                     "conversation": {"title": title, "default_model_slug": model, "messages": []},
                 }
 
-            async def complete():
-                if not remote_id:
+            async def complete(snapshot):
+                if not (snapshot.conversation_id or remote):
                     raise ProviderError("Sağlayıcı sohbet kimliği döndürmedi")
                 try:
-                    return await asyncio.to_thread(persist)
+                    return await asyncio.to_thread(persist, snapshot)
                 except Exception:
                     # The remote turn has already completed. Local failures must
                     # not invite a duplicate POST or report the accepted send as failed.
                     return {
-                        "conversation_id": identity(key, remote_id),
+                        "conversation_id": identity(key, snapshot.conversation_id or remote),
                         "cache_warning": "Yanıt alındı ancak yerel arşive kaydedilemedi",
                         "sent_attachment_ids": [
                             item["queue_id"] for item in attachments if item.get("queue_id")
@@ -1229,10 +1330,15 @@ class Accounts:
             finally:
                 jobs.forget(job_id)
 
-        self._start()
         with self._lock:
             if key in self._session_changes:
                 raise RuntimeError("Profil doğrulaması tamamlanana kadar bekleyin")
+            if not self.enabled(key.split("/")[0]):
+                raise ValueError("Sağlayıcı devre dışı")
+            if key not in {item["key"] for item in self.active_accounts()}:
+                raise ValueError(
+                    "Bu sağlayıcıda başka hesap etkin; Hesaplar bölümünden bu hesabı etkinleştirin"
+                )
             self._sending[key] = self._sending.get(key, 0) + 1
 
             def finished(inner):
@@ -1247,7 +1353,7 @@ class Accounts:
                 nonlocal task
                 task = self._loop.create_task(consume(), name="siope-send:" + key)
                 task.add_done_callback(finished)
-                if cancel_requested:
+                if cancel_requested or cancel_event.is_set():
                     task.cancel()
 
             try:
@@ -1256,36 +1362,7 @@ class Accounts:
                 self._sending[key] -= 1
                 raise
 
-        def cancel():
-            nonlocal cancel_requested
-            if not cancel_requested:
-                cancel_requested = True
-                if task is not None and not task.done():
-                    task.cancel()
-
-        class Cancellation:
-            @property
-            def id(self):
-                return job_id
-
-            def shutdown(self, *_):
-                self.close()
-
-            def close(self):
-                self_loop.call_soon_threadsafe(cancel)
-
-        self_loop = self._loop
         try:
-            connection = Cancellation()
-            try:
-                on_connection(connection)
-            except BaseException:
-                connection.close()
-                try:
-                    completion.result()
-                except BaseException:
-                    pass
-                raise
             return completion.result()
         except AccountPaused:
             self._forget_verification(key)
@@ -1294,7 +1371,7 @@ class Accounts:
             with self._lock:
                 self._sending[key] -= 1
 
-    def _prepare_attachments(self, key, attachments):
+    def _prepare_attachments(self, key, attachments, *, conversation_id=None, cancel_event=None):
         """Fit staged files to the destination account and re-upload foreign IDs."""
         if not attachments:
             return [], []
@@ -1305,6 +1382,35 @@ class Accounts:
         policy = self.attachment_policy(key)
         if policy is None:
             raise ValueError("Bu sağlayıcı dosya eklerini desteklemiyor")
+        if hasattr(policy, "as_dict"):
+            policy = policy.as_dict()
+        else:
+            policy = dict(policy)
+
+        if policy.get("max_files_scope") == "conversation" and conversation_id:
+            provider = self.provider(key)
+            count_attachments = getattr(provider, "conversation_attachment_count", None)
+            if not callable(count_attachments):
+                raise ValueError("Bu sohbetin dosya kotası doğrulanamıyor; ekler gönderilmedi")
+            coroutine = count_attachments(conversation_id)
+            try:
+                used_files = (
+                    self._call_cancellable(coroutine, HISTORY_TIMEOUT, cancel_event)
+                    if cancel_event is not None
+                    else self.call(coroutine, timeout=HISTORY_TIMEOUT)
+                )
+            except BaseException:
+                if getattr(coroutine, "close", None):
+                    coroutine.close()
+                raise
+            if isinstance(used_files, bool) or not isinstance(used_files, int) or used_files < 0:
+                raise ValueError(
+                    "Claude sohbetindeki mevcut dosya sayısı doğrulanamadı; ekler gönderilmedi"
+                )
+            policy["max_files"] = max(0, int(policy.get("max_files") or 0) - used_files)
+            if policy["max_files"] == 0:
+                raise ValueError("Bu sohbetin dosya ekleme kotası dolu; yeni ekler gönderilmedi")
+
         normalized = []
         for attachment in attachments:
             resource = dict(attachment)
@@ -1329,6 +1435,8 @@ class Accounts:
 
         prepared = []
         for attachment in selected:
+            if cancel_event is not None and cancel_event.is_set():
+                raise CancelledError()
             resource = dict(attachment)
             source_key = resource.get("source_account_key") or key
             if source_key != key:
@@ -1337,7 +1445,11 @@ class Accounts:
                     raise ValueError(
                         f"{resource.get('name') or 'Dosya'} hedef hesap için yeniden yüklenemiyor"
                     )
-                uploaded = dict(self.attach_file(key, path))
+                uploaded = dict(
+                    self.attach_file(key, path, cancel_event=cancel_event)
+                    if cancel_event is not None
+                    else self.attach_file(key, path)
+                )
                 for name in (
                     "queue_id",
                     "source_tab_id",
@@ -1424,7 +1536,7 @@ class Accounts:
             "temporary_local": True,
         }
 
-    def attach_file(self, key, path):
+    def attach_file(self, key, path, *, cancel_event=None):
         path = Path(path).expanduser().resolve(strict=True)
         if not path.is_file() or path.stat().st_size <= 0:
             raise ValueError("Dosya boş olmamalı")
@@ -1434,7 +1546,11 @@ class Accounts:
         upload = getattr(provider, "upload_file", None)
         if upload is None:
             raise ValueError("Sağlayıcının dosya yükleme işlemi hazır değil")
-        result = self.call(upload(path))
+        result = (
+            self.call(upload(path))
+            if cancel_event is None
+            else self._call_cancellable(upload(path), 45, cancel_event)
+        )
         if key.startswith("gemini/"):
             return result
         remote = result.get("id") or result.get("file_id")

@@ -1,9 +1,11 @@
 """Attachment preflight and provider policy boundaries."""
 
+import asyncio
 import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
+from threading import Event
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -77,6 +79,66 @@ class AttachmentPolicyTests(unittest.TestCase):
             callbacks["success"](selected)
             choose.assert_called_once_with("Dosya seç", (".txt",), multiple=True)
         self.assertEqual(editor.text, "/already/selected.txt\n/tmp/new.txt")
+
+    def test_file_preflight_runs_in_background_and_opens_review_afterward(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "notes.txt"
+            path.write_text("notes", encoding="utf-8")
+            callbacks = {}
+            view = SimpleNamespace(
+                pending_attachments=[],
+                background_jobs=0,
+                attachment_preflight=False,
+                status="",
+                tr=lambda value: value,
+                app=SimpleNamespace(invalidate=Mock()),
+                forms=SimpleNamespace(open=Mock(), error=""),
+                _read_in_background=lambda read, success, failure, **kwargs: callbacks.update(
+                    read=read, success=success, failure=failure, options=kwargs
+                ),
+            )
+            picker = AttachmentPicker(view)
+            policy = {"max_files": 3, "max_bytes": 1024}
+
+            with patch.object(picker, "_prepare", wraps=picker._prepare) as prepare:
+                picker._review(str(path), policy)
+                prepare.assert_not_called()
+                self.assertTrue(view.attachment_preflight)
+                self.assertEqual(view.background_jobs, 1)
+                self.assertEqual(callbacks["options"], {"session_bound": False})
+
+                result = callbacks["read"]()
+                prepare.assert_called_once()
+                callbacks["success"](result)
+
+            self.assertFalse(view.attachment_preflight)
+            self.assertEqual(view.background_jobs, 0)
+            view.forms.open.assert_called_once()
+
+    def test_rejected_file_preflight_keeps_the_path_in_the_edit_form(self):
+        callbacks = {}
+        missing = "/tmp/siopechat-file-that-does-not-exist.txt"
+        forms = SimpleNamespace(open=Mock(), error="")
+        view = SimpleNamespace(
+            pending_attachments=[],
+            background_jobs=0,
+            attachment_preflight=False,
+            status="",
+            tr=lambda value: value,
+            app=SimpleNamespace(invalidate=Mock()),
+            forms=forms,
+            _read_in_background=lambda read, success, failure, **kwargs: callbacks.update(
+                read=read, success=success, failure=failure
+            ),
+        )
+        picker = AttachmentPicker(view)
+
+        picker._review(missing, {"max_files": 1, "max_bytes": 1024})
+        callbacks["success"](callbacks["read"]())
+
+        forms.open.assert_called_once()
+        self.assertIn(missing, str(forms.open.call_args))
+        self.assertIn("dosya bulunamadı", forms.error)
 
     def test_video_uses_its_provider_specific_ceiling(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -251,6 +313,66 @@ class AttachmentPolicyTests(unittest.TestCase):
         self.assertEqual(attachments[0]["queue_id"], "queued")
         self.assertEqual(attachments[0]["source_account_key"], "gemini/other")
         self.assertEqual(omitted, [])
+
+    def test_claude_conversation_quota_trims_to_the_remote_remaining_count(self):
+        from accounts import Accounts
+
+        service = object.__new__(Accounts)
+        service._attachment_paths = {}
+        service.attachment_policy = lambda _key: policy_for("claude")
+        provider = SimpleNamespace(conversation_attachment_count=AsyncMock(return_value=19))
+        service.provider = lambda _key: provider
+        service._call_cancellable = lambda coroutine, *_args: asyncio.run(coroutine)
+        service.attach_file = Mock()
+        account = "claude/default"
+        staged = [
+            {
+                "id": f"file-{index}",
+                "name": f"file-{index}.txt",
+                "size_bytes": 5,
+                "source_account_key": account,
+            }
+            for index in range(3)
+        ]
+
+        selected, omitted = service._prepare_attachments(
+            account, staged, conversation_id="conversation", cancel_event=Event()
+        )
+
+        provider.conversation_attachment_count.assert_awaited_once_with("conversation")
+        self.assertEqual([item["id"] for item in selected], ["file-0"])
+        self.assertEqual([item["id"] for item in omitted], ["file-1", "file-2"])
+        service.attach_file.assert_not_called()
+
+    def test_claude_does_not_upload_when_remote_quota_cannot_be_verified(self):
+        from accounts import Accounts
+
+        service = object.__new__(Accounts)
+        service._attachment_paths = {}
+        service.attachment_policy = lambda _key: policy_for("claude")
+        provider = SimpleNamespace(conversation_attachment_count=AsyncMock(return_value=None))
+        service.provider = lambda _key: provider
+        service._call_cancellable = lambda coroutine, *_args: asyncio.run(coroutine)
+        service.attach_file = Mock(return_value={"id": "uploaded"})
+        account = "claude/default"
+
+        with self.assertRaisesRegex(ValueError, "dosya sayısı doğrulanamadı"):
+            service._prepare_attachments(
+                account,
+                [
+                    {
+                        "id": "foreign-file",
+                        "source_account_key": "chatgpt/default",
+                        "path": "/unused/path.txt",
+                        "name": "path.txt",
+                        "size_bytes": 5,
+                    }
+                ],
+                conversation_id="conversation",
+                cancel_event=Event(),
+            )
+
+        service.attach_file.assert_not_called()
 
 
 class GeminiStreamingUploadTests(unittest.IsolatedAsyncioTestCase):

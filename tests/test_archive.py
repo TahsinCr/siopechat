@@ -1,6 +1,8 @@
 """Archive isolation, revalidation, bounded memory and account/model UX."""
 
 import asyncio
+import hashlib
+import io
 import sqlite3
 import tempfile
 import threading
@@ -539,6 +541,29 @@ class ArchiveMaintenanceTests(unittest.TestCase):
                 with self.assertRaises(OSError):
                     files.save(b"not durable")
             self.assertEqual([path for path in files.root.rglob("*") if path.is_file()], [])
+
+    def test_streaming_file_save_uses_bounded_reads_and_deduplicates_content(self):
+        class BoundedReader(io.BytesIO):
+            def read(self, size=-1):
+                if size <= 0 or size > 64 * 1024:
+                    raise AssertionError("archive read exceeded its bounded chunk size")
+                return super().read(size)
+
+        data = b"attachment" * (96 * 1024)
+        with tempfile.TemporaryDirectory() as folder:
+            files = Files(Path(folder) / "files")
+
+            relative, digest = files.save_stream(BoundedReader(data))
+            duplicate, duplicate_digest = files.save_stream(BoundedReader(data))
+
+            self.assertEqual(relative, duplicate)
+            self.assertEqual(digest, hashlib.sha256(data).hexdigest())
+            self.assertEqual(duplicate_digest, digest)
+            self.assertEqual((files.root / relative).read_bytes(), data)
+            self.assertEqual(
+                sum(path.is_file() for path in files.root.rglob("*")),
+                1,
+            )
 
     def test_gc_preserves_shared_references_recent_saves_and_unknown_files(self):
         import os

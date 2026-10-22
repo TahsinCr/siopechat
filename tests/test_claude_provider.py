@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 from providers import Capability, ConversationBound, ReplaceText, SendRequest
 from providers.claude import ClaudeProvider
-from providers.claude.records import conversation, project
+from providers.claude.records import conversation, conversation_attachment_count, project
 from providers.errors import FeatureUnavailable, ProviderError
 from providers.models import FeatureState
 from tests.account_fixture import configured_application as create_application
@@ -90,6 +90,45 @@ class ClaudeRecordsTests(unittest.TestCase):
             [x.content[0].text for x in value.messages], ["Question", "Selected branch"]
         )
 
+    def test_history_counts_unique_files_across_all_conversation_branches(self):
+        value = {
+            "uuid": CHAT,
+            "current_leaf_message_uuid": "a2",
+            "chat_messages": [
+                {
+                    "uuid": "u",
+                    "sender": "human",
+                    "parent_message_uuid": None,
+                    "files": [{"uuid": "f1", "file_name": "first.txt"}],
+                },
+                {
+                    "uuid": "a1",
+                    "sender": "assistant",
+                    "parent_message_uuid": "u",
+                    "attachments": [{"id": "f2", "name": "old-branch.pdf"}],
+                },
+                {
+                    "uuid": "a2",
+                    "sender": "assistant",
+                    "parent_message_uuid": "u",
+                    "files": [{"uuid": "f3", "file_name": "selected.png"}],
+                },
+                {
+                    "uuid": "a3",
+                    "sender": "assistant",
+                    "parent_message_uuid": "u",
+                    "attachments": [{"uuid": "f3", "file_name": "selected.png"}],
+                },
+            ],
+        }
+
+        self.assertEqual(conversation_attachment_count(value), 3)
+
+        summary = {"uuid": CHAT, "name": "List item"}
+        self.assertIsNone(conversation_attachment_count(summary))
+        unidentified_file = {"uuid": CHAT, "chat_messages": [{"files": [{"name": "unknown"}]}]}
+        self.assertIsNone(conversation_attachment_count(unidentified_file))
+
     def test_project_instructions_and_sources_are_provider_neutral(self):
         value = project(
             {
@@ -110,6 +149,20 @@ class ClaudeProviderTests(unittest.IsolatedAsyncioTestCase):
         self.provider = ClaudeProvider(Path("unused"), "account")
         self.provider.transport.authenticated = True
         self.provider.transport.request = AsyncMock()
+
+    async def test_attachment_count_uses_the_compact_history_operation(self):
+        self.provider.transport.request.return_value = {
+            "uuid": CHAT,
+            "chat_messages": [
+                {"uuid": "u", "attachments": [{"uuid": "file-1"}]},
+                {"uuid": "a", "files": [{"id": "file-2"}]},
+            ],
+        }
+
+        count = await self.provider.conversation_attachment_count(CHAT)
+
+        self.assertEqual(count, 2)
+        self.provider.transport.request.assert_awaited_once_with("history", conversation_id=CHAT)
 
     async def test_dynamic_models_keep_only_discovered_efforts_and_default(self):
         self.provider.transport.request.return_value = {

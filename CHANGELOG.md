@@ -24,8 +24,17 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 
 ### Fixed
 
+- Persist the provider runtime's canonical response snapshot even after a UI callback fails, so archived answers and reasoning are not truncated.
+- Keep response cancellation available while staged files are re-uploaded to another provider account; cancellation now stops the in-flight upload before chat submission.
+- Repaint the old and newly selected download-history rows when their cached fragments are reused.
+- Run attachment path, type and size preflight on the background read pool, and use a file-neutral prompt when sending attachments without text.
+- Stream attachment files into the content-addressed archive in bounded chunks instead of reading each file fully into memory.
+- Remove the obsolete example-README source-manifest exclusion while retaining exclusions for local configuration and memory files.
+- Declare the resource-only helper and translation packages explicitly so setuptools builds the wheel without namespace-discovery warnings.
 - Release closed-tab and split-pane source, selection and render references; stop startup frames and archive polling from retaining complete conversation bodies.
 - Preserve drafts, text selections and live responses when older SQL pages finish loading, and refresh streamed thinking even before the final answer changes.
+- Count distinct files across Claude's full conversation tree before sending attachments, limit the new files to the remaining conversation quota, and stop safely when the provider cannot confirm current usage.
+- Close the runtime before removing the paging test's temporary SQLite directory, fixing the Windows CI file-lock failure.
 
 ## [1.3-beta] - 2026-10-22
 

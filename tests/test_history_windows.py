@@ -234,28 +234,30 @@ class PagingUITests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as folder:
             api = configured_application(Path(folder))
-            self.addCleanup(api.runtime.close)
-            archive = api.get("archive")
-            archive.put("chatgpt/default", "conversation", "chat", {"messages": [message(0)]})
-            with terminal(account_service=api.get("accounts")) as (view, _):
-                view.conversation_id = "@chatgpt/default/chat"
-                view.messages = visible_window(
-                    archive.conversation_window("chatgpt/default", "chat")
-                )
-                view._save_active_tab()
-                layout = prepare_virtual_transcript(view.messages, 60, {}, True)
-                view._virtual_transcript = layout
-                view._virtual_tab_id = view.tabs[0]["tab_id"]
-                view.transcript_control.selection_rows = layout
-                closed = view.tabs[0]
-                view.close_tab()
-                self.assertEqual(closed["messages"], [])
-                self.assertEqual(layout.messages, ())
-                self.assertEqual(view.transcript_control.selection_rows, ())
-                self.assertIsNotNone(archive.conversation_window("chatgpt/default", "chat"))
-                view._reads.close()
-                view._render_reads.close()
-                view._operations.close()
+            try:
+                archive = api.get("archive")
+                archive.put("chatgpt/default", "conversation", "chat", {"messages": [message(0)]})
+                with terminal(account_service=api.get("accounts")) as (view, _):
+                    view.conversation_id = "@chatgpt/default/chat"
+                    view.messages = visible_window(
+                        archive.conversation_window("chatgpt/default", "chat")
+                    )
+                    view._save_active_tab()
+                    layout = prepare_virtual_transcript(view.messages, 60, {}, True)
+                    view._virtual_transcript = layout
+                    view._virtual_tab_id = view.tabs[0]["tab_id"]
+                    view.transcript_control.selection_rows = layout
+                    closed = view.tabs[0]
+                    view.close_tab()
+                    self.assertEqual(closed["messages"], [])
+                    self.assertEqual(layout.messages, ())
+                    self.assertEqual(view.transcript_control.selection_rows, ())
+                    self.assertIsNotNone(archive.conversation_window("chatgpt/default", "chat"))
+                    view._reads.close()
+                    view._render_reads.close()
+                    view._operations.close()
+            finally:
+                api.runtime.close()
 
 
 class RenderReuseTests(unittest.TestCase):

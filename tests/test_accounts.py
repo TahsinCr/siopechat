@@ -7,13 +7,13 @@ import subprocess
 import tempfile
 import time
 import unittest
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import CancelledError, ThreadPoolExecutor
 from pathlib import Path
 from threading import Event
 from unittest.mock import AsyncMock, Mock, patch
 
 from accounts import Accounts, identity, origin
-from providers import ConversationBound, ReplaceText
+from providers import Capability, ConversationBound, ReplaceText, TextDelta
 from providers.errors import AccountPaused
 from providers.models import Conversation, FeatureState, Model, ModelCatalog, Origin, Page
 from tests.account_fixture import configured_application as create_application
@@ -353,6 +353,112 @@ class AccountTests(unittest.TestCase):
         archived = self.accounts.cached(self.gemini, "same")
         self.assertEqual(archived["messages"][0]["text"], "Q")
         self.assertNotIn("Private", str(archived))
+
+    def test_view_callback_failure_does_not_truncate_archived_text_or_reasoning(self):
+        async def stream(_request):
+            yield ConversationBound("callback-case")
+            yield TextDelta("discarded")
+            yield TextDelta("old thought", channel="analysis")
+            yield ReplaceText("final")
+            yield ReplaceText("canonical thought", channel="analysis")
+            yield TextDelta(" answer")
+
+        provider = Mock()
+        provider.close = AsyncMock()
+        provider.stream = stream
+        self.accounts._providers[self.gemini] = provider
+        calls = 0
+
+        def failing_view(_event):
+            nonlocal calls
+            calls += 1
+            raise RuntimeError("view closed during stream")
+
+        self.accounts.send(self.gemini, None, "Question", [], failing_view, Mock())
+        messages = self.accounts.cached(self.gemini, "callback-case")["messages"]
+
+        self.assertEqual(calls, 1)
+        self.assertEqual(
+            [(message["role"], message["text"]) for message in messages],
+            [
+                ("user", "Question"),
+                ("reasoning", "canonical thought"),
+                ("assistant", "final answer"),
+            ],
+        )
+
+    def test_local_history_failure_keeps_successful_send_and_conversation_identity(self):
+        async def stream(_request):
+            yield ConversationBound("archive-failure")
+            yield ReplaceText("accepted response")
+
+        provider = Mock()
+        provider.close = AsyncMock()
+        provider.stream = stream
+        self.accounts._providers[self.gemini] = provider
+
+        with patch.object(self.accounts, "cached", side_effect=RuntimeError("local read failed")):
+            result = self.accounts.send(self.gemini, None, "Question", [], Mock(), Mock())
+
+        self.assertEqual(result["conversation_id"], identity(self.gemini, "archive-failure"))
+        self.assertEqual(result["cache_warning"], "Yanıt alındı ancak yerel arşive kaydedilemedi")
+
+    def test_stop_cancels_a_cross_account_upload_before_chat_submission(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "source.txt"
+            path.write_text("source", encoding="utf-8")
+            upload_started, upload_cancelled, stream_started = Event(), Event(), Event()
+
+            async def upload(_path):
+                upload_started.set()
+                try:
+                    await asyncio.sleep(30)
+                finally:
+                    upload_cancelled.set()
+
+            async def stream(_request):
+                stream_started.set()
+                yield ConversationBound("should-not-send")
+
+            provider = Mock()
+            provider.close = AsyncMock()
+            provider.capabilities = frozenset({Capability.ATTACHMENTS, Capability.CHAT})
+            provider.attachment_policy = lambda: {
+                "max_files": 10,
+                "max_bytes": 20 * 1024 * 1024,
+            }
+            provider.upload_file = upload
+            provider.stream = stream
+            self.accounts._providers[self.gemini] = provider
+            connections = []
+
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(
+                    self.accounts.send,
+                    self.gemini,
+                    None,
+                    "Question",
+                    [
+                        {
+                            "path": str(path),
+                            "name": path.name,
+                            "size_bytes": path.stat().st_size,
+                            "source_account_key": "chatgpt/default",
+                            "queue_id": "staged-file",
+                        }
+                    ],
+                    Mock(),
+                    connections.append,
+                )
+                self.assertTrue(upload_started.wait(2))
+                self.assertEqual(len(connections), 1)
+                connections[0].close()
+                with self.assertRaises(CancelledError):
+                    future.result(timeout=3)
+
+            self.assertTrue(upload_cancelled.wait(1))
+            self.assertFalse(stream_started.is_set())
+            self.assertEqual(self.accounts._sending.get(self.gemini), 0)
 
     def test_cross_account_project_move_fails_before_provider_call(self):
         provider = Mock()

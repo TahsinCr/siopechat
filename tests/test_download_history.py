@@ -219,6 +219,26 @@ class DownloadWorkspaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(content.get_line(1), [("", "1")])
         self.assertEqual(panel.rendered, [0, 1])
 
+    async def test_download_selection_invalidates_old_and_new_cached_rows(self):
+        with terminal() as (view, _):
+            panel = view.downloads_panel
+            panel.rows = [("file", {}), ("file", {})]
+            panel.index = 0
+            panel.render_revision += 1
+            panel.render_row = lambda index, _width: [
+                ("class:message.selected" if panel.index == index else "", str(index))
+            ]
+
+            content = panel.control.create_content(40, 2)
+            self.assertEqual(content.get_line(0)[0][0], "class:message.selected")
+            self.assertEqual(content.get_line(1)[0][0], "")
+
+            panel.move(1)
+
+            content = panel.control.create_content(40, 2)
+            self.assertEqual(content.get_line(0)[0][0], "")
+            self.assertEqual(content.get_line(1)[0][0], "class:message.selected")
+
     async def test_filtered_active_download_updates_its_own_record(self):
         with terminal() as (view, _):
             panel = view.downloads_panel

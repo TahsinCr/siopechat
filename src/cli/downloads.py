@@ -325,11 +325,26 @@ class DownloadsPanel:
             self.view.app.invalidate()
 
     def move(self, offset):
-        self.index = min(max(0, self.index + offset), max(0, len(self.rows) - 1))
+        if not self.rows:
+            return
+        previous = self.index
+        current = min(max(0, previous + offset), len(self.rows) - 1)
+        if current == previous:
+            return
+        self.index = current
+        self.control.invalidate_row(previous)
+        self.control.invalidate_row(current)
         self.view.app.invalidate()
 
     def pick(self, index):
-        self.index = index
+        if not self.rows:
+            return
+        previous = self.index
+        current = min(max(0, index), len(self.rows) - 1)
+        if current != previous:
+            self.index = current
+            self.control.invalidate_row(previous)
+            self.control.invalidate_row(current)
         self.view.app.layout.focus(self.control)
         self.activate()
 

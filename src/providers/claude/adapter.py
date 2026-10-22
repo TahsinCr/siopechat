@@ -19,7 +19,7 @@ from ..models import (
     SessionStatus,
 )
 from ..projects import ProjectEditing
-from .records import conversation, project
+from .records import conversation, conversation_attachment_count, project
 from .transport import ClaudeProjectEditor, ClaudeTransport
 
 
@@ -198,6 +198,10 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
             await self.transport.request("history", conversation_id=conversation_id),
             self.account_id,
         )
+
+    async def conversation_attachment_count(self, conversation_id):
+        value = await self.transport.request("history", conversation_id=conversation_id)
+        return conversation_attachment_count(value)
 
     async def list_projects(self, cursor=None):
         if cursor:

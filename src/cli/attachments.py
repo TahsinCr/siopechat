@@ -16,6 +16,10 @@ class AttachmentPicker:
 
     def open(self):
         view = self.view
+        if getattr(view, "attachment_preflight", False):
+            view.status = view.tr("Dosyalar kontrol ediliyor…")
+            view.app.invalidate()
+            return
         if view.attach_file_callback is None:
             if view.pending_attachments:
                 view.forms.open(
@@ -88,13 +92,13 @@ class AttachmentPicker:
         else:
             self._open_path_form("", policy)
 
-    def _prepare(self, value, policy):
+    def _prepare(self, value, policy, *, pending=None):
         view = self.view
         max_files = max(1, int(policy.get("max_files") or 1))
         max_bytes = max(1, int(policy.get("max_bytes") or 20 * 1024 * 1024))
         max_total = policy.get("max_total_bytes")
         extensions = {str(x).lower() for x in policy.get("allowed_extensions") or ()}
-        pending = list(view.pending_attachments)
+        pending = [dict(item) for item in view.pending_attachments] if pending is None else pending
         eligible_pending, _ = fit_attachments(pending, policy)
         remaining = max_files - len(eligible_pending)
         accepted, rejected, seen = [], [], set()
@@ -164,8 +168,47 @@ class AttachmentPicker:
         return os.path.normcase(os.path.realpath(os.path.expanduser(str(path))))
 
     def _review(self, value, policy):
+        self._prepare_in_background(
+            value,
+            policy,
+            lambda result: self._show_review(result[0], result[1], policy, value),
+        )
+
+    def _prepare_in_background(self, value, policy, ready):
         view = self.view
-        accepted, rejected = self._prepare(value, policy)
+        pending = [dict(item) for item in view.pending_attachments]
+        view.attachment_preflight = True
+        view.background_jobs += 1
+        view.status = view.tr("Dosyalar kontrol ediliyor…")
+        view.app.invalidate()
+        finished = False
+
+        def release():
+            nonlocal finished
+            if finished:
+                return
+            finished = True
+            view.attachment_preflight = False
+            view.background_jobs = max(0, view.background_jobs - 1)
+
+        def success(result):
+            release()
+            ready(result)
+
+        def failure(reason):
+            release()
+            view.status = str(reason)
+            view.app.invalidate()
+
+        view._read_in_background(
+            lambda: self._prepare(value, policy, pending=pending),
+            success,
+            failure,
+            session_bound=False,
+        )
+
+    def _show_review(self, accepted, rejected, policy, value):
+        view = self.view
         if not accepted:
             if view.pending_attachments and not rejected:
                 view.status = self.tr_count(len(view.pending_attachments))
@@ -200,7 +243,7 @@ class AttachmentPicker:
                 f" · {view.tr('Tablo sınırı')} {self._size(int(policy['max_spreadsheet_bytes']))}"
             )
         if policy.get("max_files_scope") == "conversation":
-            explanation += " · konuşma sınırı; eski dosyalar sağlayıcıda ayrıca sayılır"
+            explanation += " · " + view.tr("Mevcut sohbet dosyaları gönderimden önce sayılır")
         if rejected:
             explanation += "\nListeden çıkarılanlar: " + "; ".join(
                 f"{name} ({reason})" for name, reason in rejected[:8]
@@ -234,13 +277,21 @@ class AttachmentPicker:
         return self.view.tr("{0} dosya hazır").format(count)
 
     def _upload(self, value, policy):
+        self._prepare_in_background(
+            value,
+            policy,
+            lambda result: self._upload_selected(*result, policy=policy),
+        )
+
+    def _upload_selected(self, selected, rejected, *, policy):
         view = self.view
-        selected, rejected = self._prepare(value, policy)
         if not selected:
-            raise ValueError(
-                "\n".join(f"{name}: {reason}" for name, reason in rejected[:8])
-                or view.tr("Dosya seçilmedi")
-            )
+            self._open_path_form("", policy)
+            view.forms.error = "\n".join(
+                f"{name}: {reason}" for name, reason in rejected[:8]
+            ) or view.tr("Dosya seçilmedi")
+            view.app.invalidate()
+            return
         callback = view.attach_file_callback
         target = view.tabs[view.active_tab]
         target_tab_id = target.get("tab_id")

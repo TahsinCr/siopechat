@@ -753,6 +753,43 @@ class Files:
         with self._lock:
             return self._save(data)
 
+    def save_file(self, source):
+        """Persist a local file without reading the complete attachment into memory."""
+        with Path(source).open("rb") as stream:
+            return self.save_stream(stream)
+
+    def save_stream(self, stream):
+        """Hash and publish a binary stream using bounded memory."""
+        with self._lock:
+            self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+            fd, temporary = tempfile.mkstemp(prefix=".archive-", dir=self.root)
+            digest = hashlib.sha256()
+            try:
+                with os.fdopen(fd, "wb") as target:
+                    while chunk := stream.read(64 * 1024):
+                        digest.update(chunk)
+                        target.write(chunk)
+                    target.flush()
+                    os.fsync(target.fileno())
+
+                hexdigest = digest.hexdigest()
+                path = self.root / hexdigest[:2] / hexdigest
+                path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                if path.exists():
+                    Path(temporary).unlink()
+                else:
+                    os.replace(temporary, path)
+                    if os.name != "nt" and hasattr(os, "O_DIRECTORY"):
+                        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+                        try:
+                            os.fsync(directory)
+                        finally:
+                            os.close(directory)
+                os.utime(path, None)
+                return str(path.relative_to(self.root)), hexdigest
+            finally:
+                Path(temporary).unlink(missing_ok=True)
+
     def _save(self, data):
         digest = hashlib.sha256(data).hexdigest()
         path = self.root / digest[:2] / digest

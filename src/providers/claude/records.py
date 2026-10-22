@@ -4,11 +4,41 @@ from ..errors import ProviderError
 from ..models import Content, Conversation, Message, Origin, Project, Resource
 
 
+def _attachment_count(turns):
+    if not isinstance(turns, list):
+        return None
+
+    identifiers = set()
+    for item in turns:
+        if not isinstance(item, dict):
+            return None
+        for name in ("attachments", "files"):
+            resources = item.get(name) or []
+            if not isinstance(resources, list):
+                return None
+            for resource in resources:
+                if not isinstance(resource, dict):
+                    return None
+                identifier = resource.get("uuid") or resource.get("id")
+                if not identifier:
+                    return None
+                identifiers.add(str(identifier))
+    return len(identifiers)
+
+
+def conversation_attachment_count(value):
+    if not isinstance(value, dict) or "chat_messages" not in value:
+        return None
+    return _attachment_count(value["chat_messages"])
+
+
 def conversation(value, account_id):
     if not isinstance(value, dict) or not value.get("uuid"):
         raise ProviderError("Claude conversation contract changed")
     messages = []
-    turns = value.get("chat_messages", [])
+    turns = value.get("chat_messages")
+    if not isinstance(turns, list):
+        turns = []
     leaf = value.get("current_leaf_message_uuid")
     by_id = {x.get("uuid"): x for x in turns}
     if leaf in by_id and any("parent_message_uuid" in x for x in turns):

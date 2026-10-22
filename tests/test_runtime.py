@@ -136,8 +136,8 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         def broken_view(_event):
             raise RuntimeError("view closed during stream")
 
-        async def persist():
-            persisted.append("saved")
+        async def persist(snapshot):
+            persisted.append(snapshot)
 
         job = self.runtime.submit(request(), on_event=broken_view, on_complete=persist)
         await self.started(self.gpt)
@@ -147,7 +147,9 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.state, JobState.COMPLETED)
         self.assertEqual(result.text, "partial response")
-        self.assertEqual(persisted, ["saved"])
+        self.assertEqual(len(persisted), 1)
+        self.assertEqual(persisted[0].text, "partial response")
+        self.assertEqual(persisted[0].conversation_id, "remote-one")
 
     async def test_cancel_queued_does_not_affect_running_job(self):
         running = self.runtime.submit(request())

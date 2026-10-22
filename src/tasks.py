@@ -330,7 +330,10 @@ class TaskService:
                 if job.cancel_requested:
                     raise asyncio.CancelledError
                 if job.complete is not None:
-                    writing = asyncio.create_task(job.complete(), name="siope-persist:" + job_id)
+                    snapshot = self._snapshot(job_id, job)
+                    writing = asyncio.create_task(
+                        job.complete(snapshot), name="siope-persist:" + job_id
+                    )
                     try:
                         job.result = await asyncio.shield(writing)
                     except asyncio.CancelledError:
