@@ -1,13 +1,16 @@
 """Small replaceable provider mappings; raw provider metadata is retained."""
 
-from copy import deepcopy
-
 
 class Mapping:
     container_kind = "project"
 
     def normalize(self, kind, value):
-        result = deepcopy(value)
+        result = dict(value)
+        # These are the only dictionaries archive normalization mutates. Text
+        # bodies and native metadata remain read-only until SQL serialization.
+        for collection in ("items", "resources"):
+            if collection in result:
+                result[collection] = [dict(item) for item in result[collection]]
         if kind == "container":
             result.setdefault("kind", self.container_kind)
         return result

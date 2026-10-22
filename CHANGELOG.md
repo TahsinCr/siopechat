@@ -15,7 +15,16 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 
 ### Changed
 
+- Open cached chats through overlapping SQLite windows of at most 80 messages and a 262,144-character serialized-record budget, with anchored scrolling and direct navigation to either end.
+- Persist accepted turns by reconciling a bounded SQL tail. Upgrade archives transactionally to schema 4, retaining ordered messages and native provider metadata without duplicating full bodies in listing headers or the hot cache.
+- Reuse bounded Markdown caches across streaming updates, share message ordering across transcript views, and prepare inactive split panes off the terminal thread.
+
 - Prioritize the visible transcript before rendering a two-screen buffer above and below it, keep recently visited rows in a one-megabyte LRU, and avoid rescanning the full message list on every terminal paint.
+
+### Fixed
+
+- Release closed-tab and split-pane source, selection and render references; stop startup frames and archive polling from retaining complete conversation bodies.
+- Preserve drafts, text selections and live responses when older SQL pages finish loading, and refresh streamed thinking even before the final answer changes.
 
 ## [1.3-beta] - 2026-10-22
 

@@ -129,11 +129,12 @@ class Accounts:
         except LookupError:
             return None
 
-    def read_record(self, key, kind, remote, fetch, force=False):
+    def read_record(self, key, kind, remote, fetch, force=False, *, window=False):
         archive = self.archive()
         if archive:
             try:
-                return archive.read(key, kind, remote or "", fetch, force=force)
+                options = {"window": True} if window else {}
+                return archive.read(key, kind, remote or "", fetch, force=force, **options)
             except OSError:
                 return fetch()
         return fetch()
@@ -720,6 +721,26 @@ class Accounts:
                 return value
         return self.cache(key).load_cached_conversation(remote)
 
+    def active_conversation(self, key):
+        archive = self.archive()
+        if archive:
+            pointer = archive.get(key, "pointer", "active")
+            if pointer is not None:
+                return pointer.get("remote")
+        return self.cache(key).active_conversation_id()
+
+    def cached_window(self, key, remote=None):
+        """UI history reads use bounded SQL windows; other API callers retain full history."""
+        archive = self.archive()
+        remote = remote or self.active_conversation(key)
+        if not remote:
+            return None
+        if archive:
+            value = archive.conversation_window(key, remote)
+            if value is not None or archive.deleted(key, "conversation", remote):
+                return value
+        return self.cached(key, remote)
+
     def queue_active(self, key, value):
         """Coalesce UI pointer writes; never perform SQLite/fsync in navigation."""
         if self.closed:
@@ -936,12 +957,12 @@ class Accounts:
             "metadata": project.metadata,
         }
 
-    def load(self, value, key, force=False):
+    def load(self, value, key, force=False, *, window=False):
         key, remote = origin(value, key)
         archive = self.archive()
         if archive and archive.deleted(key, "conversation", remote):
             raise RemoteNotFound("Bu sohbet sağlayıcıdan silindi")
-        if archive and archive.get(key, "conversation", remote) is None:
+        if archive and archive.conversation_window(key, remote) is None:
             legacy = self.cache(key).load_cached_conversation(remote)
             if legacy and not legacy.get("temporary"):
                 archive.put(
@@ -956,15 +977,16 @@ class Accounts:
                     archive.delete(key, "conversation", remote)
                 raise
             record = self.chat_record(key, chat)
+            previous = self.cached_window(key, remote) or {}
             if chat.metadata.get("title_unavailable"):
-                record["title"] = (self.cached(key, remote) or {}).get("title") or record["title"]
+                record["title"] = previous.get("title") or record["title"]
             if not record.get("project_id"):
-                record["project_id"] = (self.cached(key, remote) or {}).get("project_id")
+                record["project_id"] = previous.get("project_id")
             if not archive:
                 self.cache(key).cache_conversation(dict(record, id=remote), make_active=False)
             return record
 
-        return self.read_record(key, "conversation", remote, fetch, force)
+        return self.read_record(key, "conversation", remote, fetch, force, window=window)
 
     def send(
         self,
@@ -1007,6 +1029,8 @@ class Accounts:
         archive = self.archive()
         if remote and archive and archive.deleted(key, "conversation", remote):
             raise RemoteNotFound("Silinmiş bir sohbete mesaj gönderilemez")
+        baseline = archive.conversation_window(key, remote, limit=1) if archive and remote else None
+        base_end = baseline["history_window"]["total"] if baseline else None
         request = SendRequest(
             key.split("/")[0],
             key.split("/")[1],
@@ -1062,7 +1086,16 @@ class Accounts:
                     raise RuntimeError("Sağlayıcı sohbet kimliği döndürmedi")
                 cache_warning = None
                 try:
-                    prior = {} if request.temporary else (self.cached(key, remote_id) or {})
+                    prior = (
+                        {}
+                        if request.temporary
+                        else (
+                            self.cached_window(key, remote_id)
+                            if self.archive()
+                            else self.cached(key, remote_id)
+                        )
+                        or {}
+                    )
                 except OSError:
                     prior = {}
                     cache_warning = "Yanıt alındı ancak yerel geçmiş okunamadı"
@@ -1095,7 +1128,7 @@ class Accounts:
                                 cache_warning = "Yanıt alındı ancak ek dosya arşivlenemedi"
 
                         resources.append(resource)
-                messages = prior.get("messages", []) + [
+                messages = ([] if self.archive() else prior.get("messages", [])) + [
                     {
                         "id": stream_id + ":user",
                         "local_pending": True,
@@ -1141,7 +1174,11 @@ class Accounts:
                         archive = self.archive()
                         if archive:
                             archive.save_turn(
-                                key, remote_id, dict(record, id=identity(key, remote_id))
+                                key,
+                                remote_id,
+                                dict(
+                                    record, id=identity(key, remote_id), _archive_base_end=base_end
+                                ),
                             )
                             self.set_active(key, remote_id)
                         else:
@@ -1693,7 +1730,7 @@ class Accounts:
 
         return {
             "upload_image": lambda *args: self.upload_image(key, *args),
-            "load_conversation": lambda value: self.load(value, key),
+            "load_conversation": lambda value: self.load(value, key, window=True),
             "send_prompt": lambda *args, **kwargs: self.send(key, *args, **kwargs),
             "load_catalog": lambda: self.models(key),
             "list_projects_callback": lambda cursor=None: self.list_projects(key, cursor),

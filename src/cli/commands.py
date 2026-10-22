@@ -145,15 +145,16 @@ def run_fullscreen(
     accounts.cdp_url = cdp_url
     key = accounts.active()
     if key != "chatgpt/default":
-        cached_conversation = accounts.cached(key)
-        conversation_id = None
-    elif (
-        not conversation_id
-        and accounts.archive()
-        and accounts.archive().get(key, "pointer", "active") is not None
-    ):
-        cached_conversation = accounts.cached(key)
-    cached = cached_conversation or {}
+        cached_conversation, conversation_id = None, None
+    cached = {
+        name: value
+        for name, value in (cached_conversation or {}).items()
+        if name not in ("messages", "metadata")
+    }
+    cached_conversation = None
+    if not conversation_id:
+        candidate = accounts.active_conversation(key)
+        conversation_id = candidate if isinstance(candidate, str) else cached.get("id")
 
     def preferences():
         config = api.settings.snapshot()
@@ -201,7 +202,7 @@ def run_fullscreen(
         callbacks["send_prompt"],
         conversation_id=identity(key, origin(conversation_id or cached.get("id"), key)[1]),
         title=cached.get("title") or "Yeni sohbet",
-        initial_messages=cached.get("messages"),
+        initial_messages=None,
         model=cached.get("model"),
         account_service=accounts,
         action_host=action_host,
@@ -309,17 +310,12 @@ def main(api, argv: list[str] | None = None) -> int:
                 raise ChatGPTWebError(
                     "interactive mode requires a terminal; use new or send for piped input"
                 )
-            cached = api.get("backend").load_cached_conversation()
-            return run_fullscreen(
-                api, args.socket, cached_conversation=cached, cdp_url=args.cdp_url
-            )
+            return run_fullscreen(api, args.socket, cdp_url=args.cdp_url)
         if args.command == "resume":
-            cached = api.get("backend").load_cached_conversation(args.conversation_id)
             return run_fullscreen(
                 api,
                 args.socket,
                 args.conversation_id,
-                cached_conversation=cached,
                 cdp_url=args.cdp_url,
             )
         api.get("backend").ensure_daemon(args.socket, args.cdp_url)

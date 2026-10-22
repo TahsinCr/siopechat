@@ -6,6 +6,7 @@ from prompt_toolkit.layout import DynamicContainer, HSplit, VSplit, Window
 from prompt_toolkit.layout.margins import ScrollbarMargin
 from prompt_toolkit.mouse_events import MouseButton, MouseEventType
 
+from cli.history import prepare_transcript
 from cli.markdown import MessageRenderer, transcript_fragments
 from cli.widgets import BoundedTextControl, TranscriptGutter, TranscriptWindow, fit_text, on_click
 
@@ -121,8 +122,19 @@ class SplitLayout:
         for group in self.groups:
             group["tabs"] = [key for key in group["tabs"] if key in existing]
         self.groups = [group for group in self.groups if len(group["tabs"]) > 1]
+        required = {key for group in self.groups for key in group["tabs"]}
+        for pane_key in tuple(self._panes):
+            if pane_key not in required:
+                self.release(pane_key)
         key = self.view.tabs[self.view.active_tab].get("tab_id")
         return next((group for group in self.groups if key in group["tabs"]), None)
+
+    def release(self, key):
+        pane = self._panes.pop(key, None)
+        if pane is not None:
+            pane.dispose()
+            self._layout_signature = None
+            self._layout_container = None
 
     def begin(self, axis="columns"):
         v = self.view
@@ -289,6 +301,9 @@ class _Pane:
         self.follow = True
         self.messages = []
         self.message_ranges = []
+        self.line_count = 1
+        self._pending = None
+        self._disposed = False
         self.header = BoundedTextControl(self.render_header)
         self.control = BoundedTextControl(self.render, get_cursor_position=self.cursor)
         self.body = TranscriptWindow(
@@ -333,8 +348,12 @@ class _Pane:
         return Point(0, max(0, self.line_count - 1) if self.follow else self.body.vertical_scroll)
 
     def render(self):
+        if self._disposed:
+            return []
         tab = self.tab()
         width = self.view.transcript_width()
+        if self._disposed:
+            return []
         self.messages = tab.get("messages", [])
         if self.renderer.theme is not self.view.renderer.theme:
             self.renderer = MessageRenderer()
@@ -343,38 +362,85 @@ class _Pane:
             self.cache_key = None
         key = (
             width,
-            tuple((m.get("role"), m.get("text")) for m in self.messages),
+            self.view._virtual_message_key(self.messages),
             self.view.show_reasoning,
             bool(tab.get("busy")),
+            tab.get("render_revision", 0),
+            repr(self.view.renderer.tokens),
         )
         if key != self.cache_key:
-            values, self.message_ranges, line = [], [], 0
-            for i, message in enumerate(self.messages):
-                role = message["role"]
-                if role == "reasoning" and not self.view.show_reasoning:
-                    continue
-                value = self.renderer.render(
-                    role,
-                    message.get("text", ""),
-                    width,
-                    i > 0,
-                    bool(tab.get("busy")) and i == len(self.messages) - 1,
-                )
-                end = line + value.count("\n")
-                self.message_ranges.append((line, end, i))
-                values.append(value)
-                line = end
-            self.line_count = line + 1
-            self.cached = transcript_fragments("".join(values))
-            self.cached = [
-                (
-                    span[0],
-                    span[1],
-                    on_click(lambda url=getattr(span[2], "url", ""): self.open_link(url)),
-                )
-                if len(span) > 2 and getattr(span[2], "url", None)
-                else span
-                for span in self.cached
-            ]
+            active = len(self.messages) - 1 if tab.get("busy") else None
+            if self.view.app.is_running:
+                if self._pending is None:
+                    self._pending = key
+                    messages = tuple(dict(m) for m in self.messages)
+                    renderer, tokens = self.renderer, dict(self.view.renderer.tokens)
+
+                    def cancelled():
+                        return self._disposed or self.tab() is not tab
+
+                    def ready(result):
+                        self._pending = None
+                        if (
+                            not cancelled()
+                            and self.view._virtual_message_key(tab.get("messages", [])) == key[1]
+                            and tab.get("render_revision", 0) == key[4]
+                            and repr(self.view.renderer.tokens) == key[5]
+                            and self.renderer is renderer
+                            and self.view.transcript_width() == width
+                            and self.view.show_reasoning == key[2]
+                            and bool(tab.get("busy")) == key[3]
+                        ):
+                            text, self.message_ranges, ansi, _ = result
+                            self.line_count = text.count("\n") + 1
+                            self._set_fragments(ansi)
+                            self.cache_key = key
+                        self.view.app.invalidate()
+
+                    def failed(_reason):
+                        self._pending = None
+                        self.view.app.invalidate()
+
+                    self.view._read_in_background(
+                        lambda: prepare_transcript(
+                            messages,
+                            width,
+                            tokens,
+                            key[2],
+                            cancelled,
+                            renderer=renderer,
+                            active_index=active,
+                            index_rows=False,
+                        ),
+                        ready,
+                        failed,
+                        session_bound=False,
+                        cpu=True,
+                    )
+                return self.cached
+            text, self.message_ranges = self.renderer.transcript(
+                self.messages, width, self.view.show_reasoning, active_index=active
+            )
+            self.line_count = text.count("\n") + 1
+            self._set_fragments(transcript_fragments(text))
             self.cache_key = key
         return self.cached
+
+    def _set_fragments(self, fragments):
+        self.cached = [
+            (
+                span[0],
+                span[1],
+                on_click(lambda url=getattr(span[2], "url", ""): self.open_link(url)),
+            )
+            if len(span) > 2 and getattr(span[2], "url", None)
+            else span
+            for span in fragments
+        ]
+
+    def dispose(self):
+        self._disposed = True
+        self._pending = self.cache_key = None
+        self.messages, self.message_ranges = [], []
+        self.cached = ANSI("")
+        self.renderer.clear_cache(wait=False)

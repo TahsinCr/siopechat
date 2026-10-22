@@ -371,7 +371,7 @@ class ArchiveIntegrationTests(unittest.TestCase):
 
         self.accounts._providers[self.gemini] = Mock(stream=stream, close=AsyncMock())
         archive = self.api.get("archive")
-        archive.repository.put = Mock(side_effect=OSError("disk full"))
+        archive.repository.append_turn = Mock(side_effect=OSError("disk full"))
         result = self.accounts.send(self.gemini, None, "Question", [], Mock(), Mock())
         self.assertTrue(result["conversation_id"].endswith("/one"))
         self.assertTrue(result["cache_warning"])

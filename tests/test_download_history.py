@@ -182,7 +182,7 @@ class DownloadHistoryTests(unittest.TestCase):
         self.assertEqual(reopened.get("gemini/a", "conversation", "chat")["title"], "Saved")
         self.assertEqual(self.make_service().refresh()[0]["state"], "interrupted")
         with closing(sqlite3.connect(self.repo.path)) as db:
-            self.assertEqual(db.execute("SELECT version FROM schema_version").fetchall(), [(3,)])
+            self.assertEqual(db.execute("SELECT version FROM schema_version").fetchall(), [(4,)])
             self.assertIn(
                 "revision", {row[1] for row in db.execute("PRAGMA table_info(downloads)")}
             )

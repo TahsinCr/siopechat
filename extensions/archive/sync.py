@@ -53,6 +53,19 @@ class Archive:
     def messages(self, account, remote, **page):
         return self.repository.messages(account, remote, **page)
 
+    def conversation_window(self, account, remote, **page):
+        with self._lock:
+            if self._repository_closed or (account, "conversation", remote) in self._deleted:
+                return None
+        return self.repository.conversation_window(account, remote, **page)
+
+    def release(self, account, remote):
+        """Release a closed view's hot body; durable data and remote work are preserved."""
+        with self._lock:
+            old = self._hot.pop((account, "conversation", remote), None)
+            if old:
+                self._size -= old[1]
+
     def resources(self, account, owner_kind, owner):
         return self.repository.resources(account, owner_kind, owner)
 
@@ -60,11 +73,15 @@ class Archive:
         self.mappings[provider] = mapping
 
     def _remember(self, key, value):
-        snapshot = encode(value).encode()
-        size = len(snapshot)
         old = self._hot.pop(key, None)
         if old:
             self._size -= old[1]
+        # Conversation bodies are paged directly from SQL; caching a second full
+        # serialized body defeats the resident-window memory bound.
+        if key[1] == "conversation":
+            return
+        snapshot = encode(value).encode()
+        size = len(snapshot)
         if size <= self.memory_bytes:
             self._hot[key] = (snapshot, size)
             self._size += size
@@ -153,20 +170,49 @@ class Archive:
                 if self.closed:
                     return
                 self._remember(key, value)
-                self._versions[key] = self._versions.get(key, 0) + 1
-                if len(self._versions) > 2048:
-                    for old in tuple(self._versions):
-                        if old not in self._pending and old != key:
-                            del self._versions[old]
-                            break
-                if changed:
-                    self.revision += 1
+                self._written(key, changed)
+
+    def _written(self, key, changed=True):
+        self._versions[key] = self._versions.get(key, 0) + 1
+        if len(self._versions) > 2048:
+            for old in tuple(self._versions):
+                if old not in self._pending and old != key:
+                    del self._versions[old]
+                    break
+        if changed:
+            self.revision += 1
 
     def save_turn(self, account, remote, value):
         """Atomically retain history hydrated while an accepted turn was saved."""
+        key = (account, "conversation", remote)
         with self._write_lock:
+            append = getattr(self.repository, "append_turn", None)
+            if append is not None:
+                mapping = self.mappings.get(account.split("/")[0], Mapping())
+                value = mapping.normalize("conversation", value)
+                with self._lock:
+                    if self.closed:
+                        raise OSError("Archive is closed")
+                    if key in self._deleted:
+                        return
+                    project = value.get("project_id")
+                    project = (
+                        unquote(project.removeprefix("@" + account + "/")) if project else None
+                    )
+                    if project and (account, "container", project) in self._deleted:
+                        value["project_id"] = None
+                try:
+                    append(account, remote, value)
+                except OSError as error:
+                    with self._lock:
+                        self._state(key, "error", str(error))
+                    raise
+                with self._lock:
+                    self._written(key)
+                return
             current = self.get(account, "conversation", remote)
             merged = merge_conversation(current or {}, value)
+            value.pop("_archive_base_end", None)
             self.put(account, "conversation", remote, dict(value, messages=merged["messages"]))
 
     def _state(self, key, state, error=None):
@@ -188,10 +234,15 @@ class Archive:
         if self.events and not self.events.closed:
             self.events.publish(SyncChanged(*key, state))
 
-    def read(self, account, kind, remote, fetch, force=False, wait=True):
+    def read(self, account, kind, remote, fetch, force=False, wait=True, window=False):
         """Return a saved value immediately; one bounded worker checks the remote value."""
         key = (account, kind, remote)
-        value = self.get(*key)
+        saved = (
+            (lambda: self.conversation_window(account, remote))
+            if window
+            else (lambda: self.get(*key))
+        )
+        value = saved()
         started = False
         with self._lock:
             if self.closed or key in self._deleted:
@@ -252,7 +303,7 @@ class Archive:
                         self.repository.state(*key, "ready")
                         # A local send may have won while this remote read was
                         # in flight. Cold waiters must also see that newer value.
-                        return self.get(*key)
+                        return saved()
                     except Exception as error:
                         with self._lock:
                             if key in self._deleted:
@@ -293,7 +344,7 @@ class Archive:
             state = self._states.get(key, {})
             if state.get("state") == "error":
                 raise RuntimeError(state.get("error") or "Senkronizasyon yeniden denenecek")
-        return self.get(*key)
+        return saved()
 
     def refresh(self, account=None, kinds=None):
         """Recheck records touched in this session, without waiting for remote reads."""

@@ -8,6 +8,7 @@ from .markdown import (
     MessageRenderer,
     index_transcript,
     index_transcript_window,
+    message_order,
     render_chatgpt_annotations,
     transcript_fragments,
 )
@@ -28,8 +29,8 @@ class VirtualTranscript:
         self._lock = RLock()
         self._pages = OrderedDict()
         self._cache_bytes = 0
-        self._cancelled = cancelled
         self._disposed = False
+        self._release_renderer = True
         self.active_index = active_index
         # Retain only the fields needed for drawing.  In particular, do not
         # keep a second copy of every full provider message dictionary.
@@ -43,7 +44,7 @@ class VirtualTranscript:
                 for message in messages
             )
         )
-        self.entries = self._ordered(self.messages)
+        self.entries = message_order(message[0] for message in self.messages)
         if not show_reasoning:
             self.entries = [
                 index for index in self.entries if self.messages[index][0] != "reasoning"
@@ -60,20 +61,6 @@ class VirtualTranscript:
             self.ranges.append((line, line + count, index))
             line += count
         self.line_count = line + 1
-
-    @staticmethod
-    def _ordered(messages):
-        ordered, pending = [], []
-        for index, message in enumerate(messages):
-            role = message[0]
-            if role in ("user", "system"):
-                ordered.extend(sorted(pending, key=lambda item: messages[item][0] != "reasoning"))
-                pending = []
-                ordered.append(index)
-            else:
-                pending.append(index)
-        ordered.extend(sorted(pending, key=lambda item: messages[item][0] != "reasoning"))
-        return ordered
 
     def _render(self, index):
         role, text = self.messages[index]
@@ -117,6 +104,9 @@ class VirtualTranscript:
             return cached[0]
         message_index = self.entries[entry_index]
         rendered = self._render(message_index)
+        if self._disposed:
+            self._release()
+            return ()
         fragments = transcript_fragments(rendered)
         count = self.ranges[entry_index][1] - self.ranges[entry_index][0]
         start = page * self.PAGE_ROWS
@@ -170,10 +160,15 @@ class VirtualTranscript:
         if entry is None:
             return (), None
         with self._lock:
+            if self._disposed:
+                return (), None
             page = local // self.PAGE_ROWS
             rows = self._render_page(entry, page)
+            if self._disposed:
+                self._release()
+                return (), None
             offset = local % self.PAGE_ROWS
-            return rows[offset] if offset < len(rows) else ((), self.entries[entry][0])
+            return rows[offset] if offset < len(rows) else ((), self.entries[entry])
 
     def cached_row(self, line):
         """Non-blocking paint access; a miss is filled by viewport prefetch."""
@@ -186,13 +181,15 @@ class VirtualTranscript:
         if not self._lock.acquire(blocking=False):
             return None
         try:
+            if self._disposed:
+                return None
             cached = self._pages.get(key)
             if cached is None:
                 return None
             self._pages.move_to_end(key)
             rows = cached[0]
             offset = local % self.PAGE_ROWS
-            return rows[offset] if offset < len(rows) else ((), self.entries[entry][0])
+            return rows[offset] if offset < len(rows) else ((), self.entries[entry])
         finally:
             self._lock.release()
 
@@ -226,7 +223,11 @@ class VirtualTranscript:
                 if self._disposed or (cancelled and cancelled()):
                     return
                 with self._lock:
-                    self._render_page(entry, page)
+                    try:
+                        self._render_page(entry, page)
+                    finally:
+                        if self._disposed:
+                            self._release()
 
     @property
     def cache_bytes(self):
@@ -237,13 +238,22 @@ class VirtualTranscript:
             self._pages.clear()
             self._cache_bytes = 0
 
-    def dispose(self):
-        """Drop rendered pages and stop queued viewport work for a closed view."""
-        with self._lock:
-            self._disposed = True
-            self._pages.clear()
-            self._cache_bytes = 0
-            self.renderer.clear_cache()
+    def _release(self):
+        self._pages.clear()
+        self._cache_bytes = 0
+        self.messages = ()
+        if self._release_renderer:
+            self.renderer.clear_cache(wait=False)
+
+    def dispose(self, *, retain_renderer=False):
+        """Never wait on the UI thread for an in-flight Markdown conversion."""
+        self._disposed = True
+        self._release_renderer = not retain_renderer
+        if self._lock.acquire(blocking=False):
+            try:
+                self._release()
+            finally:
+                self._lock.release()
 
 
 class VirtualTranscriptRows:

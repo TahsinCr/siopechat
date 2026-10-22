@@ -23,6 +23,7 @@ class TranscriptControl(UIControl):
         self.clear_selection()
 
     def clear_selection(self):
+        self.dragging = False
         self.anchor = self.extent = None
         self.selection_rows = ()
         self.selected_text = ""
@@ -102,6 +103,7 @@ class TranscriptControl(UIControl):
             return NotImplemented
         if mouse_event.event_type == MouseEventType.MOUSE_DOWN:
             self.clear_selection()
+            self.dragging = True
             self.selection_rows = self.rows
             self.anchor = (line, mouse_event.position.x)
             self.extent = self.anchor
@@ -111,6 +113,7 @@ class TranscriptControl(UIControl):
             self._select_to(mouse_event.position)
             return None
         if mouse_event.event_type == MouseEventType.MOUSE_UP:
+            self.dragging = False
             if self.anchor is not None:
                 self._select_to(mouse_event.position)
             if self.selected_text:

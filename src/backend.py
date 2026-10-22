@@ -126,20 +126,30 @@ class BackendService:
             return None
 
         if conversation_id is None:
-            paths = [self.active_conversation_path()]
-            if self.legacy_fallback:
-                paths.append(legacy_data_dir() / "active-conversation.json")
-            active = read(paths)
-            candidate = active.get("conversation_id") if isinstance(active, dict) else None
-            if not isinstance(candidate, str) or not candidate:
+            conversation_id = self.active_conversation_id()
+            if conversation_id is None:
                 return None
-            conversation_id = candidate
         if self.conversation_cache_path(conversation_id).with_suffix(".deleted").is_file():
             return None
         paths = [self.conversation_cache_path(conversation_id)]
         if self.legacy_fallback:
             paths.append(legacy_data_dir() / "conversations" / f"{conversation_id}.json")
         return read(paths)
+
+    def active_conversation_id(self):
+        """Read only the small active pointer, never its conversation body."""
+        paths = [self.active_conversation_path()]
+        if self.legacy_fallback:
+            paths.append(legacy_data_dir() / "active-conversation.json")
+        for path in paths:
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if isinstance(value, dict):
+                candidate = value.get("conversation_id")
+                return candidate if isinstance(candidate, str) and candidate else None
+        return None
 
     def mark_conversation_deleted(self, conversation_id):
         path = self.conversation_cache_path(conversation_id)

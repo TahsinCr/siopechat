@@ -17,6 +17,15 @@ def encode(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def conversation_header(value):
+    """Listing/window headers must not retain provider-native copies of the body."""
+    return {
+        key: item
+        for key, item in value.items()
+        if key not in ("messages", "metadata", "_archive_sql_messages", "_archive_sql_metadata")
+    }
+
+
 class Repository(Protocol):
     def get(self, account, kind, remote): ...
     def put(self, account, kind, remote, value): ...
@@ -24,6 +33,7 @@ class Repository(Protocol):
     def conversations(self, account, limit=50, offset=0): ...
     def containers(self, account, limit=50, offset=0): ...
     def messages(self, account, remote, limit=100, offset=0): ...
+    def conversation_window(self, account, remote, *, start=None, limit=80, max_chars=262144): ...
     def resources(self, account, owner_kind, owner): ...
     def tombstones(self): ...
     def delete(self, account, kind, remote): ...
@@ -40,7 +50,7 @@ class SQLiteRepository:
             ).fetchone()
             if exists:
                 versions = db.execute("SELECT version FROM schema_version").fetchall()
-                if versions not in ([(1,)], [(2,)], [(3,)]):
+                if versions not in ([(1,)], [(2,)], [(3,)], [(4,)]):
                     raise OSError("Unsupported archive schema version")
             db.executescript("""
                 PRAGMA journal_mode=WAL;
@@ -97,6 +107,55 @@ class SQLiteRepository:
             if "revision" not in columns:
                 db.execute("ALTER TABLE downloads ADD COLUMN revision INTEGER NOT NULL DEFAULT 0")
             db.execute("UPDATE schema_version SET version=3 WHERE version=2")
+        # Older versions duplicated complete histories in the listing metadata.
+        # Migrate one record at a time; the canonical record and messages stay intact.
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS conversation_metadata("
+                "account TEXT NOT NULL, remote TEXT NOT NULL, payload TEXT NOT NULL,"
+                "PRIMARY KEY(account,remote))"
+            )
+            if db.execute("SELECT version FROM schema_version").fetchone()[0] == 3:
+                for account, remote, metadata in db.execute(
+                    "SELECT account,remote,metadata FROM conversations"
+                ):
+                    header = json.loads(metadata)
+                    if "messages" in header:
+                        header = conversation_header(header)
+                        db.execute(
+                            "UPDATE conversations SET metadata=? WHERE account=? AND remote=?",
+                            (encode(header), account, remote),
+                        )
+                for account, remote, payload in db.execute(
+                    "SELECT account,remote,payload FROM records WHERE kind='conversation'"
+                ):
+                    value = json.loads(payload)
+                    changed = False
+                    if "messages" in value:
+                        messages = value.pop("messages")
+                        count = db.execute(
+                            "SELECT count(*) FROM messages WHERE account=? AND conversation=?",
+                            (account, remote),
+                        ).fetchone()[0]
+                        if count != len(messages):
+                            self._write_messages(db, account, remote, messages)
+                        value["_archive_sql_messages"] = True
+                        changed = True
+                    if "metadata" in value:
+                        db.execute(
+                            "INSERT OR REPLACE INTO conversation_metadata VALUES(?,?,?)",
+                            (account, remote, encode(value.pop("metadata"))),
+                        )
+                        value["_archive_sql_metadata"] = True
+                        changed = True
+                    if changed:
+                        db.execute(
+                            "UPDATE records SET payload=? WHERE account=? "
+                            "AND kind='conversation' AND remote=?",
+                            (encode(value), account, remote),
+                        )
+                db.execute("UPDATE schema_version SET version=4 WHERE version=3")
         if os.name != "nt":
             self.path.chmod(0o600)
 
@@ -116,15 +175,39 @@ class SQLiteRepository:
 
     def get(self, account, kind, remote):
         with self._connect() as db:
+            db.execute("BEGIN")
             row = db.execute(
                 "SELECT payload FROM records WHERE account=? AND kind=? AND remote=?",
                 (account, kind, remote),
             ).fetchone()
-        return json.loads(row[0]) if row else None
+            value = json.loads(row[0]) if row else None
+            if value and value.pop("_archive_sql_metadata", False):
+                metadata = db.execute(
+                    "SELECT payload FROM conversation_metadata WHERE account=? AND remote=?",
+                    (account, remote),
+                ).fetchone()
+                value["metadata"] = json.loads(metadata[0]) if metadata else {}
+            if value and value.pop("_archive_sql_messages", False):
+                value["messages"] = [
+                    json.loads(item[0])
+                    for item in db.execute(
+                        "SELECT metadata FROM messages WHERE account=? AND conversation=? "
+                        "ORDER BY ordinal",
+                        (account, remote),
+                    )
+                ]
+            return value
 
     def put(self, account, kind, remote, value):
         payload = encode(value)
         digest = hashlib.sha256(payload.encode()).hexdigest()
+        if kind == "conversation":
+            header = {k: v for k, v in value.items() if k not in ("messages", "metadata")}
+            if "messages" in value:
+                header["_archive_sql_messages"] = True
+            if "metadata" in value:
+                header["_archive_sql_metadata"] = True
+            payload = encode(header)
         now = time.time()
         with self._connect() as db:
             prior = db.execute(
@@ -164,7 +247,7 @@ class SQLiteRepository:
                         item.get("title"),
                         item.get("project_id"),
                         item.get("model"),
-                        encode(item),
+                        encode(conversation_header(item) if kind == "conversation" else item),
                     ),
                 )
             if kind == "containers":
@@ -190,24 +273,15 @@ class SQLiteRepository:
                         )
             if kind == "conversation":
                 db.execute(
-                    "DELETE FROM messages WHERE account=? AND conversation=?", (account, remote)
+                    "DELETE FROM conversation_metadata WHERE account=? AND remote=?",
+                    (account, remote),
                 )
-                db.executemany(
-                    "INSERT INTO messages VALUES(?,?,?,?,?,?,?,?)",
-                    [
-                        (
-                            account,
-                            remote,
-                            i,
-                            m.get("id"),
-                            m.get("role"),
-                            m.get("channel"),
-                            m.get("text", ""),
-                            encode(m),
-                        )
-                        for i, m in enumerate(value.get("messages", []))
-                    ],
-                )
+                if "metadata" in value:
+                    db.execute(
+                        "INSERT INTO conversation_metadata VALUES(?,?,?)",
+                        (account, remote, encode(value["metadata"])),
+                    )
+                self._write_messages(db, account, remote, value.get("messages", []))
                 db.execute(
                     "DELETE FROM memberships WHERE account=? AND conversation=?", (account, remote)
                 )
@@ -231,6 +305,115 @@ class SQLiteRepository:
             if kind in ("conversation", "container"):
                 self._write_resources(db, account, kind, remote, value)
         return True
+
+    @staticmethod
+    def _write_messages(db, account, remote, messages, *, start=0):
+        db.execute(
+            "DELETE FROM messages WHERE account=? AND conversation=? AND ordinal>=?",
+            (account, remote, start),
+        )
+        db.executemany(
+            "INSERT INTO messages VALUES(?,?,?,?,?,?,?,?)",
+            (
+                (
+                    account,
+                    remote,
+                    start + index,
+                    message.get("id"),
+                    message.get("role"),
+                    message.get("channel"),
+                    message.get("text", ""),
+                    encode(message),
+                )
+                for index, message in enumerate(messages)
+            ),
+        )
+
+    def append_turn(self, account, remote, value):
+        """Reconcile only the bounded tail, never decode/rewrite the complete history."""
+        from .history import merge_conversation
+
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT payload FROM records WHERE account=? AND kind='conversation' AND remote=?",
+                (account, remote),
+            ).fetchone()
+            current = json.loads(row[0]) if row else {}
+            base_end = value.get("_archive_base_end")
+            tail = list(
+                db.execute(
+                    "SELECT ordinal,metadata FROM messages WHERE account=? AND conversation=? "
+                    "AND ordinal>=? ORDER BY ordinal DESC LIMIT 32",
+                    (account, remote, base_end or 0),
+                )
+            )
+            tail.reverse()
+            last = db.execute(
+                "SELECT ordinal FROM messages WHERE account=? AND conversation=? "
+                "ORDER BY ordinal DESC LIMIT 1",
+                (account, remote),
+            ).fetchone()
+            tail_values = [json.loads(item[1]) for item in tail]
+            new_ids = {item.get("id") for item in value.get("messages", ()) if item.get("id")}
+            old_ids = {item.get("id") for item in tail_values if item.get("id")}
+            if (
+                tail_values
+                and tail_values[-1].get("local_pending")
+                and new_ids
+                and new_ids.isdisjoint(old_ids)
+            ):
+                # Identical text in two separately accepted sends is still two turns.
+                # Remote-confirmed tails can instead be reconciled by content.
+                tail, tail_values = [], []
+            first = tail[0][0] if tail else last[0] + 1 if last else 0
+            merged = merge_conversation(dict(current, messages=tail_values), value)
+            messages = merged.pop("messages", [])
+            header = dict(
+                current,
+                **{k: v for k, v in value.items() if k not in ("messages", "_archive_base_end")},
+            )
+            if "metadata" in header:
+                db.execute(
+                    "INSERT OR REPLACE INTO conversation_metadata VALUES(?,?,?)",
+                    (account, remote, encode(header.pop("metadata"))),
+                )
+                header["_archive_sql_metadata"] = True
+            header["_archive_sql_messages"] = True
+            payload = encode(header)
+            now = time.time()
+            digest = hashlib.sha256((payload + encode(messages)).encode()).hexdigest()
+            db.execute(
+                "INSERT INTO records VALUES(?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(account,kind,remote) DO UPDATE SET payload=excluded.payload,"
+                "digest=excluded.digest,changed=excluded.changed,checked=excluded.checked",
+                (account, "conversation", remote, account.split("/")[0], payload, digest, now, now),
+            )
+            self._write_messages(db, account, remote, messages, start=first)
+            db.execute(
+                "INSERT OR REPLACE INTO conversations VALUES(?,?,?,?,?,?)",
+                (
+                    account,
+                    remote,
+                    header.get("title"),
+                    header.get("project_id"),
+                    header.get("model"),
+                    encode(
+                        conversation_header(
+                            {k: v for k, v in header.items() if k != "_archive_sql_messages"}
+                        )
+                    ),
+                ),
+            )
+            db.execute(
+                "DELETE FROM memberships WHERE account=? AND conversation=?", (account, remote)
+            )
+            if header.get("project_id"):
+                db.execute(
+                    "INSERT OR IGNORE INTO memberships VALUES(?,?,?)",
+                    (account, remote, self._remote(account, header["project_id"])),
+                )
+            self._write_resources(db, account, "conversation", remote, value, append=True)
 
     def container_members(self, account, remote):
         with self._connect() as db:
@@ -302,6 +485,10 @@ class SQLiteRepository:
                     (account, target_kind, target),
                 )
                 if target_kind == "conversation":
+                    db.execute(
+                        "DELETE FROM conversation_metadata WHERE account=? AND remote=?",
+                        (account, target),
+                    )
                     db.execute(
                         "DELETE FROM conversations WHERE account=? AND remote=?", (account, target)
                     )
@@ -376,18 +563,36 @@ class SQLiteRepository:
                 )
         return removed
 
-    def _write_resources(self, db, account, kind, remote, value):
-        db.execute(
-            "DELETE FROM resources WHERE account=? AND owner_kind=? AND owner=?",
-            (account, kind, remote),
-        )
+    def _write_resources(self, db, account, kind, remote, value, *, append=False):
+        first = 0
+        if append:
+            first = db.execute(
+                "SELECT COALESCE(MAX(ordinal)+1,0) FROM resources "
+                "WHERE account=? AND owner_kind=? AND owner=?",
+                (account, kind, remote),
+            ).fetchone()[0]
+        else:
+            db.execute(
+                "DELETE FROM resources WHERE account=? AND owner_kind=? AND owner=?",
+                (account, kind, remote),
+            )
         resources = list(value.get("resources", []))
         for message in value.get("messages", []):
             resources.extend(message.get("resources", []))
             for part in message.get("content", []):
                 if part.get("resource"):
                     resources.append(part["resource"])
-        for i, r in enumerate(resources):
+        for i, r in enumerate(resources, first):
+            metadata = encode(r)
+            if (
+                append
+                and db.execute(
+                    "SELECT 1 FROM resources WHERE account=? AND owner_kind=? AND owner=? "
+                    "AND metadata=? LIMIT 1",
+                    (account, kind, remote, metadata),
+                ).fetchone()
+            ):
+                continue
             db.execute(
                 "INSERT INTO resources VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 (
@@ -401,7 +606,7 @@ class SQLiteRepository:
                     r.get("mime_type") or r.get("media_type"),
                     r.get("uri") or r.get("remote_url"),
                     r.get("path"),
-                    encode(r),
+                    metadata,
                 ),
             )
 
@@ -444,6 +649,62 @@ class SQLiteRepository:
             ).fetchall()
         return [json.loads(row[0]) for row in rows]
 
+    def conversation_window(self, account, remote, *, start=None, limit=80, max_chars=262144):
+        """Read a bounded history window using the ordinal index, newest first by default.
+
+        A single message is never truncated, even if it exceeds the character budget.
+        All queries share a read transaction so a concurrent sync cannot mix revisions.
+        """
+        if not 1 <= limit <= 500 or max_chars < 1 or (start is not None and start < 0):
+            raise ValueError("invalid conversation window")
+        with self._connect() as db:
+            db.execute("BEGIN")
+            row = db.execute(
+                "SELECT metadata FROM conversations WHERE account=? AND remote=? "
+                "AND EXISTS(SELECT 1 FROM records WHERE account=? AND kind='conversation' "
+                "AND remote=?)",
+                (account, remote, account, remote),
+            ).fetchone()
+            if row is None:
+                return None
+            header = json.loads(row[0])
+            last = db.execute(
+                "SELECT ordinal FROM messages WHERE account=? AND conversation=? "
+                "ORDER BY ordinal DESC LIMIT 1",
+                (account, remote),
+            ).fetchone()
+            total = last[0] + 1 if last else 0
+            tail = start is None or start >= total
+            start = min(start or 0, max(0, total - 1))
+            order = "DESC" if tail else "ASC"
+            rows = db.execute(
+                "SELECT ordinal,metadata FROM messages WHERE account=? AND conversation=? "
+                f"AND ordinal>=? ORDER BY ordinal {order} LIMIT ?",
+                (account, remote, start, limit),
+            )
+            messages, size = [], 0
+            for ordinal, metadata in rows:
+                # Check serialized size before decoding a potentially large next message.
+                if messages and size + len(metadata) > max_chars:
+                    break
+                value = json.loads(metadata)
+                value["_archive_ordinal"] = ordinal
+                messages.append(value)
+                size += len(metadata)
+            if tail:
+                messages.reverse()
+            first = messages[0]["_archive_ordinal"] if messages else 0
+            end = messages[-1]["_archive_ordinal"] + 1 if messages else 0
+            return dict(
+                header,
+                messages=messages,
+                history_window={
+                    "start": first,
+                    "end": end,
+                    "total": total,
+                },
+            )
+
     def resources(self, account, owner_kind, owner):
         with self._connect() as db:
             rows = db.execute(
@@ -469,6 +730,10 @@ class SQLiteRepository:
 
         with self._connect() as db:
             for (payload,) in db.execute("SELECT payload FROM records"):
+                visit(json.loads(payload))
+            for (payload,) in db.execute("SELECT metadata FROM messages"):
+                visit(json.loads(payload))
+            for (payload,) in db.execute("SELECT payload FROM conversation_metadata"):
                 visit(json.loads(payload))
             references.update(
                 row[0] for row in db.execute("SELECT path FROM resources WHERE path IS NOT NULL")

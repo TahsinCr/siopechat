@@ -9,6 +9,7 @@ import subprocess
 import sys
 from collections import OrderedDict
 from io import StringIO
+from threading import RLock
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -187,6 +188,21 @@ def render_chatgpt_annotations(text: str) -> str:
     return rendered
 
 
+def message_order(roles):
+    """Keep published reasoning before the answer of its own user turn."""
+    roles = tuple(roles)
+    ordered, pending = [], []
+    for index, role in enumerate(roles):
+        if role in ("user", "system"):
+            ordered.extend(sorted(pending, key=lambda item: roles[item] != "reasoning"))
+            pending = []
+            ordered.append(index)
+        else:
+            pending.append(index)
+    ordered.extend(sorted(pending, key=lambda item: roles[item] != "reasoning"))
+    return ordered
+
+
 def visible_chat_message(message: dict[str, Any]) -> dict[str, str] | None:
     """Return user-facing turns while excluding web tool protocol nodes."""
     role = message.get("role")
@@ -217,7 +233,7 @@ def visible_chat_message(message: dict[str, Any]) -> dict[str, str] | None:
         return None
     return {"role": "reasoning" if reasoning else role, "text": text} | {
         key: message[key]
-        for key in ("id", "local_pending")
+        for key in ("id", "local_pending", "_archive_ordinal")
         if key in message and message[key] is not None
     }
 
@@ -408,6 +424,8 @@ def index_transcript_window(ansi, ranges, start, stop):
 
 class MessageRenderer:
     def __init__(self):
+        self._lock = RLock()
+        self._clear_requested = False
         self.theme = MARKDOWN_THEME
         self.tokens = {}
         self.cache: OrderedDict[tuple[str, str, int, bool], str] = OrderedDict()
@@ -431,28 +449,28 @@ class MessageRenderer:
         self.tokens = dict(tokens)
         self.clear_cache()
 
-    def clear_cache(self):
+    def clear_cache(self, *, wait=True):
         """Release all formatted message strings held by this renderer."""
-        self.cache.clear()
-        self.cache_bytes = 0
+        self._clear_requested = True
+        if self._lock.acquire(blocking=wait):
+            try:
+                self.cache.clear()
+                self.cache_bytes = 0
+                self._clear_requested = False
+            finally:
+                self._lock.release()
 
     @staticmethod
     def _cache_entry_bytes(key, value):
         return 128 + len(key[1].encode("utf-8")) + len(value.encode("utf-8"))
 
-    def transcript(self, messages, width, show_reasoning=True, cancelled=None):
+    def transcript(self, messages, width, show_reasoning=True, cancelled=None, active_index=None):
         """Prepare immutable transcript text and line ranges off the UI thread."""
-        pieces, ranges, ordered, pending = [], [], [], []
+        pieces, ranges = [], []
         line = 0
-        for entry in enumerate(messages):
-            if entry[1]["role"] in ("user", "system"):
-                ordered.extend(sorted(pending, key=lambda item: item[1]["role"] != "reasoning"))
-                pending = []
-                ordered.append(entry)
-            else:
-                pending.append(entry)
-        ordered.extend(sorted(pending, key=lambda item: item[1]["role"] != "reasoning"))
-        for index, message in ordered:
+        ordered = message_order(message.get("role") for message in messages)
+        for index in ordered:
+            message = messages[index]
             if cancelled and cancelled():
                 raise InterruptedError("Sohbet yüklemesi daha yeni bir seçimle değiştirildi")
             if message["role"] == "reasoning" and not show_reasoning:
@@ -462,7 +480,7 @@ class MessageRenderer:
                 render_chatgpt_annotations(message["text"]),
                 width,
                 index > 0,
-                False,
+                index == active_index,
             )
             count = value.count("\n")
             ranges.append((line, line + count, index))
@@ -478,6 +496,14 @@ class MessageRenderer:
         separated: bool,
         active: bool,
     ) -> str:
+        with self._lock:
+            try:
+                return self._render_cached(role, text, width, separated, active)
+            finally:
+                if self._clear_requested:
+                    self.clear_cache()
+
+    def _render_cached(self, role, text, width, separated, active):
         key = (role, text, width, separated)
         if not active and key in self.cache:
             self.cache.move_to_end(key)

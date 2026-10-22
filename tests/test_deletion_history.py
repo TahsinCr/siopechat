@@ -299,7 +299,7 @@ class DeleteAndCacheTests(unittest.TestCase):
         entered, release = threading.Event(), threading.Event()
         self.provider.capabilities = frozenset()
 
-        def load(value, key, force=False):
+        def load(value, key, force=False, **options):
             entered.set()
             if not release.wait(3):
                 raise TimeoutError("test barrier")

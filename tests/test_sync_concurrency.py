@@ -299,20 +299,20 @@ class AccountConcurrencyTests(unittest.TestCase):
     def test_slow_archive_write_does_not_block_another_provider_stream_or_loop(self):
         archive = self.accounts.archive()
         entered, release = threading.Event(), threading.Event()
-        original = archive.put
+        original = archive.save_turn
 
-        def slow(account, kind, remote, value):
-            if account == self.gemini and kind == "conversation":
+        def slow(account, remote, value):
+            if account == self.gemini:
                 entered.set()
                 if not release.wait(3):
                     raise TimeoutError("test barrier")
-            return original(account, kind, remote, value)
+            return original(account, remote, value)
 
         async def pulse():
             await asyncio.sleep(0)
             return "responsive"
 
-        with patch.object(archive, "put", side_effect=slow), ThreadPoolExecutor(2) as pool:
+        with patch.object(archive, "save_turn", side_effect=slow), ThreadPoolExecutor(2) as pool:
             first = pool.submit(self.send, self.gemini)
             try:
                 self.assertTrue(entered.wait(1))
@@ -327,19 +327,18 @@ class AccountConcurrencyTests(unittest.TestCase):
     def test_same_account_waits_for_persistence_and_preserves_both_turns(self):
         archive = self.accounts.archive()
         entered, release = threading.Event(), threading.Event()
-        original = archive.put
+        original = archive.save_turn
         calls = []
 
-        def slow(account, kind, remote, value):
-            if kind == "conversation":
-                calls.append(1)
-                if len(calls) == 1:
-                    entered.set()
-                    if not release.wait(3):
-                        raise TimeoutError("test barrier")
-            return original(account, kind, remote, value)
+        def slow(account, remote, value):
+            calls.append(1)
+            if len(calls) == 1:
+                entered.set()
+                if not release.wait(3):
+                    raise TimeoutError("test barrier")
+            return original(account, remote, value)
 
-        with patch.object(archive, "put", side_effect=slow), ThreadPoolExecutor(2) as pool:
+        with patch.object(archive, "save_turn", side_effect=slow), ThreadPoolExecutor(2) as pool:
             first = pool.submit(self.send, self.gemini)
             try:
                 self.assertTrue(entered.wait(1))
@@ -353,21 +352,20 @@ class AccountConcurrencyTests(unittest.TestCase):
     def test_runtime_drains_accepted_response_before_closing_archive_extension(self):
         archive = self.accounts.archive()
         entered, release, closing = threading.Event(), threading.Event(), threading.Event()
-        original_put, original_close = archive.put, self.accounts.close
+        original_put, original_close = archive.save_turn, self.accounts.close
 
-        def slow(account, kind, remote, value):
-            if kind == "conversation":
-                entered.set()
-                if not release.wait(3):
-                    raise TimeoutError("test barrier")
-            return original_put(account, kind, remote, value)
+        def slow(account, remote, value):
+            entered.set()
+            if not release.wait(3):
+                raise TimeoutError("test barrier")
+            return original_put(account, remote, value)
 
         def close_accounts():
             closing.set()
             return original_close()
 
         with (
-            patch.object(archive, "put", side_effect=slow),
+            patch.object(archive, "save_turn", side_effect=slow),
             patch.object(self.accounts, "close", side_effect=close_accounts),
             ThreadPoolExecutor(2) as pool,
         ):
