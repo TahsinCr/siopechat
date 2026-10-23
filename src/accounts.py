@@ -958,8 +958,8 @@ class Accounts:
 
         return self.read_record(key, "containers", cursor, fetch, force)
 
-    def all_projects(self, cursor=None, force=False, account_keys=None):
-        from concurrent.futures import ThreadPoolExecutor
+    def all_projects(self, cursor=None, force=False, account_keys=None, on_account=None):
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         cursors = json.loads(cursor) if cursor else None
         accounts = [
@@ -976,26 +976,39 @@ class Accounts:
             )
         ]
         items, errors, failed, more = [], [], [], {}
-        with ThreadPoolExecutor(max_workers=max(1, len(accounts))) as pool:
-            futures = [
-                (
-                    account,
-                    pool.submit(
-                        self.list_projects,
-                        account["key"],
-                        cursors.get(account["key"]) if cursors else None,
-                        force,
-                    ),
-                )
+
+        def report(account, outcome):
+            if on_account is None:
+                return
+            try:
+                on_account(account, outcome)
+            except Exception:
+                # Progress reporting is an optional UI hint; it cannot turn a
+                # valid provider response into a failed account refresh.
+                return
+
+        with ThreadPoolExecutor(
+            max_workers=min(6, max(1, len(accounts))), thread_name_prefix="project-list"
+        ) as pool:
+            futures = {
+                pool.submit(
+                    self.list_projects,
+                    account["key"],
+                    cursors.get(account["key"]) if cursors else None,
+                    force,
+                ): account
                 for account in accounts
-            ]
-            for account, future in futures:
+            }
+            for future in as_completed(futures):
+                account = futures[future]
                 try:
                     page = future.result()
+                    report(account, page)
                     items.extend(page["items"])
                     if page.get("cursor"):
                         more[account["key"]] = page["cursor"]
-                except Exception:
+                except Exception as error:
+                    report(account, error)
                     errors.append(account["label"])
                     failed.append(account["key"])
         return {
@@ -1213,21 +1226,10 @@ class Accounts:
                             "temporary_local",
                         ):
                             resource.pop(internal, None)
-                        path = resource.get("path") or self._attachment_paths.get(
-                            (key, resource.get("id") or resource.get("file_id"))
-                        )
-                        if (
-                            path
-                            and Path(path).is_file()
-                            and Path(path).stat().st_size <= 20 * 1024 * 1024
-                        ):
-                            try:
-                                resource["path"], resource["sha256"] = archive.files.save_file(
-                                    Path(path)
-                                )
-                            except OSError:
-                                cache_warning = "Yanıt alındı ancak ek dosya arşivlenemedi"
-
+                        # Keep the provider's attachment identity and display
+                        # metadata, never the user's local path or file bytes.
+                        resource.pop("path", None)
+                        resource.pop("sha256", None)
                         resources.append(resource)
                 messages = ([] if self.archive() else prior.get("messages", [])) + [
                     {
@@ -1640,17 +1642,11 @@ class Accounts:
             raise ValueError("Proje seçili hesaba ait olmalı")
         return self.store_project(key, self.call(self.provider(key).get_project(remote)))
 
-    def store_project(self, key, project, local_file=None, previous_resources=()):
+    def store_project(self, key, project):
         record = self.project_record(key, project)
         archive = self.archive()
         if archive:
             try:
-                if local_file:
-                    fresh = [r for r in record["resources"] if r["id"] not in previous_resources]
-                    if len(fresh) == 1:
-                        fresh[0]["path"], fresh[0]["sha256"] = archive.files.save(
-                            Path(local_file).expanduser().read_bytes()
-                        )
                 archive.put(key, "container", project.origin.remote_id, record)
                 for state in archive.states():
                     if state["account"] != key or state["kind"] != "containers":
@@ -1679,22 +1675,12 @@ class Accounts:
             current = self.call(provider.get_project(remote))
             result = self.call(provider.update_project(replace(current, **values)), timeout=90)
         elif operation == "add_source":
-            before = self.call(provider.get_project(remote))
             result = self.call(provider.add_project_resource(remote, **values), timeout=90)
         elif operation == "remove_source":
             result = self.call(provider.remove_project_resource(remote, **values), timeout=90)
         else:
             raise ValueError("Bilinmeyen proje işlemi")
-        return self.store_project(
-            key,
-            result,
-            local_file=values.get("path")
-            if operation == "add_source" and values.get("kind") == "file"
-            else None,
-            previous_resources={r.id for r in before.resources}
-            if operation == "add_source"
-            else (),
-        )
+        return self.store_project(key, result)
 
     def delete(self, value, key, kind="conversation"):
         context, remote = origin(value, key)

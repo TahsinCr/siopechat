@@ -13,9 +13,11 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 
 ### Changed
 - Render large fenced code messages through bounded transcript windows, avoiding full-message ANSI buffers and syntax tokenization.
-- Document the archive's 20 MiB local-file copy limit in all README languages.
+- Keep uploaded file metadata without retaining their bytes, and remove legacy archive copies during the schema v5 migration.
+- Show each provider's projects as soon as its background refresh completes.
 
 ### Fixed
+- Preserve the user's latest scroll anchor when an older SQLite history page finishes loading late.
 - Stop ChatGPT file uploads by cancelling the synchronous transfer, and reject files changed after preflight.
 - Keep split-pane transcript render caches bounded and release inactive pane pages.
 - Retain failed provider backends for a later `close()` retry instead of discarding them.
@@ -29,7 +31,7 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 ### Changed
 
 - Open cached chats through overlapping SQLite windows of at most 80 messages and a 262,144-character serialized-record budget, with anchored scrolling and direct navigation to either end.
-- Persist accepted turns by reconciling a bounded SQL tail. Upgrade archives transactionally to schema 4, retaining ordered messages and native provider metadata without duplicating full bodies in listing headers or the hot cache.
+- Persist accepted turns by reconciling a bounded SQL tail. Upgrade archives transactionally to schema 5, retaining ordered messages and native provider metadata without duplicating full bodies in listing headers or the hot cache.
 - Reuse bounded Markdown caches across streaming updates, share message ordering across transcript views, and prepare inactive split panes off the terminal thread.
 
 - Prioritize the visible transcript before rendering a two-screen buffer above and below it, keep recently visited rows in a one-megabyte LRU, and avoid rescanning the full message list on every terminal paint.

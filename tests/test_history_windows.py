@@ -228,6 +228,55 @@ class PagingUITests(unittest.TestCase):
                 view._render_reads.close()
                 view._operations.close()
 
+    def test_late_history_page_preserves_the_viewport_after_fast_user_scroll(self):
+        from tests.account_fixture import configured_application
+        from tests.test_cli_interaction import terminal
+
+        with tempfile.TemporaryDirectory() as folder:
+            api = configured_application(Path(folder))
+            self.addCleanup(api.runtime.close)
+            archive = api.get("archive")
+            archive.put(
+                "chatgpt/default",
+                "conversation",
+                "chat",
+                {"messages": [message(i, 20) for i in range(400)]},
+            )
+            callbacks = []
+            with terminal(account_service=api.get("accounts")) as (view, _):
+                window = archive.conversation_window("chatgpt/default", "chat")
+                view.conversation_id = "@chatgpt/default/chat"
+                view.messages = visible_window(window)
+                tab = view.tabs[0]
+                tab.update(
+                    conversation_id=view.conversation_id,
+                    messages=view.messages,
+                    history_window=window["history_window"],
+                )
+                view.follow_output = False
+                view._virtual_transcript = prepare_virtual_transcript(view.messages, 60, {}, True)
+                view.transcript_window.vertical_scroll = 0
+                view._read_in_background = lambda operation, ready, failed, **kw: callbacks.append(
+                    (operation, ready)
+                )
+
+                self.assertTrue(view.history_pager.request("older"))
+                current_ordinal = 350
+                current_line = next(
+                    start
+                    for start, _, index in view._virtual_transcript.ranges
+                    if view.messages[index]["_archive_ordinal"] == current_ordinal
+                )
+                view.transcript_window.vertical_scroll = current_line
+                result = callbacks[0][0]()
+                callbacks[0][1](result)
+
+                self.assertEqual(tab["history_anchor"]["ordinal"], current_ordinal)
+                self.assertFalse(view.follow_output)
+                view._reads.close()
+                view._render_reads.close()
+                view._operations.close()
+
     def test_tab_close_releases_selection_and_sources_without_deleting_archive(self):
         from tests.account_fixture import configured_application
         from tests.test_cli_interaction import terminal

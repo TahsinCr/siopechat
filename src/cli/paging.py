@@ -88,6 +88,7 @@ class HistoryPager:
         else:
             start = 0 if direction == "top" else None
         anchor = {"edge": direction} if direction in ("top", "bottom") else self.anchor(tab)
+        request_scroll = view.transcript_window.vertical_scroll
         if direction in ("top", "bottom"):
             view.transcript_control.clear_selection()
         cid = tab["conversation_id"]
@@ -111,13 +112,21 @@ class HistoryPager:
                 )
             ):
                 return
+            active = tab is view.tabs[view.active_tab]
+            moved_while_loading = (
+                active and view.transcript_window.vertical_scroll != request_scroll
+            )
+            current_anchor = view.history_pager.anchor(tab) if moved_while_loading else anchor
             messages = visible_window(value, tab.get("messages", ()))
             tab.update(messages=messages, history_window=value["history_window"])
-            if tab is view.tabs[view.active_tab]:
+            if active:
                 view.messages = messages
-                tab["history_anchor"] = anchor
+                # A late history page must preserve where the user is now, not
+                # jump back to the viewport that originally triggered the read.
+                tab["history_anchor"] = current_anchor
                 view.transcript_control.clear_selection()
-                view.follow_output = direction == "bottom"
+                if not moved_while_loading:
+                    view.follow_output = direction == "bottom"
             view.app.invalidate()
 
         def failed(reason):

@@ -140,7 +140,40 @@ class ProjectFormTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ProjectArchiveTests(unittest.TestCase):
-    def test_source_paths_survive_revalidation_without_resurrecting_removed_resources(self):
+    def test_added_project_source_keeps_provider_metadata_without_copying_local_bytes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            api = create_application(Path(folder))
+            try:
+                accounts = api.get("accounts")
+                key = "chatgpt/default"
+                source = Path(folder) / "source.pdf"
+                source.write_bytes(b"private source body")
+                project = Project(
+                    Origin("chatgpt", "default", "one"),
+                    "Project",
+                    resources=(Resource("source-1", "source.pdf", "application/pdf"),),
+                )
+                provider = Mock(
+                    add_project_resource=AsyncMock(return_value=project), close=AsyncMock()
+                )
+                accounts._providers[key] = provider
+
+                result = accounts.change_project(
+                    key,
+                    "@chatgpt/default/one",
+                    "add_source",
+                    kind="file",
+                    path=str(source),
+                )
+
+                self.assertEqual(result["resources"][0]["name"], "source.pdf")
+                self.assertNotIn("path", result["resources"][0])
+                self.assertEqual(list(api.get("archive").files.root.glob("??/" + "?" * 64)), [])
+                self.assertTrue(source.exists())
+            finally:
+                api.runtime.close()
+
+    def test_revalidation_does_not_restore_stale_local_source_paths(self):
         with tempfile.TemporaryDirectory() as folder:
             api = create_application(Path(folder))
             try:
@@ -163,10 +196,7 @@ class ProjectArchiveTests(unittest.TestCase):
                     {"resources": [{"id": "a", "name": "Renamed"}]},
                 )
                 value = archive.get("gemini/personal", "container", "one")
-                self.assertEqual(
-                    value["resources"],
-                    [{"id": "a", "name": "Renamed", "path": "abc/source", "sha256": "digest"}],
-                )
+                self.assertEqual(value["resources"], [{"id": "a", "name": "Renamed"}])
             finally:
                 api.runtime.close()
 

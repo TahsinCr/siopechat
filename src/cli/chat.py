@@ -1929,12 +1929,60 @@ class ChatView:
         self._invalidate_sidebar_rows()
         self.app.invalidate()
         callback = self.list_projects_callback
+        epoch = self.session_epoch
+        project_scope = tuple(sorted(self.account_filter or ()))
+        aggregate_accounts = bool(
+            self.account_service and hasattr(self.account_service, "all_projects")
+        )
+
+        def request_is_current():
+            return (
+                self._project_requests.get(account_key) == token
+                and epoch == self.session_epoch
+                and tuple(sorted(self.account_filter or ())) == project_scope
+                and (aggregate_accounts or self.account_key == account_key)
+            )
+
+        def apply_project_page(account, page):
+            def apply():
+                if not request_is_current() or isinstance(page, BaseException):
+                    return
+                if not isinstance(page, dict) or not isinstance(page.get("items"), list):
+                    return
+                projects = {
+                    key: item
+                    for key, item in self.project_items.items()
+                    if origin(key, account["key"])[0] != account["key"]
+                }
+                for item in page["items"]:
+                    if not isinstance(item, dict) or not item.get("id"):
+                        continue
+                    if item["id"] not in self.project_items:
+                        self.sidebar_collapsed.add(f"project:{item['id']}")
+                    projects[item["id"]] = dict(item, name=item.get("name") or self.tr("Proje"))
+                self.project_items = projects
+                self.projects_loaded = True
+                for tab in self.tabs:
+                    project = tab.get("project") or {}
+                    if project.get("id") in projects:
+                        project["name"] = projects[project["id"]]["name"]
+                        tab["project"] = project
+                self.current_project = dict(self.tabs[self.active_tab].get("project") or {})
+                self.filter_sidebar()
+                if self.palette_visible and self.palette_mode == "projects":
+                    self.open_project_picker(getattr(self, "project_picker_purpose", "select"))
+                self.app.invalidate()
+
+            self._dispatch_ui(apply)
+
         if self.account_service and hasattr(self.account_service, "all_projects"):
 
             def callback(cursor):
-                return self.account_service.all_projects(cursor, account_keys=self.account_filter)
-
-        epoch = self.session_epoch
+                return self.account_service.all_projects(
+                    cursor,
+                    account_keys=self.account_filter,
+                    on_account=apply_project_page,
+                )
 
         def finish():
             if self._project_requests.get(account_key) == token:
@@ -1943,15 +1991,16 @@ class ChatView:
             self._invalidate_sidebar_rows()
 
         def success(result):
+            current = request_is_current()
             finish()
-            if epoch != self.session_epoch or self.account_key != account_key:
+            if not current:
                 return
             if not isinstance(result, dict) or not isinstance(result.get("items"), list):
-                failure(self.tr("Proje listesi geçersiz"))
+                failure(self.tr("Proje listesi geçersiz"), finished=True)
                 return
             next_cursor = result.get("cursor")
             if cursor and next_cursor == cursor:
-                failure(self.tr("Sağlayıcı aynı proje sayfasını döndürdü"))
+                failure(self.tr("Sağlayıcı aynı proje sayfasını döndürdü"), finished=True)
                 return
             failed = set(result.get("failed_accounts", []))
             projects = (
@@ -1965,7 +2014,7 @@ class ChatView:
             )
             for item in result["items"]:
                 if not isinstance(item, dict) or not item.get("id"):
-                    failure(self.tr("Proje kimliği eksik"))
+                    failure(self.tr("Proje kimliği eksik"), finished=True)
                     return
                 if item["id"] not in self.project_items:
                     self.sidebar_collapsed.add(f"project:{item['id']}")
@@ -1990,9 +2039,15 @@ class ChatView:
             if self.palette_visible and self.palette_mode == "projects":
                 self.open_project_picker(getattr(self, "project_picker_purpose", "select"))
 
-        def failure(reason):
+        def failure(reason, *, finished=False):
+            current = (
+                epoch == self.session_epoch
+                and tuple(sorted(self.account_filter or ())) == project_scope
+                and (aggregate_accounts or self.account_key == account_key)
+                and (finished or self._project_requests.get(account_key) == token)
+            )
             finish()
-            if epoch != self.session_epoch or self.account_key != account_key:
+            if not current:
                 return
             self.project_error = reason
             self.status = self.tr("Proje listesi alınamadı: {0}").format(reason)

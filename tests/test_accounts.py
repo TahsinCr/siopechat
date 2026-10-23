@@ -10,6 +10,7 @@ import unittest
 from concurrent.futures import CancelledError, ThreadPoolExecutor
 from pathlib import Path
 from threading import Event
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 from accounts import Accounts, identity, origin
@@ -27,6 +28,46 @@ class AccountTests(unittest.TestCase):
         self.addCleanup(self.api.runtime.close)
         self.accounts = self.api.get("accounts")
         self.gemini = self.accounts.add("gemini", "Personal Gemini")
+
+    def test_project_refresh_reports_each_provider_as_soon_as_it_finishes(self):
+        fast_key, slow_key = "chatgpt/fast", "claude/slow"
+        account_items = [
+            {"key": fast_key, "provider": "chatgpt", "label": "Fast"},
+            {"key": slow_key, "provider": "claude", "label": "Slow"},
+        ]
+        slow_release, fast_ready = Event(), Event()
+        reported = []
+
+        def list_projects(key, cursor, force):
+            if key == slow_key:
+                slow_release.wait(2)
+            return {"items": [{"id": f"@{key}/project", "name": key}], "cursor": None}
+
+        service = SimpleNamespace(
+            items=lambda: account_items,
+            enabled=lambda _provider: True,
+            status=lambda _key: {"saved_snapshot": True},
+            archive=lambda: None,
+            list_projects=list_projects,
+        )
+
+        def on_account(account, _result):
+            reported.append(account["key"])
+            if account["key"] == fast_key:
+                fast_ready.set()
+
+        with ThreadPoolExecutor(max_workers=1) as caller:
+            pending = caller.submit(Accounts.all_projects, service, on_account=on_account)
+            self.assertTrue(fast_ready.wait(1))
+            self.assertFalse(pending.done())
+            slow_release.set()
+            result = pending.result(2)
+
+        self.assertCountEqual(reported, [fast_key, slow_key])
+        self.assertCountEqual(
+            [item["id"] for item in result["items"]],
+            [f"@{fast_key}/project", f"@{slow_key}/project"],
+        )
 
     def test_account_status_does_not_require_a_browser_process(self):
         with (

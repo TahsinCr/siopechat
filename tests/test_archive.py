@@ -378,7 +378,7 @@ class ArchiveIntegrationTests(unittest.TestCase):
         self.assertTrue(result["conversation_id"].endswith("/one"))
         self.assertTrue(result["cache_warning"])
 
-    def test_successful_file_send_archives_content_without_forwarding_local_paths(self):
+    def test_successful_file_send_keeps_metadata_without_archiving_file_content(self):
         from providers import ConversationBound, ReplaceText
 
         root = Path(self.folder.name)
@@ -408,9 +408,86 @@ class ArchiveIntegrationTests(unittest.TestCase):
         )
         archive = self.api.get("archive")
         resource = archive.resources("chatgpt/default", "conversation", "one")[0]
-        self.assertFalse(Path(resource["path"]).is_absolute())
-        self.assertEqual((archive.files.root / resource["path"]).read_text(), "Research source")
+        self.assertEqual(resource["name"], "notes.txt")
+        self.assertNotIn("path", resource)
+        self.assertNotIn("sha256", resource)
+        self.assertEqual(list(archive.files.root.glob("??/" + "?" * 64)), [])
         self.assertTrue(source.exists())
+
+    def test_v5_migration_removes_legacy_uploaded_bodies_and_keeps_resource_metadata(self):
+        from extensions.archive.repository import SQLiteRepository
+        from extensions.archive.sync import Archive
+
+        archive = self.api.get("archive")
+        repository_before = archive.repository
+        relative, digest = archive.files.save(b"legacy uploaded body")
+        archive.put(
+            "chatgpt/a",
+            "conversation",
+            "chat",
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "resources": [
+                            {
+                                "id": "file-1",
+                                "name": "notes.txt",
+                                "mime": "text/plain",
+                                "size": 20,
+                                "path": relative,
+                                "sha256": digest,
+                            }
+                        ],
+                    }
+                ]
+            },
+        )
+        archive.put(
+            "gemini/a",
+            "container",
+            "project",
+            {
+                "id": "project",
+                "resources": [
+                    {
+                        "id": "source-1",
+                        "name": "reference.pdf",
+                        "mime": "application/pdf",
+                        "path": relative,
+                        "sha256": digest,
+                    }
+                ],
+            },
+        )
+        with closing(sqlite3.connect(repository_before.path)) as db:
+            db.execute("UPDATE schema_version SET version=4")
+            db.commit()
+
+        archive.close()
+        repository = SQLiteRepository(repository_before.path)
+        upgraded = Archive(repository, Files(archive.files.root))
+        self.addCleanup(upgraded.close)
+        resource = upgraded.get("chatgpt/a", "conversation", "chat")["messages"][0]["resources"][0]
+        self.assertEqual(
+            {key: resource[key] for key in ("id", "name", "mime", "size")},
+            {"id": "file-1", "name": "notes.txt", "mime": "text/plain", "size": 20},
+        )
+        self.assertNotIn("path", resource)
+        self.assertNotIn("sha256", resource)
+        self.assertFalse((archive.files.root / relative).exists())
+        project_resource = upgraded.get("gemini/a", "container", "project")["resources"][0]
+        self.assertNotIn("path", project_resource)
+        self.assertNotIn("sha256", project_resource)
+        self.assertIsNone(repository.resources("gemini/a", "container", "project")[0].get("path"))
+        with closing(sqlite3.connect(repository.path)) as db:
+            self.assertIsNone(
+                db.execute(
+                    "SELECT path FROM resources WHERE account=? AND owner_kind=? AND owner=?",
+                    ("gemini/a", "container", "project"),
+                ).fetchone()[0]
+            )
+        self.assertFalse(repository.uploaded_file_cleanup_pending())
 
     def test_cached_startup_revalidates_active_chat_without_resetting_draft(self):
         self.accounts.load = Mock(return_value={"id": "one", "messages": []})

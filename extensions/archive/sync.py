@@ -28,6 +28,10 @@ class Archive:
 
     def __init__(self, repository, files, events=None, memory_bytes=8 * 1024 * 1024):
         self.repository, self.files, self.events = repository, files, events
+        pending_file_cleanup = getattr(repository, "uploaded_file_cleanup_pending", None)
+        if callable(pending_file_cleanup) and pending_file_cleanup():
+            files.purge_owned()
+            repository.complete_uploaded_file_cleanup()
         from .downloads import DownloadHistory
 
         self.downloads = DownloadHistory(repository)

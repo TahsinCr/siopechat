@@ -26,6 +26,39 @@ def conversation_header(value):
     }
 
 
+def _is_archive_blob_path(value):
+    if not isinstance(value, str):
+        return False
+    parts = value.replace("\\", "/").split("/")
+    return (
+        len(parts) == 2
+        and len(parts[0]) == 2
+        and len(parts[1]) == 64
+        and parts[0] == parts[1][:2]
+        and all(char in "0123456789abcdef" for char in parts[1])
+    )
+
+
+def _strip_archive_blob_refs(value):
+    changed = False
+    if isinstance(value, dict):
+        looks_like_resource = "id" in value and any(
+            name in value for name in ("name", "filename", "mime", "mime_type")
+        )
+        if _is_archive_blob_path(value.get("path")) or (
+            looks_like_resource and ("path" in value or "sha256" in value)
+        ):
+            value.pop("path", None)
+            value.pop("sha256", None)
+            changed = True
+        for item in value.values():
+            changed = _strip_archive_blob_refs(item) or changed
+    elif isinstance(value, list):
+        for item in value:
+            changed = _strip_archive_blob_refs(item) or changed
+    return changed
+
+
 class Repository(Protocol):
     def get(self, account, kind, remote): ...
     def put(self, account, kind, remote, value): ...
@@ -50,7 +83,7 @@ class SQLiteRepository:
             ).fetchone()
             if exists:
                 versions = db.execute("SELECT version FROM schema_version").fetchall()
-                if versions not in ([(1,)], [(2,)], [(3,)], [(4,)]):
+                if versions not in ([(1,)], [(2,)], [(3,)], [(4,)], [(5,)]):
                     raise OSError("Unsupported archive schema version")
             db.executescript("""
                 PRAGMA journal_mode=WAL;
@@ -90,6 +123,8 @@ class SQLiteRepository:
                     account TEXT NOT NULL, kind TEXT NOT NULL, remote TEXT NOT NULL,
                     state TEXT NOT NULL, checked REAL NOT NULL, error TEXT,
                     PRIMARY KEY(account,kind,remote));
+                CREATE TABLE IF NOT EXISTS maintenance(
+                    key TEXT PRIMARY KEY, value TEXT NOT NULL);
             """)
         # Upgrade the existing archive atomically; conversation tables remain intact.
         with self._connect() as db:
@@ -156,6 +191,51 @@ class SQLiteRepository:
                             (encode(value), account, remote),
                         )
                 db.execute("UPDATE schema_version SET version=4 WHERE version=3")
+        # v5 stops duplicating uploaded source bytes in the archive. Remove only
+        # content-addressed archive paths; provider URIs and attachment metadata stay.
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            version = db.execute("SELECT version FROM schema_version").fetchone()[0]
+            if version == 4:
+                for table, column in (
+                    ("records", "payload"),
+                    ("conversations", "metadata"),
+                    ("messages", "metadata"),
+                    ("containers", "metadata"),
+                    ("conversation_metadata", "payload"),
+                ):
+                    rows = db.execute(f"SELECT rowid,{column} FROM {table}").fetchall()
+                    for rowid, payload in rows:
+                        value = json.loads(payload)
+                        if _strip_archive_blob_refs(value):
+                            db.execute(
+                                f"UPDATE {table} SET {column}=? WHERE rowid=?",
+                                (encode(value), rowid),
+                            )
+                for account, owner_kind, owner, ordinal, path, metadata in db.execute(
+                    "SELECT account,owner_kind,owner,ordinal,path,metadata FROM resources"
+                ).fetchall():
+                    value = json.loads(metadata)
+                    changed = _strip_archive_blob_refs(value)
+                    remove_path = path is not None
+                    if changed or remove_path:
+                        db.execute(
+                            "UPDATE resources SET path=? ,metadata=? WHERE account=? "
+                            "AND owner_kind=? AND owner=? AND ordinal=?",
+                            (
+                                None if remove_path else path,
+                                encode(value) if changed else metadata,
+                                account,
+                                owner_kind,
+                                owner,
+                                ordinal,
+                            ),
+                        )
+                db.execute(
+                    "INSERT OR REPLACE INTO maintenance(key,value) "
+                    "VALUES('uploaded_file_cleanup_pending','1')"
+                )
+                db.execute("UPDATE schema_version SET version=5 WHERE version=4")
         if os.name != "nt":
             self.path.chmod(0o600)
 
@@ -743,6 +823,17 @@ class SQLiteRepository:
     def close(self):
         pass  # Connections are scoped to individual transactions, never held across remote work.
 
+    def uploaded_file_cleanup_pending(self):
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT value FROM maintenance WHERE key='uploaded_file_cleanup_pending'"
+            ).fetchone()
+        return bool(row and row[0] == "1")
+
+    def complete_uploaded_file_cleanup(self):
+        with self._connect() as db:
+            db.execute("DELETE FROM maintenance WHERE key='uploaded_file_cleanup_pending'")
+
 
 class Files:
     def __init__(self, root):
@@ -835,3 +926,16 @@ class Files:
                 if not dry_run:
                     path.unlink()
         return candidates
+
+    def purge_owned(self):
+        """Remove legacy content-addressed upload copies during the v5 migration."""
+        with self._lock:
+            for path in self.root.glob("??/" + "?" * 64):
+                if path.is_symlink() or path.parent.is_symlink() or not path.is_file():
+                    continue
+                if (
+                    not all(char in "0123456789abcdef" for char in path.name)
+                    or path.parent.name != path.name[:2]
+                ):
+                    continue
+                path.unlink()
