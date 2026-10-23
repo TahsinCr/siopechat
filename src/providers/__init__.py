@@ -36,9 +36,11 @@ from .models import (
 )
 from .projects import ProjectOptions
 from .registry import ProviderRegistry, create_provider
+from .session import CredentialStore
 
 __all__ = [
     "AccountPaused",
+    "CredentialStore",
     "AttachmentPolicy",
     "Choice",
     "Content",

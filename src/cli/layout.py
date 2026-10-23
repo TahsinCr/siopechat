@@ -28,59 +28,69 @@ def workspace_layout(view):
     view.transcript_window.style = "class:transcript"
     view.transcript_window.char = " "
 
-    sidebar = ConditionalContainer(
-        HSplit(
-            [
-                VSplit(
-                    [
+    sidebar_content = HSplit(
+        [
+            VSplit(
+                [
+                    text_window(
+                        lambda: [
+                            (
+                                "class:button",
+                                " ↻ ",
+                                on_click(lambda: view.synchronize("library")),
+                            )
+                        ],
+                        width=3,
+                    ),
+                    text_window(
+                        lambda: view.text("library", view.tr("Sohbetler ve projeler")),
+                        1,
+                        "class:sidebar.header",
+                    ),
+                    ConditionalContainer(
+                        text_window(
+                            lambda: [("class:button", " + ", on_click(view.open_project_create))],
+                            width=3,
+                        ),
+                        filter=Condition(view.project_panel.can_create),
+                    ),
+                ]
+            ),
+            VSplit(
+                [
+                    view.sidebar_search,
+                    ConditionalContainer(
                         text_window(
                             lambda: [
                                 (
                                     "class:button",
-                                    " ↻ ",
-                                    on_click(lambda: view.synchronize("library")),
+                                    " ☷ ",
+                                    on_click(view.open_filters),
                                 )
                             ],
                             width=3,
                         ),
-                        text_window(
-                            lambda: view.text("library", view.tr("Sohbetler ve projeler")),
-                            1,
-                            "class:sidebar.header",
-                        ),
-                        ConditionalContainer(
-                            text_window(
-                                lambda: [
-                                    ("class:button", " + ", on_click(view.open_project_create))
-                                ],
-                                width=3,
-                            ),
-                            filter=Condition(view.project_panel.can_create),
-                        ),
-                    ]
+                        filter=Condition(lambda: view.account_service is not None),
+                    ),
+                ]
+            ),
+            view.sidebar_window,
+        ],
+        width=view.sidebar_width,
+        style="class:sidebar",
+    )
+    sidebar = ConditionalContainer(
+        VSplit(
+            [
+                sidebar_content,
+                Window(
+                    width=1,
+                    char="│",
+                    style="class:separator",
+                    wrap_lines=False,
+                    dont_extend_width=True,
                 ),
-                VSplit(
-                    [
-                        view.sidebar_search,
-                        ConditionalContainer(
-                            text_window(
-                                lambda: [
-                                    (
-                                        "class:button",
-                                        " ☷ ",
-                                        on_click(view.open_filters),
-                                    )
-                                ],
-                                width=3,
-                            ),
-                            filter=Condition(lambda: view.account_service is not None),
-                        ),
-                    ]
-                ),
-                view.sidebar_window,
-            ],
-            width=view.sidebar_width,
-            style="class:sidebar",
+            ]
         ),
         filter=Condition(lambda: view.sidebar_visible and view.tab_kind != "settings"),
     )
@@ -138,10 +148,6 @@ def workspace_layout(view):
                 VSplit(
                     [
                         sidebar,
-                        ConditionalContainer(
-                            Window(width=1, char="│", style="class:separator"),
-                            filter=view.sidebar_visible_filter,
-                        ),
                         DynamicContainer(
                             lambda: (
                                 view.layout_controller.container(conversation)

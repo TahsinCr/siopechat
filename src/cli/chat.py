@@ -40,7 +40,7 @@ from .actions import action_order, action_title
 from .bindings import key_bindings
 from .history import prepare_archive_snapshot, prepare_transcript, prepare_virtual_transcript
 from .layout import render_tab_bar, workspace_layout
-from .library import SORT_OPTIONS, build_sidebar_rows
+from .library import SORT_OPTIONS, build_sidebar_rows, merge_chat_listing
 from .markdown import (
     MessageRenderer,
     index_transcript,
@@ -241,6 +241,7 @@ class ChatView:
         self.sidebar_refresh_generation = 0
         self.sidebar_visible = True
         self.sidebar_collapsed: set[str] = set()
+        self._sidebar_known_projects: set[str] = set()
         self.sidebar_rows: list[dict[str, Any]] = []
         self._sidebar_rows_dirty = True
         self.palette_visible = False
@@ -506,7 +507,7 @@ class ChatView:
                     chats.pop(removed, None)
                 self._archive_page_ids[key, "chats"] = new_ids
                 for item in page["items"]:
-                    chats[item["id"]] = item
+                    chats[item["id"]] = merge_chat_listing(chats.get(item["id"]), item)
             page = archive.get(key, "containers", "")
             if page:
                 new_ids = {item["id"] for item in page["items"]}
@@ -1459,14 +1460,29 @@ class ChatView:
 
     def _sidebar_sync_states(self):
         archive = self.archive_service()
-        return (
-            {
-                (item["account"], item["kind"], item["remote"]): item["state"]
-                for item in self.sync_states(archive)
-            }
-            if archive
-            else {}
-        )
+        if not archive:
+            return {}
+        result = {}
+        for item in self.sync_states(archive):
+            error = str(item.get("error") or "").casefold()
+            if (
+                item["kind"] == "container"
+                and item["state"] == "error"
+                and any(
+                    marker in error
+                    for marker in (
+                        "kayıtlı oturum yok",
+                        "http 401",
+                        "unauthorized",
+                        "authentication required",
+                    )
+                )
+            ):
+                # Authentication is account-wide. Repeating the same ! on every
+                # cached project suggests independent project failures.
+                continue
+            result[item["account"], item["kind"], item["remote"]] = item["state"]
+        return result
 
     def render_sidebar_row(self, index, states=None, open_ids=None):
         if not 0 <= index < len(self.sidebar_rows):
@@ -1507,6 +1523,9 @@ class ChatView:
         suffix = " " + str(row.get("count", "")) if kind in ("section", "project") else ""
         if kind == "project":
             suffix += " ⓘ"
+        section_action = None
+        if kind == "section" and row.get("id") in ("projects", "chats"):
+            section_action = self.open_project_create if row["id"] == "projects" else self.new_tab
         key, remote = origin(row.get("id"), self.account_key)
         state = states.get((key, "conversation" if kind == "chat" else "container", remote))
         live_tab = row.get("live_tab")
@@ -1519,17 +1538,19 @@ class ChatView:
             suffix += " ↻"
         elif state == "error":
             suffix += " !"
+        reserve_suffix = suffix + ("  +" if section_action is not None else "")
         width = (
             self.sidebar_width()
             - len(indent)
             - 3
             - (2 if kind in ("chat", "project") else 0)
-            - get_cwidth(suffix)
+            - get_cwidth(reserve_suffix)
         )
+        title = fit_text(row["title"], max(1, width))
         fragments.append(
             (
                 style + (" bold" if kind == "section" else ""),
-                fit_text(row["title"], max(1, width)),
+                title,
                 click,
             )
         )
@@ -1541,6 +1562,13 @@ class ChatView:
                     on_click(lambda project_id=row["id"]: self.show_project_details(project_id)),
                 )
             )
+        elif section_action is not None:
+            padding = max(0, width - get_cwidth(title))
+            if padding:
+                fragments.append((style, " " * padding, click))
+            fragments.append((style, suffix, click))
+            fragments.append((style, "  +", on_click(section_action)))
+            fragments.append((style, "\n", click))
         else:
             fragments.append((style, suffix + "\n", click))
         return fragments
@@ -1637,7 +1665,7 @@ class ChatView:
             by_id = {item["id"]: item for item in self.sidebar_items if item.get("id")}
             for item in page["items"]:
                 if item.get("id"):
-                    by_id[item["id"]] = item
+                    by_id[item["id"]] = merge_chat_listing(by_id.get(item["id"]), item)
             self.sidebar_items = list(by_id.values())
             self.history_cursor = page.get("cursor") if page.get("cursor") != cursor else None
             self.history_loading = False
@@ -1702,9 +1730,10 @@ class ChatView:
                         for item in self.sidebar_items
                         if item.get("project_id") in self.project_chats_loaded
                     ]
-                    by_id = {
-                        item["id"]: item for item in project_chats + conversations if item.get("id")
-                    }
+                    by_id = {item["id"]: item for item in project_chats if item.get("id")}
+                    for item in conversations:
+                        if item.get("id"):
+                            by_id[item["id"]] = merge_chat_listing(by_id.get(item["id"]), item)
                     chats = list(by_id.values())
                 else:
                     chats = [item for item in self.sidebar_items if item.get("kind") != "workspace"]
@@ -1961,8 +1990,6 @@ class ChatView:
                 for item in page["items"]:
                     if not isinstance(item, dict) or not item.get("id"):
                         continue
-                    if item["id"] not in self.project_items:
-                        self.sidebar_collapsed.add(f"project:{item['id']}")
                     projects[item["id"]] = dict(item, name=item.get("name") or self.tr("Proje"))
                 self.project_items = projects
                 self.projects_loaded = True
@@ -2020,8 +2047,6 @@ class ChatView:
                 if not isinstance(item, dict) or not item.get("id"):
                     failure(self.tr("Proje kimliği eksik"), finished=True)
                     return
-                if item["id"] not in self.project_items:
-                    self.sidebar_collapsed.add(f"project:{item['id']}")
                 projects[item["id"]] = dict(item, name=item.get("name") or self.tr("Proje"))
             self.project_items = projects
             self._save_active_tab()
@@ -2121,6 +2146,10 @@ class ChatView:
             f"- {r.get('name') or r.get('id')} ({r.get('media_type') or r.get('type') or self.tr('kaynak')})"
             for r in resources
         ) or self.tr("Kaynak yok.")
+        if project.get("requires_auth"):
+            text += "\n\n" + self.tr(
+                "Showing cached project details. Verify the provider account to refresh or edit them."
+            )
         return [{"role": "system", "text": text}]
 
     def show_project_details(self, project_id: str | None = None) -> None:
@@ -3143,16 +3172,29 @@ class ChatView:
         return FormattedText([("", self.tr(" Hazır"))])
 
     def remember_transcript(
-        self, tab, messages, width, tokens, reasoning, text, ranges, ansi, lines=None
+        self,
+        tab,
+        messages,
+        width,
+        tokens,
+        reasoning,
+        text,
+        ranges,
+        ansi,
+        lines=None,
+        *,
+        message_key=None,
+        revision=0,
     ):
         cache = getattr(self, "_prepared_transcripts", {})
         self._prepared_transcripts = cache
         key = tab["tab_id"]
         cache.pop(key, None)
+        roles = tuple(message["role"] for message in messages)
         cost = (
             len(text.encode("utf-8"))
             + sum(len(part[1].encode("utf-8")) for part in ansi)
-            + sum(len(m["text"].encode("utf-8")) for m in messages)
+            + len(roles) * 8
         )
         budget = 1_000_000
         if cost > budget:
@@ -3162,7 +3204,9 @@ class ChatView:
             conversation_id=tab.get("conversation_id"),
             tokens=tokens,
             reasoning=reasoning,
-            messages=tuple((m["role"], m["text"]) for m in messages),
+            message_key=message_key or self._virtual_message_key(tab.get("messages", [])),
+            revision=revision,
+            roles=roles,
             text=text,
             ranges=ranges,
             ansi=ansi,
@@ -3175,13 +3219,25 @@ class ChatView:
     def render_transcript(self) -> str:
         width = self.transcript_width()
         with self.lock:
+            tab = self.tabs[self.active_tab]
+            message_key = self._virtual_message_key(self.messages)
+            revision = tab.get("render_revision", 0)
+            load_state = (
+                bool(tab.get("loading")),
+                bool(tab.get("syncing")),
+                tab.get("load_error"),
+            )
             signature = (
                 width,
                 self.busy,
                 self.busy_tab_index,
                 self.active_tab,
                 self.show_reasoning,
-                tuple((m.get("role"), m.get("text")) for m in self.messages),
+                tab.get("tab_id"),
+                tab.get("conversation_id"),
+                message_key,
+                revision,
+                load_state,
             )
             if signature == getattr(self, "_transcript_signature", None):
                 return self._transcript_cache
@@ -3195,11 +3251,13 @@ class ChatView:
             and snapshot["width"] == width
             and snapshot["tokens"] == self.renderer.tokens
             and snapshot["reasoning"] == self.show_reasoning
-            and snapshot["messages"] == signature[-1]
+            and snapshot.get("conversation_id") == tab.get("conversation_id")
+            and snapshot["message_key"] == message_key
+            and snapshot["revision"] == revision
         ):
             snapshots.pop(tab_id)
             snapshots[tab_id] = snapshot
-            self._transcript_roles = tuple(role for role, _ in snapshot["messages"])
+            self._transcript_roles = snapshot["roles"]
             self.message_ranges = snapshot["ranges"]
             self.transcript_line_count = snapshot["text"].count("\n") + 1
             self._ansi_render_key, self._ansi_fragments = snapshot["text"], snapshot["ansi"]
@@ -3215,6 +3273,8 @@ class ChatView:
                 pending.add(key)
                 tokens, reasoning = dict(self.renderer.tokens), self.show_reasoning
                 conversation_id = tab.get("conversation_id")
+                message_key = self._virtual_message_key(tab.get("messages", []))
+                revision = tab.get("render_revision", 0)
 
                 def read():
                     return prepare_transcript(
@@ -3231,8 +3291,21 @@ class ChatView:
 
                 def ready(result):
                     pending.discard(key)
-                    if tab.get("conversation_id") == conversation_id:
-                        self.remember_transcript(tab, messages, width, tokens, reasoning, *result)
+                    if (
+                        tab.get("conversation_id") == conversation_id
+                        and self._virtual_message_key(tab.get("messages", [])) == message_key
+                        and tab.get("render_revision", 0) == revision
+                    ):
+                        self.remember_transcript(
+                            tab,
+                            messages,
+                            width,
+                            tokens,
+                            reasoning,
+                            *result,
+                            message_key=message_key,
+                            revision=revision,
+                        )
                     self.app.invalidate()
 
                 def failed(reason):
@@ -3247,7 +3320,7 @@ class ChatView:
                 and snapshot["tokens"] == self.renderer.tokens
                 and snapshot["reasoning"] == self.show_reasoning
             ):
-                self._transcript_roles = tuple(role for role, _ in snapshot["messages"])
+                self._transcript_roles = snapshot["roles"]
                 self.message_ranges = snapshot["ranges"]
                 self.transcript_line_count = len(snapshot["lines"])
                 self._line_render_key, self._transcript_lines = snapshot["text"], snapshot["lines"]
@@ -3268,7 +3341,24 @@ class ChatView:
             )
             console.print(
                 Text(
-                    self.tr("SiopeChat\n\nYeni bir sohbet başlatın."),
+                    (
+                        self.tr("Conversation load failed: {0}").format(
+                            self.tabs[self.active_tab]["load_error"]
+                        )
+                        if self.tabs and self.tabs[self.active_tab].get("load_error")
+                        else self.tr("Loading conversation…")
+                        if self.loading_conversation
+                        or (
+                            self.tabs
+                            and (
+                                self.tabs[self.active_tab].get("loading")
+                                or self.tabs[self.active_tab].get("syncing")
+                            )
+                        )
+                        else self.tr("This saved conversation has no messages.")
+                        if self.tabs and self.tabs[self.active_tab].get("conversation_id")
+                        else self.tr("SiopeChat\n\nYeni bir sohbet başlatın.")
+                    ),
                     style="dim",
                 )
             )

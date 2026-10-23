@@ -469,7 +469,15 @@ class ProviderFileTests(unittest.IsolatedAsyncioTestCase):
 
         alias = "http://googleusercontent.com/image_generation_content/6_786"
         provider = GeminiProvider(Path("unused"))
-        provider._saved_cookies = {"__Secure-1PSID": "owned-cookie", "unrelated": "never-send"}
+        provider._client = Mock(
+            http=Mock(
+                cookies=Mock(
+                    get_dict=Mock(
+                        return_value={"__Secure-1PSID": "owned-cookie", "unrelated": "never-send"}
+                    )
+                )
+            )
+        )
         provider.get_chat = AsyncMock(
             return_value=Conversation(
                 Origin("gemini", "default", "c_owner"),

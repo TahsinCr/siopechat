@@ -13,6 +13,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
+from extensions.archive import repository as archive_repository
 from extensions.archive.repository import Files, SQLiteRepository
 from extensions.archive.sync import Archive
 from providers import Capability
@@ -83,6 +84,29 @@ class ArchiveTests(unittest.TestCase):
         self.assertFalse(self.repository.put("chatgpt/a", "conversation", "one", value))
         fresh = SQLiteRepository(self.repository.path)
         self.assertEqual(fresh.get("chatgpt/a", "conversation", "one"), value)
+
+    def test_conversation_digest_does_not_materialize_a_second_full_json_record(self):
+        value = {
+            "title": "Long history",
+            "messages": [
+                {"id": str(index), "role": "assistant", "text": "answer" * 200}
+                for index in range(20)
+            ],
+        }
+        expected = hashlib.sha256(archive_repository.encode(value).encode()).hexdigest()
+        original_encode = archive_repository.encode
+
+        with patch("extensions.archive.repository.encode", wraps=original_encode) as encode_value:
+            self.repository.put("chatgpt/a", "conversation", "long", value)
+
+        self.assertFalse(any(call.args[0] is value for call in encode_value.call_args_list))
+        with closing(sqlite3.connect(self.repository.path)) as db:
+            digest = db.execute(
+                "SELECT digest FROM records WHERE account=? AND kind=? AND remote=?",
+                ("chatgpt/a", "conversation", "long"),
+            ).fetchone()[0]
+        self.assertEqual(digest, expected)
+        self.assertFalse(self.repository.put("chatgpt/a", "conversation", "long", value))
 
     def test_cached_read_returns_before_remote_and_single_flight(self):
         self.archive.put("gemini/a", "conversation", "one", {"messages": [], "title": "old"})
@@ -219,6 +243,34 @@ class ArchiveIntegrationTests(unittest.TestCase):
             view.conversation_id = "@chatgpt/default/one"
             view.open_palette("models")
             self.assertEqual([x["detail"].split(" · ")[0] for x in view.palette_items], ["chatgpt"])
+
+    def test_general_list_refresh_cannot_move_known_notebook_chat_out_of_its_project(self):
+        archive = self.api.get("archive")
+        cid = "@" + self.gemini + "/c_chat"
+        pid = "@" + self.gemini + "/notebooks%2Fabcdef"
+        plain = {"id": cid, "provider_id": "gemini", "title": "Updated", "project_id": None}
+        with terminal(account_service=self.accounts) as (view, _):
+            view.sidebar_items = [dict(plain, project_id=pid, project_name="Notebook")]
+            view.project_chats_loaded.add(pid)
+            archive.put(self.gemini, "chats", "", {"items": [plain]})
+            view.apply_archive_updates()
+            self.assertEqual(view.sidebar_items[0]["project_id"], pid)
+            view.list_history_page = lambda cursor: {"items": [plain], "cursor": None}
+            with patch.object(view._reads, "submit", side_effect=lambda work: work() or True):
+                view.refresh_sidebar()
+            self.assertEqual(view.sidebar_items[0]["project_id"], pid)
+            view.history_cursor = "next"
+            view._read_in_background = immediate
+            view.load_more_history()
+            self.assertEqual(view.sidebar_items[0]["project_id"], pid)
+            archive.put(
+                self.gemini,
+                "chats",
+                "",
+                {"items": [dict(plain, metadata={"project_membership_known": True})]},
+            )
+            view.apply_archive_updates()
+            self.assertIsNone(view.sidebar_items[0]["project_id"])
 
     def test_stale_sync_cannot_erase_a_completed_visible_reply(self):
         archive = self.api.get("archive")

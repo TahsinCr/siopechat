@@ -49,6 +49,22 @@ def sort_records(records, mode="time_desc"):
     return [value for _, value in dated] + undated
 
 
+def merge_chat_listing(previous, incoming):
+    """Keep notebook membership when Gemini's general list omits it."""
+    result = dict(incoming)
+    provider = incoming.get("provider_id") or origin(incoming.get("id"))[0].split("/")[0]
+    if (
+        previous
+        and provider == "gemini"
+        and not incoming.get("project_id")
+        and not (incoming.get("metadata") or {}).get("project_membership_known")
+    ):
+        for field in ("project_id", "project_name", "project"):
+            if previous.get(field):
+                result[field] = previous[field]
+    return result
+
+
 def build_sidebar_rows(view) -> None:
     query = view.sidebar_search.text.strip().casefold()
     active_keys = (
@@ -149,6 +165,9 @@ def build_sidebar_rows(view) -> None:
                 visible_items = items
             if query and query not in project_name.casefold() and not visible_items:
                 continue
+            if project_id not in view._sidebar_known_projects:
+                view._sidebar_known_projects.add(project_id)
+                view.sidebar_collapsed.add(f"project:{project_id}")
             collapsed = f"project:{project_id}" in view.sidebar_collapsed
             rows.append(
                 {
@@ -165,6 +184,17 @@ def build_sidebar_rows(view) -> None:
                     rows.append({"kind": "message", "title": view.tr("Sohbetler yükleniyor…")})
                 if project_id in view.project_chat_errors:
                     rows.append({"kind": "message", "title": view.project_chat_errors[project_id]})
+                if (
+                    project_id not in view.project_chats_loaded
+                    and project_id not in view.project_chats_loading
+                    and project_id not in view.project_chat_errors
+                ):
+                    rows.append(
+                        {
+                            "kind": "message",
+                            "title": view.tr("Projeyi seçerek sohbetleri yükleyin"),
+                        }
+                    )
                 rows.extend(view._chat_row(item, nested=True) for item in visible_items)
                 if view.project_chat_cursors.get(project_id):
                     rows.append(

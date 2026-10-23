@@ -35,7 +35,16 @@ def conversations(pages, origin):
             result[cid] = Conversation(
                 origin(cid),
                 title or "Gemini sohbeti",
-                metadata={"native": row, "updated_at": timestamp(nested(row, 5))},
+                project_id=(
+                    nested(row, 7)
+                    if isinstance(nested(row, 7), str) and nested(row, 7).startswith("notebooks/")
+                    else None
+                ),
+                metadata={
+                    "native": row,
+                    "updated_at": timestamp(nested(row, 5)),
+                    "project_membership_known": len(row) > 7,
+                },
             )
     return tuple(result.values())
 

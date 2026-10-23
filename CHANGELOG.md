@@ -9,15 +9,27 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 ## [Unreleased]
 
 ### Added
+- Add section-level project and conversation creation buttons to the sidebar using the existing creation actions.
+- Store account sessions, model catalogs and verification records in a private, account-scoped SQLite repository with an injectable provider credential contract.
 - Add clean-install wheel and source-archive checks for the standalone provider package to CI.
 
 ### Changed
+- Replace the Gemini SDK and subclass wrappers with native HTTPS authentication, model discovery, RPC, disk uploads and bounded streaming parsing.
+- Remove the Gemini SDK dependency and its application-level cookie-cache initialization.
 - Render large fenced code messages through bounded transcript windows, avoiding full-message ANSI buffers and syntax tokenization.
 - Keep uploaded file metadata without retaining their bytes, and remove legacy archive copies during the schema v5 migration.
 - Document the irreversible schema v5 cleanup and pre-upgrade backup scope in all README versions.
 - Show each provider's projects as soon as its background refresh completes.
 
 ### Fixed
+- Read Gemini notebook membership from the general conversation list so notebook chats stay under their projects; preserve known membership when stale listing pages omit it during archive refresh or pagination.
+- Keep the sidebar divider aligned and default all project groups to collapsed, including projects inferred from conversation listings; load chats only when their group is opened.
+- Report accounts with missing sessions in listing errors instead of silently excluding their conversations and projects. Explicit refresh and project-chat expansion await fresh results while retaining the cached page if refresh fails; bound account listing workers.
+- Do not reuse a prepared transcript for a different conversation, and show the actual loading or failure state while a cold history is being fetched.
+- Keep cached ChatGPT project details readable without repeating an account-wide missing-login error on every project; live refresh and edits still require a verified session.
+- Hash conversation records incrementally before SQLite writes, avoiding a second full-history JSON string during provider sync.
+- Merge a concurrent local send from a bounded SQL tail when the provider returns complete history, and keep partial-history merges lossless.
+- Parse ChatGPT, Claude and Gemini histories off their shared asynchronous provider loop.
 - Preserve the user's latest scroll anchor when an older SQLite history page finishes loading late.
 - Keep previously loaded provider projects visible when loading the next project page.
 - Fix the provider wheel and source-archive CI command blocks so the workflow can be parsed and start jobs.
@@ -27,7 +39,7 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 
 ### Added
 
-- Add an optional process-tree performance sampler for SiopeChat, recording CPU, resident memory, thread count and process count to CSV.
+- Expand the optional process-tree profiler to record CPU, RSS/USS/PSS memory, disk I/O, handles, threads and processes, with metadata-only storage snapshots categorized by browser profile, cache, account data, archive and downloads.
 - Publish a host-independent provider client, account factory and complete typed backend contract; the provider directory includes standalone packaging and portable API tests.
 - Show a stop button in place of Send while the active chat is generating; pressing Esc twice within three seconds also stops it, with an inline status hint after the first press.
 

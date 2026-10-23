@@ -1,171 +1,201 @@
-"""Small, scoped compatibility layer for native Gemini notebook requests."""
+"""Bounded Gemini generation protocol and streaming disk uploads."""
 
-import inspect
+import codecs
 import json
 import mimetypes
-from contextlib import contextmanager
+import uuid
 from pathlib import Path
-from urllib.parse import urlparse
 
 from ..errors import ProviderError
-
-NOTEBOOK_ID_INDEX = 19
-NOTEBOOK_CONTEXT_INDEX = 40
-CONTEXT_NOTEBOOK_INDEX = 13
-
-
-def notebook_payload(data, remote, notebook_context):
-    """Validate and copy the SDK envelope before binding native notebook context."""
-    try:
-        data = dict(data)
-        outer = json.loads(data["f.req"])
-        if not isinstance(outer, list) or len(outer) < 2 or not isinstance(outer[1], str):
-            raise ValueError("changed outer envelope")
-        inner = json.loads(outer[1])
-        if not isinstance(inner, list) or len(inner) <= NOTEBOOK_CONTEXT_INDEX:
-            raise ValueError("changed generation envelope")
-        if inner[NOTEBOOK_CONTEXT_INDEX] is not None and not isinstance(
-            inner[NOTEBOOK_CONTEXT_INDEX], list
-        ):
-            raise ValueError("changed notebook context")
-        if not isinstance(remote, str) or not remote or not isinstance(notebook_context, list):
-            raise ValueError("invalid notebook binding")
-        inner[NOTEBOOK_ID_INDEX] = remote
-        context = list(inner[NOTEBOOK_CONTEXT_INDEX] or [])
-        context.extend([None] * max(0, CONTEXT_NOTEBOOK_INDEX + 1 - len(context)))
-        context[CONTEXT_NOTEBOOK_INDEX] = notebook_context
-        inner[NOTEBOOK_CONTEXT_INDEX] = context
-        outer[1] = json.dumps(inner)
-        data["f.req"] = json.dumps(outer)
-        return data
-    except (KeyError, TypeError, ValueError, IndexError):
-        raise ProviderError("Gemini defter gönderim sözleşmesi değişmiş") from None
+from ..session import WebSession
+from .media import candidate_images
+from .session import BASE, HEADERS, nested
 
 
-class NotebookTransport:
-    def __init__(self, transport, remote, context):
-        self.transport, self.remote, self.context = transport, remote, context
+class Frames:
+    """Decode newline-framed JSPB without retaining the full response."""
 
-    def __getattr__(self, name):
-        return getattr(self.transport, name)
+    def __init__(self):
+        self.decoder = codecs.getincrementaldecoder("utf-8")()
+        self.pending = ""
 
-    def stream(self, method, url, **options):
-        target = urlparse(str(getattr(url, "value", url)))
-        if target.hostname == "gemini.google.com" and target.path.endswith(
-            "/assistant.lamda.BardFrontendService/StreamGenerate"
-        ):
-            options["data"] = notebook_payload(options.get("data"), self.remote, self.context)
-        return self.transport.stream(method, url, **options)
-
-
-def notebook_client_type(base):
-    """Keep context across SDK reconnects without replacing its owned session."""
-
-    class NotebookClient(base):
-        @property
-        def _live_client(self):
-            transport = super()._live_client
-            context = getattr(self, "_siope_notebook", None)
-            return NotebookTransport(transport, *context) if context else transport
-
-    return NotebookClient
-
-
-@contextmanager
-def notebook_transport(client, remote, context):
-    original = getattr(client, "_siope_notebook", None)
-    client._siope_notebook = (remote, context)
-    try:
-        yield
-    finally:
-        client._siope_notebook = original
-
-
-async def stream_local_files(
-    client, chat, prompt, paths, *, model=None, temporary=False, extended_thinking=False
-):
-    """Upload paths one at a time from disk, then stream through the SDK's request builder.
-
-    gemini-webapi 2.1.x reads every selected path into memory and uploads them with
-    asyncio.gather. CurlMime's local_path keeps one file at a time on disk instead.
-    """
-    paths = [Path(path) for path in paths]
-    if not paths:
-        async for chunk in chat.send_message_stream(
-            prompt,
-            temporary=temporary,
-            extended_thinking=extended_thinking,
-            current_retry=0,
-        ):
-            yield chunk
-        return
-
-    if not (
-        hasattr(client, "_live_client")
-        and inspect.iscoroutinefunction(getattr(type(client), "_sync_activity", None))
-        and inspect.isasyncgenfunction(getattr(type(client), "_generate", None))
-    ):
-        # Test doubles and compatible client wrappers can retain their own upload method.
-        async for chunk in chat.send_message_stream(
-            prompt,
-            files=[str(path) for path in paths],
-            temporary=temporary,
-            extended_thinking=extended_thinking,
-            current_retry=0,
-        ):
-            yield chunk
-        return
-
-    from curl_cffi import CurlMime
-    from gemini_webapi.constants import Endpoint, Headers
-    from gemini_webapi.utils.upload_file import parse_file_name
-
-    if getattr(client, "auto_close", False) is True:
-        await client.reset_close_task()
-    client._check_account_status(raise_error=True)
-    await client._sync_activity()
-    file_data = []
-    for path in paths:
-        mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-        mime_part = CurlMime()
+    def feed(self, data, final=False):
         try:
-            mime_part.addpart(
+            self.pending += self.decoder.decode(data, final=final)
+        except UnicodeDecodeError as error:
+            raise ProviderError("Gemini akışı geçersiz UTF-8 içeriyor") from error
+        if len(self.pending) > 8 * 1024 * 1024:
+            raise ProviderError("Gemini akış çerçevesi boyut sınırını aştı")
+        lines = self.pending.split("\n")
+        self.pending = "" if final else lines.pop()
+        for line in lines:
+            if not line.startswith("[["):
+                continue
+            try:
+                rows = json.loads(line)
+            except ValueError as error:
+                raise ProviderError("Gemini akış biçimi değişti") from error
+            yield from rows
+
+
+async def upload_files(session, paths):
+    from curl_cffi import CurlMime
+
+    files = []
+    for value in paths:
+        path = Path(value)
+        mime = CurlMime()
+        try:
+            mime.addpart(
                 name="file",
-                content_type=mime,
+                content_type=mimetypes.guess_type(path.name)[0] or "application/octet-stream",
                 filename=path.name,
                 local_path=str(path),
             )
-            response = await client._live_client.post(
-                url=Endpoint.UPLOAD,
+            response = await session.http.post(
+                "https://content-push.googleapis.com/upload",
                 headers={
-                    **Headers.REFERER.value,
-                    **Headers.UPLOAD.value,
-                    "Push-ID": client.push_id,
+                    "Origin": "https://gemini.google.com",
+                    "Referer": "https://gemini.google.com/",
+                    "X-Tenant-Id": "bard-storage",
+                    "Push-ID": session.push_id,
                 },
-                multipart=mime_part,
-                allow_redirects=True,
+                multipart=mime,
+                allow_redirects=False,
             )
-            response.raise_for_status()
-            file_data.append([[response.text], parse_file_name(path)])
+            WebSession.check(response)
+            files.append([[response.text], path.name])
         finally:
-            mime_part.close()
+            mime.close()
+    return files
 
-    await client._sync_activity()
-    output = None
-    async for chunk in client._generate(
-        prompt=prompt,
-        req_file_data=file_data,
-        model=model,
-        gem=None,
-        chat=chat,
-        temporary=temporary,
-        session_state={"last_texts": {}, "last_thoughts": {}},
-        deep_research=False,
-        extended_thinking=extended_thinking,
-        current_retry=0,
-    ):
-        output = chunk
-        yield chunk
-    if output is not None and hasattr(output, "metadata") and hasattr(chat, "metadata"):
-        output.metadata = chat.metadata
-        chat.last_output = output
+
+def generation_request(session, request, metadata, files, notebook=None):
+    selected = next(
+        (m for m in session.models if request.model in (m.id, m.metadata["model_id"])), None
+    )
+    if request.model and selected is None:
+        raise ValueError("Model bu Gemini hesabında kullanılamıyor")
+    extended = request.effort == "extended"
+    body = [None] * 81
+    body[0], body[1], body[2] = (
+        [request.prompt, 0, None, files or None, None, None, 0],
+        [session.language],
+        metadata,
+    )
+    for index, value in {
+        6: [1],
+        7: 1,
+        10: 1,
+        11: 0,
+        17: [[0]],
+        18: 0,
+        27: 1,
+        30: [4],
+        41: [1],
+        53: 0,
+        61: [],
+        68: 1,
+        79: 1,
+        80: 2 if extended else 1,
+    }.items():
+        body[index] = value
+    if request.temporary:
+        body[45] = 1
+    if notebook:
+        body[19] = notebook[0]
+        body[40] = [None] * 14
+        body[40][13] = notebook[1]
+    identifier = str(uuid.uuid4()).upper()
+    body[59] = identifier
+    headers = {**HEADERS, "x-goog-ext-525005358-jspb": json.dumps([identifier, 1])}
+    if selected:
+        info = selected.metadata
+        selector = [1, None, None, None, info["model_id"], None, None, 0, [4, 5, 6, 8], None, None]
+        selector.extend([None] * (info["capacity_slot"] - 1 - len(selector)))
+        selector.extend(
+            [info["capacity"], None, None, info["number"], 2 if extended else 1, session.session_id]
+        )
+        headers.update(
+            {
+                "x-goog-ext-525001261-jspb": json.dumps(selector),
+                "x-goog-ext-73010989-jspb": "[0]",
+                "x-goog-ext-73010990-jspb": "[0,0,0]",
+            }
+        )
+        body[79] = info["number"]
+    return headers, {"at": session.token, "f.req": json.dumps([None, json.dumps(body)])}
+
+
+async def generate(session, request, metadata, notebook=None):
+    files = await upload_files(session, [item["path"] for item in request.attachments])
+    headers, data = generation_request(session, request, metadata, files, notebook)
+    frames = Frames()
+    completed = False
+    last_text = last_thoughts = ""
+    async with session.http.stream(
+        "POST",
+        BASE + "assistant.lamda.BardFrontendService/StreamGenerate",
+        params=session.params(),
+        headers=headers,
+        data=data,
+        allow_redirects=False,
+    ) as response:
+        WebSession.check(response)
+
+        async def parts():
+            async for chunk in response.aiter_content():
+                for frame in frames.feed(chunk):
+                    yield frame
+            for frame in frames.feed(b"", final=True):
+                yield frame
+
+        async for frame in parts():
+            if nested(frame, 5, 2, 0, 1, 0):
+                raise ProviderError(
+                    "Gemini isteği reddetti; kota veya model uygunluğunu kontrol edin"
+                )
+            payload = nested(frame, 2)
+            if not isinstance(payload, str):
+                continue
+            try:
+                body = json.loads(payload)
+            except ValueError as error:
+                raise ProviderError("Gemini yanıt gövdesi değişti") from error
+            returned = nested(body, 1)
+            if isinstance(returned, list) and returned:
+                metadata = returned
+            context = nested(body, 25)
+            if isinstance(context, str):
+                completed = True
+            for candidate in nested(body, 4, default=[]):
+                if not nested(candidate, 0):
+                    continue
+                cid = nested(metadata, 0) or request.conversation_id
+                current = list(metadata)
+                current.extend([None] * max(0, 3 - len(current)))
+                current[2] = candidate[0]
+                completed = completed or nested(candidate, 8, 0) == 2
+                text = nested(candidate, 1, 0)
+                if isinstance(text, str) and text.startswith(
+                    (
+                        "http://googleusercontent.com/card_content/",
+                        "https://googleusercontent.com/card_content/",
+                    )
+                ):
+                    text = nested(candidate, 22, 0) or text
+                last_text = text or last_text
+                last_thoughts = nested(candidate, 37, 0, 0) or last_thoughts
+                yield {
+                    "cid": cid,
+                    "metadata": current,
+                    "text": last_text,
+                    "thoughts": last_thoughts,
+                    "images": candidate_images(candidate),
+                }
+            if isinstance(context, str):
+                metadata = [None] * 9 + [context]
+                yield {"cid": request.conversation_id, "metadata": metadata, "context_only": True}
+    if not completed:
+        raise ProviderError("Gemini akışı tamamlanmadan kesildi; yeniden gönderilmedi")
+    await session.persist()

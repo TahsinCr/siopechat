@@ -268,6 +268,13 @@ class CliComponentTests(unittest.TestCase):
                 ]
                 view.sidebar_search.text = "network"
                 view._build_sidebar_rows()
+                self.assertIn("project:p1", view.sidebar_collapsed)
+                self.assertFalse(any(row["kind"] == "chat" for row in view.sidebar_rows))
+                view.sidebar_index = next(
+                    i for i, row in enumerate(view.sidebar_rows) if row["kind"] == "project"
+                )
+                view.toggle_sidebar_group()
+                self.assertNotIn("project:p1", view.sidebar_collapsed)
                 self.assertEqual(
                     [row["id"] for row in view.sidebar_rows if row["kind"] == "chat"], ["1"]
                 )

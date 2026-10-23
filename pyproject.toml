@@ -26,7 +26,6 @@ dependencies = [
     "exceptiongroup>=1.3.1,<2; python_version < '3.11'",
     "prompt-toolkit>=3.0,<4",
     "rich>=13,<15",
-    "gemini-webapi>=2.1.1,<2.2; python_version >= '3.11'",
 ]
 
 [project.scripts]
@@ -46,7 +45,7 @@ select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.setuptools]
 package-dir = {"" = "src", "extensions" = "extensions", "themes" = "themes"}
-py-modules = ["downloads", "views", "accounts", "bootstrap", "settings", "actions", "tasks", "runtime", "extension", "backend", "language", "theme"]
+py-modules = ["account_repository", "downloads", "views", "accounts", "bootstrap", "settings", "actions", "tasks", "runtime", "extension", "backend", "language", "theme"]
 # Resource-only namespace packages are listed explicitly so setuptools includes
 # their bundled helpers and translations without package-discovery ambiguity.
 packages = [

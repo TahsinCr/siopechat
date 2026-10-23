@@ -28,7 +28,7 @@ It uses your own signed-in web sessions. There are no API keys to configure, and
 
 ## Install and sign in
 
-You need Python **3.10+** for ChatGPT and Claude, or **3.11+** for Gemini; Node.js **22+** for login helpers and the ChatGPT request signer; and Chrome/Chromium for the explicit sign-in step. Use a Unicode terminal. True color and mouse reporting are recommended.
+You need Python **3.10+** for all three providers; Node.js **22+** for login helpers and the ChatGPT request signer; and Chrome/Chromium for the explicit sign-in step. Use a Unicode terminal. True color and mouse reporting are recommended.
 
 Install from this checkout in your Python environment:
 
@@ -186,7 +186,7 @@ For computed themes, export the same dictionary as `THEME` from a Python file. [
 
 ## Development
 
-Application settings and cached records share atomic JSON persistence. The independent provider library owns session persistence and common project-source validation; it does not depend on application utilities.
+Account sessions, model catalogs and verification records are stored in `data/accounts.sqlite3`, separated by provider and account. Provider-specific fields remain JSON inside the database. On Unix the database is restricted to its owner; it is not encrypted. Account labels, selection and preferences remain application configuration. The independent provider library accepts a credential file or an injected credential store and never imports the application database. Gemini uses a native HTTPS transport with no Gemini SDK or browser process. Legacy account session files are imported on access and removed after the database write succeeds.
 
 Bundled providers use their HTTPS transports for conversations and projects. Packaged Node helpers are limited to explicit login/session capture and ChatGPT request signing.
 
@@ -206,7 +206,7 @@ uv run --locked python -m build
 uv run --locked python -m twine check dist/*
 ```
 
-To collect process-tree CPU, resident-memory and thread samples while using the app, run `uv run --group performance python tools/measure_performance.py`. Samples are written to an ignored `performance/` CSV file; pass `--interval 0.5` to sample twice per second or `-- --help` to pass arguments to SiopeChat. CPU is reported as a process-tree sum, so it can exceed 100% when several cores are busy.
+To profile SiopeChat while using it, run `uv run --group performance python tools/measure_performance.py`. The CSV records process-tree CPU, RSS/USS/PSS memory, disk I/O, open handles, thread count and process count. A companion JSON summary compares file counts and sizes by category under `data/` and the configured download folder before and after the run, including browser profiles, caches, account data and the archive database. The storage scan reads file metadata only; it does not read file contents or follow symlinks. Pass `--interval 0.5` for two samples per second, `--storage-root PATH` (repeatable) to select other directories, or `--no-storage` to skip directory scans. Arguments after `--` are passed to SiopeChat. Process-tree CPU can exceed 100% when multiple cores are busy; USS/PSS or disk I/O may be unavailable on some operating systems and will be left blank.
 
 Before reporting an issue, note the provider, operation, terminal, operating system and error message. Remove credentials and private conversation content. The [changelog](CHANGELOG.md) records release changes.
 

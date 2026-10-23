@@ -128,12 +128,19 @@ def create_provider(
         if session is None:
             if credential_file is None:
                 raise ValueError("credential_file or session is required")
-            path = Path(credential_file)
+            from .session import CredentialStore
+
+            is_store = isinstance(credential_file, CredentialStore)
+            if is_store and cache_directory is None:
+                raise ValueError("cache_directory is required with a ChatGPT credential store")
+            path = credential_file if is_store else Path(credential_file)
+            cache = Path(cache_directory) if cache_directory else path.parent / "cache"
+            profile = Path(profile_directory) if profile_directory else cache / "login-profile"
             session = BrowserSession(
                 SessionPaths(
                     path,
-                    Path(cache_directory) if cache_directory else path.parent / "cache",
-                    Path(profile_directory) if profile_directory else path.parent / "profile",
+                    cache,
+                    profile,
                 )
             )
         return ChatGPTProvider(session, account_id, **options)
@@ -142,7 +149,7 @@ def create_provider(
     if provider_id == "gemini":
         from .gemini import GeminiProvider
 
-        return GeminiProvider(Path(credential_file), account_id, **options)
+        return GeminiProvider(credential_file, account_id, **options)
     from .claude import ClaudeProvider
 
-    return ClaudeProvider(Path(credential_file), account_id, **options)
+    return ClaudeProvider(credential_file, account_id, **options)

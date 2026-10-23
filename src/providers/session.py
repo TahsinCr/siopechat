@@ -7,9 +7,30 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
 from .errors import AccountPaused, ProviderError, RateLimited, RemoteNotFound
+
+
+@runtime_checkable
+class CredentialStore(Protocol):
+    def load(self) -> dict: ...
+    def save(self, value: dict) -> None: ...
+    def exists(self) -> bool: ...
+    def delete(self) -> None: ...
+
+
+def session_exists(source):
+    return source.exists() if isinstance(source, CredentialStore) else Path(source).is_file()
+
+
+def delete_session(source):
+    if isinstance(source, CredentialStore):
+        source.delete()
+    else:
+        Path(source).unlink(missing_ok=True)
+
 
 _SESSION_WRITE_LOCKS = {}
 _SESSION_WRITE_LOCKS_GUARD = threading.Lock()
@@ -33,6 +54,14 @@ def _replace_with_retry(source, destination):
 
 
 def read_session(path):
+    if isinstance(path, CredentialStore):
+        try:
+            value = path.load()
+            if not isinstance(value, dict):
+                raise ValueError("session shape")
+            return value
+        except (OSError, ValueError):
+            raise AccountPaused("Kayıtlı oturum yok veya geçersiz; hesabı doğrulayın") from None
     path = Path(path)
     try:
         if path.stat().st_size > 1_048_576:
@@ -48,6 +77,9 @@ def read_session(path):
 
 
 def save_session(path, value, *, ensure_ascii=False, newline=False):
+    if isinstance(path, CredentialStore):
+        path.save(value)
+        return
     path = Path(path)
     with _session_write_lock(path):
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -78,7 +110,7 @@ class WebSession:
             raise ValueError("unsupported session origin")
         self.origin, self.path, self.required_cookie = (
             origin,
-            Path(credential_file),
+            credential_file,
             required_cookie,
         )
         self.factory, self.client, self.authenticated = client_factory, None, False

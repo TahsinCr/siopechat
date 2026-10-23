@@ -80,3 +80,5 @@ Offline API tests run after installation with:
 ```sh
 python -m unittest discover -s tests
 ```
+
+Gemini uses the bundled native HTTPS implementation. All three backends accept caller-owned credential storage through `providers.session.CredentialStore` (`load`, `save`, `exists`, `delete`); file paths remain supported. When creating ChatGPT with a credential store, supply `cache_directory` for its request-signing resources. Database implementations belong to the host application.

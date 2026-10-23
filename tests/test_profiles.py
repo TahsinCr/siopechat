@@ -381,9 +381,8 @@ class ProfileAccountTests(unittest.TestCase):
     setUp = test_accounts.AccountTests.setUp
 
     def test_rejected_candidate_preserves_current_session_and_verification(self):
-        path = self.accounts.credential_path(self.gemini)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text('{"__Secure-1PSID":"previous"}')
+        path = self.accounts.credentials(self.gemini)
+        path.save({"__Secure-1PSID": "previous"})
         self.accounts._remember_verification(self.gemini)
         candidate = Mock(
             authenticate=AsyncMock(side_effect=RuntimeError("rejected")), close=AsyncMock()
@@ -396,13 +395,13 @@ class ProfileAccountTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(RuntimeError, "rejected"):
                 self.accounts.session_action(self.gemini, "verify_profile")
-        self.assertEqual(json.loads(path.read_text()), {"__Secure-1PSID": "previous"})
+        self.assertEqual(path.load(), {"__Secure-1PSID": "previous"})
         self.assertTrue(self.accounts.status(self.gemini)["authenticated"])
         self.assertFalse(self.accounts._session_changes)
         candidate.close.assert_awaited_once()
 
     def test_success_saves_only_selected_account_after_remote_verification(self):
-        path = self.accounts.credential_path(self.gemini)
+        path = self.accounts.credentials(self.gemini)
         old = Mock(close=AsyncMock())
         self.accounts._providers[self.gemini] = old
         self.accounts._catalogs[self.gemini] = "old catalog"
@@ -423,11 +422,11 @@ class ProfileAccountTests(unittest.TestCase):
             state = self.accounts.session_action(self.gemini, "verify_profile")
         self.assertTrue(state["authenticated"])
         self.assertEqual(state["imported_browser"], "brave-origin")
-        self.assertEqual(json.loads(path.read_text()), {"__Secure-1PSID": "new"})
+        self.assertEqual(path.load(), {"__Secure-1PSID": "new"})
         self.assertNotIn(self.gemini, self.accounts._catalogs)
-        self.assertFalse(self.accounts.credential_path("chatgpt/default").exists())
+        self.assertFalse(self.accounts.credentials("chatgpt/default").exists())
         if os.name != "nt":
-            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(self.accounts.repository.path.stat().st_mode & 0o777, 0o600)
         old.close.assert_awaited_once()
 
     def test_import_is_blocked_during_send_before_reading_profile(self):

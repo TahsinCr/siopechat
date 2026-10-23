@@ -1,4 +1,4 @@
-"""Gemini notebook RPCs through the authenticated SDK HTTP session."""
+"""Gemini notebook RPCs through the account-owned HTTP session."""
 
 import json
 from dataclasses import dataclass
@@ -23,10 +23,9 @@ class NotebookRPC:
     async def call(self, rpc, args, source_path="/notebooks/view", allow_empty=False):
 
         client = await self.connect()
-        response = await client._batch_execute(
+        response = await client.batch(
             [RPCPayload(rpcid=rpc, payload=json.dumps(args))],
             source_path=source_path,
-            current_retry=0,
         )
         parts = []
         for line in response.text.splitlines():

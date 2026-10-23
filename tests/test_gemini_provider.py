@@ -1,158 +1,221 @@
-"""Gemini adapter contracts with no Google account traffic."""
+"""Native Gemini protocol tests; no Gemini SDK imports or SDK-shaped mocks."""
 
+import asyncio
 import json
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
-from providers import ConversationBound, ReplaceText, SendRequest
+from providers import SendRequest
+from providers.errors import ProviderError
 from providers.gemini import GeminiProvider
+from providers.gemini.session import GeminiSession
+from providers.gemini.transport import Frames, generation_request, upload_files
+from providers.models import Model
 
 
-class GeminiTests(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
-        self.folder = tempfile.TemporaryDirectory()
-        self.addCleanup(self.folder.cleanup)
-        cookie_file = Path(self.folder.name) / "cookies.json"
-        cookie_file.write_text(json.dumps({"__Secure-1PSID": "fake-test-cookie"}))
-        self.client = Mock()
-        self.client.init = AsyncMock()
-        self.client.close = AsyncMock()
+class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
+    async def test_repeated_catalog_discovery_refreshes_account_entitlements(self):
+        provider = GeminiProvider(Path("unused"))
+        first, second = Model("first", "First"), Model("second", "Second")
+        session = SimpleNamespace(
+            models=(first,), discover_models=AsyncMock(return_value=(second,))
+        )
+        provider._connect = AsyncMock(return_value=session)
+        self.assertEqual((await provider.models()).models, (first,))
+        self.assertEqual((await provider.models()).models, (second,))
+        session.discover_models.assert_awaited_once()
 
-        async def generate_content_stream(prompt, extended_thinking=False):
-            yield None
+    def test_frames_handle_utf8_boundaries_lengths_and_multiple_packets(self):
+        frame = [["wrb.fr", None, json.dumps(["Türkçe"])]]
+        wire = (")]}'\n\n123\n" + json.dumps(frame, ensure_ascii=False) + "\n").encode()
+        parser = Frames()
+        output = []
+        for byte in wire:
+            output.extend(parser.feed(bytes([byte])))
+        output.extend(parser.feed(b"", final=True))
+        self.assertEqual(output, frame)
+        self.assertEqual(parser.pending, "")
 
-        self.client.generate_content_stream = generate_content_stream
-        self.client.list_models.return_value = [
-            SimpleNamespace(
-                model_name="dynamic",
-                display_name="Account model",
-                model_id="id",
-                description="",
-                is_available=True,
-            )
-        ]
-        self.provider = GeminiProvider(cookie_file, "test", client_factory=lambda *_: self.client)
-        self.addAsyncCleanup(self.provider.close)
+    def test_frame_size_and_invalid_json_are_rejected(self):
+        with self.assertRaises(ProviderError):
+            list(Frames().feed(b"x" * (8 * 1024 * 1024 + 1)))
+        with self.assertRaises(ProviderError):
+            list(Frames().feed(b"[[invalid\n"))
 
-    async def test_sdk_logging_is_quiet_without_removing_host_sinks(self):
-        try:
-            import gemini_webapi
-            from gemini_webapi.utils.logger import logger as sdk_logger
-            from loguru import logger
-        except ImportError:
-            self.skipTest("Gemini SDK requires Python 3.11+")
-        records = []
-        sink = logger.add(lambda message: records.append(message.record), level="TRACE")
-        namespace = {"__name__": "gemini_webapi.client", "logger": sdk_logger}
-        exec("def emit():\n    logger.info('quota test')", namespace)
-
-        async def initialize(**kwargs):
-            namespace["emit"]()
-
-        self.client.init.side_effect = initialize
-        provider = GeminiProvider(self.provider.cookie_file)
-        try:
-            with (
-                patch.object(gemini_webapi, "GeminiClient", return_value=self.client),
-                patch(
-                    "providers.gemini.session.owned_client_type",
-                    side_effect=lambda base, path: base,
-                ),
-                patch(
-                    "providers.gemini.transport.notebook_client_type", side_effect=lambda base: base
-                ),
-            ):
-                await provider.models()
-            self.assertFalse(any(r["name"].startswith("gemini_webapi") for r in records))
-            # Disabling is namespace scoped; it must not remove the caller's sink.
-            self.assertIn(sink, logger._core.handlers)
-        finally:
-            await provider.close()
-            logger.remove(sink)
-            logger.enable("gemini_webapi")
-
-    async def test_models_use_account_names_and_real_extended_flag(self):
-        catalog = await self.provider.models()
-        self.assertEqual(catalog.models[0].id, "dynamic")
+    def test_model_selection_notebook_temporary_and_effort_are_native(self):
+        model = Model(
+            "dynamic",
+            "Dynamic",
+            metadata={"model_id": "remote", "capacity": 2, "capacity_slot": 12, "number": 3},
+        )
+        session = SimpleNamespace(
+            models=(model,), language="en", token="test", session_id="session"
+        )
+        request = SendRequest(
+            "gemini", "test", "local", "hello", model="dynamic", effort="extended", temporary=True
+        )
+        headers, data = generation_request(session, request, ["cid"], [], ("notebooks/test", [2]))
+        body = json.loads(json.loads(data["f.req"])[1])
         self.assertEqual(
-            [choice.id for choice in catalog.models[0].efforts], ["standard", "extended"]
+            (body[19], body[40][13], body[45], body[79], body[80]), ("notebooks/test", [2], 1, 3, 2)
         )
-        await self.provider.models()
-        self.assertEqual(self.client.init.await_count, 1)
-
-    async def test_history_preserves_thoughts_before_final(self):
-        self.client.read_chat = AsyncMock(
-            return_value=SimpleNamespace(
-                turns=[
-                    SimpleNamespace(
-                        role="model",
-                        text="Answer",
-                        model_output=SimpleNamespace(thoughts="Thought"),
-                    ),
-                    SimpleNamespace(role="user", text="Question", model_output=None),
-                ]
+        selector = json.loads(headers["x-goog-ext-525001261-jspb"])
+        self.assertEqual(selector[11], 2)
+        with self.assertRaises(ValueError):
+            generation_request(
+                session,
+                SendRequest("gemini", "test", "local", "hello", model="unavailable"),
+                [],
+                [],
             )
+
+    async def test_uploads_use_local_paths_serially_and_close_mime(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = [Path(directory) / name for name in ("one.txt", "two.txt")]
+            for path in paths:
+                path.write_text("fixture")
+            http = SimpleNamespace(
+                post=AsyncMock(
+                    return_value=SimpleNamespace(status_code=200, text="uploaded", headers={})
+                )
+            )
+            session = SimpleNamespace(http=http, push_id="push")
+            with patch(
+                "pathlib.Path.read_bytes", side_effect=AssertionError("must stream from disk")
+            ):
+                files = await upload_files(session, paths)
+            self.assertEqual([item[1] for item in files], ["one.txt", "two.txt"])
+            self.assertEqual(http.post.await_count, 2)
+
+    async def test_rpc_is_account_owned_and_never_retries_writes(self):
+        from providers.gemini.rpc import NotebookRPC
+
+        client = SimpleNamespace(
+            batch=AsyncMock(return_value=SimpleNamespace(text='[["wrb.fr","rpc","[]"]]\n'))
         )
-        self.client.list_chats.return_value = [SimpleNamespace(cid="c_test", title="Demo")]
-        chat = await self.provider.get_chat("c_test")
-        self.assertEqual([m.role for m in chat.messages], ["user", "assistant", "assistant"])
-        self.assertEqual(chat.messages[1].channel, "analysis")
-        self.assertEqual(chat.origin.account_id, "test")
+        rpc = NotebookRPC(AsyncMock(return_value=client))
+        self.assertEqual(await rpc.call("rpc", ["test"]), [[]])
+        client.batch.assert_awaited_once()
+        client.batch.return_value.text = "invalid"
+        with self.assertRaises(ProviderError):
+            await rpc.call("rpc", [])
 
-    async def test_cid_without_answer_is_not_success_and_bad_session_is_paused(self):
-        from providers import SendRequest
-        from providers.errors import AccountPaused, ProviderError
+    async def test_close_cancels_and_joins_refresh_then_closes_http(self):
+        session = GeminiSession(Path("unused"))
+        session.http = SimpleNamespace(close=AsyncMock())
+        http = session.http
+        task = session.refresh_task = asyncio.create_task(asyncio.sleep(3600))
+        await session.close()
+        self.assertTrue(task.cancelled())
+        http.close.assert_awaited_once()
+        await session.close()
 
-        async def empty(prompt, **options):
-            yield SimpleNamespace(text="", thoughts=None)
+    async def test_history_preserves_thoughts_and_stable_ids(self):
+        provider = GeminiProvider(Path("unused"), "test")
+        candidate = [None] * 38
+        candidate[0], candidate[1], candidate[37] = "rcid", ["Answer"], [["Thought"]]
+        turn = [["cid", "rid"], None, [["Question"]], [[candidate]]]
+        provider.rpc.call = AsyncMock(return_value=[[[turn]]])
+        history = await provider.get_chat("cid")
+        self.assertEqual([m.channel for m in history.messages], [None, "analysis", None])
+        self.assertEqual(history.messages[-1].id, "rid:model")
 
-        chat = SimpleNamespace(cid="c_empty", metadata=[], send_message_stream=empty)
-        self.client.start_chat.return_value = chat
+
+class StreamTests(unittest.IsolatedAsyncioTestCase):
+    def session(self, response):
+        from contextlib import asynccontextmanager
+
+        @asynccontextmanager
+        async def stream(*args, **kwargs):
+            try:
+                yield response
+            finally:
+                response.closed = True
+
+        return SimpleNamespace(
+            http=SimpleNamespace(stream=stream),
+            models=(),
+            language="en",
+            token="test",
+            session_id="test",
+            params=lambda: {},
+            persist=AsyncMock(),
+        )
+
+    def response(self, payloads):
+        async def content():
+            for payload in payloads:
+                yield payload
+
+        return SimpleNamespace(status_code=200, headers={}, aiter_content=content, closed=False)
+
+    async def test_completed_stream_preserves_text_thoughts_and_cid(self):
+        from providers.gemini.transport import generate
+
+        candidate = [None] * 38
+        candidate[0], candidate[1], candidate[8], candidate[37] = (
+            "rcid",
+            ["answer"],
+            [2],
+            [["thought"]],
+        )
+        body = [None, ["c_new", "rid"], None, None, [candidate]]
+        wire = (json.dumps([["wrb.fr", None, json.dumps(body)]]) + "\n").encode()
+        response = self.response([wire[:20], wire[20:]])
+        session = self.session(response)
+        result = [
+            c
+            async for c in generate(session, SendRequest("gemini", "test", "local", "question"), [])
+        ]
+        self.assertEqual(
+            (result[0]["cid"], result[0]["text"], result[0]["thoughts"]),
+            ("c_new", "answer", "thought"),
+        )
+        self.assertTrue(response.closed)
+        session.persist.assert_awaited_once()
+
+    async def test_incomplete_stream_is_not_success_or_retried(self):
+        from providers.gemini.transport import generate
+
+        response = self.response([b""])
+        session = self.session(response)
         with self.assertRaises(ProviderError):
             _ = [
-                event
-                async for event in self.provider.stream(
-                    SendRequest("gemini", "test", "local", "Question")
+                c
+                async for c in generate(
+                    session, SendRequest("gemini", "test", "local", "question"), []
                 )
             ]
-        await self.provider.close()
-        self.provider.cookie_file.write_text("{invalid")
-        with self.assertRaises(AccountPaused):
-            await self.provider._connect()
+        self.assertTrue(response.closed)
+        session.persist.assert_not_awaited()
 
-    async def test_stream_does_not_resend_and_passes_files_and_effort(self):
-        async def stream(prompt, **kwargs):
-            yield SimpleNamespace(text="Answer", thoughts="Summary")
+    async def test_cancellation_closes_stream_without_resending(self):
+        from providers.gemini.transport import generate
 
-        chat = SimpleNamespace(
-            cid="c_test", metadata=["c_test"], send_message_stream=Mock(side_effect=stream)
-        )
-        self.client.start_chat.return_value = chat
-        events = [
-            event
-            async for event in self.provider.stream(
-                SendRequest(
-                    "gemini",
-                    "test",
-                    "local",
-                    "Question",
-                    model="dynamic",
-                    effort="extended",
-                    attachments=({"path": "/tmp/fake-file"},),
-                )
-            )
-        ]
-        self.assertEqual(events[0], ConversationBound("c_test"))
-        self.assertEqual(events[1], ReplaceText("Summary", "analysis"))
-        self.assertTrue(chat.send_message_stream.call_args.kwargs["extended_thinking"])
-        self.assertEqual(chat.send_message_stream.call_count, 1)
-        with self.assertRaises(ValueError):
-            _ = [
-                event
-                async for event in self.provider.stream(
-                    SendRequest("gemini", "other", "local", "Q")
+        entered = asyncio.Event()
+
+        async def content():
+            entered.set()
+            await asyncio.Future()
+            yield b""
+
+        response = self.response([])
+        response.aiter_content = content
+
+        async def consume():
+            return [
+                c
+                async for c in generate(
+                    self.session(response), SendRequest("gemini", "test", "local", "question"), []
                 )
             ]
+
+        task = asyncio.create_task(consume())
+        await entered.wait()
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertTrue(response.closed)

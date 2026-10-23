@@ -14,10 +14,11 @@ import time
 import uuid
 from concurrent.futures import CancelledError, Future
 from concurrent.futures import TimeoutError as FutureTimeout
-from dataclasses import asdict, replace
+from dataclasses import asdict, fields, replace
 from pathlib import Path
 from urllib.parse import quote, unquote
 
+from account_repository import AccountRepository
 from backend import BackendService
 from providers import Capability, ReplaceText, SendRequest, TextDelta
 from providers.chatgpt import BrowserSession, ChatGPTClient, ChatGPTProvider, SessionPaths
@@ -27,7 +28,7 @@ from providers.gemini import GeminiProvider
 from providers.models import FeatureState, ModelCatalog, SessionState
 from providers.profiles import import_cookies
 from providers.registry import PROVIDERS
-from providers.session import read_session, save_session
+from providers.session import read_session, save_session, session_exists
 from utils.compatibility import ExceptionGroup
 
 CATALOG_SCHEMA = 2
@@ -47,6 +48,11 @@ def origin(value, fallback="chatgpt/default"):
     return fallback, value
 
 
+def _shallow_dataclass(value):
+    """Project provider records without recursively duplicating metadata trees."""
+    return {item.name: getattr(value, item.name) for item in fields(value)}
+
+
 class Accounts:
     def __init__(self, api):
         self.api = api
@@ -54,7 +60,10 @@ class Accounts:
         self.closed = False
         self._chat_projects = {}
         self.root = api.get("paths")
+        self.repository = AccountRepository(self.root / "data" / "accounts.sqlite3")
         self._providers = {}
+        self._credential_stores = {}
+        self._credential_lock = threading.Lock()
         self.cdp_url = None
         self._verified = set()
         self._catalogs = {}
@@ -70,13 +79,26 @@ class Accounts:
         self._active_pending = {}
         self._active_values = {}
         self._active_writer_running = False
-        cache = self.root / "data" / "gemini-cookie-cache"
-        cache.mkdir(parents=True, mode=0o700, exist_ok=True)
-        if os.name != "nt":
-            cache.chmod(0o700)
-        # The SDK requires one process cache root. Explicit cookies are always
-        # supplied; its per-session cache lookup cannot fall back to another SID.
-        os.environ.setdefault("GEMINI_COOKIE_PATH", str(cache))
+        for item in self.items():
+            key = item["key"]
+            for kind, filename in (
+                ("catalog", "models.json"),
+                ("verification", "verification.json"),
+            ):
+                path = self.directory(key) / filename
+                if not path.is_file():
+                    continue
+                try:
+                    if path.stat().st_size > 256 * 1024:
+                        continue
+                    value = json.loads(path.read_text(encoding="utf-8"))
+                    if not isinstance(value, dict) or value.get("account_key") != key:
+                        continue
+                    if self.repository.get(key, kind) is None:
+                        self.repository.put(key, kind, value)
+                    path.unlink(missing_ok=True)
+                except (OSError, ValueError):
+                    continue
 
     def items(self):
         config = self.settings.snapshot()
@@ -129,11 +151,13 @@ class Accounts:
         except LookupError:
             return None
 
-    def read_record(self, key, kind, remote, fetch, force=False, *, window=False):
+    def read_record(self, key, kind, remote, fetch, force=False, *, window=False, fresh=False):
         archive = self.archive()
         if archive:
             try:
                 options = {"window": True} if window else {}
+                if fresh:
+                    options["fresh"] = True
                 return archive.read(key, kind, remote or "", fetch, force=force, **options)
             except OSError:
                 return fetch()
@@ -207,11 +231,6 @@ class Accounts:
             # Reject before closing clients or touching credentials.
             if not any(item["key"] != key and item["enabled"] for item in self.items()):
                 raise ValueError("Son etkin hesap silinemez; önce başka bir hesap ekleyin")
-            files = [
-                self.credential_path(key),
-                self._verification_path(key),
-                self.directory(key) / "models.json",
-            ]
 
             async def release():
                 task = self._catalog_tasks.get(key)
@@ -224,13 +243,14 @@ class Accounts:
 
             self.call(release())
             # A failed credential removal must not report successful deletion.
-            for path in files:
-                path.unlink(missing_ok=True)
+            self.repository.delete(key)
             active = self.settings.remove_account(key)
             with self._catalog_io_lock:
                 self._catalog_versions[key] = self._catalog_versions.get(key, 0) + 1
                 self._catalogs.pop(key, None)
             self._providers.pop(key, None)
+            with self._credential_lock:
+                self._credential_stores.pop(key, None)
             self._verified.discard(key)
             with self._lock:
                 self._active_pending.pop(key, None)
@@ -249,24 +269,42 @@ class Accounts:
         item = self.item(key)
         if item.get("browser_account"):
             return self.session(item["browser_account"])
+        directory = self.directory(key)
         if key == "chatgpt/default":
-            return self.api.get("backend").create_session(
+            session = self.api.get("backend").create_session(
                 self.cdp_url or f"http://127.0.0.1:{item['port']}"
             )
-        directory = self.directory(key)
+            return BrowserSession(
+                replace(session.paths, session_file=self.credentials(key)), session.cdp_url
+            )
         return BrowserSession(
-            SessionPaths(
-                directory / "session.json", directory / "cache", directory / "chrome-profile"
-            ),
+            SessionPaths(self.credentials(key), directory / "cache", directory / "chrome-profile"),
             f"http://127.0.0.1:{item['port']}",
         )
 
-    def credential_path(self, key):
-        if key.startswith("chatgpt/"):
-            return self.session(key).paths.session_file
-        return self.directory(key) / (
-            "native.json" if key.startswith("claude/") else "cookies.json"
-        )
+    def credentials(self, key):
+        with self._credential_lock:
+            existing = self._credential_stores.get(key)
+            if existing is not None:
+                return existing
+            store = self.repository.credentials(key)
+            if not store.exists():
+                directory = self.directory(key)
+                if key == "chatgpt/default":
+                    old = self.api.get("backend").auth_store_path()
+                else:
+                    old = directory / (
+                        "session.json"
+                        if key.startswith("chatgpt/")
+                        else "native.json"
+                        if key.startswith("claude/")
+                        else "cookies.json"
+                    )
+                if old.is_file():
+                    store.save(read_session(old))
+                    old.unlink(missing_ok=True)
+            self._credential_stores[key] = store
+            return store
 
     def capabilities(self, key):
         return self.provider(key).capabilities
@@ -275,7 +313,7 @@ class Accounts:
         with self._lock:
             if key not in self._providers:
                 item = self.item(key)
-                configuration = {"credential_file": self.credential_path(key)}
+                configuration = {"credential_file": self.credentials(key)}
                 if item["provider"] == "chatgpt":
                     configuration["session"] = self.session(key)
                 provider = self.api.providers.create_account(
@@ -391,11 +429,10 @@ class Accounts:
         cached = self._catalogs.get(key)
         if cached:
             return cached[1]
-        path = self.directory(key) / "models.json"
         try:
-            if path.stat().st_size > 256 * 1024:
+            record = self.repository.get(key, "catalog")
+            if record is None:
                 return None
-            record = json.loads(path.read_text(encoding="utf-8"))
             if record.get("account_key") != key or record.get("schema") != CATALOG_SCHEMA:
                 return None
             catalog = ModelCatalog.from_dict(record["catalog"])
@@ -447,8 +484,9 @@ class Accounts:
                                 ):
                                     self._remember_verification(key)
                                 try:
-                                    self.api.get("backend").atomic_json_write(
-                                        self.directory(key) / "models.json",
+                                    self.repository.put(
+                                        key,
+                                        "catalog",
                                         {
                                             "schema": CATALOG_SCHEMA,
                                             "account_key": key,
@@ -555,9 +593,6 @@ class Accounts:
         except OSError:
             return False
 
-    def _verification_path(self, key):
-        return self.directory(key) / "verification.json"
-
     def _remember_verification(self, key, *, resume=False):
         self._verified.add(key)
         if resume and self._loop is not None and self._loop.is_running():
@@ -570,8 +605,8 @@ class Accounts:
 
             self._loop.call_soon_threadsafe(resume_job_account)
         try:
-            self.api.get("backend").atomic_json_write(
-                self._verification_path(key), {"account_key": key, "verified_at": time.time()}
+            self.repository.put(
+                key, "verification", {"account_key": key, "verified_at": time.time()}
             )
         except OSError:
             # Persistence failure cannot invalidate an authenticated provider reply.
@@ -579,7 +614,7 @@ class Accounts:
 
     def _forget_verification(self, key):
         self._verified.discard(key)
-        self._verification_path(key).unlink(missing_ok=True)
+        self.repository.delete(key, "verification")
         transport = getattr(self._providers.get(key), "transport", None)
         if transport is not None:
             transport.authenticated = False
@@ -593,8 +628,8 @@ class Accounts:
                 "provider": "",
                 "transport": "http",
             }
-        path = self.credential_path(key)
-        saved = path.is_file()
+        path = self.credentials(key)
+        saved = session_exists(path)
         verified = (
             key in self._verified
             or getattr(getattr(self._providers.get(key), "transport", None), "authenticated", False)
@@ -602,9 +637,8 @@ class Accounts:
         )
         if not verified:
             try:
-                marker = self._verification_path(key)
-                if marker.stat().st_size <= 4096:
-                    verified = json.loads(marker.read_text()).get("account_key") == key
+                marker = self.repository.get(key, "verification")
+                verified = bool(marker and marker.get("account_key") == key)
             except (OSError, ValueError, AttributeError):
                 pass
         return {
@@ -659,11 +693,11 @@ class Accounts:
                         await previous.close()
                     # No background catalog may persist the old account snapshot.
                     with self._catalog_io_lock:
-                        save_session(self.credential_path(key), value)
+                        save_session(self.credentials(key), value)
                         self._providers.pop(key, None)
                         self._catalog_versions[key] = self._catalog_versions.get(key, 0) + 1
                         self._catalogs.pop(key, None)
-                        (self.directory(key) / "models.json").unlink(missing_ok=True)
+                        self.repository.delete(key, "catalog")
                     self._remember_verification(key, resume=True)
 
             self.call(verify_candidate(), timeout=90)
@@ -719,7 +753,7 @@ class Accounts:
             with self._catalog_io_lock:
                 self._catalog_versions[key] = self._catalog_versions.get(key, 0) + 1
                 self._catalogs.pop(key, None)
-                (self.directory(key) / "models.json").unlink(missing_ok=True)
+                self.repository.delete(key, "catalog")
 
             async def forget():
                 task = self._catalog_tasks.get(key)
@@ -753,7 +787,7 @@ class Accounts:
                 directory = self.directory(key)
                 directory.mkdir(mode=0o700, parents=True, exist_ok=True)
                 self.call(provider.close())
-                self.api.get("backend").atomic_json_write(self.credential_path(key), cookies)
+                save_session(self.credentials(key), cookies)
             try:
                 status = self.call(provider.authenticate())
             except AccountPaused:
@@ -856,6 +890,8 @@ class Accounts:
         return BackendService(self.directory(key), legacy_fallback=key == "chatgpt/default")
 
     def chat_record(self, key, chat):
+        if chat.metadata.get("project_membership_known") and not chat.project_id:
+            self._chat_projects.pop((key, chat.origin.remote_id), None)
         if chat.project_id:
             self._chat_projects[key, chat.origin.remote_id] = chat.project_id
             if len(self._chat_projects) > 2048:
@@ -877,7 +913,17 @@ class Accounts:
                     "role": message.role,
                     "channel": message.channel,
                     "text": "\n".join(content.text or "" for content in message.content),
-                    "content": [asdict(content) for content in message.content],
+                    "content": [
+                        dict(
+                            _shallow_dataclass(content),
+                            resource=(
+                                _shallow_dataclass(content.resource)
+                                if content.resource is not None
+                                else None
+                            ),
+                        )
+                        for content in message.content
+                    ],
                     "metadata": message.metadata,
                 }
                 for message in chat.messages
@@ -893,7 +939,6 @@ class Accounts:
             and self.enabled(item["provider"])
             and (selected is None or item["provider"] in selected)
             and (cursors is None or item["key"] in cursors)
-            and self.status(item["key"])["saved_snapshot"]
         ]
 
         def page_for(account):
@@ -912,7 +957,7 @@ class Accounts:
                     and len(page.items) < 50,
                 }
 
-            page = self.read_record(key, "chats", page_cursor, fetch, force)
+            page = self.read_record(key, "chats", page_cursor, fetch, force, fresh=force)
             # Closed or tombstoned list-page cache entries must not hide the
             # provider's live chat list. Conversation tombstones remain enforced
             # when the fetched page is normalized by the archive.
@@ -920,7 +965,7 @@ class Accounts:
 
         from concurrent.futures import ThreadPoolExecutor
 
-        with ThreadPoolExecutor(max_workers=max(1, len(accounts))) as pool:
+        with ThreadPoolExecutor(max_workers=min(6, max(1, len(accounts)))) as pool:
             futures = [pool.submit(page_for, account) for account in accounts]
             pages = []
             for future in futures:
@@ -956,7 +1001,7 @@ class Accounts:
                 "cursor": page.next_cursor,
             }
 
-        return self.read_record(key, "containers", cursor, fetch, force)
+        return self.read_record(key, "containers", cursor, fetch, force, fresh=force)
 
     def all_projects(self, cursor=None, force=False, account_keys=None, on_account=None):
         from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -968,12 +1013,6 @@ class Accounts:
             if self.enabled(item["provider"])
             and (account_keys is None or item["key"] in account_keys)
             and (cursors is None or item["key"] in cursors)
-            and (
-                self.status(item["key"])["saved_snapshot"]
-                or (
-                    self.archive() and self.archive().get(item["key"], "containers", "") is not None
-                )
-            )
         ]
         items, errors, failed, more = [], [], [], {}
 
@@ -1640,6 +1679,22 @@ class Accounts:
         context, remote = origin(value, key)
         if context != key or not remote:
             raise ValueError("Proje seçili hesaba ait olmalı")
+        if not self.status(key)["saved_snapshot"]:
+            archive = self.archive()
+            cached = archive.get(key, "container", remote) if archive else None
+            if cached is None and archive:
+                cached = next(
+                    (
+                        item
+                        for item in archive.containers(key, limit=500)
+                        if item.get("remote_id") == remote
+                        or origin(item.get("id"), key)[1] == remote
+                    ),
+                    None,
+                )
+            if cached is None:
+                raise RuntimeError("Kayıtlı oturum yok; Hesaplar bölümünden doğrulayın")
+            return dict(cached, requires_auth=True)
         return self.store_project(key, self.call(self.provider(key).get_project(remote)))
 
     def store_project(self, key, project):
@@ -1662,6 +1717,7 @@ class Accounts:
                         ):
                             items.insert(0, record)
                         archive.put(key, "containers", state["remote"], dict(page, items=items))
+                archive.mark_ready(key, "container", project.origin.remote_id)
             except OSError:
                 record["cache_warning"] = "Proje güncellendi ancak yerel arşiv kaydı tamamlanamadı"
         return record
@@ -1810,7 +1866,11 @@ class Accounts:
                 }
 
             return self.read_record(
-                context, "container_chats", remote + ":" + (cursor or ""), fetch
+                context,
+                "container_chats",
+                remote + ":" + (cursor or ""),
+                fetch,
+                fresh=True,
             )
 
         def move(chat, project):

@@ -1,6 +1,7 @@
 """Deterministic races and slow-storage probes; no remote provider traffic."""
 
 import asyncio
+import hashlib
 import tempfile
 import threading
 import unittest
@@ -10,7 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 from accounts import identity
-from extensions.archive.repository import Files, SQLiteRepository
+from extensions.archive.repository import Files, SQLiteRepository, encode
 from extensions.archive.sync import Archive
 from providers import ConversationBound, ReplaceText
 from providers.models import FeatureState, Model, ModelCatalog
@@ -66,6 +67,124 @@ class SyncConcurrencyTests(unittest.TestCase):
             finally:
                 release.set()
             self.assertEqual(waiting.result(2)["title"], "new local")
+
+    def test_long_history_refresh_merges_only_the_changed_sql_tail(self):
+        account, remote = "gemini/a", "long-chat"
+        key = account, "conversation", remote
+        history = [{"id": f"m{i}", "role": "user", "text": f"archived-{i}"} for i in range(1000)]
+        self.archive.put(
+            account,
+            "conversation",
+            remote,
+            {"history_complete": True, "messages": history},
+        )
+        entered, release = threading.Event(), threading.Event()
+
+        def fetch():
+            entered.set()
+            if not release.wait(3):
+                raise TimeoutError("test barrier")
+            return {"history_complete": True, "messages": history}
+
+        with (
+            patch.object(self.repo, "get", wraps=self.repo.get) as full_read,
+            patch.object(self.repo, "messages", wraps=self.repo.messages) as page_read,
+        ):
+            self.archive.read(account, "conversation", remote, fetch, force=True, window=True)
+            self.assertTrue(entered.wait(1))
+            future = self.archive._pending[key]
+            try:
+                self.archive.save_turn(
+                    account,
+                    remote,
+                    {
+                        "messages": [
+                            {"role": "user", "text": "new question", "local_pending": True},
+                            {
+                                "role": "assistant",
+                                "text": "accepted answer",
+                                "local_pending": True,
+                            },
+                        ]
+                    },
+                )
+            finally:
+                release.set()
+            future.result(3)
+
+        self.assertEqual(full_read.call_count, 0)
+        self.assertTrue(page_read.called)
+        args, kwargs = page_read.call_args_list[0]
+        self.assertEqual(kwargs.get("offset", args[3] if len(args) > 3 else None), 920)
+        window = self.archive.conversation_window(account, remote, limit=3)
+        self.assertEqual(
+            [item["text"] for item in window["messages"]],
+            ["archived-999", "new question", "accepted answer"],
+        )
+
+    def test_partial_provider_refresh_preserves_sql_prefix_and_concurrent_send(self):
+        account, remote = "gemini/a", "partial-chat"
+        key = account, "conversation", remote
+        history = [{"id": f"m{i}", "role": "user", "text": f"archived-{i}"} for i in range(1200)]
+        self.archive.put(
+            account,
+            "conversation",
+            remote,
+            {"history_complete": True, "messages": history},
+        )
+        entered, release = threading.Event(), threading.Event()
+
+        def fetch():
+            entered.set()
+            if not release.wait(3):
+                raise TimeoutError("test barrier")
+            return {"history_complete": False, "messages": history[600:]}
+
+        with (
+            patch.object(self.repo, "get", wraps=self.repo.get) as full_read,
+            patch.object(self.repo, "messages", wraps=self.repo.messages) as page_read,
+        ):
+            self.archive.read(account, "conversation", remote, fetch, force=True, window=True)
+            self.assertTrue(entered.wait(1))
+            future = self.archive._pending[key]
+            try:
+                self.archive.save_turn(
+                    account,
+                    remote,
+                    {
+                        "messages": [
+                            {"role": "user", "text": "new question", "local_pending": True},
+                            {
+                                "role": "assistant",
+                                "text": "accepted answer",
+                                "local_pending": True,
+                            },
+                        ]
+                    },
+                )
+            finally:
+                release.set()
+            future.result(3)
+
+        self.assertEqual(full_read.call_count, 0)
+        self.assertTrue(page_read.called)
+        args, kwargs = page_read.call_args_list[0]
+        self.assertEqual(kwargs.get("offset", args[3] if len(args) > 3 else None), 520)
+        first = self.archive.conversation_window(account, remote, start=0, limit=1)
+        tail = self.archive.conversation_window(account, remote, limit=3)
+        self.assertEqual(first["messages"][0]["text"], "archived-0")
+        self.assertEqual(tail["history_window"]["total"], 1202)
+        self.assertEqual(
+            [item["text"] for item in tail["messages"]],
+            ["archived-1199", "new question", "accepted answer"],
+        )
+        value = self.repo.get(account, "conversation", remote)
+        with self.repo._connect() as db:
+            digest = db.execute(
+                "SELECT digest FROM records WHERE account=? AND kind='conversation' AND remote=?",
+                (account, remote),
+            ).fetchone()[0]
+        self.assertEqual(digest, hashlib.sha256(encode(value).encode()).hexdigest())
 
     def test_cold_snapshot_cannot_replace_a_concurrent_new_write_in_hot_cache(self):
         self.archive.put("gemini/a", "conversation", "one", {"title": "old"})
@@ -401,25 +520,24 @@ class AccountConcurrencyTests(unittest.TestCase):
 
     def test_catalog_disk_write_does_not_block_the_provider_loop(self):
         entered, release = threading.Event(), threading.Event()
-        backend = self.api.get("backend")
-        original = backend.atomic_json_write
+        original = self.accounts.repository.put
         self.accounts._providers[self.gemini].models = AsyncMock(
             return_value=ModelCatalog(FeatureState.AVAILABLE, (Model("fixture", "Fixture"),))
         )
 
-        def slow(path, value):
-            if path.name == "models.json":
+        def slow(key, kind, value):
+            if kind == "catalog":
                 entered.set()
                 if not release.wait(3):
                     raise TimeoutError("test barrier")
-            return original(path, value)
+            return original(key, kind, value)
 
         async def pulse():
             await asyncio.sleep(0)
             return "responsive"
 
         with (
-            patch.object(backend, "atomic_json_write", side_effect=slow),
+            patch.object(self.accounts.repository, "put", side_effect=slow),
             ThreadPoolExecutor(1) as pool,
         ):
             discovering = pool.submit(self.accounts.models, self.gemini, True)

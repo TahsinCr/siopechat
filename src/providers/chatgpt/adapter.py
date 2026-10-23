@@ -32,6 +32,7 @@ from ..models import (
     SessionStatus,
 )
 from ..projects import ProjectEditing
+from ..session import delete_session, session_exists
 from .client import ChatGPTClient
 from .discovery import project_id
 from .errors import SentinelCompatibilityError
@@ -136,7 +137,7 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
         await self.editor.close()
 
     async def session_status(self) -> SessionStatus:
-        saved = self.session.paths.session_file.is_file()
+        saved = session_exists(self.session.paths.session_file)
         return SessionStatus(
             SessionState.UNKNOWN if saved else SessionState.LOGIN_REQUIRED,
             saved,
@@ -148,7 +149,7 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
             await asyncio.to_thread(self.session.launch)
         return SessionStatus(
             SessionState.UNKNOWN,
-            self.session.paths.session_file.is_file(),
+            session_exists(self.session.paths.session_file),
             "complete_login_in_browser_then_authenticate",
         )
 
@@ -162,11 +163,13 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
 
         async with self._gate:
             await asyncio.to_thread(verify)
-        return SessionStatus(SessionState.AUTHENTICATED, self.session.paths.session_file.is_file())
+        return SessionStatus(
+            SessionState.AUTHENTICATED, session_exists(self.session.paths.session_file)
+        )
 
     async def forget_session(self) -> SessionStatus:
         async with self._gate:
-            await asyncio.to_thread(self.session.paths.session_file.unlink, missing_ok=True)
+            await asyncio.to_thread(delete_session, self.session.paths.session_file)
             self._temporary_conversations.clear()
         return SessionStatus(SessionState.LOGIN_REQUIRED, False, "browser_session_retained")
 
@@ -344,10 +347,13 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
     async def get_chat(self, conversation_id: str) -> Conversation:
         def read():
             with self._factory(self.session) as client:
-                return client.get_conversation(conversation_id)
+                raw = client.get_conversation(conversation_id)
+            # Parse large native histories on the worker that performed the HTTP
+            # read. This keeps the shared provider event loop available to sends.
+            return self._conversation(raw)
 
         async with self._gate:
-            return self._conversation(await asyncio.to_thread(read))
+            return await asyncio.to_thread(read)
 
     async def resolve_download(self, url, conversation_id=None, message_id=None):
         from urllib.parse import quote, unquote, urlsplit

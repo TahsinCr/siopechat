@@ -17,6 +17,15 @@ def encode(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def _digest_json(value):
+    """Hash canonical JSON incrementally so large histories need no full JSON copy."""
+    digest = hashlib.sha256()
+    encoder = json.JSONEncoder(ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    for part in encoder.iterencode(value):
+        digest.update(part.encode("utf-8"))
+    return digest.hexdigest()
+
+
 def conversation_header(value):
     """Listing/window headers must not retain provider-native copies of the body."""
     return {
@@ -66,6 +75,8 @@ class Repository(Protocol):
     def conversations(self, account, limit=50, offset=0): ...
     def containers(self, account, limit=50, offset=0): ...
     def messages(self, account, remote, limit=100, offset=0): ...
+    def message_ordinal(self, account, remote, message_id): ...
+    def replace_conversation_tail(self, account, remote, start, value): ...
     def conversation_window(self, account, remote, *, start=None, limit=80, max_chars=262144): ...
     def resources(self, account, owner_kind, owner): ...
     def tombstones(self): ...
@@ -279,15 +290,17 @@ class SQLiteRepository:
             return value
 
     def put(self, account, kind, remote, value):
-        payload = encode(value)
-        digest = hashlib.sha256(payload.encode()).hexdigest()
         if kind == "conversation":
+            digest = _digest_json(value)
             header = {k: v for k, v in value.items() if k not in ("messages", "metadata")}
             if "messages" in value:
                 header["_archive_sql_messages"] = True
             if "metadata" in value:
                 header["_archive_sql_metadata"] = True
             payload = encode(header)
+        else:
+            payload = encode(value)
+            digest = hashlib.sha256(payload.encode()).hexdigest()
         now = time.time()
         with self._connect() as db:
             prior = db.execute(
@@ -728,6 +741,145 @@ class SQLiteRepository:
                 (account, remote, limit, offset),
             ).fetchall()
         return [json.loads(row[0]) for row in rows]
+
+    def message_ordinal(self, account, remote, message_id):
+        """Return the first archived position of a provider message ID, if present."""
+        if not message_id:
+            return None
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT ordinal FROM messages WHERE account=? AND conversation=? AND remote=? "
+                "ORDER BY ordinal LIMIT 1",
+                (account, remote, message_id),
+            ).fetchone()
+        return row[0] if row else None
+
+    def replace_conversation_tail(self, account, remote, start, value):
+        """Replace a provider-aligned suffix while retaining the older SQL prefix."""
+        if start < 0 or not isinstance(value.get("messages"), list):
+            raise ValueError("invalid conversation tail")
+        now = time.time()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT payload FROM records WHERE account=? AND kind='conversation' AND remote=?",
+                (account, remote),
+            ).fetchone()
+            if row is None:
+                return False
+            old_header = json.loads(row[0])
+            metadata_row = db.execute(
+                "SELECT payload FROM conversation_metadata WHERE account=? AND remote=?",
+                (account, remote),
+            ).fetchone()
+            if "metadata" in value:
+                metadata = value["metadata"]
+                has_metadata = True
+            else:
+                metadata = json.loads(metadata_row[0]) if metadata_row else None
+                has_metadata = bool(metadata_row) or old_header.get("_archive_sql_metadata", False)
+
+            header = {
+                key: item
+                for key, item in value.items()
+                if key not in ("messages", "metadata", "history_window")
+                and not key.startswith("_archive_sql_")
+            }
+            record_header = dict(header, _archive_sql_messages=True)
+            if has_metadata:
+                record_header["_archive_sql_metadata"] = True
+                db.execute(
+                    "INSERT OR REPLACE INTO conversation_metadata VALUES(?,?,?)",
+                    (account, remote, encode(metadata)),
+                )
+            else:
+                record_header.pop("_archive_sql_metadata", None)
+                db.execute(
+                    "DELETE FROM conversation_metadata WHERE account=? AND remote=?",
+                    (account, remote),
+                )
+
+            total = db.execute(
+                "SELECT count(*) FROM messages WHERE account=? AND conversation=?",
+                (account, remote),
+            ).fetchone()[0]
+            if start > total:
+                raise ValueError("conversation tail starts after the archived history")
+            self._write_messages(db, account, remote, value["messages"], start=start)
+            db.execute(
+                "INSERT OR REPLACE INTO conversations VALUES(?,?,?,?,?,?)",
+                (
+                    account,
+                    remote,
+                    header.get("title"),
+                    header.get("project_id"),
+                    header.get("model"),
+                    encode(conversation_header(header)),
+                ),
+            )
+            db.execute(
+                "DELETE FROM memberships WHERE account=? AND conversation=?", (account, remote)
+            )
+            if header.get("project_id"):
+                db.execute(
+                    "INSERT OR IGNORE INTO memberships VALUES(?,?,?)",
+                    (account, remote, self._remote(account, header["project_id"])),
+                )
+            self._write_resources(
+                db,
+                account,
+                "conversation",
+                remote,
+                dict(value, resources=[]),
+                append=True,
+            )
+
+            digest = hashlib.sha256()
+            encoder = json.JSONEncoder(ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            fields = dict(header)
+            if has_metadata:
+                fields["metadata"] = metadata
+            keys = sorted((*fields, "messages"))
+
+            def write_json(item):
+                for part in encoder.iterencode(item):
+                    digest.update(part.encode("utf-8"))
+
+            digest.update(b"{")
+            for index, name in enumerate(keys):
+                if index:
+                    digest.update(b",")
+                write_json(name)
+                digest.update(b":")
+                if name == "messages":
+                    digest.update(b"[")
+                    for message_index, (raw,) in enumerate(
+                        db.execute(
+                            "SELECT metadata FROM messages WHERE account=? AND conversation=? "
+                            "ORDER BY ordinal",
+                            (account, remote),
+                        )
+                    ):
+                        if message_index:
+                            digest.update(b",")
+                        digest.update(raw.encode("utf-8"))
+                    digest.update(b"]")
+                else:
+                    write_json(fields[name])
+            digest.update(b"}")
+            db.execute(
+                "UPDATE records SET payload=?,digest=?,changed=?,checked=? "
+                "WHERE account=? AND kind='conversation' AND remote=?",
+                (
+                    encode(record_header),
+                    digest.hexdigest(),
+                    now,
+                    now,
+                    account,
+                    remote,
+                ),
+            )
+        return True
 
     def conversation_window(self, account, remote, *, start=None, limit=80, max_chars=262144):
         """Read a bounded history window using the ordinal index, newest first by default.

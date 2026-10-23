@@ -295,6 +295,49 @@ class DeleteAndCacheTests(unittest.TestCase):
                 background.assert_called_once()
                 self.assertTrue(view.tabs[view.active_tab]["syncing"])
 
+    def test_cold_load_invalidates_new_chat_placeholder_and_preserves_load_error(self):
+        entered, release = threading.Event(), threading.Event()
+        self.provider.capabilities = frozenset()
+
+        def load(*_args, **_kwargs):
+            entered.set()
+            if not release.wait(3):
+                raise TimeoutError("test barrier")
+            raise RuntimeError("offline")
+
+        with terminal(account_service=self.accounts) as (view, _):
+            self.assertIn("Yeni bir sohbet", view.render_transcript())
+            with (
+                patch.object(self.accounts, "load", side_effect=load),
+                patch.object(view, "refresh_provider_catalog"),
+            ):
+                view.resume_conversation(identity(self.key, "c_cold"))
+                try:
+                    self.assertTrue(entered.wait(1))
+                    loading = view.render_transcript()
+                    self.assertIn("Loading conversation", loading)
+                    self.assertNotIn("Yeni bir sohbet", loading)
+                finally:
+                    release.set()
+                deadline = time.monotonic() + 2
+                while (
+                    not view.tabs[view.active_tab].get("load_error") and time.monotonic() < deadline
+                ):
+                    time.sleep(0.01)
+                failed = view.render_transcript()
+                self.assertIn("Conversation load failed: offline", failed)
+                self.assertNotIn("Yeni bir sohbet", failed)
+
+    def test_sidebar_does_not_repeat_account_authentication_error_per_cached_project(self):
+        remote = "g-p-auth-required"
+        key = self.key, "container", remote
+        self.archive._state(key, "error", "Kayıtlı oturum yok; Hesaplar bölümünden doğrulayın")
+
+        with terminal(account_service=self.accounts) as (view, _):
+            self.assertNotIn(key, view._sidebar_sync_states())
+            self.archive._state(key, "error", "HTTP 500: provider unavailable")
+            self.assertEqual(view._sidebar_sync_states()[key], "error")
+
     def test_cold_history_does_not_replace_an_inflight_response_or_a_typed_draft(self):
         entered, release = threading.Event(), threading.Event()
         self.provider.capabilities = frozenset()
@@ -345,44 +388,27 @@ class DeleteAndCacheTests(unittest.TestCase):
 
 
 class GeminiHistoryTests(unittest.IsolatedAsyncioTestCase):
-    async def test_listing_refreshes_sdk_cache_and_returns_real_pagination(self):
+    async def test_listing_reads_remote_pages_and_returns_real_pagination(self):
         provider = GeminiProvider(Path("unused"))
-        client = SimpleNamespace(
-            _fetch_recent_chats=AsyncMock(),
-            list_chats=lambda: [
-                SimpleNamespace(cid="c_" + str(i), title=str(i), timestamp=i) for i in range(5)
-            ],
+        provider._connect = AsyncMock()
+        provider.rpc.call = AsyncMock(
+            return_value=[[None, None, [["c_" + str(i), str(i)] for i in range(5)]]]
         )
-        provider._factory = lambda *_: client
-        provider._connect = AsyncMock(return_value=client)
         first = await provider.list_chats(limit=2)
         second = await provider.list_chats(first.next_cursor, limit=2)
         self.assertEqual([x.title for x in first.items], ["0", "1"])
         self.assertEqual([x.title for x in second.items], ["2", "3"])
         self.assertEqual(second.next_cursor, "4")
-        self.assertEqual(client._fetch_recent_chats.await_count, 2)
+        self.assertEqual(provider.rpc.call.await_count, 2)
 
     async def test_message_ids_do_not_shift_when_older_history_arrives(self):
+        def turn(rid):
+            return [["c_abc", rid], None, [["question"]], [[["candidate", ["answer"]]]]]
+
         provider = GeminiProvider(Path("unused"))
-        output = SimpleNamespace(thoughts=None, metadata=["c_abc", "r_stable"])
-        user = SimpleNamespace(role="user", text="question", model_output=None)
-        assistant = SimpleNamespace(role="model", text="answer", model_output=output)
-        client = SimpleNamespace(
-            read_chat=AsyncMock(return_value=SimpleNamespace(turns=[assistant, user])),
-            list_chats=lambda: [],
-        )
-        provider._factory = lambda *_: client
-        provider._connect = AsyncMock(return_value=client)
+        provider.rpc.call = AsyncMock(return_value=[[[turn("r_stable")]]])
         first = await provider.get_chat("c_abc")
-        old_output = SimpleNamespace(thoughts=None, metadata=["c_abc", "r_old"])
-        client.read_chat.return_value = SimpleNamespace(
-            turns=[
-                assistant,
-                user,
-                SimpleNamespace(role="model", text="old answer", model_output=old_output),
-                SimpleNamespace(role="user", text="old question", model_output=None),
-            ]
-        )
+        provider.rpc.call.return_value = [[[turn("r_stable"), turn("r_old")]]]
         second = await provider.get_chat("c_abc")
         self.assertEqual([m.id for m in first.messages], [m.id for m in second.messages[-2:]])
 

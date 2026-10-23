@@ -1,29 +1,23 @@
-"""Provider-neutral Gemini access over the maintained gemini-webapi transport."""
+"""Gemini web provider implementing the shared provider contract."""
 
 import asyncio
-import inspect
 from pathlib import Path
 
 from ..api import Capability, ConversationBound, ReplaceText, SendRequest, validate_request
 from ..contracts import OptionalFeatures, confirm_deleted
 from ..errors import AccountPaused, FeatureUnavailable, ProviderError
 from ..models import (
-    Choice,
-    Content,
-    Conversation,
     Feature,
     FeatureState,
-    Message,
-    Model,
     ModelCatalog,
     Origin,
     Page,
     ProviderDescription,
-    Resource,
     SessionState,
     SessionStatus,
 )
 from ..projects import ProjectEditing
+from ..session import delete_session, session_exists
 
 
 class GeminiProvider(ProjectEditing, OptionalFeatures):
@@ -47,18 +41,16 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
         account_id="default",
         client_factory=None,
         *,
-        quiet=True,
         notebooks=None,
     ):
         self._media = {}
-        self.cookie_file = Path(cookie_file)
+        self.cookie_file = cookie_file
         self.account_id = account_id
-        self.quiet = quiet
         self._factory = client_factory
         self._client = None
+        self._catalog_delivered = False
         self._gate = asyncio.Lock()
         self._connect_gate = asyncio.Lock()
-        self._saved_cookies = None
         self._temporary = {}
         self.notebooks = notebooks
         from .notebooks import Notebooks
@@ -107,63 +99,25 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
 
     async def _connect_once(self):
         if self._client is not None:
-            if getattr(self._client, "_running", True) is not False:
-                return self._client
-            await self.close()
-        if not self.cookie_file.is_file():
+            return self._client
+        if not session_exists(self.cookie_file):
             raise AccountPaused("Gemini oturumu yok; Hesaplar bölümünden giriş yapın")
-        from ..session import read_session
+        from .session import GeminiSession
 
-        values = read_session(self.cookie_file)
-        if not isinstance(values, dict) or not values.get("__Secure-1PSID"):
-            raise AccountPaused("Gemini oturum çerezleri eksik")
-        factory = self._factory
-        if factory is None:
-            try:
-                from gemini_webapi import GeminiClient
-            except ImportError:
-                raise ProviderError(
-                    "Gemini için Python 3.11+ ve gemini-webapi bağımlılığı gerekir"
-                ) from None
-            if self.quiet:
-                # verbose=False does not cover quota/init/background SDK logs.
-                # Keep other application loggers and their handlers untouched.
-                from gemini_webapi.utils.logger import logger
-
-                logger.disable("gemini_webapi")
-            from .session import owned_client_type
-            from .transport import notebook_client_type
-
-            factory = notebook_client_type(owned_client_type(GeminiClient, self.cookie_file))
-        client = factory(values["__Secure-1PSID"], values.get("__Secure-1PSIDTS"))
-        try:
-            await client.init(timeout=45, auto_close=False, auto_refresh=True, verbose=False)
-        except asyncio.CancelledError:
-            await client.close()
-            raise
-        except (AccountPaused, ProviderError):
-            await client.close()
-            raise
-        except Exception as error:
-            await client.close()
-            raise ProviderError(
-                "Gemini oturum bağlantısı kurulamadı (" + type(error).__name__ + ")"
-            ) from None
-        status = getattr(client, "account_status", None)
-        if getattr(status, "name", None) == "UNAUTHENTICATED" or status == 1016:
-            await client.close()
-            raise AccountPaused(
-                "Gemini oturumu sona ermiş; misafir oturumunda gönderim yapılmadı. "
-                "Hesaplar → Bağlı tarayıcı ile giriş yapıp oturumu doğrulayın."
-            )
+        client = (
+            GeminiSession(self.cookie_file)
+            if self._factory is None
+            else self._factory(self.cookie_file)
+        )
+        await client.open()
         self._client = client
-        self._saved_cookies = values
         return client
 
     async def close(self):
         if hasattr(self, "editor"):
             await self.editor.close()
         client, self._client = self._client, None
+        self._catalog_delivered = False
         if client is not None:
             await client.close()
 
@@ -172,9 +126,9 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
             SessionState.AUTHENTICATED
             if self._client
             else SessionState.UNKNOWN
-            if self.cookie_file.is_file()
+            if session_exists(self.cookie_file)
             else SessionState.LOGIN_REQUIRED,
-            self.cookie_file.is_file(),
+            session_exists(self.cookie_file),
         )
 
     async def authenticate(self):
@@ -184,7 +138,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
     async def forget_session(self):
         async with self._gate:
             await self.close()
-            self.cookie_file.unlink(missing_ok=True)
+            delete_session(self.cookie_file)
             self._temporary.clear()
         return SessionStatus(SessionState.LOGIN_REQUIRED)
 
@@ -204,31 +158,10 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
 
     async def models(self):
         client = await self._connect()
-        # The transport exposes a boolean extended_thinking option, not
-        # OpenAI-style low/medium/high levels. Never invent those levels.
-        extended = (
-            "extended_thinking" in inspect.signature(client.generate_content_stream).parameters
-        )
-        efforts = (
-            (Choice("standard", "Standart"), Choice("extended", "Genişletilmiş"))
-            if extended
-            else ()
-        )
-        models = tuple(
-            Model(
-                model.model_name,
-                model.display_name or model.model_name,
-                efforts,
-                metadata={
-                    "model_id": model.model_id,
-                    "description": model.description,
-                    "effort_source": "extended_thinking" if extended else None,
-                },
-            )
-            for model in client.list_models() or []
-            if model.is_available
-        )
-        return ModelCatalog(FeatureState.AVAILABLE, models)
+        if self._catalog_delivered:
+            client.models = await client.discover_models()
+        self._catalog_delivered = True
+        return ModelCatalog(FeatureState.AVAILABLE, client.models)
 
     def _origin(self, remote_id):
         return Origin(self.id, self.account_id, remote_id)
@@ -241,99 +174,31 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
         if offset < 0 or offset > 5000 or not 1 <= limit <= 100:
             raise ValueError("invalid Gemini conversation page")
         async with self._gate:
-            client = await self._connect()
-            if hasattr(client, "_fetch_recent_chats"):
-                await client._fetch_recent_chats(recent=offset + limit + 1)
-            chats = client.list_chats()
-            if chats is None:
-                raise ProviderError("Gemini sohbet listesi sunucudan alınamadı")
+            await self._connect()
+            from .history import conversations
+
+            parts = await self.rpc.call(
+                "MaZiqc", [offset + limit + 1, None, [None, None, 1, None, 1]], "/app"
+            )
+            chats = conversations(parts, self._origin)
             return Page(
-                tuple(
-                    Conversation(
-                        self._origin(item.cid),
-                        item.title or "Gemini sohbeti",
-                        metadata={"updated_at": item.timestamp},
-                    )
-                    for item in chats[offset : offset + limit]
-                ),
+                chats[offset : offset + limit],
                 str(offset + limit) if len(chats) > offset + limit else None,
             )
 
     async def get_chat(self, conversation_id):
-        if self._factory is None:
-            from .history import history
+        from .history import history
 
-            parts = await self.rpc.call(
-                "hNvQHb", [conversation_id, 1000, None, 1, [1], [4], None, 1], "/app"
-            )
-            if len(parts) != 1:
-                raise ProviderError("Gemini geçmiş yanıtı değişmiş")
-            return history(parts[0], self._origin, conversation_id)
-        async with self._gate:
-            client = await self._connect()
-            history = await client.read_chat(conversation_id, limit=1000)
-            if history is None:
-                raise ProviderError("Gemini sohbet geçmişi alınamadı")
-            messages = []
-            turns = list(reversed(history.turns))
-            for i, turn in enumerate(turns):
-                output = turn.model_output
-                paired = output or (turns[i + 1].model_output if i + 1 < len(turns) else None)
-                metadata = getattr(paired, "metadata", None)
-                rid = metadata[1] if isinstance(metadata, list) and len(metadata) > 1 else None
-                if not isinstance(rid, str) or not rid:
-                    import hashlib
-
-                    rid = hashlib.sha256((turn.role + "\0" + turn.text).encode()).hexdigest()
-                stable_id = rid + ":" + turn.role
-                if output and output.thoughts:
-                    messages.append(
-                        Message(
-                            stable_id + ":thoughts",
-                            "assistant",
-                            (Content("text", output.thoughts),),
-                            channel="analysis",
-                        )
-                    )
-                from .media import render_images, sdk_images
-
-                images = sdk_images(output) if output else []
-                messages.append(
-                    Message(
-                        stable_id,
-                        "user" if turn.role == "user" else "assistant",
-                        (Content("text", render_images(turn.text, images)),)
-                        + tuple(
-                            Content(
-                                "image",
-                                resource=Resource(
-                                    image["alias"],
-                                    image["name"],
-                                    image.get("media_type"),
-                                    image["url"],
-                                ),
-                            )
-                            for image in images
-                        ),
-                    )
-                )
-            title = next(
-                (item.title for item in client.list_chats() or [] if item.cid == conversation_id),
-                "Gemini sohbeti",
-            )
-            return Conversation(
-                self._origin(conversation_id),
-                title,
-                tuple(messages),
-                metadata={"history_partial": len(history.turns) >= 1000},
-            )
+        parts = await self.rpc.call(
+            "hNvQHb", [conversation_id, 1000, None, 1, [1], [4], None, 1], "/app"
+        )
+        if len(parts) != 1:
+            raise ProviderError("Gemini geçmiş yanıtı değişmiş")
+        return await asyncio.to_thread(history, parts[0], self._origin, conversation_id)
 
     async def delete_chat(self, conversation_id):
         async with self._gate:
-            client = await self._connect()
-            if self._factory is not None:
-                await client.delete_chat(conversation_id)
-                return
+            await self._connect()
             await self.rpc.call("GzXR5e", [conversation_id], "/app", allow_empty=True)
             await confirm_deleted(
                 lambda: self.rpc.call(
@@ -427,78 +292,72 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
         project = notebook_id(request.project_id) if request.project_id else None
         if request.effort not in (None, "", "standard", "extended"):
             raise ValueError("unsupported Gemini thinking option")
-        from contextlib import nullcontext
-
+        from .media import render_images
         from .notebooks import field
-        from .transport import notebook_transport, stream_local_files
+        from .transport import generate
 
         async with self._gate:
             client = await self._connect()
             context = None
             if project:
-                if self.notebooks is None:
-                    raise ProviderError("Gemini defter bağlantısı yapılandırılmamış")
                 notebook = await self.notebooks.get(project)
-                context = field(field(notebook.metadata.get("native"), 1), 12)
-                if not isinstance(context, list) or not context or context[0] not in (1, 2):
-                    raise ProviderError("Gemini defter bağlamı okunamadı; verileri yenileyin")
-            model = client.resolve_model(request.model) if request.model else None
+                value = field(field(notebook.metadata.get("native"), 1), 12)
+                if not isinstance(value, list) or not value or value[0] not in (1, 2):
+                    raise ProviderError("Gemini defter bağlamı okunamadı")
+                context = (project, value)
             metadata = self._temporary.get(request.conversation_id) if request.temporary else None
             if request.temporary and request.conversation_id and metadata is None:
                 raise ProviderError("Geçici Gemini bağlamı artık bellekte değil")
-            chat = client.start_chat(
-                metadata=metadata,
-                cid=request.conversation_id or "",
-                model=model,
-            )
-            bound = False
-            visible_output = False
-            try:
-                with notebook_transport(client, project, context) if project else nullcontext():
-                    async for chunk in stream_local_files(
-                        client,
-                        chat,
-                        request.prompt,
-                        [item["path"] for item in request.attachments],
-                        model=model,
-                        temporary=request.temporary,
-                        extended_thinking=request.effort == "extended",
-                    ):
-                        if chat.cid and not bound:
-                            yield ConversationBound(chat.cid)
-                            bound = True
-                        if chunk.thoughts:
-                            yield ReplaceText(chunk.thoughts, "analysis")
-                        from .media import render_images, sdk_images
+            if metadata is None:
+                metadata = [
+                    request.conversation_id or "",
+                    "",
+                    "",
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    "",
+                ]
+                if request.conversation_id:
+                    parts = await self.rpc.call(
+                        "hNvQHb", [request.conversation_id, 1, None, 1, [1], [4], None, 1], "/app"
+                    )
+                    from .session import nested
 
-                        images = sdk_images(chunk)
-                        visible_output = visible_output or bool(chunk.text or images)
-                        for image in images:
-                            self._media[chat.cid, image["alias"]] = image
-                            self._media[chat.cid, image["url"]] = image
-                        while len(self._media) > 256:
-                            self._media.pop(next(iter(self._media)))
-                        yield ReplaceText(render_images(chunk.text or "", images), "final")
-            except asyncio.CancelledError:
-                raise
-            except ProviderError:
-                raise
-            except Exception as error:
-                raise ProviderError(
-                    "Gemini yanıtı tamamlanamadı ("
-                    + type(error).__name__
-                    + "); hesabı veya bağlantıyı kontrol edin"
-                ) from error
-            if not visible_output:
-                raise ProviderError("Gemini yanıtı tamamlanmadı; istek yeniden gönderilmedi")
-            if not chat.cid:
-                raise ProviderError("Gemini sohbet kimliği dönmedi")
+                    turn = nested(parts[0], 0, 0)
+                    rid = nested(turn, 0, 1)
+                    rcid = nested(turn, 3, 0, 0, 0)
+                    if not rid or not rcid:
+                        raise ProviderError("Gemini sohbet devam kimlikleri alınamadı")
+                    metadata[1:3] = [rid, rcid]
+            bound, visible, cid = False, False, request.conversation_id
+            async for chunk in generate(client, request, metadata, context):
+                cid = chunk.get("cid") or cid
+                metadata = chunk["metadata"]
+                if cid and not bound:
+                    yield ConversationBound(cid)
+                    bound = True
+                if chunk.get("context_only"):
+                    continue
+                images = chunk["images"]
+                visible = visible or bool(chunk["text"] or images)
+                if chunk["thoughts"]:
+                    yield ReplaceText(chunk["thoughts"], "analysis")
+                for image in images:
+                    self._media[cid, image["alias"]] = image
+                    self._media[cid, image["url"]] = image
+                while len(self._media) > 256:
+                    self._media.pop(next(iter(self._media)))
+                yield ReplaceText(render_images(chunk["text"], images), "final")
+            if not visible or not cid:
+                raise ProviderError("Gemini yanıtı tamamlanmadı; yeniden gönderilmedi")
             if request.temporary:
-                self._temporary[chat.cid] = chat.metadata
+                self._temporary[cid] = metadata
                 while len(self._temporary) > 32:
                     self._temporary.pop(next(iter(self._temporary)))
-            if not bound:
-                yield ConversationBound(chat.cid)
 
     async def resolve_download(self, url, conversation_id=None, message_id=None):
         from ..files import DownloadSource, NativeDownloadClient, cookie_header
@@ -523,16 +382,18 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
         from urllib.parse import urlsplit
 
         headers = {"Referer": "https://gemini.google.com/"}
-        # Generated media can require the owning account, just like SDK Image.save().
+        # Generated media can require the owning account, through the owning HTTP session.
         # Never attach Google cookies to arbitrary user-controlled CDN subdomains.
         host = urlsplit(target["url"]).hostname
         if host in {"lh3.googleusercontent.com", "lh3-gg.googleusercontent.com"}:
             from ..session import read_session
 
-            values = self._saved_cookies or read_session(self.cookie_file)
             client = self._client
-            if client is not None and hasattr(getattr(client, "cookies", None), "get_dict"):
-                values = client.cookies.get_dict()
+            values = (
+                client.http.cookies.get_dict()
+                if client is not None and client.http is not None
+                else read_session(self.cookie_file)
+            )
             headers["Cookie"] = cookie_header(values, ("__Secure-1PSID", "__Secure-1PSIDTS"))
         return DownloadSource(target["url"], target["name"], True, headers, NativeDownloadClient)
 

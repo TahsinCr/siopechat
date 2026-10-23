@@ -324,15 +324,13 @@ class ClaudeAccountsTests(unittest.TestCase):
                 )
                 self.assertNotEqual(accounts.directory(key), accounts.directory("chatgpt/default"))
                 self.assertIsInstance(accounts.provider(key), ClaudeProvider)
-                accounts.credential_path(key).parent.mkdir(parents=True, exist_ok=True)
-                accounts.credential_path(key).write_text("{}")
+                accounts.credentials(key).save({})
                 accounts._remember_verification(key)
                 with patch.object(accounts, "browser_connected", return_value=False):
                     self.assertTrue(accounts.status(key)["authenticated"])
-                gpt_file = accounts.credential_path("chatgpt/default")
-                gpt_file.parent.mkdir(parents=True, exist_ok=True)
-                gpt_file.write_text("{}")
-                self.assertNotEqual(accounts.credential_path(key), gpt_file)
+                gpt_file = accounts.credentials("chatgpt/default")
+                gpt_file.save({})
+                self.assertNotEqual(accounts.credentials(key), gpt_file)
                 with self.assertRaises(ValueError):
                     accounts.add("claude", "Wrong", browser_account=key)
             finally:

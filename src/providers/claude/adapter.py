@@ -1,7 +1,6 @@
 """Independent Claude adapter using a saved web session over HTTPS."""
 
 import asyncio
-from pathlib import Path
 
 from ..api import Capability, ConversationBound, ReplaceText, TextDelta, validate_request
 from ..contracts import OptionalFeatures
@@ -19,6 +18,7 @@ from ..models import (
     SessionStatus,
 )
 from ..projects import ProjectEditing
+from ..session import delete_session, session_exists
 from .records import conversation, conversation_attachment_count, project
 from .transport import ClaudeProjectEditor, ClaudeTransport
 
@@ -52,7 +52,7 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
         cdp_url="http://127.0.0.1:9232",
         ensure_ready=None,
     ):
-        self.credential_file = Path(credential_file)
+        self.credential_file = credential_file
         self.account_id = account_id
         self.transport = ClaudeTransport(self.credential_file)
         self._gate = asyncio.Lock()
@@ -87,9 +87,9 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
             SessionState.AUTHENTICATED
             if self.transport.authenticated
             else SessionState.UNKNOWN
-            if self.credential_file.is_file()
+            if session_exists(self.credential_file)
             else SessionState.LOGIN_REQUIRED,
-            self.credential_file.is_file(),
+            session_exists(self.credential_file),
         )
 
     async def resolve_download(self, url, conversation_id=None, message_id=None):
@@ -145,7 +145,7 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
     async def forget_session(self):
         async with self._gate:
             await self.close()
-            self.credential_file.unlink(missing_ok=True)
+            delete_session(self.credential_file)
             self.transport.authenticated = False
         return SessionStatus(SessionState.LOGIN_REQUIRED)
 
@@ -194,8 +194,10 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
         )
 
     async def get_chat(self, conversation_id):
-        return conversation(
-            await self.transport.request("history", conversation_id=conversation_id),
+        raw = await self.transport.request("history", conversation_id=conversation_id)
+        return await asyncio.to_thread(
+            conversation,
+            raw,
             self.account_id,
         )
 
@@ -276,7 +278,7 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
                 Capability.TEMPORARY,
                 "not_available",
             )
-        if not self.credential_file.is_file() and not self.transport.authenticated:
+        if not session_exists(self.credential_file) and not self.transport.authenticated:
             raise AccountPaused("Claude hesabını Hesaplar bölümünden doğrulayın")
         async with self._gate:
             completed = False

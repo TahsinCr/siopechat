@@ -44,6 +44,36 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
                 self.assertGreater(clicked, 0)
                 self.assertFalse(view.message_selection)
 
+    def test_transcript_snapshot_is_not_reused_for_a_different_conversation(self):
+        with terminal() as (view, _):
+            tab = view.tabs[view.active_tab]
+            tab.update(
+                conversation_id="@chatgpt/default/old",
+                messages=[],
+                render_revision=1,
+            )
+            width = view.transcript_width()
+            text = "Previous conversation"
+            view.remember_transcript(
+                tab,
+                [],
+                width,
+                dict(view.renderer.tokens),
+                view.show_reasoning,
+                text,
+                [],
+                transcript_fragments(text),
+                message_key=view._virtual_message_key(tab["messages"]),
+                revision=1,
+            )
+            tab.update(conversation_id="@chatgpt/default/new", loading=True)
+            view.loading_conversation = True
+
+            rendered = view.render_transcript()
+
+        self.assertNotIn(text, rendered)
+        self.assertIn("Loading conversation", rendered)
+
     def test_link_targets_survive_wrapping_and_background_preparation(self):
         from cli.history import prepare_transcript
 

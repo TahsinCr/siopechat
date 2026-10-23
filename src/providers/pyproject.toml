@@ -16,7 +16,6 @@ dependencies = [
     "browser-cookie3>=0.20.1,<0.21",
     "lz4>=4.4.5,<5",
     "curl-cffi>=0.16,<1",
-    "gemini-webapi>=2.1.1,<2.2; python_version >= '3.11'",
 ]
 
 [tool.setuptools]

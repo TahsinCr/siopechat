@@ -1,9 +1,7 @@
 """Saved web sessions: no browser processes, redirects or mutation retries."""
 
-import asyncio
 import json
 import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,7 +14,6 @@ from backend import BackendService
 from providers.claude.transport import ClaudeTransport, organization_from_bootstrap
 from providers.errors import AccountPaused, ProviderError, RateLimited, RemoteNotFound
 from providers.gemini.rpc import NotebookEditor, NotebookRPC
-from providers.gemini.transport import NotebookTransport
 from providers.session import WebSession, read_session, save_session
 
 
@@ -91,41 +88,21 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
 class NotebookHTTPTests(unittest.IsolatedAsyncioTestCase):
     async def test_rpc_keeps_native_identity_and_disables_automatic_retry(self):
         client = SimpleNamespace(
-            _batch_execute=AsyncMock(
+            batch=AsyncMock(
                 return_value=SimpleNamespace(text=')]}\'\n[["wrb.fr","HcT8bb","[[]]"]]')
             )
         )
         rpc = NotebookRPC(AsyncMock(return_value=client))
         self.assertEqual(await rpc.read("notebooks", remote="notebooks/abcdef"), [[[]]])
-        args = client._batch_execute.call_args
-        self.assertEqual(args.kwargs["current_retry"], 0)
+        args = client.batch.call_args
         self.assertEqual(json.loads(args.args[0][0].payload), ["notebooks/abcdef", ["en"], 0])
 
     async def test_missing_rpc_ack_cannot_be_reported_as_success(self):
         client = SimpleNamespace(
-            _batch_execute=AsyncMock(
-                return_value=SimpleNamespace(text='[["wrb.fr","HcT8bb",null]]')
-            )
+            batch=AsyncMock(return_value=SimpleNamespace(text='[["wrb.fr","HcT8bb",null]]'))
         )
         with self.assertRaises(ProviderError):
             await NotebookRPC(AsyncMock(return_value=client)).call("HcT8bb", [])
-
-    def test_notebook_generation_preserves_existing_sdk_fields(self):
-        wire = Mock()
-        transport = NotebookTransport(wire, "notebooks/abcdef", [2, None, None, None, 1])
-        inner = [None] * 81
-        inner[0] = ["question"]
-        inner[79] = 4
-        transport.stream(
-            "POST",
-            "https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate",
-            data={"at": "fixture", "f.req": json.dumps([None, json.dumps(inner)])},
-        )
-        result = json.loads(json.loads(wire.stream.call_args.kwargs["data"]["f.req"])[1])
-        self.assertEqual(result[19], "notebooks/abcdef")
-        self.assertEqual(result[40][13], [2, None, None, None, 1])
-        self.assertEqual(result[79], 4)
-        self.assertEqual(result[0], ["question"])
 
     async def test_notebook_update_uses_write_settings_not_display_icon(self):
         detail = [None] * 13
@@ -237,82 +214,6 @@ class ClaudeHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("".join(e["text"] for e in final), "Answer")
         self.assertTrue(all(e["type"] == "delta" for e in final))
         self.assertEqual(session.request.await_count, 1)
-
-
-@unittest.skipIf(sys.version_info < (3, 11), "Gemini SDK requires Python 3.11+")
-class OwnedGeminiSessionTests(unittest.IsolatedAsyncioTestCase):
-    async def test_bootstrap_never_calls_sdk_cookie_discovery_or_guest_fallback(self):
-        from curl_cffi.requests import Cookies
-        from gemini_webapi import GeminiClient
-
-        from providers.gemini.session import owned_client_type
-
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "cookies.json"
-            save_session(path, {"__Secure-1PSID": "owned-fixture"})
-            wire = SimpleNamespace(
-                get=AsyncMock(return_value=httpx.Response(200, text="bootstrap")),
-                cookies=Cookies({"__Secure-1PSID": "rotated-fixture"}),
-                close=AsyncMock(),
-            )
-            cls = owned_client_type(GeminiClient, path)
-            client = cls("owned-fixture")
-            with (
-                patch("curl_cffi.requests.AsyncSession", return_value=wire),
-                patch(
-                    "gemini_webapi.utils.get_access_token._extract_payload",
-                    return_value=("csrf", "build", "session", "en", None),
-                ),
-                patch.object(cls, "_init_rpc", new_callable=AsyncMock),
-                patch.object(cls, "_check_account_status", return_value=True),
-                patch.object(
-                    GeminiClient, "init", side_effect=AssertionError("global cookie discovery")
-                ),
-                patch.object(
-                    GeminiClient, "close", side_effect=AssertionError("global cookie cache")
-                ),
-                patch("asyncio.create_subprocess_exec", side_effect=AssertionError("browser")),
-            ):
-                await asyncio.gather(
-                    client.init(auto_refresh=False), client.init(auto_refresh=False)
-                )
-                await client.close()
-            wire.get.assert_awaited_once()
-            wire.close.assert_awaited_once()
-            self.assertEqual(read_session(path)["__Secure-1PSID"], "rotated-fixture")
-
-    async def test_rejected_guest_bootstrap_cannot_replace_owned_credentials(self):
-        from curl_cffi.requests import Cookies
-        from gemini_webapi import GeminiClient
-        from gemini_webapi.constants import AccountStatus
-
-        from providers.gemini.session import owned_client_type
-
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "cookies.json"
-            save_session(path, {"__Secure-1PSID": "owned-fixture"})
-            wire = SimpleNamespace(
-                get=AsyncMock(return_value=httpx.Response(200, text="bootstrap")),
-                cookies=Cookies({"__Secure-1PSID": "guest-fixture"}),
-                close=AsyncMock(),
-            )
-            cls = owned_client_type(GeminiClient, path)
-            client = cls("owned-fixture")
-            client.account_status = AccountStatus.UNAUTHENTICATED
-            with (
-                patch("curl_cffi.requests.AsyncSession", return_value=wire),
-                patch(
-                    "gemini_webapi.utils.get_access_token._extract_payload",
-                    return_value=("csrf", "build", "session", "en", None),
-                ),
-                patch.object(cls, "_init_rpc", new_callable=AsyncMock),
-                patch.object(cls, "_check_account_status", return_value=False),
-            ):
-                with self.assertRaises(AccountPaused):
-                    await client.init(auto_refresh=False)
-            self.assertEqual(read_session(path)["__Secure-1PSID"], "owned-fixture")
-            self.assertFalse(client._running)
-            wire.close.assert_awaited_once()
 
 
 class ClaudeFileDeletionTests(unittest.IsolatedAsyncioTestCase):

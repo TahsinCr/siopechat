@@ -37,7 +37,6 @@ class ArchitectureTests(unittest.TestCase):
             "httpx",
             "providers",
             "__future__",
-            "gemini_webapi",
             "curl_cffi",
             "browser_cookie3",
             "lz4",

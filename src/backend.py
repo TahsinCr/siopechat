@@ -45,9 +45,19 @@ class BackendService:
         ) / "session.json"
 
     def create_session(self, cdp_url: str = DEFAULT_CDP_URL) -> BrowserSession:
+        from account_repository import AccountRepository
+        from providers.session import read_session
+
+        store = AccountRepository(self.root / "data" / "accounts.sqlite3").credentials(
+            "chatgpt/default"
+        )
+        legacy = self.auth_store_path()
+        if not store.exists() and legacy.is_file():
+            store.save(read_session(legacy))
+            legacy.unlink(missing_ok=True)
         return BrowserSession(
             SessionPaths(
-                self.auth_store_path(),
+                store,
                 cache_dir()
                 if self.root.resolve() == project_root().resolve()
                 else self.root / "data" / "session" / "cache",

@@ -28,7 +28,7 @@ Uygulama, giriş yaptığınız kendi web oturumlarınızı kullanır. API anaht
 
 ## Kurulum ve giriş
 
-ChatGPT ve Claude için Python **3.10+**, Gemini için **3.11+** gerekir. Giriş yardımcıları ve ChatGPT istek imzalayıcısı Node.js **22+**, açıkça başlatılan giriş işlemi ise Chrome/Chromium kullanır. Unicode destekli bir terminal kullanın; gerçek renk ve fare raporlama desteği önerilir.
+Üç sağlayıcı için de Python **3.10+** gerekir. Giriş yardımcıları ve ChatGPT istek imzalayıcısı Node.js **22+**, açıkça başlatılan giriş işlemi ise Chrome/Chromium kullanır. Unicode destekli bir terminal kullanın; gerçek renk ve fare raporlama desteği önerilir.
 
 Projeyi indirdiğiniz dizinde, kendi Python ortamınızla kurun:
 
@@ -186,7 +186,7 @@ Hesaplanan değerler için aynı sözlüğü bir Python dosyasından `THEME` ad�
 
 ## Geliştirme
 
-Uygulama ayarları ve önbellek kayıtları ortak atomik JSON yazıcısını kullanır. Bağımsız sağlayıcı kütüphanesi oturum kayıtlarını ve ortak proje kaynak doğrulamasını kendi içinde yönetir; uygulamanın yardımcı modüllerine bağımlı değildir.
+Hesap oturumları, model katalogları ve doğrulama kayıtları sağlayıcı/hesap ayrımıyla `data/accounts.sqlite3` içinde tutulur. Sağlayıcıya özel alanlar JSON olarak saklanır. Unix üzerinde dosya yalnız sahibine açıktır; veritabanı şifreli değildir. Hesap adları, seçimler ve tercihler uygulama yapılandırmasında kalır. Sağlayıcı kütüphanesi dışarıdan kimlik bilgisi deposu alır; uygulamanın SQLite kodunu bilmez. Gemini yerel HTTPS taşıyıcısını kullanır ve Gemini SDK bağımlılığı gerektirmez. Eski oturum dosyaları erişim sırasında aktarılır ve başarılı veritabanı yazımından sonra kaldırılır.
 
 Yerleşik sağlayıcılar sohbet ve proje işlemlerinde kendi HTTPS taşıyıcılarını kullanır. Paketlenen Node yardımcıları açıkça başlatılan giriş/oturum aktarımı ve ChatGPT istek imzalama işlemleriyle sınırlıdır.
 
@@ -206,7 +206,7 @@ uv run --locked python -m build
 uv run --locked python -m twine check dist/*
 ```
 
-Uygulamayı kullanırken süreç ağacının CPU, yerleşik bellek ve thread sayılarını kaydetmek için `uv run --group performance python tools/measure_performance.py` komutunu çalıştırın. Ölçümler Git tarafından yok sayılan `performance/` klasörüne CSV olarak yazılır. `--interval 0.5` örnekleme sıklığını saniyede ikiye çıkarır; `-- --help` parametreleri SiopeChat'e iletir. CPU değeri süreçlerin toplamıdır; birden fazla çekirdek yoğun kullanıldığında %100'ü aşabilir.
+SiopeChat'i kullanırken kaynak ölçümü almak için `uv run --group performance python tools/measure_performance.py` komutunu çalıştırın. CSV; süreç ağacının CPU, RSS/USS/PSS bellek, disk G/Ç, açık tanıtıcı, thread ve süreç sayılarını kaydeder. Yanındaki JSON özeti `data/` ve yapılandırılmış indirme klasöründeki dosya sayısı ile boyutları kategori bazında çalıştırma öncesi ve sonrası karşılaştırır; tarayıcı profili, önbellek, hesap verisi ve arşiv veritabanı ayrı görünür. Depolama taraması yalnız dosya metaverisini okur; dosya içeriklerini okumaz ve sembolik bağlantıları izlemez. Saniyede iki örnek için `--interval 0.5`, farklı klasörleri izlemek için tekrarlanabilir `--storage-root DİZİN`, klasör taramasını kapatmak için `--no-storage` kullanın. `--` sonrasındaki parametreler SiopeChat'e iletilir. Birden fazla çekirdek kullanılırsa süreç ağacının CPU toplamı %100'ü aşabilir; bazı işletim sistemlerinde USS/PSS veya disk G/Ç ölçümü bulunmayabilir ve boş bırakılır.
 
 Hata bildirirken sağlayıcıyı, işlemi, terminali, işletim sistemini ve hata mesajını belirtin. Kimlik bilgilerini ve özel sohbet içeriğini çıkarın. Sürüm değişiklikleri [CHANGELOG.md](CHANGELOG.md) içinde yer alır.
 

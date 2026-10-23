@@ -33,14 +33,11 @@ class NativeHistoryTests(unittest.IsolatedAsyncioTestCase):
     async def test_history_uses_only_the_owned_account_http_session(self):
         provider = GeminiProvider(Path("unused"))
         client = SimpleNamespace(
-            _batch_execute=AsyncMock(
-                return_value=SimpleNamespace(text='[["wrb.fr","hNvQHb","[[]]"]]')
-            )
+            batch=AsyncMock(return_value=SimpleNamespace(text='[["wrb.fr","hNvQHb","[[]]"]]'))
         )
         provider.rpc.connect = AsyncMock(return_value=client)
         with patch("asyncio.create_subprocess_exec", side_effect=AssertionError("browser")):
             self.assertEqual((await provider.get_chat("c_abc")).messages, ())
-        self.assertEqual(client._batch_execute.call_args.kwargs["current_retry"], 0)
 
     def test_empty_pinned_page_is_valid_and_contract_errors_are_explicit(self):
         def origin(cid):
@@ -49,6 +46,16 @@ class NativeHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(conversations([[], [None, None, [["c_abc", "Title"]]]], origin)), 1)
         with self.assertRaisesRegex(Exception, "sözleşmesi"):
             conversations([[None]], origin)
+
+    def test_general_chat_list_preserves_notebook_membership(self):
+        rows = [
+            ["c_project", "Notebook chat", None, None, None, None, None, "notebooks/abcdef"],
+            ["c_plain", "General chat", None, None, None, None, None, None],
+        ]
+        chats = conversations([[None, None, rows]], lambda cid: Origin("gemini", "a", cid))
+        self.assertEqual(chats[0].project_id, "notebooks/abcdef")
+        self.assertIsNone(chats[1].project_id)
+        self.assertTrue(all(c.metadata["project_membership_known"] for c in chats))
 
     def test_history_preserves_ids_published_thoughts_and_raw_media_metadata(self):
         candidate = ["candidate", ["Answer"]] + [None] * 35 + [[["Thought"]]]

@@ -8,6 +8,7 @@ import tempfile
 import time
 import unittest
 from concurrent.futures import CancelledError, ThreadPoolExecutor
+from dataclasses import asdict
 from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
@@ -16,7 +17,16 @@ from unittest.mock import AsyncMock, Mock, patch
 from accounts import Accounts, identity, origin
 from providers import Capability, ConversationBound, ReplaceText, TextDelta
 from providers.errors import AccountPaused
-from providers.models import Conversation, FeatureState, Model, ModelCatalog, Origin, Page
+from providers.models import (
+    Content,
+    Conversation,
+    FeatureState,
+    Message,
+    Model,
+    ModelCatalog,
+    Origin,
+    Page,
+)
 from tests.account_fixture import configured_application as create_application
 
 
@@ -79,6 +89,40 @@ class AccountTests(unittest.TestCase):
         ):
             self.assertEqual(self.accounts.status(self.gemini)["transport"], "http")
             self.assertFalse(self.accounts.status(self.gemini)["authenticated"])
+
+    def test_project_details_use_local_cache_when_no_provider_session_is_saved(self):
+        archive = self.accounts.archive()
+        remote = "project-cache-only"
+        project_id = identity(self.gemini, remote)
+        cached = {
+            "id": project_id,
+            "remote_id": remote,
+            "name": "Cached project",
+            "instructions": "Keep this local copy available.",
+            "resources": [],
+        }
+        archive.put(self.gemini, "container", remote, cached)
+
+        with patch.object(self.accounts, "provider", side_effect=AssertionError("network")):
+            result = self.accounts.project_details(self.gemini, project_id)
+
+        self.assertEqual(result["name"], "Cached project")
+        self.assertTrue(result["requires_auth"])
+
+    def test_chat_record_shares_provider_metadata_instead_of_deep_copying_it(self):
+        nested_metadata = {"details": {"items": ["source"]}}
+        content = Content("text", "A large body", metadata=nested_metadata)
+        chat = Conversation(
+            Origin("gemini", self.gemini.split("/", 1)[1], "remote-chat"),
+            "Memory check",
+            (Message("m1", "assistant", (content,)),),
+        )
+
+        record = self.accounts.chat_record(self.gemini, chat)
+        archived_content = record["messages"][0]["content"][0]
+
+        self.assertEqual(archived_content, asdict(content))
+        self.assertIs(archived_content["metadata"], nested_metadata)
 
     def test_runtime_shutdown_does_not_cancel_provider_loop_cleanup(self):
         self.accounts.call(asyncio.sleep(0))
@@ -161,7 +205,7 @@ class AccountTests(unittest.TestCase):
             state = restarted.status(self.gemini)
             self.assertTrue(state["authenticated"])
             self.assertEqual(state["transport"], "http")
-        path.unlink()
+        restarted.credentials(self.gemini).delete()
         self.assertFalse(restarted.status(self.gemini)["authenticated"])
 
     def test_transport_failure_preserves_verification_but_auth_rejection_invalidates_it(self):
@@ -180,7 +224,7 @@ class AccountTests(unittest.TestCase):
         with self.assertRaises(AccountPaused):
             self.accounts.models(self.gemini, force=True)
         self.assertFalse(self.accounts.status(self.gemini)["authenticated"])
-        self.assertFalse(self.accounts._verification_path(self.gemini).exists())
+        self.assertFalse(self.accounts.repository.get(self.gemini, "verification") is not None)
 
     def test_saved_model_catalog_cannot_verify_an_account(self):
         path = self.accounts.directory(self.gemini) / "cookies.json"
@@ -328,6 +372,27 @@ class AccountTests(unittest.TestCase):
         with patch("accounts.subprocess.run", return_value=Mock(returncode=1)):
             with self.assertRaisesRegex(RuntimeError, "Tarayıcı açılamadı"):
                 self.accounts.session_action(self.gemini, "default_browser")
+
+    def test_accounts_without_saved_sessions_are_reported_instead_of_silently_omitted(self):
+        self.accounts.status = lambda _: {"saved_snapshot": False}
+        for key in ("chatgpt/default", self.gemini):
+            provider = Mock()
+            provider.capabilities = {Capability.PROJECTS}
+            provider.close = AsyncMock()
+            provider.list_chats = AsyncMock(side_effect=RuntimeError("No saved session"))
+            provider.list_projects = AsyncMock(side_effect=RuntimeError("No saved session"))
+            self.accounts._providers[key] = provider
+        for page in (self.accounts.list_chats(), self.accounts.all_projects()):
+            self.assertEqual(set(page["failed_accounts"]), {"chatgpt/default", self.gemini})
+            self.assertEqual(len(page["errors"]), 2)
+            self.assertEqual(page["items"], [])
+
+    def test_authoritative_unassigned_chat_clears_remembered_notebook_membership(self):
+        origin = Origin("gemini", self.gemini.split("/")[1], "c_chat")
+        linked = Conversation(origin, "Chat", project_id="notebooks/abcdef")
+        self.assertIsNotNone(self.accounts.chat_record(self.gemini, linked)["project_id"])
+        plain = Conversation(origin, "Chat", metadata={"project_membership_known": True})
+        self.assertIsNone(self.accounts.chat_record(self.gemini, plain)["project_id"])
 
     def test_mixed_list_filter_and_account_pagination(self):
         self.accounts.status = lambda _: {"saved_snapshot": True}

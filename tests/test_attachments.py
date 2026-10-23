@@ -1,7 +1,6 @@
 """Attachment preflight and provider policy boundaries."""
 
 import asyncio
-import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
@@ -373,54 +372,6 @@ class AttachmentPolicyTests(unittest.TestCase):
             )
 
         service.attach_file.assert_not_called()
-
-
-class GeminiStreamingUploadTests(unittest.IsolatedAsyncioTestCase):
-    @unittest.skipUnless(
-        importlib.util.find_spec("gemini_webapi"),
-        "Gemini transport tests require the optional Python 3.11+ SDK",
-    )
-    async def test_local_files_upload_serially_without_sdk_read_bytes_path(self):
-        from providers.gemini.transport import stream_local_files
-
-        with tempfile.TemporaryDirectory() as folder:
-            paths = [Path(folder) / "a.txt", Path(folder) / "b.txt"]
-            for path in paths:
-                path.write_text(path.stem, encoding="utf-8")
-            response = SimpleNamespace(text="remote-url", raise_for_status=Mock())
-            live = SimpleNamespace(post=AsyncMock(return_value=response))
-            captured = {}
-
-            async def generate(self, **kwargs):
-                captured.update(kwargs)
-                yield "response chunk"
-
-            class SDKClientDouble:
-                _generate = generate
-                auto_close = False
-                push_id = "push"
-
-                def __init__(self):
-                    self._live_client = live
-                    self._check_account_status = Mock()
-
-                async def _sync_activity(self):
-                    return None
-
-            client = SDKClientDouble()
-            chat = SimpleNamespace(metadata={"chat": True}, last_output=None)
-            result = [
-                item
-                async for item in stream_local_files(
-                    client, chat, "prompt", paths, extended_thinking=True
-                )
-            ]
-            self.assertEqual(result, ["response chunk"])
-            self.assertEqual(live.post.await_count, 2)
-            self.assertEqual(
-                captured["req_file_data"], [[["remote-url"], "a.txt"], [["remote-url"], "b.txt"]]
-            )
-            self.assertTrue(captured["extended_thinking"])
 
 
 class ChatGPTStreamingUploadTests(unittest.TestCase):

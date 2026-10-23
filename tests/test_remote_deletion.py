@@ -27,7 +27,7 @@ class DeletionVerificationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_gemini_rpc_reply_cannot_confirm_a_delete(self):
         client = SimpleNamespace(
-            _batch_execute=AsyncMock(return_value=SimpleNamespace(text="not a valid response"))
+            batch=AsyncMock(return_value=SimpleNamespace(text="not a valid response"))
         )
         with self.assertRaises(ProviderError):
             await NotebookRPC(AsyncMock(return_value=client)).call(

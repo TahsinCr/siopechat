@@ -17,7 +17,8 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from ..session import save_session
+from ..errors import AccountPaused
+from ..session import read_session, save_session
 from .constants import DEFAULT_CDP_URL, FORBIDDEN_REPLAY_HEADERS
 from .errors import ChatGPTWebError
 from .resources import Script, script_path
@@ -139,12 +140,10 @@ class BrowserSession:
     def load(self) -> tuple[str, dict[str, str]]:
         path = self.paths.session_file
         try:
-            if path.stat().st_size > 2 * 1024 * 1024:
-                raise ChatGPTWebError("saved ChatGPT session exceeds the size limit")
-            value = json.loads(path.read_text(encoding="utf-8"))
+            value = read_session(path)
             url = value["url"]
             headers = value["headers"]
-        except FileNotFoundError as error:
+        except (FileNotFoundError, AccountPaused) as error:
             raise ChatGPTWebError("no saved session; run siopechat login") from error
         except (KeyError, TypeError, json.JSONDecodeError, UnicodeDecodeError, OSError) as error:
             raise ChatGPTWebError("saved ChatGPT session is invalid") from error

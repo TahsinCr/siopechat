@@ -44,6 +44,9 @@ def create_application(root: Path | None = None):
     settings = Settings(root / "config.json")
     api = ExtensionAPI(settings)
     api.provide("application", "paths", root)
+    from account_repository import AccountRepository
+
+    repository = AccountRepository(root / "data" / "accounts.sqlite3")
     backend = BackendService(root)
     api.provide("application", "backend", backend)
     api.providers.register(
@@ -54,17 +57,13 @@ def create_application(root: Path | None = None):
     )
 
     api.providers.register(
-        create_provider(
-            "gemini", credential_file=root / "data/accounts/gemini/default/cookies.json"
-        ),
+        create_provider("gemini", credential_file=repository.credentials("gemini/default")),
         account_factory=lambda account_id, **config: create_provider(
             "gemini", account_id, **config
         ),
     )
     api.providers.register(
-        create_provider(
-            "claude", credential_file=root / "data/accounts/claude/default/native.json"
-        ),
+        create_provider("claude", credential_file=repository.credentials("claude/default")),
         account_factory=lambda account_id, **config: create_provider(
             "claude", account_id, **config
         ),

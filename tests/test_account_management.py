@@ -59,14 +59,13 @@ class AccountManagementTests(unittest.TestCase):
         key = self.gemini
         self.accounts.select(key)
         self.accounts.remember(key, "model", "effort")
-        path = self.accounts.credential_path(key)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("preserved session")
+        path = self.accounts.credentials(key)
+        path.save({"session": "preserved session"})
         before = self.api.settings.snapshot()["accounts"]
         renamed = self.accounts.rename(key, "  Work account  ")
         self.assertEqual(renamed["label"], "Work account")
         self.assertEqual(renamed["key"], key)
-        self.assertEqual(path.read_text(), "preserved session")
+        self.assertEqual(path.load(), {"session": "preserved session"})
         after = Settings(self.api.settings.path).snapshot()["accounts"]
         self.assertEqual(after["active"], before["active"])
         self.assertEqual(after["selected"], before["selected"])
@@ -101,10 +100,10 @@ class AccountManagementTests(unittest.TestCase):
         key = self.gemini
         self.accounts.select(key)
         self.accounts.remember(key, "model", "effort")
-        path = self.accounts.credential_path(key)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text('{"__Secure-1PSID":"test"}')
-        keep = path.parent / "history-to-keep.txt"
+        path = self.accounts.credentials(key)
+        path.save({"__Secure-1PSID": "test"})
+        keep = self.accounts.directory(key) / "history-to-keep.txt"
+        keep.parent.mkdir(parents=True, exist_ok=True)
         keep.write_text("local history")
         self.accounts._remember_verification(key)
         self.accounts.remove(key)

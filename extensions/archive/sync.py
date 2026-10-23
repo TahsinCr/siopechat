@@ -14,6 +14,8 @@ from .adapters import MAPPINGS, Mapping
 from .history import merge_conversation
 from .repository import encode
 
+SYNC_MERGE_OVERLAP = 80
+
 
 @dataclass(frozen=True)
 class SyncChanged:
@@ -238,8 +240,51 @@ class Archive:
         if self.events and not self.events.closed:
             self.events.publish(SyncChanged(*key, state))
 
-    def read(self, account, kind, remote, fetch, force=False, wait=True, window=False):
-        """Return a saved value immediately; one bounded worker checks the remote value."""
+    def _merge_partial_history(self, account, remote, value, current):
+        """Merge a provider tail against a bounded SQL suffix, preserving its prefix."""
+        ordinal = getattr(self.repository, "message_ordinal", None)
+        replace_tail = getattr(self.repository, "replace_conversation_tail", None)
+        page_messages = getattr(self.repository, "messages", None)
+        messages = value.get("messages")
+        if (
+            not current
+            or not messages
+            or not callable(ordinal)
+            or not callable(replace_tail)
+            or not callable(page_messages)
+        ):
+            return False
+        anchor = ordinal(account, remote, messages[0].get("id"))
+        if anchor is None:
+            return False
+        total = (current.get("history_window") or {}).get("total", len(current.get("messages", [])))
+        start = max(0, anchor - SYNC_MERGE_OVERLAP)
+        local_tail = []
+        offset = start
+        while offset < total:
+            batch = page_messages(account, remote, limit=min(500, total - offset), offset=offset)
+            if not batch:
+                break
+            local_tail.extend(batch)
+            offset += len(batch)
+        local_header = dict(current)
+        local_header.pop("messages", None)
+        local_header.pop("history_window", None)
+        merged = merge_conversation(value, dict(local_header, messages=local_tail))
+        merged.pop("history_window", None)
+        mapping = self.mappings.get(account.split("/")[0], Mapping())
+        if not replace_tail(account, remote, start, mapping.normalize("conversation", merged)):
+            return False
+        key = (account, "conversation", remote)
+        with self._lock:
+            self._written(key)
+            self._checked[key] = time.monotonic()
+            if len(self._checked) > 2048:
+                self._checked.pop(next(iter(self._checked)))
+        return True
+
+    def read(self, account, kind, remote, fetch, force=False, wait=True, window=False, fresh=False):
+        """Serve cached records quickly, or await a bounded refresh when fresh is requested."""
         key = (account, kind, remote)
         saved = (
             (lambda: self.conversation_window(account, remote))
@@ -247,6 +292,16 @@ class Archive:
             else (lambda: self.get(*key))
         )
         value = saved()
+        base_window = value if window and kind == "conversation" and value else None
+        if kind == "conversation" and base_window is None:
+            base_window = self.conversation_window(account, remote)
+        base_end = (
+            (base_window.get("history_window") or {}).get(
+                "total", len(base_window.get("messages", []))
+            )
+            if isinstance(base_window, dict)
+            else 0
+        )
         started = False
         with self._lock:
             if self.closed or key in self._deleted:
@@ -257,13 +312,16 @@ class Archive:
                 self._fetchers.popitem(last=False)
             future = self._pending.get(key)
             checked = self._checked.get(key)
-            if future is None and (force or checked is None or time.monotonic() - checked > 60):
+            if future is None and (
+                force or fresh or checked is None or time.monotonic() - checked > 60
+            ):
                 if len(self._pending) >= 32:
                     if value is not None:
                         return value
                     raise RuntimeError("Senkronizasyon kuyruğu dolu; birazdan yeniden deneyin")
                 generation = self._versions.get(key, 0)
                 self._state(key, "syncing")
+                state_version = self._states[key]["version"]
 
                 def work():
                     try:
@@ -276,29 +334,98 @@ class Archive:
                                 )
                             if key in self._deleted:
                                 return None
-                            current = self.get(*key) if kind == "conversation" else None
+                            partial_written = False
                             if (
-                                not self.closed
+                                kind == "conversation"
+                                and "messages" in result
+                                and result.get("history_complete", True) is False
+                            ):
+                                current = self.conversation_window(account, remote)
+                                partial_written = self._merge_partial_history(
+                                    account, remote, result, current
+                                )
+                                if partial_written:
+                                    accept = True
+                                elif current is not None:
+                                    # Keep a lossless fallback if provider IDs no longer
+                                    # overlap; this path is rare and must not drop history.
+                                    current = self.get(*key)
+                                    if current and "messages" in current:
+                                        merged = merge_conversation(result, current)
+                                        result = dict(
+                                            current,
+                                            messages=merged["messages"],
+                                            history_complete=False,
+                                        )
+                                        accept = True
+                            if (
+                                not partial_written
+                                and not accept
                                 and kind == "conversation"
                                 and "messages" in result
-                                and current
-                                and "messages" in current
                             ):
-                                merged = merge_conversation(result, current)
-                                result = (
-                                    dict(
-                                        current,
-                                        messages=merged["messages"],
-                                        history_complete=merged.get(
-                                            "history_complete",
-                                            current.get("history_complete", True),
-                                        ),
+                                current = self.conversation_window(account, remote)
+                                current_total = (
+                                    (current.get("history_window") or {}).get(
+                                        "total", len(current.get("messages", []))
                                     )
-                                    if not accept
-                                    else merged
+                                    if current
+                                    else 0
                                 )
+                                if result.get("history_complete", True) is not False and callable(
+                                    getattr(self.repository, "messages", None)
+                                ):
+                                    # A local send can finish while provider history is in
+                                    # flight. Align against only the local tail that could
+                                    # have changed instead of loading a second full history.
+                                    offset = max(
+                                        0, min(base_end, current_total) - SYNC_MERGE_OVERLAP
+                                    )
+                                    local_tail = []
+                                    while offset < current_total:
+                                        batch = self.repository.messages(
+                                            account,
+                                            remote,
+                                            limit=min(500, current_total - offset),
+                                            offset=offset,
+                                        )
+                                        if not batch:
+                                            break
+                                        local_tail.extend(batch)
+                                        offset += len(batch)
+                                    merged = merge_conversation(
+                                        result, dict(current or {}, messages=local_tail)
+                                    )
+                                    if current:
+                                        header = dict(current)
+                                        header.pop("messages", None)
+                                        header.pop("history_window", None)
+                                        result = dict(
+                                            header,
+                                            messages=merged["messages"],
+                                            history_complete=merged.get(
+                                                "history_complete",
+                                                current.get("history_complete", True),
+                                            ),
+                                        )
+                                    else:
+                                        result = merged
+                                else:
+                                    # Partial provider pages need the local prefix so a
+                                    # refresh cannot discard older archived messages.
+                                    current = self.get(*key)
+                                    if current and "messages" in current:
+                                        merged = merge_conversation(result, current)
+                                        result = dict(
+                                            current,
+                                            messages=merged["messages"],
+                                            history_complete=merged.get(
+                                                "history_complete",
+                                                current.get("history_complete", True),
+                                            ),
+                                        )
                                 accept = True
-                            if accept:
+                            if accept and not partial_written:
                                 self.put(*key, result)
                                 with self._lock:
                                     self._checked[key] = time.monotonic()
@@ -309,13 +436,18 @@ class Archive:
                         # in flight. Cold waiters must also see that newer value.
                         return saved()
                     except Exception as error:
-                        with self._lock:
-                            if key in self._deleted:
-                                raise
-                            self._checked[key] = time.monotonic()
-                            if len(self._checked) > 2048:
-                                self._checked.pop(next(iter(self._checked)))
-                        self.repository.state(*key, "error", str(error))
+                        with self._write_lock:
+                            with self._lock:
+                                if key in self._deleted:
+                                    raise
+                                self._checked[key] = time.monotonic()
+                                if len(self._checked) > 2048:
+                                    self._checked.pop(next(iter(self._checked)))
+                                publish_error = (
+                                    self._states.get(key, {}).get("version") == state_version
+                                )
+                            if publish_error:
+                                self.repository.state(*key, "error", str(error))
                         raise
 
                 future = self._pool.submit(work)
@@ -331,19 +463,29 @@ class Archive:
                                 if not completed.cancelled()
                                 else RuntimeError("İptal edildi")
                             )
-                            self._state(
-                                key, "error" if error else "ready", str(error) if error else None
-                            )
+                            if self._states.get(key, {}).get("version") == state_version:
+                                self._state(
+                                    key,
+                                    "error" if error else "ready",
+                                    str(error) if error else None,
+                                )
                     self._maybe_close_repository()
 
         # add_done_callback may execute immediately in this caller. Register it
         # outside _lock to preserve the write-lock -> state-lock ordering.
         if started:
             future.add_done_callback(done)
-        if value is not None:
+        if value is not None and not fresh:
             return value
         if future is not None:
-            return future.result(timeout=50) if wait else None
+            if not wait:
+                return None
+            try:
+                return future.result(timeout=50)
+            except Exception:
+                if value is not None:
+                    return value
+                raise
         with self._lock:
             state = self._states.get(key, {})
             if state.get("state") == "error":
@@ -367,6 +509,18 @@ class Archive:
     def states(self):
         with self._lock:
             return copy.deepcopy(list(self._states.values()))
+
+    def mark_ready(self, account, kind, remote):
+        """Clear a transient sync error after a confirmed provider operation."""
+        key = (account, kind, remote)
+        with self._write_lock:
+            with self._lock:
+                if self.closed or key in self._deleted:
+                    return
+            self.repository.state(*key, "ready")
+            with self._lock:
+                if not self.closed and key not in self._deleted:
+                    self._state(key, "ready")
 
     def deleted(self, account, kind, remote):
         with self._lock:
