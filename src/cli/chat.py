@@ -1949,11 +1949,15 @@ class ChatView:
                     return
                 if not isinstance(page, dict) or not isinstance(page.get("items"), list):
                     return
-                projects = {
-                    key: item
-                    for key, item in self.project_items.items()
-                    if origin(key, account["key"])[0] != account["key"]
-                }
+                projects = (
+                    dict(self.project_items)
+                    if more
+                    else {
+                        key: item
+                        for key, item in self.project_items.items()
+                        if origin(key, account["key"])[0] != account["key"]
+                    }
+                )
                 for item in page["items"]:
                     if not isinstance(item, dict) or not item.get("id"):
                         continue

@@ -1,8 +1,10 @@
 """Reported wrapped cursor failure and global sidebar and model-scoped project picker."""
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.layout.controls import FormattedTextControl
@@ -76,5 +78,36 @@ class CursorTests(unittest.TestCase):
                     )
                     view.choose_project("@" + gemini + "/notebooks%2Fabcdef")
                     self.assertEqual(view.current_project["name"], "Gemini notebook")
+            finally:
+                api.runtime.close()
+
+    def test_loading_next_project_page_keeps_previous_pages_and_other_accounts(self):
+        with tempfile.TemporaryDirectory() as folder:
+            api = create_application(Path(folder))
+            try:
+                accounts = api.get("accounts")
+                first_id = "@chatgpt/default/project-1"
+                next_id = "@chatgpt/default/project-2"
+                other_id = "@gemini/personal/notebook-1"
+                with terminal(account_service=accounts) as (view, _):
+                    view.project_items = {
+                        first_id: {"id": first_id, "name": "Page one"},
+                        other_id: {"id": other_id, "name": "Other account"},
+                    }
+                    view.project_cursor = json.dumps({"chatgpt/default": "page-2"})
+                    view._read_in_background = lambda read, success, _failure, **_kwargs: success(
+                        read()
+                    )
+
+                    def load_next(cursor, *, account_keys=None, on_account=None):
+                        self.assertEqual(json.loads(cursor), {"chatgpt/default": "page-2"})
+                        page = {"items": [{"id": next_id, "name": "Page two"}], "cursor": None}
+                        on_account({"key": "chatgpt/default"}, page)
+                        return page | {"errors": [], "failed_accounts": []}
+
+                    with patch.object(accounts, "all_projects", side_effect=load_next):
+                        view.refresh_projects(more=True)
+
+                    self.assertEqual(set(view.project_items), {first_id, next_id, other_id})
             finally:
                 api.runtime.close()

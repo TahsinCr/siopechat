@@ -14,10 +14,13 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 ### Changed
 - Render large fenced code messages through bounded transcript windows, avoiding full-message ANSI buffers and syntax tokenization.
 - Keep uploaded file metadata without retaining their bytes, and remove legacy archive copies during the schema v5 migration.
+- Document the irreversible schema v5 cleanup and pre-upgrade backup scope in all README versions.
 - Show each provider's projects as soon as its background refresh completes.
 
 ### Fixed
 - Preserve the user's latest scroll anchor when an older SQLite history page finishes loading late.
+- Keep previously loaded provider projects visible when loading the next project page.
+- Fix the provider wheel and source-archive CI command blocks so the workflow can be parsed and start jobs.
 - Stop ChatGPT file uploads by cancelling the synchronous transfer, and reject files changed after preflight.
 - Keep split-pane transcript render caches bounded and release inactive pane pages.
 - Retain failed provider backends for a later `close()` retry instead of discarding them.

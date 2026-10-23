@@ -58,12 +58,16 @@ jobs:
       - run: uv build src/providers --out-dir "$RUNNER_TEMP/provider-dist"
       - run: uv venv "$RUNNER_TEMP/provider-venv" --python "${{ matrix.python }}"
       - run: uv pip install --python "$RUNNER_TEMP/provider-venv/bin/python" "$RUNNER_TEMP/provider-dist"/*.whl
-      - run: "$RUNNER_TEMP/provider-venv/bin/python" -m unittest discover -s src/providers/tests -p test_api.py -v
-      - run: "$RUNNER_TEMP/provider-venv/bin/python" tests/provider_package_smoke.py
+      - run: |
+          "$RUNNER_TEMP/provider-venv/bin/python" -m unittest discover -s src/providers/tests -p test_api.py -v
+      - run: |
+          "$RUNNER_TEMP/provider-venv/bin/python" tests/provider_package_smoke.py
       - run: uv venv "$RUNNER_TEMP/provider-sdist-venv" --python "${{ matrix.python }}"
       - run: uv pip install --python "$RUNNER_TEMP/provider-sdist-venv/bin/python" "$RUNNER_TEMP/provider-dist"/*.tar.gz
-      - run: "$RUNNER_TEMP/provider-sdist-venv/bin/python" -m unittest discover -s src/providers/tests -p test_api.py -v
-      - run: "$RUNNER_TEMP/provider-sdist-venv/bin/python" tests/provider_package_smoke.py
+      - run: |
+          "$RUNNER_TEMP/provider-sdist-venv/bin/python" -m unittest discover -s src/providers/tests -p test_api.py -v
+      - run: |
+          "$RUNNER_TEMP/provider-sdist-venv/bin/python" tests/provider_package_smoke.py
   latest-dependencies:
     runs-on: ubuntu-latest
     env:
