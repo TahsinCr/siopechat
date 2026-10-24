@@ -198,6 +198,12 @@ Tests run without requiring your personal account sessions. Install [uv](https:/
 
 ```sh
 uv sync --locked --all-groups
+python run_tests.py
+```
+
+The script runs the Python and JavaScript test suites. It prefers the locked `uv` environment, then a project virtual environment, and finally the Python interpreter used to start the script. To run the checks individually:
+
+```sh
 PYTHONPATH=src:. uv run --locked python -m unittest discover -s tests
 node --test tests/js/*.test.cjs
 uv run --locked python -m ruff check .
