@@ -21,6 +21,7 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 
 ### Changed
 
+- Exclude the application test tree from the root source distribution while retaining tests in the repository and CI.
 - Make launch scripts select an existing supported environment consistently and check Python 3.10+ and Node.js 22+ without installing dependencies at startup.
 - Make archive repository operations explicit and required; remove optional-method fallbacks that could load a complete conversation during a send or synchronization race.
 - Discard unknown application settings while loading configuration so removed preferences do not prevent startup; unsupported settings are not exposed in the application.
