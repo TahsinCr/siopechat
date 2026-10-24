@@ -105,6 +105,7 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 - Remove the `CHATGPT_WEB_MODEL` environment override in favor of the selected account's model catalog and current chat preference.
 - Require extensions to provide a manifest and an explicit matching API version; remove the implicit version-1 and manifest-less extension paths.
 - Remove the archive history import shim and use the provider package's shared history module directly.
+- Call the required archive repository history methods directly during partial-history merging; remove optional method-discovery fallbacks.
 
 ## [1.3-beta] - 2026-10-22
 

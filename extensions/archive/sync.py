@@ -244,23 +244,14 @@ class Archive:
 
     def _merge_partial_history(self, account, remote, value, current):
         """Merge a provider tail against a bounded SQL suffix, preserving its prefix."""
-        ordinal = getattr(self.repository, "message_ordinal", None)
-        replace_tail = getattr(self.repository, "replace_conversation_tail", None)
-        merge_window = getattr(self.repository, "partial_history_window", None)
         messages = value.get("messages")
-        if (
-            not current
-            or not messages
-            or not callable(ordinal)
-            or not callable(replace_tail)
-            or not callable(merge_window)
-        ):
+        if not current or not messages:
             return False
-        anchor = ordinal(account, remote, messages[0].get("id"))
+        anchor = self.repository.message_ordinal(account, remote, messages[0].get("id"))
         if anchor is None:
             return False
         start = max(0, anchor - SYNC_MERGE_OVERLAP)
-        local_tail = merge_window(
+        local_tail = self.repository.partial_history_window(
             account,
             remote,
             start,
@@ -273,7 +264,9 @@ class Archive:
         merged = merge_conversation(value, dict(local_header, messages=local_tail))
         merged.pop("history_window", None)
         mapping = self.mappings.get(account.split("/")[0], Mapping())
-        if not replace_tail(account, remote, start, mapping.normalize("conversation", merged)):
+        if not self.repository.replace_conversation_tail(
+            account, remote, start, mapping.normalize("conversation", merged)
+        ):
             return False
         key = (account, "conversation", remote)
         with self._lock:
