@@ -20,6 +20,7 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 
 ### Changed
 
+- Isolate streamed event handling and provider snapshot reconciliation from the chat send coordinator without changing the send lifecycle.
 - Move legacy per-account conversation caches, active-chat pointers and deletion markers into the existing SQLite stores. The account database migration is additive and preserves its session/catalog schema; the archive remains the canonical history store when enabled.
 - Count models across selected accounts of enabled providers and show how many provider catalogs are ready; fetch missing catalogs in the background without holding up chat startup.
 - Keep the composer available while a known chat's local history and provider refresh load; merge late history with any turn already sent from the tab.

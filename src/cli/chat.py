@@ -88,6 +88,95 @@ RenameConversation = Callable[[str, str], None]
 SetActiveConversation = Callable[[str | None], None]
 
 
+class _SendStream:
+    """Apply provider stream events to one conversation tab."""
+
+    def __init__(self, view: ChatView, target_tab: dict[str, Any], messages: list[Message]):
+        self.view = view
+        self.target_tab = target_tab
+        self.messages = messages
+        self.stream_id = uuid.uuid4().hex
+        self.rendered = ""
+        self.final_message_id = None
+        self._refresh_lock = threading.Lock()
+        self._refresh_pending = False
+        self._refresh_status = False
+
+    def _is_active(self) -> bool:
+        return self.target_tab is self.view.tabs[self.view.active_tab]
+
+    def _schedule_refresh(self, *, show_status: bool = False) -> None:
+        with self._refresh_lock:
+            self._refresh_status = self._refresh_status or show_status
+            if self._refresh_pending:
+                return
+            self._refresh_pending = True
+
+        def update_active_view() -> None:
+            with self._refresh_lock:
+                update_status = self._refresh_status
+                self._refresh_status = False
+                self._refresh_pending = False
+            if self._is_active():
+                if update_status:
+                    self.view.status = self.view.tr("Streaming response…")
+                self.view.scroll_bottom(force=False)
+
+        self.view._dispatch_ui(update_active_view)
+
+    def register_connection(self, connection: Any) -> None:
+        self.target_tab["connection"] = connection
+        self.target_tab["job_id"] = getattr(connection, "id", None)
+        if self._is_active():
+            self.view.cancel_connection = connection
+        if self.target_tab.get("cancel_requested"):
+            self.view._cancel_connection(connection)
+
+    def on_event(self, event: dict[str, Any]) -> None:
+        connection = self.target_tab.get("connection")
+        if connection is not None:
+            self.target_tab["job_id"] = getattr(connection, "id", None)
+        event_type = event.get("type")
+        if event.get("channel") == "analysis" or event_type == "reasoning":
+            text = event.get("text")
+            if not isinstance(text, str):
+                return
+            identity = self.stream_id + ":" + str(event.get("message_id") or "reasoning")
+            with self.view.lock:
+                item = next(
+                    (item for item in self.messages if item.get("stream_id") == identity), None
+                )
+                if item is None:
+                    item = {
+                        "role": "reasoning",
+                        "text": "",
+                        "stream_id": identity,
+                        "local_pending": True,
+                    }
+                    self.messages.insert(max(0, len(self.messages) - 1), item)
+                item["text"] = item["text"] + text if event_type == "delta" else text
+                self.target_tab["render_revision"] = self.target_tab.get("render_revision", 0) + 1
+            self._schedule_refresh()
+            return
+
+        identity = event.get("message_id")
+        if identity and self.final_message_id and identity != self.final_message_id:
+            self.rendered = ""
+        if identity:
+            self.final_message_id = identity
+        text = event.get("text")
+        if event_type == "delta" and isinstance(text, str):
+            self.rendered += text
+        elif event_type == "replace" and isinstance(text, str):
+            self.rendered = text
+        else:
+            return
+        with self.view.lock:
+            self.messages[-1]["text"] = self.rendered
+            self.target_tab["render_revision"] = self.target_tab.get("render_revision", 0) + 1
+        self._schedule_refresh(show_status=True)
+
+
 class ChatView:
     def __init__(
         self,
@@ -4842,6 +4931,50 @@ class ChatView:
             self.loading_conversation, self.loading_started = False, None
             self.status = self.tr("Arka plan iş kuyruğu dolu; yeniden deneyin")
 
+    def _apply_send_snapshot(
+        self, result: dict[str, Any], messages: list[Message], rendered: str
+    ) -> tuple[str | None, str | None]:
+        conversation = result.get("conversation")
+        if not isinstance(conversation, dict):
+            return None, None
+
+        resolved_title = conversation.get("title") or None
+        resolved_model = conversation.get("default_model_slug")
+        if not isinstance(resolved_model, str) or not resolved_model:
+            resolved_model = None
+        previous_ids = set(result.get("previous_ids", []))
+        final_text = ""
+        for message in conversation.get("messages", []):
+            if not isinstance(message, dict) or message.get("id") in previous_ids:
+                continue
+            author = message.get("author") or {}
+            if author.get("role") == "assistant" and message.get("channel") == "analysis":
+                from providers.chatgpt.formats import normalize_message
+
+                visible = visible_chat_message(normalize_message(message))
+                if visible and not any(
+                    item.get("role") == "reasoning" and item.get("text") == visible["text"]
+                    for item in messages
+                ):
+                    with self.lock:
+                        messages.insert(max(0, len(messages) - 1), visible)
+                continue
+            if author.get("role") != "assistant" or message.get("recipient") not in (None, "all"):
+                continue
+            metadata = message.get("metadata") or {}
+            if isinstance(metadata, dict) and isinstance(metadata.get("model_slug"), str):
+                resolved_model = metadata["model_slug"]
+            content = message.get("content") or {}
+            parts = content.get("parts") or []
+            text_parts = [part for part in parts if isinstance(part, str)]
+            if text_parts:
+                final_text = "\n".join(text_parts)
+
+        if final_text and final_text != rendered:
+            with self.lock:
+                messages[-1]["text"] = final_text
+        return resolved_title, resolved_model
+
     def run_send(
         self,
         prompt: str,
@@ -4861,10 +4994,8 @@ class ChatView:
         def is_active():
             return target_tab is self.tabs[self.active_tab]
 
-        rendered = ""
-        stream_id = uuid.uuid4().hex
+        stream = _SendStream(self, target_tab, messages)
         started = target_tab.get("started", self.active_started)
-        final_message_id = None
         elapsed = None
         final_status = "Ready"
         send_succeeded = False
@@ -4874,90 +5005,13 @@ class ChatView:
         resolved_id = conversation_id
         resolved_title: str | None = None
         resolved_model: str | None = None
-        refresh_lock = threading.Lock()
-        refresh_pending = False
-        refresh_status = False
-
-        def schedule_stream_refresh(*, show_status: bool = False) -> None:
-            nonlocal refresh_pending, refresh_status
-            with refresh_lock:
-                refresh_status = refresh_status or show_status
-                if refresh_pending:
-                    return
-                refresh_pending = True
-
-            def update_active_view() -> None:
-                nonlocal refresh_pending, refresh_status
-                with refresh_lock:
-                    update_status = refresh_status
-                    refresh_status = False
-                    refresh_pending = False
-                if is_active():
-                    if update_status:
-                        self.status = self.tr("Streaming response…")
-                    self.scroll_bottom(force=False)
-
-            self._dispatch_ui(update_active_view)
-
-        def register_connection(connection: Any) -> None:
-            target_tab["connection"] = connection
-            target_tab["job_id"] = getattr(connection, "id", None)
-            if is_active():
-                self.cancel_connection = connection
-            if target_tab.get("cancel_requested"):
-                self._cancel_connection(connection)
-
-        def on_event(event: dict[str, Any]) -> None:
-            nonlocal rendered, final_message_id
-            connection = target_tab.get("connection")
-            if connection is not None:
-                target_tab["job_id"] = getattr(connection, "id", None)
-            event_type = event.get("type")
-            if event.get("channel") == "analysis" or event_type == "reasoning":
-                text = event.get("text")
-                if not isinstance(text, str):
-                    return
-                identity = stream_id + ":" + str(event.get("message_id") or "reasoning")
-                with self.lock:
-                    item = next(
-                        (item for item in messages if item.get("stream_id") == identity), None
-                    )
-                    if item is None:
-                        item = {
-                            "role": "reasoning",
-                            "text": "",
-                            "stream_id": identity,
-                            "local_pending": True,
-                        }
-                        messages.insert(max(0, len(messages) - 1), item)
-                    item["text"] = item["text"] + text if event_type == "delta" else text
-                    target_tab["render_revision"] = target_tab.get("render_revision", 0) + 1
-                schedule_stream_refresh()
-                return
-            identity = event.get("message_id")
-            if identity and final_message_id and identity != final_message_id:
-                rendered = ""
-            if identity:
-                final_message_id = identity
-            text = event.get("text")
-            if event_type == "delta" and isinstance(text, str):
-                rendered += text
-            elif event_type == "replace" and isinstance(text, str):
-                rendered = text
-            else:
-                return
-            with self.lock:
-                messages[-1]["text"] = rendered
-                target_tab["render_revision"] = target_tab.get("render_revision", 0) + 1
-            schedule_stream_refresh(show_status=True)
-
         try:
             result = (send_callback or self.send_prompt)(
                 conversation_id,
                 prompt,
                 attachments,
-                on_event,
-                register_connection,
+                stream.on_event,
+                stream.register_connection,
                 model,
                 effort,
                 **({"project_id": project_id} if project_id else {}),
@@ -4974,47 +5028,11 @@ class ChatView:
             result_id = result.get("conversation_id")
             if isinstance(result_id, str) and result_id:
                 resolved_id = result_id
-            conversation = result.get("conversation")
-            if isinstance(conversation, dict):
-                resolved_title = conversation.get("title") or None
-                response_model = conversation.get("default_model_slug")
-                if isinstance(response_model, str) and response_model:
-                    resolved_model = response_model
-                previous_ids = set(result.get("previous_ids", []))
-                final_text = ""
-                for message in conversation.get("messages", []):
-                    if not isinstance(message, dict) or message.get("id") in previous_ids:
-                        continue
-                    author = message.get("author") or {}
-                    if author.get("role") == "assistant" and message.get("channel") == "analysis":
-                        from providers.chatgpt.formats import normalize_message
-
-                        visible = visible_chat_message(normalize_message(message))
-                        if visible and not any(
-                            item.get("role") == "reasoning" and item.get("text") == visible["text"]
-                            for item in messages
-                        ):
-                            with self.lock:
-                                messages.insert(max(0, len(messages) - 1), visible)
-                        continue
-                    if author.get("role") != "assistant" or message.get("recipient") not in (
-                        None,
-                        "all",
-                    ):
-                        continue
-                    metadata = message.get("metadata") or {}
-                    if isinstance(metadata, dict) and isinstance(metadata.get("model_slug"), str):
-                        resolved_model = metadata["model_slug"]
-                    content = message.get("content") or {}
-                    parts = content.get("parts") or []
-                    text_parts = [part for part in parts if isinstance(part, str)]
-                    if text_parts:
-                        final_text = "\n".join(text_parts)
-                if final_text and final_text != rendered:
-                    with self.lock:
-                        messages[-1]["text"] = final_text
+            resolved_title, resolved_model = self._apply_send_snapshot(
+                result, messages, stream.rendered
+            )
         except Exception as error:
-            if not rendered:
+            if not stream.rendered:
                 with self.lock:
                     messages[-1]["text"] = "*" + self.tr("Request stopped: {0}").format(error) + "*"
             final_status = self.tr("Response stopped")
