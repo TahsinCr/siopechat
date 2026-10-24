@@ -201,7 +201,7 @@ uv sync --locked --all-groups
 python run_tests.py
 ```
 
-The script runs the Python and JavaScript test suites. It prefers the locked `uv` environment, then a project virtual environment, and finally the Python interpreter used to start the script. To run the checks individually:
+The script runs application tests, standalone provider API and credential tests, the provider smoke script against the current checkout, and JavaScript tests. It uses an active Python virtual environment first, then the locked `uv` environment, a project virtual environment, and finally the interpreter used to start the script. Python tests appear in the standard verbose `unittest` format. Node.js is required for JavaScript tests and the provider smoke check. Clean wheel/source-archive installation checks, lint/format, and package-build checks remain separate CI checks. To run the checks individually:
 
 ```sh
 PYTHONPATH=src:. uv run --locked python -m unittest discover -s tests

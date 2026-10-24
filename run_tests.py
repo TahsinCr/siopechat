@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run SiopeChat's Python and JavaScript test suites from the repository root."""
+"""Run SiopeChat's application and provider tests from the repository root."""
 
 from __future__ import annotations
 
@@ -14,6 +14,9 @@ ROOT = Path(__file__).resolve().parent
 
 
 def python_command() -> list[str]:
+    if sys.prefix != sys.base_prefix:
+        return [sys.executable]
+
     uv = shutil.which("uv")
     if uv:
         return [uv, "run", "--locked", "python"]
@@ -44,22 +47,20 @@ def main() -> int:
         python_paths.append(env["PYTHONPATH"])
     env["PYTHONPATH"] = os.pathsep.join(python_paths)
 
-    suites = [
-        (
-            "Python tests",
-            [*python_command(), "-m", "unittest", "discover", "-s", "tests"],
-        )
+    python = python_command()
+    commands = [
+        [*python, "-m", "unittest", "discover", "-s", "tests", "-v"],
+        [*python, "-m", "unittest", "discover", "-s", "src/providers/tests", "-v"],
+        [*python, "tests/provider_package_smoke.py"],
     ]
     if js_tests:
-        suites.append(("JavaScript tests", [node, "--test", *(str(path) for path in js_tests)]))
+        commands.append([node, "--test", *(str(path) for path in js_tests)])
 
-    for name, command in suites:
-        print(f"\n== {name} ==", flush=True)
+    for command in commands:
         result = subprocess.run(command, cwd=ROOT, env=env, check=False)
         if result.returncode:
             return result.returncode
 
-    print("\nAll test suites passed.", flush=True)
     return 0
 
 

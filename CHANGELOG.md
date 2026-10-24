@@ -10,7 +10,7 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 
 ### Added
 
-- Add a root-level `run_tests.py` command to run the Python and JavaScript test suites together.
+- Add a root-level `run_tests.py` command for application and provider tests, provider smoke checks, and JavaScript tests.
 - Add section-level project and conversation creation buttons to the sidebar using the existing creation actions.
 - Store account sessions, model catalogs and verification records in a private, account-scoped SQLite repository with an injectable provider credential contract.
 - Add clean-install wheel and source-archive checks for the standalone provider package to CI.
