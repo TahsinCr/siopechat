@@ -3945,13 +3945,20 @@ class ChatView:
             if still_active() and tab.get("tab_id") == tab_id:
                 self._virtual_failed_signature = None
                 previous = getattr(self, "_virtual_transcript", None)
+                previous_owner = next(
+                    (item for item in self.tabs if item.get("render_layout") is previous), None
+                )
                 latest_anchor = anchor
                 if anchor is not None and (
                     getattr(self, "_manual_scroll_revision", 0) != manual_revision
                     or (not anchor.get("edge") and self.transcript_window.vertical_scroll != scroll)
                 ):
                     latest_anchor = self.history_pager.anchor(tab) or anchor
-                if previous is not None and previous is not value:
+                if (
+                    previous is not None
+                    and previous is not value
+                    and (previous_owner is None or previous_owner is tab)
+                ):
                     previous.dispose(retain_renderer=previous.renderer is value.renderer)
                 self._virtual_transcript = value
                 if anchor is not None and tab.get("history_anchor") is anchor:
@@ -4869,7 +4876,9 @@ class ChatView:
                     if target_tab is self.tabs[self.active_tab]:
                         self._restore_active_tab(focus=False)
                         previous = getattr(self, "_virtual_transcript", None)
-                        if previous is not None:
+                        if previous is not None and not any(
+                            item.get("render_layout") is previous for item in self.tabs
+                        ):
                             previous.dispose()
                         self._virtual_transcript = None
                         self._virtual_signature = None

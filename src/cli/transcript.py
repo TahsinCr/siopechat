@@ -362,8 +362,8 @@ class TranscriptPrefetch:
         self._target = self._done = None
 
     def request(self, layout, top, height):
-        top = min(max(0, top), max(0, layout.line_count - height))
         height = max(1, height)
+        top = min(max(0, top), max(0, layout.line_count - height))
         key = (id(layout), top, height)
         self._target = (key, layout)
         if self._running is not None or self._done == key:
@@ -403,7 +403,6 @@ class TranscriptPrefetch:
                 self.invalidate()
 
         self.submit(read, finished, lambda _reason: finished())
-
 
 class VirtualTranscriptRows:
     """Sequence-compatible row view consumed by TranscriptControl."""
