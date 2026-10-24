@@ -415,8 +415,7 @@ class ChatView:
 
     def sync_failure_detail(self, failures):
         if not failures or not all(
-            "provider rate limit" in str(item.get("error") or "").casefold()
-            for item in failures
+            "provider rate limit" in str(item.get("error") or "").casefold() for item in failures
         ):
             return None
         providers = {
@@ -3316,9 +3315,9 @@ class ChatView:
                         [
                             (
                                 "class:sync.error",
-                                self.tr(
-                                    " ! {0} kayıt · {1} · önbellek korunuyor "
-                                ).format(len(failures), detail),
+                                self.tr(" ! {0} kayıt · {1} · önbellek korunuyor ").format(
+                                    len(failures), detail
+                                ),
                             )
                         ]
                     )

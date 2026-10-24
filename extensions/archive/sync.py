@@ -499,8 +499,10 @@ class Archive:
         with self._lock:
             entries = list(self._fetchers.items())
         for key, fetch in entries:
-            if key in excluded or (account is not None and key[0] != account) or (
-                kinds is not None and key[1] not in kinds
+            if (
+                key in excluded
+                or (account is not None and key[0] != account)
+                or (kinds is not None and key[1] not in kinds)
             ):
                 continue
             with self._lock:

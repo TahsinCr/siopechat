@@ -30,9 +30,7 @@ class TabMemoryReleaseTests(unittest.TestCase):
                         "memory-probe",
                         {
                             "title": "Memory probe",
-                            "messages": [
-                                {"id": "saved", "role": "assistant", "text": "saved"}
-                            ],
+                            "messages": [{"id": "saved", "role": "assistant", "text": "saved"}],
                         },
                     )
                     with terminal(account_service=app.get("accounts")) as (view, _):
@@ -58,9 +56,7 @@ class TabMemoryReleaseTests(unittest.TestCase):
                             "owner": owner,
                         }
                         tab_id = tab["tab_id"]
-                        view._prepared_transcripts = {
-                            tab_id: {"source": source, "owner": owner}
-                        }
+                        view._prepared_transcripts = {tab_id: {"source": source, "owner": owner}}
                         rendered = view.renderer.render(
                             "assistant", source, view.transcript_width(), False, False
                         )
@@ -122,9 +118,7 @@ class TabMemoryReleaseTests(unittest.TestCase):
                         "repeated-memory-probe",
                         {
                             "title": "Repeated memory probe",
-                            "messages": [
-                                {"id": "saved", "role": "assistant", "text": "saved"}
-                            ],
+                            "messages": [{"id": "saved", "role": "assistant", "text": "saved"}],
                         },
                     )
                     with terminal(account_service=app.get("accounts")) as (view, _):
@@ -208,9 +202,7 @@ class TabMemoryReleaseTests(unittest.TestCase):
                             512 * 1024,
                             "live traced heap grew across repeated tab close cycles",
                         )
-                        saved = archive.get(
-                            account_key, "conversation", "repeated-memory-probe"
-                        )
+                        saved = archive.get(account_key, "conversation", "repeated-memory-probe")
                         self.assertEqual(saved["messages"][0]["text"], "saved")
                 finally:
                     app.runtime.close()
