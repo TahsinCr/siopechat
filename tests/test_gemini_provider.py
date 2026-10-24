@@ -3,6 +3,7 @@
 import asyncio
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -17,7 +18,26 @@ from providers.models import Model
 
 
 class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
-    async def test_repeated_catalog_discovery_refreshes_account_entitlements(self):
+    async def test_background_prepare_and_first_request_share_session_open(self):
+        provider = GeminiProvider(Path("saved"), client_factory=lambda _path: client)
+        first = Model("first", "First")
+
+        async def open_session():
+            await asyncio.sleep(0.02)
+
+        client = SimpleNamespace(
+            open=AsyncMock(side_effect=open_session),
+            close=AsyncMock(),
+            models=(first,),
+            discover_models=AsyncMock(return_value=(Model("second", "Second"),)),
+        )
+        with patch("providers.gemini.adapter.session_exists", return_value=True):
+            await asyncio.gather(provider.prepare(), provider.models())
+        client.open.assert_awaited_once_with()
+        client.discover_models.assert_not_awaited()
+        await provider.close()
+
+    async def test_catalog_is_cached_but_expiry_and_force_refresh_entitlements(self):
         provider = GeminiProvider(Path("unused"))
         first, second = Model("first", "First"), Model("second", "Second")
         session = SimpleNamespace(
@@ -25,8 +45,45 @@ class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
         )
         provider._connect = AsyncMock(return_value=session)
         self.assertEqual((await provider.models()).models, (first,))
-        self.assertEqual((await provider.models()).models, (second,))
-        session.discover_models.assert_awaited_once()
+        await asyncio.gather(provider.models(), provider.models())
+        session.discover_models.assert_not_awaited()
+        self.assertEqual((await provider.models(force=True)).models, (second,))
+        provider._catalog_at -= 301
+        await asyncio.gather(provider.models(), provider.models())
+        self.assertEqual(session.discover_models.await_count, 2)
+
+    async def test_rotated_credentials_are_serialized_and_saved_on_close(self):
+        session = GeminiSession("unused")
+        current = {"__Secure-1PSID": "first"}
+        session.verified = True
+        session.http = SimpleNamespace(
+            cookies=SimpleNamespace(get_dict=lambda: dict(current)), close=AsyncMock()
+        )
+        started, release = threading.Event(), threading.Event()
+        writes = []
+
+        def save(_path, value):
+            writes.append(value)
+            if len(writes) == 1:
+                started.set()
+                if not release.wait(2):
+                    raise TimeoutError("save not released")
+
+        with patch("providers.session.save_session", side_effect=save):
+            first = asyncio.create_task(session.persist())
+            self.assertTrue(await asyncio.to_thread(started.wait, 2))
+            current["__Secure-1PSID"] = "rotated"
+            second = asyncio.create_task(session.persist())
+            await asyncio.sleep(0.01)
+            self.assertEqual(len(writes), 1)
+            release.set()
+            await asyncio.gather(first, second)
+            await session.persist()
+            self.assertEqual(len(writes), 2)
+            current["__Secure-1PSID"] = "last"
+            await session.close()
+        self.assertEqual([v["__Secure-1PSID"] for v in writes], ["first", "rotated", "last"])
+        self.assertIsNone(session.http)
 
     def test_frames_handle_utf8_boundaries_lengths_and_multiple_packets(self):
         frame = [["wrb.fr", None, json.dumps(["Türkçe"])]]
@@ -102,6 +159,26 @@ class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
         client.batch.return_value.text = "invalid"
         with self.assertRaises(ProviderError):
             await rpc.call("rpc", [])
+
+    async def test_large_rpc_json_is_decoded_off_the_provider_loop(self):
+        from providers.gemini.rpc import NotebookRPC
+
+        response = SimpleNamespace(
+            content=b" " * (256 * 1024),
+            text='[["wrb.fr","rpc","[]"]]\n',
+        )
+        client = SimpleNamespace(batch=AsyncMock(return_value=response))
+        rpc = NotebookRPC(AsyncMock(return_value=client))
+        original = rpc._decode
+        threads = []
+
+        def decode(*args):
+            threads.append(threading.get_ident())
+            return original(*args)
+
+        with patch.object(rpc, "_decode", side_effect=decode):
+            self.assertEqual(await rpc.call("rpc", []), [[]])
+        self.assertNotEqual(threads, [threading.get_ident()])
 
     async def test_close_cancels_and_joins_refresh_then_closes_http(self):
         session = GeminiSession(Path("unused"))

@@ -443,6 +443,42 @@ class Accounts:
         self._catalogs.setdefault(key, (float("-inf"), catalog))
         return self._catalogs[key][1]
 
+    def prepare_enabled(self):
+        """Warm saved sessions for enabled accounts without blocking the UI.
+
+        Failures are returned per account so one expired session cannot prevent
+        the other providers from becoming ready. Accounts without saved
+        credentials are skipped rather than prompting or opening a browser.
+        """
+        accounts = [
+            item
+            for item in self.items()
+            if item["enabled"] and session_exists(self.credentials(item["key"]))
+        ]
+        if not accounts:
+            return {}
+
+        def prepare(item):
+            key = item["key"]
+            provider = self.provider(key)
+            warmup = getattr(provider, "prepare", None)
+            if warmup is None:
+                return key, None
+            try:
+                self.call(warmup(), MODEL_TIMEOUT)
+            except AccountPaused as error:
+                self._forget_verification(key)
+                return key, str(error)
+            except Exception as error:
+                return key, str(error)
+            return key, None
+
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=min(3, len(accounts))) as pool:
+            results = pool.map(prepare, accounts)
+            return {key: error for key, error in results if error}
+
     def models(self, key, force=False):
         if not self.enabled(key.split("/")[0]):
             raise ValueError("Sağlayıcı devre dışı")
@@ -457,7 +493,9 @@ class Accounts:
 
                 async def fetch():
                     try:
-                        value = await asyncio.wait_for(self.provider(key).models(), MODEL_TIMEOUT)
+                        value = await asyncio.wait_for(
+                            self.provider(key).models(force=force), MODEL_TIMEOUT
+                        )
                     except AccountPaused:
                         self._forget_verification(key)
                         raise

@@ -148,6 +148,7 @@
   "ui.Düzenler": "Компоновки",
   "ui.{0} model · hazır": "Моделей: {0} · готово",
   "ui.Model kataloğu alınamadı: {0} · F10 yeniden dene": "Не удалось загрузить каталог моделей: {0} · F10: повторить",
+  "ui.Sağlayıcı bağlantısı hazırlanamadı: {0}": "Не удалось подготовить подключение провайдера: {0}",
   "ui.Proje bilgileri yükleniyor…": "Загрузка сведений о проекте…",
   "ui.Bilinmeyen arayüz aksiyonu": "Неизвестное действие интерфейса",
   "ui.Mevcut sohbetin sağlayıcısı değiştirilemez; yeni sohbet açın": "В существующем чате нельзя сменить провайдера; откройте новый",

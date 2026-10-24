@@ -7,7 +7,7 @@ import re
 import uuid
 
 from ..errors import AccountPaused, ProviderError
-from ..session import WebSession, read_session, save_session
+from ..session import WebSession, read_session, save_session_async
 
 ORIGIN = "https://gemini.google.com"
 BASE = ORIGIN + "/_/BardChatUi/data/"
@@ -48,6 +48,7 @@ class GeminiSession:
         self._saved = None
         self.verified = False
         self.persistence_warning = None
+        self._save_lock = asyncio.Lock()
 
     async def open(self):
         from curl_cffi.requests import AsyncSession
@@ -182,17 +183,18 @@ class GeminiSession:
         return tuple(models)
 
     async def persist(self):
-        if self.http is None or not self.verified:
-            return
-        cookies = self.http.cookies.get_dict()
-        if cookies != self._saved:
-            try:
-                await asyncio.to_thread(save_session, self.credential_file, cookies)
-            except (OSError, ValueError):
-                self.persistence_warning = "Gemini oturum kaydı güncellenemedi"
+        async with self._save_lock:
+            if self.http is None or not self.verified:
                 return
-            self._saved = cookies
-            self.persistence_warning = None
+            cookies = self.http.cookies.get_dict()
+            if cookies != self._saved:
+                try:
+                    await save_session_async(self.credential_file, cookies)
+                except (OSError, ValueError):
+                    self.persistence_warning = "Gemini oturum kaydı güncellenemedi"
+                    return
+                self._saved = cookies
+                self.persistence_warning = None
 
     async def refresh(self):
         while True:
@@ -219,6 +221,11 @@ class GeminiSession:
         if task and task is not asyncio.current_task():
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
-        http, self.http = self.http, None
+        http = self.http
         if http is not None:
-            await http.close()
+            try:
+                await self.persist()
+            finally:
+                self.http = None
+                self.verified = False
+                await http.close()

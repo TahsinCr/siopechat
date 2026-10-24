@@ -1,8 +1,10 @@
 """Saved web sessions: no browser processes, redirects or mutation retries."""
 
+import asyncio
 import json
 import os
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,7 +16,7 @@ from backend import BackendService
 from providers.claude.transport import ClaudeTransport, organization_from_bootstrap
 from providers.errors import AccountPaused, ProviderError, RateLimited, RemoteNotFound
 from providers.gemini.rpc import NotebookEditor, NotebookRPC
-from providers.session import WebSession, read_session, save_session
+from providers.session import WebSession, read_session, save_session, save_session_async
 
 
 class SessionTests(unittest.IsolatedAsyncioTestCase):
@@ -61,6 +63,34 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
         with patch("providers.session.save_session", side_effect=OSError("disk full")):
             self.assertEqual(await self.session.request("POST", "/api/project"), {"ok": True})
         self.assertTrue(self.session.persistence_warning)
+
+    async def test_large_json_is_parsed_off_the_provider_loop(self):
+        loop_thread = threading.get_ident()
+        self.client.request.return_value = SimpleNamespace(
+            status_code=200,
+            content=b" " * (256 * 1024),
+            json=lambda: {"thread": threading.get_ident()},
+        )
+        value = await self.session.request("GET", "/api/history")
+        self.assertNotEqual(value["thread"], loop_thread)
+
+    async def test_cancelled_persistence_finishes_before_returning(self):
+        started, release = threading.Event(), threading.Event()
+
+        def write(*_args):
+            started.set()
+            if not release.wait(2):
+                raise TimeoutError("write not released")
+
+        with patch("providers.session.save_session", side_effect=write):
+            task = asyncio.create_task(save_session_async(self.path, {}))
+            self.assertTrue(await asyncio.to_thread(started.wait, 2))
+            task.cancel()
+            await asyncio.sleep(0.01)
+            self.assertFalse(task.done())
+            release.set()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
 
     def test_auth_access_missing_and_limit_are_different_failures(self):
         for status, kind in [
@@ -156,6 +186,79 @@ class ClaudeHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(org, "workspace")
         with self.assertRaises(ProviderError):
             organization_from_bootstrap(data, "other")
+
+    async def test_first_discovery_is_shared_with_requests_during_warmup(self):
+        organization = "11111111-1111-1111-1111-111111111111"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "session.json"
+            save_session(path, {"cookies": {"lastActiveOrg": organization}})
+            calls = []
+
+            async def request(method, endpoint, **_kwargs):
+                calls.append(endpoint)
+                if endpoint == "/api/bootstrap":
+                    await asyncio.sleep(0.02)
+                    return {
+                        "account": {
+                            "memberships": [
+                                {
+                                    "organization": {
+                                        "uuid": organization,
+                                        "capabilities": ["chat"],
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                if endpoint.endswith("/model_selector/chat"):
+                    await asyncio.sleep(0.02)
+                    return {
+                        "model_selector_config": [
+                            {"id": "chat", "models": [{"id": "model", "name": "Model"}]}
+                        ],
+                        "model_selector_state": [],
+                    }
+                if endpoint.endswith("/chat_conversations?limit=50&offset=0"):
+                    return []
+                raise AssertionError(endpoint)
+
+            session = SimpleNamespace(
+                path=path,
+                request=AsyncMock(side_effect=request),
+                close=AsyncMock(),
+            )
+            transport = ClaudeTransport(path, session=session)
+            self.addAsyncCleanup(transport.close)
+            _, chats = await asyncio.gather(
+                transport.prepare(), transport.request("chats", cursor=0, limit=50)
+            )
+
+        self.assertEqual(chats, [])
+        self.assertEqual(calls.count("/api/bootstrap"), 1)
+        selector = f"/api/organizations/{organization}/model_selector/chat"
+        chats_endpoint = f"/api/organizations/{organization}/chat_conversations?limit=50&offset=0"
+        self.assertEqual(calls.count(selector), 1)
+        self.assertGreater(calls.index(chats_endpoint), calls.index(selector))
+
+    async def test_model_catalog_expires_and_explicit_refresh_bypasses_cache(self):
+        transport = ClaudeTransport("unused")
+        self.addAsyncCleanup(transport.close)
+
+        async def discover():
+            transport.organization = "org"
+            transport.catalog = {"models": []}
+            transport._discovered_at = asyncio.get_running_loop().time()
+            return transport.catalog
+
+        with patch.object(transport, "_discover", side_effect=discover) as fetch:
+            await asyncio.gather(transport.discover(), transport.discover())
+            await transport.discover()
+            self.assertEqual(fetch.call_count, 1)
+            await transport.discover(force=True)
+            self.assertEqual(fetch.call_count, 2)
+            transport._discovered_at -= 301
+            await transport.discover()
+            self.assertEqual(fetch.call_count, 3)
 
     async def test_http_stream_preserves_published_thinking_and_end_marker(self):
         cid = "11111111-1111-1111-1111-111111111111"

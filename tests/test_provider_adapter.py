@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 from providers import Capability, ProviderRegistry, ReplaceText, SendRequest, TextDelta
 from providers.chatgpt import BrowserSession, ChatGPTProvider, SessionPaths
+from providers.chatgpt.client import ChatGPTClient
 from providers.errors import RateLimited, RemoteNotFound
 from providers.models import Choice, FeatureState, Model, ModelCatalog, SessionState
 from tasks import JobState, TaskService
@@ -66,6 +67,25 @@ class FakeClient:
 
 
 class ProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
+    async def test_structured_text_parts_are_readable_alongside_thinking(self):
+        self.client.raw["messages"] = [
+            {
+                "id": "thought",
+                "author": {"role": "assistant"},
+                "content": {"content_type": "thoughts", "thoughts": [{"summary": "Thinking"}]},
+            },
+            {
+                "id": "answer",
+                "author": {"role": "assistant"},
+                "content": {
+                    "content_type": "multimodal_text",
+                    "parts": [{"content_type": "audio_transcription", "text": "Spoken answer"}],
+                },
+            },
+        ]
+        chat = await self.provider.get_chat("remote")
+        self.assertEqual([m.content[0].text for m in chat.messages], ["Thinking", "Spoken answer"])
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
@@ -139,6 +159,70 @@ class ProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
                 self.client.deleted,
                 ("DELETE", "https://chatgpt.com/backend-api/gizmos/g-p-created"),
             )
+
+    async def test_request_waits_for_background_preparation(self):
+        ready, release = threading.Event(), threading.Event()
+
+        def prepare_catalog():
+            ready.set()
+            if not release.wait(2):
+                raise TimeoutError("test warmup was not released")
+            return ModelCatalog(FeatureState.AVAILABLE)
+
+        self.client.model_catalog = prepare_catalog
+        warmup = asyncio.create_task(self.provider.prepare())
+        self.assertTrue(await asyncio.to_thread(ready.wait, 2))
+        history = asyncio.create_task(self.provider.get_chat("remote"))
+        await asyncio.sleep(0.02)
+        self.assertFalse(history.done())
+        release.set()
+        await warmup
+        self.assertEqual((await history).origin.remote_id, "remote")
+
+    async def test_default_http_client_is_reused_after_startup_warmup(self):
+        import httpx
+
+        raw = {"id": "remote", "title": "Example", "messages": []}
+        catalog = ModelCatalog(FeatureState.AVAILABLE)
+        self.session.load = lambda: ("https://chatgpt.com/", {"authorization": "Bearer test"})
+        real_http_client = httpx.Client
+        with (
+            patch("providers.chatgpt.client.httpx.Client", wraps=real_http_client) as clients,
+            patch.object(ChatGPTClient, "model_catalog", return_value=catalog) as model_catalog,
+            patch.object(ChatGPTClient, "list_page", return_value={"items": [raw]}),
+            patch.object(ChatGPTClient, "get_conversation", return_value=raw),
+            patch.object(ChatGPTClient, "get_project", return_value={"metadata": {}}),
+        ):
+            provider = ChatGPTProvider(self.session)
+            await provider.prepare()
+            await provider.models()
+            await provider.models(force=True)
+            await provider.list_chats(limit=1)
+            await provider.get_chat("remote")
+            await provider.project_options("project")
+            self.assertEqual(clients.call_count, 1)
+            self.assertIsNotNone(provider._http_client)
+            self.assertIs(
+                provider._http_client.temporary_conversations, provider._temporary_conversations
+            )
+            model_catalog.assert_called_with(refresh=True)
+            await provider.close()
+            self.assertIsNone(provider._http_client)
+
+    async def test_project_file_source_is_streamed_using_a_dedicated_client(self):
+        from providers.chatgpt.projects import ChatGPTProjectEditor
+
+        path = Path(self.directory.name) / "source.txt"
+        path.write_text("fixture")
+        self.client.upload_file = lambda name, mime, data, **kwargs: (
+            {"id": "file", "size_bytes": data.stat().st_size}
+            if data == path
+            else self.fail("expected a disk path")
+        )
+        editor = ChatGPTProjectEditor(self.session, lambda _: self.client)
+        with patch("pathlib.Path.read_bytes", side_effect=AssertionError("must stream")):
+            await editor.write("add_source", "project", kind="file", path=path)
+        self.assertTrue(self.client.closed.is_set())
 
     async def test_completed_snapshot_publishes_thinking_summaries(self):
         self.client.closed.set()

@@ -91,6 +91,7 @@ class ChatGPTClient:
         self.http = httpx.Client(
             follow_redirects=False,
             timeout=httpx.Timeout(30.0),
+            limits=httpx.Limits(max_keepalive_connections=5, keepalive_expiry=30.0),
         )
         if authenticate:
             try:

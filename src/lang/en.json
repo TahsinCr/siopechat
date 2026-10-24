@@ -148,6 +148,7 @@
   "ui.Düzenler": "Layouts",
   "ui.{0} model · hazır": "{0} models · ready",
   "ui.Model kataloğu alınamadı: {0} · F10 yeniden dene": "Could not load model catalog: {0} · F10 to retry",
+  "ui.Sağlayıcı bağlantısı hazırlanamadı: {0}": "Could not prepare provider connection: {0}",
   "ui.Proje bilgileri yükleniyor…": "Loading project details…",
   "ui.Bilinmeyen arayüz aksiyonu": "Unknown UI action",
   "ui.Mevcut sohbetin sağlayıcısı değiştirilemez; yeni sohbet açın": "An existing chat cannot switch providers; open a new chat",

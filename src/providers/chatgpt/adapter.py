@@ -4,6 +4,7 @@ import asyncio
 import concurrent.futures
 import threading
 from collections import OrderedDict
+from contextlib import contextmanager
 from typing import Callable
 
 from ..api import (
@@ -75,9 +76,36 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
         self.session = session
         self.account_id = account_id
         self._factory = client_factory
+        self._persistent_client = client_factory is ChatGPTClient
+        self._http_client = None
+        self._http_lock = threading.RLock()
         self._temporary_conversations = OrderedDict()
         self._gate = asyncio.Lock()
-        self.editor = ChatGPTProjectEditor(self.session, self._factory)
+        self.editor = ChatGPTProjectEditor(
+            self.session, self._factory, client_scope=self._client_scope
+        )
+
+    @contextmanager
+    def _client_scope(self):
+        """Reuse the production HTTP pool while retaining injectable test clients."""
+        if self._persistent_client:
+            with self._http_lock:
+                if self._http_client is None:
+                    self._http_client = self._factory(self.session)
+                    self._http_client.temporary_conversations = self._temporary_conversations
+                yield self._http_client
+            return
+        with self._factory(self.session) as client:
+            yield client
+
+    async def _discard_http_client(self):
+        def discard():
+            with self._http_lock:
+                client, self._http_client = self._http_client, None
+                if client is not None:
+                    client.close()
+
+        await asyncio.to_thread(discard)
 
     def attachment_policy(self):
         from ..attachments import policy_for
@@ -134,7 +162,11 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
             raise
 
     async def close(self):
-        await self.editor.close()
+        async with self._gate:
+            try:
+                await self.editor.close()
+            finally:
+                await self._discard_http_client()
 
     async def session_status(self) -> SessionStatus:
         saved = session_exists(self.session.paths.session_file)
@@ -162,6 +194,7 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
                 client.verify()
 
         async with self._gate:
+            await self._discard_http_client()
             await asyncio.to_thread(verify)
         return SessionStatus(
             SessionState.AUTHENTICATED, session_exists(self.session.paths.session_file)
@@ -169,6 +202,7 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
 
     async def forget_session(self) -> SessionStatus:
         async with self._gate:
+            await self._discard_http_client()
             await asyncio.to_thread(delete_session, self.session.paths.session_file)
             self._temporary_conversations.clear()
         return SessionStatus(SessionState.LOGIN_REQUIRED, False, "browser_session_retained")
@@ -186,10 +220,14 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
             ),
         )
 
-    async def models(self) -> ModelCatalog:
+    async def prepare(self) -> None:
+        """Warm the saved session and retain its HTTP connection pool."""
+        await self.models()
+
+    async def models(self, *, force: bool = False) -> ModelCatalog:
         def read():
-            with self._factory(self.session) as client:
-                return client.model_catalog()
+            with self._client_scope() as client:
+                return client.model_catalog(refresh=True) if force else client.model_catalog()
 
         async with self._gate:
             return await asyncio.to_thread(read)
@@ -215,14 +253,14 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
         async with self._gate:
 
             def remove():
-                with self._factory(self.session) as client:
+                with self._client_scope() as client:
                     client.delete_conversation(conversation_id)
 
             await asyncio.to_thread(remove)
 
             async def readback():
                 def read():
-                    with self._factory(self.session) as client:
+                    with self._client_scope() as client:
                         return client.get_conversation(conversation_id)
 
                 return await asyncio.to_thread(read)
@@ -233,7 +271,7 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
         from urllib.parse import quote
 
         def remove():
-            with self._factory(self.session) as client:
+            with self._client_scope() as client:
                 client.request(
                     "DELETE",
                     "https://chatgpt.com/backend-api/gizmos/" + quote(project_id, safe=""),
@@ -246,7 +284,7 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
 
     async def list_projects(self, cursor: str | None = None) -> Page[Project]:
         def read():
-            with self._factory(self.session) as client:
+            with self._client_scope() as client:
                 return client.list_projects(cursor)
 
         async with self._gate:
@@ -257,7 +295,7 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
         self, name: str, instructions: str = "", *, visibility="private", memory="default"
     ) -> Project:
         def create():
-            with self._factory(self.session) as client:
+            with self._client_scope() as client:
                 return client.create_project(
                     name, instructions, visibility=visibility, memory=memory
                 )
@@ -267,7 +305,7 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
 
     async def get_project(self, project_id: str) -> Project:
         def read():
-            with self._factory(self.session) as client:
+            with self._client_scope() as client:
                 return client.get_project(project_id)
 
         async with self._gate:
@@ -277,7 +315,7 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
         self, project_id: str, cursor: str | None = None
     ) -> Page[Conversation]:
         def read():
-            with self._factory(self.session) as client:
+            with self._client_scope() as client:
                 return client.list_project_chats(project_id, cursor)
 
         async with self._gate:
@@ -302,6 +340,8 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
             blocks = tuple(
                 Content("text", text=part)
                 if isinstance(part, str)
+                else Content("text", text=part["text"], metadata={"native": part})
+                if isinstance(part, dict) and isinstance(part.get("text"), str)
                 else Content("provider", metadata={"value": part})
                 for part in parts
             )
@@ -331,7 +371,7 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
             raise ValueError("invalid conversation page")
 
         def read():
-            with self._factory(self.session) as client:
+            with self._client_scope() as client:
                 return client.list_page(offset, limit)
 
         async with self._gate:
@@ -346,7 +386,7 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
 
     async def get_chat(self, conversation_id: str) -> Conversation:
         def read():
-            with self._factory(self.session) as client:
+            with self._client_scope() as client:
                 raw = client.get_conversation(conversation_id)
             # Parse large native histories on the worker that performed the HTTP
             # read. This keeps the shared provider event loop available to sends.
@@ -428,7 +468,7 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
             raise ValueError("title must be nonempty")
 
         def rename():
-            with self._factory(self.session) as client:
+            with self._client_scope() as client:
                 client.rename_conversation(conversation_id, title.strip())
 
         async with self._gate:
@@ -436,7 +476,7 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
 
     async def move_chat(self, conversation_id: str, project_id: str | None) -> None:
         def move():
-            with self._factory(self.session) as client:
+            with self._client_scope() as client:
                 client.move_conversation(conversation_id, project_id)
 
         async with self._gate:

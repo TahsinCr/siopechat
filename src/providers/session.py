@@ -102,6 +102,16 @@ def save_session(path, value, *, ensure_ascii=False, newline=False):
                 os.unlink(name)
 
 
+async def save_session_async(path, value):
+    """Finish an in-flight credential write before releasing a caller's save lock."""
+    worker = asyncio.create_task(asyncio.to_thread(save_session, path, value))
+    try:
+        await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        await asyncio.gather(worker, return_exceptions=True)
+        raise
+
+
 class WebSession:
     """Reuse an authenticated HTTP connection; never launch processes or follow redirects."""
 
@@ -187,6 +197,9 @@ class WebSession:
         if len(response.content) > 16 * 1024 * 1024:
             raise ProviderError("Sağlayıcı yanıtı boyut sınırını aştı")
         try:
+            # Large histories must not block unrelated accounts on the shared loop.
+            if len(response.content) >= 256 * 1024:
+                return await asyncio.to_thread(response.json)
             return response.json()
         except ValueError:
             raise ProviderError("Sağlayıcı yanıt biçimi değişmiş") from None
@@ -211,7 +224,7 @@ class WebSession:
                         cookies[cookie.name] = cookie.value
             if cookies != self._saved_cookies:
                 try:
-                    await asyncio.to_thread(save_session, self.path, cookies)
+                    await save_session_async(self.path, cookies)
                     self._saved_cookies = cookies
                 except OSError:
                     self.persistence_warning = "Oturum yenilendi ancak yerel kayıt güncellenemedi"

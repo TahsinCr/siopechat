@@ -1,6 +1,7 @@
 """Gemini web provider implementing the shared provider contract."""
 
 import asyncio
+import time
 from pathlib import Path
 
 from ..api import Capability, ConversationBound, ReplaceText, SendRequest, validate_request
@@ -48,7 +49,8 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
         self.account_id = account_id
         self._factory = client_factory
         self._client = None
-        self._catalog_delivered = False
+        self._catalog_at = None
+        self._model_gate = asyncio.Lock()
         self._gate = asyncio.Lock()
         self._connect_gate = asyncio.Lock()
         self._temporary = {}
@@ -111,13 +113,14 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
         )
         await client.open()
         self._client = client
+        self._catalog_at = time.monotonic()
         return client
 
     async def close(self):
         if hasattr(self, "editor"):
             await self.editor.close()
         client, self._client = self._client, None
-        self._catalog_delivered = False
+        self._catalog_at = None
         if client is not None:
             await client.close()
 
@@ -134,6 +137,10 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
     async def authenticate(self):
         await self._connect()
         return SessionStatus(SessionState.AUTHENTICATED, True)
+
+    async def prepare(self):
+        """Open the authenticated HTTP session and discover its initial models."""
+        await self._connect()
 
     async def forget_session(self):
         async with self._gate:
@@ -156,12 +163,17 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
             ),
         )
 
-    async def models(self):
-        client = await self._connect()
-        if self._catalog_delivered:
-            client.models = await client.discover_models()
-        self._catalog_delivered = True
-        return ModelCatalog(FeatureState.AVAILABLE, client.models)
+    async def models(self, *, force: bool = False):
+        async with self._model_gate:
+            client = await self._connect()
+            if force or (
+                self._catalog_at is not None and time.monotonic() - self._catalog_at >= 300
+            ):
+                client.models = await client.discover_models()
+                self._catalog_at = time.monotonic()
+            elif self._catalog_at is None:
+                self._catalog_at = time.monotonic()
+            return ModelCatalog(FeatureState.AVAILABLE, client.models)
 
     def _origin(self, remote_id):
         return Origin(self.id, self.account_id, remote_id)

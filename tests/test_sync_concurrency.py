@@ -555,7 +555,7 @@ class AccountConcurrencyTests(unittest.TestCase):
         catalog = ModelCatalog(FeatureState.AVAILABLE, (Model("fixture", "Fixture"),))
         for key in self.entered:
 
-            async def models(key=key):
+            async def models(key=key, *, force=False):
                 self.entered[key].set()
                 await asyncio.to_thread(release.wait, 3)
                 return catalog

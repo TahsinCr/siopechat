@@ -238,7 +238,7 @@ class AccountTests(unittest.TestCase):
     def test_catalog_single_flight_cache_and_account_local_disk_snapshot(self):
         catalog = ModelCatalog(FeatureState.AVAILABLE, (Model("gemini-test", "Gemini"),))
 
-        async def discover():
+        async def discover(*, force=False):
             await asyncio.sleep(0.04)
             return catalog
 
@@ -254,9 +254,34 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(provider.models.await_count, 1)
         self.accounts.models(self.gemini, force=True)
         self.assertEqual(provider.models.await_count, 2)
+        self.assertFalse(provider.models.await_args_list[0].kwargs["force"])
+        self.assertTrue(provider.models.await_args_list[1].kwargs["force"])
         fresh = Accounts(self.api)
         self.assertEqual(fresh.cached_models(self.gemini), catalog)
         self.assertIsNone(fresh.cached_models("chatgpt/default"))
+
+    def test_background_preparation_skips_accounts_without_credentials(self):
+        item = {"key": self.gemini, "enabled": True}
+        with (
+            patch.object(self.accounts, "items", return_value=[item]),
+            patch("accounts.session_exists", return_value=False),
+            patch.object(self.accounts, "provider", side_effect=AssertionError("no session")),
+        ):
+            self.assertEqual(self.accounts.prepare_enabled(), {})
+
+    def test_background_preparation_reports_each_account_without_raising(self):
+        item = {"key": self.gemini, "enabled": True}
+        provider = Mock()
+        provider.prepare = AsyncMock(side_effect=RuntimeError("offline"))
+        provider.close = AsyncMock()
+        with (
+            patch.object(self.accounts, "items", return_value=[item]),
+            patch("accounts.session_exists", return_value=True),
+            patch.object(self.accounts, "provider", return_value=provider),
+        ):
+            failures = self.accounts.prepare_enabled()
+        self.assertEqual(failures, {self.gemini: "offline"})
+        provider.prepare.assert_awaited_once_with()
 
     def test_old_catalog_snapshot_is_not_restored_after_entitlement_schema_changes(self):
         from dataclasses import asdict
@@ -280,7 +305,7 @@ class AccountTests(unittest.TestCase):
         self.assertIs(self.accounts.cached_models(self.gemini), good)
 
     def test_read_timeout_releases_catalog_single_flight_for_retry(self):
-        async def stalled():
+        async def stalled(*, force=False):
             await asyncio.sleep(10)
 
         provider = Mock()

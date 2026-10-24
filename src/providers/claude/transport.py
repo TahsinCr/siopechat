@@ -1,7 +1,9 @@
 """Account-scoped Claude HTTPS operations and completion streams."""
 
+import asyncio
 import json
 import mimetypes
+import time
 import uuid
 from pathlib import Path
 from urllib.parse import quote
@@ -40,19 +42,52 @@ class ClaudeTransport:
         self.session = session or WebSession("https://claude.ai", credential_file, "sessionKey")
         self.path, self.organization, self.catalog = self.session.path, None, None
         self.authenticated = False
+        self._discover_task = None
+        self._discovered_at = 0.0
 
-    async def discover(self):
+    async def _discover(self):
         data = await self.session.request("GET", "/api/bootstrap")
         values = read_session(self.path)
-        self.organization = organization_from_bootstrap(
+        organization = organization_from_bootstrap(
             data, values.get("cookies", values).get("lastActiveOrg")
         )
         selected = await self.session.request(
-            "GET", "/api/organizations/" + remote_id(self.organization) + "/model_selector/chat"
+            "GET", "/api/organizations/" + remote_id(organization) + "/model_selector/chat"
         )
-        self.catalog = selector_catalog(selected)
+        catalog = selector_catalog(selected)
+        self.organization = organization
+        self.catalog = catalog
         self.authenticated = True
-        return self.catalog
+        self._discovered_at = time.monotonic()
+        return catalog
+
+    async def discover(self, *, force=False):
+        if (
+            not force
+            and self.organization
+            and self.catalog is not None
+            and time.monotonic() - self._discovered_at < 300
+        ):
+            return self.catalog
+        task = self._discover_task
+        if task is None or task.done():
+            task = asyncio.create_task(self._discover(), name="claude-account-discovery")
+            task.add_done_callback(self._observe_discovery)
+            self._discover_task = task
+        try:
+            return await asyncio.shield(task)
+        finally:
+            if task.done() and self._discover_task is task:
+                self._discover_task = None
+
+    @staticmethod
+    def _observe_discovery(task):
+        if not task.cancelled():
+            task.exception()
+
+    async def prepare(self):
+        """Resolve the account workspace and its selectable model catalog once."""
+        await self.discover()
 
     async def base(self):
         if not self.organization:
@@ -60,6 +95,13 @@ class ClaudeTransport:
         return "/api/organizations/" + remote_id(self.organization)
 
     async def close(self):
+        task, self._discover_task = self._discover_task, None
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        self.organization = None
+        self.catalog = None
+        self.authenticated = False
         await self.session.close()
 
     async def upload_file(self, path):
@@ -115,7 +157,7 @@ class ClaudeTransport:
 
     async def request(self, mode, **v):
         if mode in ("status", "models"):
-            data = await self.discover()
+            data = await self.discover(force=mode == "status" or bool(v.get("force", False)))
             return data if mode == "models" else {"authenticated": True}
         base = await self.base()
         cid = remote_id(v["conversation_id"]) if v.get("conversation_id") else None

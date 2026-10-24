@@ -9,8 +9,9 @@ from ..projects import ProjectOptions, source_file
 
 
 class ChatGPTProjectEditor:
-    def __init__(self, session, factory):
+    def __init__(self, session, factory, *, client_scope=None):
         self.session, self.factory = session, factory
+        self.client_scope = client_scope or (lambda: self.factory(self.session))
 
     async def close(self):
         pass
@@ -26,7 +27,7 @@ class ChatGPTProjectEditor:
                         Choice("project_only", "Yalnızca proje"),
                     ),
                 )
-            with self.factory(self.session) as client:
+            with self.client_scope() as client:
                 raw = client.get_project(project_id)["metadata"]
             for _ in range(3):
                 if not isinstance(raw.get("gizmo"), dict):
@@ -59,7 +60,8 @@ class ChatGPTProjectEditor:
 
     async def write(self, operation, project_id=None, **values):
         def send():
-            with self.factory(self.session) as client:
+            scope = self.factory(self.session) if operation == "add_source" else self.client_scope()
+            with scope as client:
                 path = "https://chatgpt.com/backend-api/projects/" + quote(project_id, safe="")
                 if operation == "update":
                     current = client.get_project(project_id)
@@ -86,9 +88,11 @@ class ChatGPTProjectEditor:
                         name, data, mime = values["name"], values["text"].encode(), "text/plain"
                         if not name.endswith(".txt"):
                             name += ".txt"
+                        size = len(data)
                     elif values["kind"] == "file":
                         file = source_file(values["path"])
-                        name, data = file.name, file.read_bytes()
+                        name, data = file.name, file
+                        size = file.stat().st_size
                         mime = mimetypes.guess_type(name)[0] or "application/octet-stream"
                     else:
                         raise ValueError("Unsupported project source type")
@@ -101,7 +105,7 @@ class ChatGPTProjectEditor:
                                 {
                                     "file_id": uploaded["id"],
                                     "name": name,
-                                    "size": len(data),
+                                    "size": uploaded.get("size_bytes", size),
                                     "type": mime,
                                     "location": "fs",
                                 }

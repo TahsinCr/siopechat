@@ -62,6 +62,9 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
         await self.editor.close()
         await self.transport.close()
 
+    async def prepare(self):
+        await self.transport.prepare()
+
     def attachment_policy(self):
         from ..attachments import policy_for
 
@@ -161,9 +164,9 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
             ),
         )
 
-    async def models(self):
+    async def models(self, *, force: bool = False):
         async with self._gate:
-            data = await self.transport.request("models")
+            data = await self.transport.request("models", force=force)
             models = []
             for item in data["models"]:
                 efforts = tuple(Choice(x["id"], x["title"]) for x in item["efforts"])

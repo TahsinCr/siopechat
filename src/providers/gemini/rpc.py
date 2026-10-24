@@ -1,5 +1,6 @@
 """Gemini notebook RPCs through the account-owned HTTP session."""
 
+import asyncio
 import json
 from dataclasses import dataclass
 
@@ -27,6 +28,12 @@ class NotebookRPC:
             [RPCPayload(rpcid=rpc, payload=json.dumps(args))],
             source_path=source_path,
         )
+        if len(getattr(response, "content", b"")) >= 256 * 1024:
+            return await asyncio.to_thread(self._decode, response, rpc, allow_empty)
+        return self._decode(response, rpc, allow_empty)
+
+    @staticmethod
+    def _decode(response, rpc, allow_empty):
         parts = []
         for line in response.text.splitlines():
             if not line.startswith('[["wrb.fr"'):

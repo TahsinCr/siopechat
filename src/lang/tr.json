@@ -148,6 +148,7 @@
   "ui.Düzenler": "Düzenler",
   "ui.{0} model · hazır": "{0} model · hazır",
   "ui.Model kataloğu alınamadı: {0} · F10 yeniden dene": "Model kataloğu alınamadı: {0} · F10 yeniden dene",
+  "ui.Sağlayıcı bağlantısı hazırlanamadı: {0}": "Sağlayıcı bağlantısı hazırlanamadı: {0}",
   "ui.Proje bilgileri yükleniyor…": "Proje bilgileri yükleniyor…",
   "ui.Bilinmeyen arayüz aksiyonu": "Bilinmeyen arayüz aksiyonu",
   "ui.Mevcut sohbetin sağlayıcısı değiştirilemez; yeni sohbet açın": "Mevcut sohbetin sağlayıcısı değiştirilemez; yeni sohbet açın",

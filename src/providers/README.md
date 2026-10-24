@@ -52,6 +52,15 @@ read. For ChatGPT, `create_provider` also accepts an existing `BrowserSession`, 
 explicit `cache_directory` and `profile_directory` paths. Each account has its own
 adapter, connections and concurrency controls.
 
+Call `await account.prepare()` to establish the initial account connection before
+interactive work starts. Concurrent first requests wait for the account's initial
+setup. Model catalogs are cached for up to five minutes; `await account.models(force=True)`
+requests an explicit refresh. Normal ChatGPT reads and project edits reuse an
+account-scoped HTTP pool, while uploads and generation keep dedicated transports.
+Large Claude JSON and Gemini RPC responses are parsed in background workers so
+decoding does not run directly on the shared provider event loop. Credential
+writes are serialized and complete before cancellation releases the save lock.
+
 `client.account(provider_id, account_id)` returns the complete `Backend` contract:
 session status and authentication, model catalogs, paginated chats and projects,
 chat history, rename/delete, project editing and sources, file uploads and download

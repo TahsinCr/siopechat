@@ -64,6 +64,15 @@ class Provider(Protocol):
     id: str
     capabilities: frozenset[Capability]
 
+    async def prepare(self) -> None:
+        """Establish account-scoped transport state before user work begins.
+
+        Preparation must be safe to call in the background and concurrent with
+        normal requests. Requests arriving during preparation should share or
+        wait for the same initialization rather than opening duplicate sessions.
+        """
+        ...
+
     def stream(self, request: SendRequest) -> AsyncGenerator[ProviderEvent, None]:
         """Yield events; cancellation must close transport without resending.
 
