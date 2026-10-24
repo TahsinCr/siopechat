@@ -10,7 +10,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
-from extensions.archive.repository import Files, SQLiteRepository
+from extensions.archive.repository import Files, SQLiteRepository, encode
 from extensions.archive.sync import Archive
 from providers import Capability
 from providers.models import Choice, FeatureState, Model, ModelCatalog
@@ -330,6 +330,26 @@ class ArchiveIntegrationTests(unittest.TestCase):
             },
         )
         with closing(sqlite3.connect(repository_before.path)) as db:
+            db.executemany(
+                "INSERT INTO resources(account,owner_kind,owner,ordinal,remote,kind,name,mime,uri,path,metadata) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    (
+                        "gemini/a",
+                        "container",
+                        f"project-{index}",
+                        0,
+                        None,
+                        "file",
+                        "reference.pdf",
+                        "application/pdf",
+                        None,
+                        relative,
+                        encode({"id": f"source-{index}", "path": relative, "sha256": digest}),
+                    )
+                    for index in range(300)
+                ),
+            )
             db.execute("UPDATE schema_version SET version=4")
             db.commit()
 
@@ -357,6 +377,11 @@ class ArchiveIntegrationTests(unittest.TestCase):
                 ).fetchone()[0]
             )
         self.assertFalse(repository.uploaded_file_cleanup_pending())
+        with closing(sqlite3.connect(repository.path)) as db:
+            self.assertEqual(
+                db.execute("SELECT count(*) FROM resources WHERE path IS NOT NULL").fetchone()[0],
+                0,
+            )
 
     def test_cached_startup_revalidates_active_chat_without_resetting_draft(self):
         self.accounts.load = Mock(return_value={"id": "one", "messages": []})

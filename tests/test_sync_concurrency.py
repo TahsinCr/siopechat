@@ -125,7 +125,7 @@ class SyncConcurrencyTests(unittest.TestCase):
     def test_partial_provider_refresh_preserves_sql_prefix_and_concurrent_send(self):
         account, remote = "gemini/a", "partial-chat"
         key = account, "conversation", remote
-        history = [{"id": f"m{i}", "role": "user", "text": f"archived-{i}"} for i in range(1200)]
+        history = [{"id": f"m{i}", "role": "user", "text": f"archived-{i}"} for i in range(5000)]
         self.archive.put(
             account,
             "conversation",
@@ -138,11 +138,13 @@ class SyncConcurrencyTests(unittest.TestCase):
             entered.set()
             if not release.wait(3):
                 raise TimeoutError("test barrier")
-            return {"history_complete": False, "messages": history[600:]}
+            return {"history_complete": False, "messages": history[2500:]}
 
         with (
             patch.object(self.repo, "get", wraps=self.repo.get) as full_read,
-            patch.object(self.repo, "messages", wraps=self.repo.messages) as page_read,
+            patch.object(
+                self.repo, "partial_history_window", wraps=self.repo.partial_history_window
+            ) as merge_window,
         ):
             self.archive.read(account, "conversation", remote, fetch, force=True, window=True)
             self.assertTrue(entered.wait(1))
@@ -167,16 +169,14 @@ class SyncConcurrencyTests(unittest.TestCase):
             future.result(3)
 
         self.assertEqual(full_read.call_count, 0)
-        self.assertTrue(page_read.called)
-        args, kwargs = page_read.call_args_list[0]
-        self.assertEqual(kwargs.get("offset", args[3] if len(args) > 3 else None), 520)
+        merge_window.assert_called_once_with(account, remote, 2420, prefix=81, tail=512)
         first = self.archive.conversation_window(account, remote, start=0, limit=1)
         tail = self.archive.conversation_window(account, remote, limit=3)
         self.assertEqual(first["messages"][0]["text"], "archived-0")
-        self.assertEqual(tail["history_window"]["total"], 1202)
+        self.assertEqual(tail["history_window"]["total"], 5002)
         self.assertEqual(
             [item["text"] for item in tail["messages"]],
-            ["archived-1199", "new question", "accepted answer"],
+            ["archived-4999", "new question", "accepted answer"],
         )
         value = self.repo.get(account, "conversation", remote)
         with self.repo._connect() as db:

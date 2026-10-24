@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from providers import SendRequest
-from providers.errors import ProviderError
+from providers.errors import AccountPaused, ProviderError
 from providers.gemini import GeminiProvider
 from providers.gemini.session import GeminiSession
 from providers.gemini.transport import Frames, generation_request, upload_files
@@ -18,6 +18,45 @@ from providers.models import Model
 
 
 class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
+    async def test_logout_waits_for_inflight_open_and_removes_rotated_cookie_write(self):
+        with tempfile.TemporaryDirectory() as folder:
+            credential = Path(folder) / "session.json"
+            credential.write_text('{"__Secure-1PSID":"initial"}', encoding="utf-8")
+            started, release = asyncio.Event(), asyncio.Event()
+
+            async def open_session():
+                started.set()
+                await release.wait()
+                credential.write_text('{"__Secure-1PSID":"rotated"}', encoding="utf-8")
+
+            client = SimpleNamespace(open=open_session, close=AsyncMock(), models=())
+            provider = GeminiProvider(credential, client_factory=lambda _path: client)
+            opening = asyncio.create_task(provider.prepare())
+            await started.wait()
+            logout = asyncio.create_task(provider.forget_session())
+            await asyncio.sleep(0)
+            self.assertFalse(logout.done())
+            release.set()
+            await asyncio.gather(opening, logout)
+
+            self.assertFalse(credential.exists())
+            self.assertIsNone(provider._client)
+            client.close.assert_awaited_once_with()
+            with self.assertRaises(AccountPaused):
+                await provider.prepare()
+
+    async def test_close_releases_gemini_session_when_editor_cleanup_fails(self):
+        provider = GeminiProvider(Path("unused"))
+        client = SimpleNamespace(close=AsyncMock())
+        provider._client = client
+        provider.editor.close = AsyncMock(side_effect=RuntimeError("editor close failed"))
+
+        with self.assertRaisesRegex(RuntimeError, "editor close failed"):
+            await provider.close()
+
+        client.close.assert_awaited_once_with()
+        self.assertIsNone(provider._client)
+
     async def test_background_prepare_and_first_request_share_session_open(self):
         provider = GeminiProvider(Path("saved"), client_factory=lambda _path: client)
         first = Model("first", "First")
@@ -189,6 +228,47 @@ class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(task.cancelled())
         http.close.assert_awaited_once()
         await session.close()
+
+    async def test_cookie_refresh_retries_transient_network_error_with_backoff(self):
+        session = GeminiSession(Path("unused"))
+        response = SimpleNamespace(status_code=200, headers={})
+        requests = 0
+
+        async def post(*_args, **_kwargs):
+            nonlocal requests
+            requests += 1
+            if requests == 1:
+                raise OSError("temporary network outage")
+            return response
+
+        session.http = SimpleNamespace(post=post)
+        session.persist = AsyncMock()
+        delays = []
+
+        async def sleep(delay):
+            delays.append(delay)
+            if len(delays) == 3:
+                raise asyncio.CancelledError
+
+        with patch("providers.gemini.session.asyncio.sleep", side_effect=sleep):
+            task = asyncio.create_task(session.refresh())
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+
+        self.assertEqual(requests, 2)
+        self.assertEqual(delays, [600, 15, 600])
+        session.persist.assert_awaited_once_with()
+
+    async def test_cookie_refresh_stops_on_expired_session(self):
+        session = GeminiSession(Path("unused"))
+        session.http = SimpleNamespace(
+            post=AsyncMock(return_value=SimpleNamespace(status_code=401, headers={}))
+        )
+
+        with patch("providers.gemini.session.asyncio.sleep", new=AsyncMock()):
+            await asyncio.wait_for(session.refresh(), 1)
+
+        session.http.post.assert_awaited_once()
 
     async def test_history_preserves_thoughts_and_stable_ids(self):
         provider = GeminiProvider(Path("unused"), "test")

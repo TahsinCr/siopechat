@@ -12,6 +12,23 @@ from pathlib import Path
 from typing import Protocol
 from urllib.parse import unquote
 
+V5_MIGRATION_BATCH_SIZE = 256
+
+
+def _rowid_batches(db, table, *columns):
+    """Read a stable table snapshot in bounded keyset batches inside a migration."""
+    last_rowid = 0
+    selected = ",".join(columns)
+    while True:
+        rows = db.execute(
+            f"SELECT rowid,{selected} FROM {table} WHERE rowid>? ORDER BY rowid LIMIT ?",
+            (last_rowid, V5_MIGRATION_BATCH_SIZE),
+        ).fetchall()
+        if not rows:
+            return
+        yield rows
+        last_rowid = rows[-1][0]
+
 
 def encode(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -76,6 +93,7 @@ class Repository(Protocol):
     def containers(self, account, limit=50, offset=0): ...
     def messages(self, account, remote, limit=100, offset=0): ...
     def message_ordinal(self, account, remote, message_id): ...
+    def partial_history_window(self, account, remote, start, *, prefix, tail): ...
     def replace_conversation_tail(self, account, remote, start, value): ...
     def conversation_window(
         self,
@@ -225,33 +243,28 @@ class SQLiteRepository:
                     ("containers", "metadata"),
                     ("conversation_metadata", "payload"),
                 ):
-                    rows = db.execute(f"SELECT rowid,{column} FROM {table}").fetchall()
-                    for rowid, payload in rows:
-                        value = json.loads(payload)
-                        if _strip_archive_blob_refs(value):
+                    for rows in _rowid_batches(db, table, column):
+                        for rowid, payload in rows:
+                            value = json.loads(payload)
+                            if _strip_archive_blob_refs(value):
+                                db.execute(
+                                    f"UPDATE {table} SET {column}=? WHERE rowid=?",
+                                    (encode(value), rowid),
+                                )
+                for rows in _rowid_batches(db, "resources", "metadata", "path"):
+                    for rowid, metadata, path in rows:
+                        value = json.loads(metadata)
+                        changed = _strip_archive_blob_refs(value)
+                        remove_path = path is not None
+                        if changed or remove_path:
                             db.execute(
-                                f"UPDATE {table} SET {column}=? WHERE rowid=?",
-                                (encode(value), rowid),
+                                "UPDATE resources SET path=?,metadata=? WHERE rowid=?",
+                                (
+                                    None if remove_path else path,
+                                    encode(value) if changed else metadata,
+                                    rowid,
+                                ),
                             )
-                for account, owner_kind, owner, ordinal, path, metadata in db.execute(
-                    "SELECT account,owner_kind,owner,ordinal,path,metadata FROM resources"
-                ).fetchall():
-                    value = json.loads(metadata)
-                    changed = _strip_archive_blob_refs(value)
-                    remove_path = path is not None
-                    if changed or remove_path:
-                        db.execute(
-                            "UPDATE resources SET path=? ,metadata=? WHERE account=? "
-                            "AND owner_kind=? AND owner=? AND ordinal=?",
-                            (
-                                None if remove_path else path,
-                                encode(value) if changed else metadata,
-                                account,
-                                owner_kind,
-                                owner,
-                                ordinal,
-                            ),
-                        )
                 db.execute(
                     "INSERT OR REPLACE INTO maintenance(key,value) "
                     "VALUES('uploaded_file_cleanup_pending','1')"
@@ -766,6 +779,30 @@ class SQLiteRepository:
                 (account, remote, message_id),
             ).fetchone()
         return row[0] if row else None
+
+    def partial_history_window(self, account, remote, start, *, prefix, tail):
+        """Load only merge_conversation's leading overlap and bounded alignment tail."""
+        if start < 0 or not 1 <= prefix <= 512 or not 1 <= tail <= 512:
+            raise ValueError("invalid partial history window")
+        with self._connect() as db:
+            head = db.execute(
+                "SELECT ordinal,metadata FROM messages "
+                "WHERE account=? AND conversation=? AND ordinal>=? "
+                "ORDER BY ordinal LIMIT ?",
+                (account, remote, start, prefix),
+            ).fetchall()
+            end = db.execute(
+                "SELECT ordinal,metadata FROM messages "
+                "WHERE account=? AND conversation=? AND ordinal>=? "
+                "ORDER BY ordinal DESC LIMIT ?",
+                (account, remote, start, tail),
+            ).fetchall()
+        end.reverse()
+        if head and end and head[-1][0] >= end[0][0]:
+            rows = head + [row for row in end if row[0] > head[-1][0]]
+        else:
+            rows = head + end
+        return [json.loads(metadata) for _, metadata in rows]
 
     def replace_conversation_tail(self, account, remote, start, value):
         """Replace a provider-aligned suffix while retaining the older SQL prefix."""

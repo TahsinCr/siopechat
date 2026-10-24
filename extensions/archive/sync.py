@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from urllib.parse import unquote
 
-from providers.history import merge_conversation
+from providers.history import MERGE_WINDOW, merge_conversation
 
 from .adapters import MAPPINGS, Mapping
 from .repository import encode
@@ -246,29 +246,27 @@ class Archive:
         """Merge a provider tail against a bounded SQL suffix, preserving its prefix."""
         ordinal = getattr(self.repository, "message_ordinal", None)
         replace_tail = getattr(self.repository, "replace_conversation_tail", None)
-        page_messages = getattr(self.repository, "messages", None)
+        merge_window = getattr(self.repository, "partial_history_window", None)
         messages = value.get("messages")
         if (
             not current
             or not messages
             or not callable(ordinal)
             or not callable(replace_tail)
-            or not callable(page_messages)
+            or not callable(merge_window)
         ):
             return False
         anchor = ordinal(account, remote, messages[0].get("id"))
         if anchor is None:
             return False
-        total = (current.get("history_window") or {}).get("total", len(current.get("messages", [])))
         start = max(0, anchor - SYNC_MERGE_OVERLAP)
-        local_tail = []
-        offset = start
-        while offset < total:
-            batch = page_messages(account, remote, limit=min(500, total - offset), offset=offset)
-            if not batch:
-                break
-            local_tail.extend(batch)
-            offset += len(batch)
+        local_tail = merge_window(
+            account,
+            remote,
+            start,
+            prefix=SYNC_MERGE_OVERLAP + 1,
+            tail=MERGE_WINDOW,
+        )
         local_header = dict(current)
         local_header.pop("messages", None)
         local_header.pop("history_window", None)

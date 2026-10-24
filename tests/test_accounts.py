@@ -96,6 +96,37 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(cached["title"], "Fallback")
         self.assertFalse(conversation_path.exists())
 
+    def test_shutdown_drains_active_pointer_to_archive_before_fallback_is_selected(self):
+        self.accounts.set_active(self.gemini, "chat-before-close")
+        entered, release = Event(), Event()
+        set_active = self.accounts.set_active
+
+        def pause_write(key, value):
+            entered.set()
+            if not release.wait(5):
+                raise TimeoutError("active pointer write was not released")
+            return set_active(key, value)
+
+        with patch.object(self.accounts, "set_active", side_effect=pause_write):
+            self.accounts.queue_active(self.gemini, "chat-selected-last")
+            self.assertTrue(entered.wait(2))
+            closer = ThreadPoolExecutor(max_workers=1)
+            closing = closer.submit(self.accounts.close)
+            try:
+                release.set()
+                closing.result(5)
+            finally:
+                release.set()
+                closer.shutdown(wait=True)
+
+        self.api.runtime.close()
+        restarted = create_application(Path(self.folder.name))
+        try:
+            fresh_accounts = restarted.get("accounts")
+            self.assertEqual(fresh_accounts.active_conversation(self.gemini), "chat-selected-last")
+        finally:
+            restarted.runtime.close()
+
     def test_project_refresh_reports_each_provider_as_soon_as_it_finishes(self):
         fast_key, slow_key = "chatgpt/fast", "claude/slow"
         account_items = [

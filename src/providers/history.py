@@ -2,6 +2,8 @@
 
 from difflib import SequenceMatcher
 
+MERGE_WINDOW = 512
+
 
 def signature(message):
     role = message.get("role")
@@ -25,7 +27,8 @@ def merge_conversation(remote, local):
         return remote
     if not before:
         return dict(remote, messages=after)
-    rstart, lstart = max(0, len(before) - 512), max(0, len(after) - 512)
+    rstart = max(0, len(before) - MERGE_WINDOW)
+    lstart = max(0, len(after) - MERGE_WINDOW)
     common_ids = {m.get("id") for m in before if m.get("id")} & {
         m.get("id") for m in after if m.get("id") and not m.get("local_pending")
     }

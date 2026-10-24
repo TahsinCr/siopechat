@@ -150,6 +150,15 @@ class ClaudeProviderTests(unittest.IsolatedAsyncioTestCase):
         self.provider.transport.authenticated = True
         self.provider.transport.request = AsyncMock()
 
+    async def test_close_releases_transport_when_editor_cleanup_fails(self):
+        self.provider.editor.close = AsyncMock(side_effect=RuntimeError("editor close failed"))
+        self.provider.transport.close = AsyncMock()
+
+        with self.assertRaisesRegex(RuntimeError, "editor close failed"):
+            await self.provider.close()
+
+        self.provider.transport.close.assert_awaited_once_with()
+
     async def test_attachment_count_uses_the_compact_history_operation(self):
         self.provider.transport.request.return_value = {
             "uuid": CHAT,

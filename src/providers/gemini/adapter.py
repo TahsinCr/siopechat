@@ -117,12 +117,31 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
         return client
 
     async def close(self):
-        if hasattr(self, "editor"):
+        async with self._gate:
+            async with self._connect_gate:
+                await self._close_unlocked()
+
+    async def _close_unlocked(self):
+        editor_error = None
+        try:
             await self.editor.close()
-        client, self._client = self._client, None
-        self._catalog_at = None
-        if client is not None:
-            await client.close()
+        except BaseException as error:
+            editor_error = error
+        client = self._client
+        try:
+            if client is not None:
+                await client.close()
+        except BaseException as close_error:
+            if editor_error is not None:
+                raise editor_error from close_error
+            raise
+        else:
+            if self._client is client:
+                self._client = None
+            if self._client is None:
+                self._catalog_at = None
+        if editor_error is not None:
+            raise editor_error
 
     async def session_status(self):
         return SessionStatus(
@@ -144,9 +163,10 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
 
     async def forget_session(self):
         async with self._gate:
-            await self.close()
-            delete_session(self.cookie_file)
-            self._temporary.clear()
+            async with self._connect_gate:
+                await self._close_unlocked()
+                delete_session(self.cookie_file)
+                self._temporary.clear()
         return SessionStatus(SessionState.LOGIN_REQUIRED)
 
     async def describe(self):

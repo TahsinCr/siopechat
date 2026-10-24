@@ -46,6 +46,11 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 
 ### Fixed
 
+- Serialize Gemini session shutdown and credential removal with connection setup so an in-flight login cannot recreate a session after sign-out; retry transient refresh network/server failures with bounded backoff.
+- Drain queued active-chat persistence before the archive becomes unavailable during shutdown, and compensate account settings if credential deletion fails.
+- Bound partial-history reconciliation to the merge prefix and tail, and process schema v5 cleanup in 256-row keyset batches instead of loading whole tables into memory.
+- Close Claude and Gemini transports even when provider-specific editor cleanup raises, while preserving the original cleanup error.
+- Run every standalone provider test in wheel and source-archive CI jobs, including credential tests.
 - Pin GitHub Actions to Node 24-compatible releases and prevent parallel `uv` cache saves from racing across CI jobs.
 - Fix Ruff import-order and formatting failures so CI can continue to the test and package checks.
 - Compare project upload paths by canonical file identity in CI tests, accounting for macOS temporary-directory symlinks.

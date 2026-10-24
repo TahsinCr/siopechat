@@ -59,7 +59,14 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
         self.editor = ClaudeProjectEditor(self.transport)
 
     async def close(self):
-        await self.editor.close()
+        try:
+            await self.editor.close()
+        except BaseException as editor_error:
+            try:
+                await self.transport.close()
+            except BaseException as close_error:
+                raise editor_error from close_error
+            raise
         await self.transport.close()
 
     async def prepare(self):

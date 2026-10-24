@@ -3,7 +3,7 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from settings import Settings
 from tests.account_fixture import configured_application as create_application
@@ -113,6 +113,31 @@ class AccountManagementTests(unittest.TestCase):
         self.assertNotIn(key, data["selected"].values())
         self.assertNotIn(key, data["preferences"])
         self.assertEqual(self.accounts.active(), "chatgpt/default")
+
+    def test_settings_write_failure_keeps_account_credentials_and_database_records(self):
+        path = self.accounts.credentials(self.gemini)
+        path.save({"__Secure-1PSID": "retained"})
+        with (
+            patch.object(
+                self.accounts.repository, "delete", wraps=self.accounts.repository.delete
+            ) as delete,
+            patch.object(self.accounts.settings, "_commit", side_effect=OSError("disk full")),
+        ):
+            with self.assertRaisesRegex(OSError, "disk full"):
+                self.accounts.remove(self.gemini)
+
+        delete.assert_not_called()
+        self.assertIn(self.gemini, [item["key"] for item in self.accounts.items()])
+        self.assertEqual(path.load(), {"__Secure-1PSID": "retained"})
+
+    def test_database_delete_failure_restores_account_settings(self):
+        before = self.accounts.settings.snapshot()["accounts"]
+        with patch.object(self.accounts.repository, "delete", side_effect=OSError("db locked")):
+            with self.assertRaisesRegex(OSError, "db locked"):
+                self.accounts.remove(self.gemini)
+
+        self.assertEqual(self.accounts.settings.snapshot()["accounts"], before)
+        self.assertIn(self.gemini, [item["key"] for item in self.accounts.items()])
 
     def test_last_enabled_account_and_busy_account_are_not_removed(self):
         self.accounts._sending[self.gemini] = 1

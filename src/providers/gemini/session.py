@@ -6,7 +6,7 @@ import random
 import re
 import uuid
 
-from ..errors import AccountPaused, ProviderError
+from ..errors import AccountPaused, ProviderError, RateLimited
 from ..session import WebSession, read_session, save_session_async
 
 ORIGIN = "https://gemini.google.com"
@@ -197,8 +197,10 @@ class GeminiSession:
                 self.persistence_warning = None
 
     async def refresh(self):
+        interval = 600
+        failures = 0
         while True:
-            await asyncio.sleep(600)
+            await asyncio.sleep(interval)
             try:
                 response = await self.http.post(
                     "https://accounts.google.com/RotateCookies",
@@ -209,10 +211,29 @@ class GeminiSession:
                     data='[000,"-0000000000000000000"]',
                     allow_redirects=False,
                 )
+                if 500 <= response.status_code < 600:
+                    failures += 1
+                    interval = min(15 * (2 ** min(failures - 1, 6)), 900)
+                    continue
                 WebSession.check(response)
                 await self.persist()
+                failures = 0
+                interval = 600
             except asyncio.CancelledError:
                 raise
+            except AccountPaused:
+                return
+            except RateLimited as error:
+                failures += 1
+                interval = min(
+                    max(error.retry_after or 15 * (2 ** min(failures - 1, 6)), 1),
+                    900,
+                )
+            except OSError:
+                failures += 1
+                interval = min(15 * (2 ** min(failures - 1, 6)), 900)
+            except ProviderError:
+                return
             except Exception:
                 return
 

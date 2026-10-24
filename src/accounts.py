@@ -57,6 +57,7 @@ class Accounts:
     def __init__(self, api):
         self.api = api
         self.settings = api.settings
+        self.closing = False
         self.closed = False
         self._chat_projects = {}
         self.root = api.get("paths")
@@ -79,6 +80,7 @@ class Accounts:
         self._active_pending = {}
         self._active_values = {}
         self._active_writer_running = False
+        self._active_writer_task = None
         self._legacy_cache_migration_lock = threading.Lock()
         self._legacy_cache_migration_complete = False
         for item in self.items():
@@ -133,7 +135,7 @@ class Accounts:
         self.settings.update("accounts", {"preferences": {key: {"model": model, "effort": effort}}})
 
     def active_accounts(self):
-        if self.closed:
+        if self.closing or self.closed:
             return []
         data = self.settings.snapshot()["accounts"]
         chosen = dict(data.get("selected", {}))
@@ -244,9 +246,21 @@ class Accounts:
                     await provider.close()
 
             self.call(release())
-            # A failed credential removal must not report successful deletion.
-            self.repository.delete(key)
+            previous_accounts = self.settings.snapshot()["accounts"]
+            # Commit visible account removal first. If SQLite cleanup then fails,
+            # restore the metadata while keeping the credential record intact.
             active = self.settings.remove_account(key)
+            try:
+                self.repository.delete(key)
+            except Exception as error:
+                try:
+                    self.settings.update("accounts", previous_accounts)
+                except Exception as rollback_error:
+                    raise RuntimeError(
+                        "Hesap silme tamamlanamadı; ayar geri yüklemesi de başarısız oldu. "
+                        f"Özgün hata: {error}; geri yükleme hatası: {rollback_error}"
+                    ) from rollback_error
+                raise
             with self._catalog_io_lock:
                 self._catalog_versions[key] = self._catalog_versions.get(key, 0) + 1
                 self._catalogs.pop(key, None)
@@ -326,7 +340,7 @@ class Accounts:
 
     def _start(self, allow_closed=False):
         with self._lock:
-            if self.closed and not allow_closed:
+            if (self.closing or self.closed) and not allow_closed:
                 raise RuntimeError("Hesap hizmeti kapalı")
             if self._loop is None:
                 self._loop = asyncio.new_event_loop()
@@ -710,9 +724,14 @@ class Accounts:
         return self.call(discover())
 
     def close(self):
-        self.closed = True
-        loop, thread = self._loop, self._thread
+        with self._lock:
+            if self.closed:
+                return
+            self.closing = True
+            loop, thread = self._loop, self._thread
         if loop is None or thread is None:
+            with self._lock:
+                self.closed = True
             return
 
         async def cleanup():
@@ -721,6 +740,12 @@ class Accounts:
                 await self.api.tasks.close()
             except Exception as error:
                 errors.append(error)
+            with self._lock:
+                pending_active = bool(self._active_pending)
+                if pending_active:
+                    self._active_writer_running = True
+            if pending_active or self._active_writer_running:
+                self._ensure_active_writer()
             current = asyncio.current_task()
             pending = [task for task in asyncio.all_tasks() if task is not current]
             persistence = [task for task in pending if task.get_name().startswith("siope-persist:")]
@@ -767,6 +792,8 @@ class Accounts:
             message = "Provider event loop did not stop; it remains open for a later shutdown retry"
             _LOG.error(message)
             raise RuntimeError(message) from cleanup_error
+        with self._lock:
+            self.closed = True
         if not loop.is_closed():
             loop.close()
         self._loop = self._thread = None
@@ -1040,10 +1067,9 @@ class Accounts:
 
     def queue_active(self, key, value):
         """Coalesce UI pointer writes; never perform SQLite/fsync in navigation."""
-        if self.closed:
-            return
-        self._start()
         with self._lock:
+            if self.closing or self.closed:
+                return
             if key in self._active_values and self._active_values[key] == value:
                 return
             self._active_values[key] = value
@@ -1052,30 +1078,45 @@ class Accounts:
                 return
             self._active_writer_running = True
 
-        async def write():
-            while True:
+        try:
+            self._start()
+            self._loop.call_soon_threadsafe(self._ensure_active_writer)
+        except RuntimeError:
+            with self._lock:
+                closing = self.closing or self.closed
+                self._active_writer_running = False
+            if closing:
+                return
+            raise
+
+    def _ensure_active_writer(self):
+        task = self._active_writer_task
+        if not self._active_writer_running or (task is not None and not task.done()):
+            return
+        self._active_writer_task = asyncio.create_task(
+            self._write_active_queue(), name="siope-persist:active"
+        )
+
+    async def _write_active_queue(self):
+        while True:
+            with self._lock:
+                if not self._active_pending:
+                    self._active_writer_running = False
+                    self._active_writer_task = None
+                    return
+                account = next(iter(self._active_pending))
+                target = self._active_pending.pop(account)
+            try:
+                await asyncio.to_thread(self.set_active, account, target)
                 with self._lock:
-                    if not self._active_pending:
-                        self._active_writer_running = False
-                        return
-                    account = next(iter(self._active_pending))
-                    target = self._active_pending.pop(account)
-                try:
-                    await asyncio.to_thread(self.set_active, account, target)
-                    with self._lock:
-                        if (
-                            account not in self._active_pending
-                            and self._active_values.get(account) == target
-                        ):
-                            self._active_values.pop(account, None)
-                except (OSError, ValueError):
-                    with self._lock:
+                    if (
+                        account not in self._active_pending
+                        and self._active_values.get(account) == target
+                    ):
                         self._active_values.pop(account, None)
-
-        def start():
-            asyncio.create_task(write(), name="siope-persist:active")
-
-        self._loop.call_soon_threadsafe(start)
+            except (OSError, ValueError):
+                with self._lock:
+                    self._active_values.pop(account, None)
 
     def set_active(self, key, value):
         _, remote = origin(value, key)
