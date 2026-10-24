@@ -20,7 +20,7 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 
 ### Changed
 
-- Organize tests around neutral shared fixtures and focused archive, history, provider UI, profile and workspace modules without changing test coverage.
+- Organize tests around neutral shared fixtures and focused archive, history, provider UI, profile and workspace modules; merge small related suites to avoid over-fragmenting the test tree.
 - Isolate streamed event handling and provider snapshot reconciliation from the chat send coordinator without changing the send lifecycle.
 - Move legacy per-account conversation caches, active-chat pointers and deletion markers into the existing SQLite stores. The account database migration is additive and preserves its session/catalog schema; the archive remains the canonical history store when enabled.
 - Count models across selected accounts of enabled providers and show how many provider catalogs are ready; fetch missing catalogs in the background without holding up chat startup.
