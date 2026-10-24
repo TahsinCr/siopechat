@@ -24,6 +24,7 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 - Isolate streamed event handling and provider snapshot reconciliation from the chat send coordinator without changing the send lifecycle.
 - Move legacy per-account conversation caches, active-chat pointers and deletion markers into the existing SQLite stores. The account database migration is additive and preserves its session/catalog schema; the archive remains the canonical history store when enabled.
 - Count models across selected accounts of enabled providers and show how many provider catalogs are ready; fetch missing catalogs in the background without holding up chat startup.
+- Share the failed model-catalog request cleanup used by startup refresh and the model picker, while preserving their separate UI refresh behavior.
 - Keep the composer available while a known chat's local history and provider refresh load; merge late history with any turn already sent from the tab.
 - Continue provider chat, project and expanded-project-chat pagination in the background so cached first pages remain usable while the rest of the library fills in.
 - Cache Gemini and Claude model catalogs for five minutes with explicit refresh support, and decode large Claude JSON and Gemini RPC responses off the provider event loop.

@@ -2076,6 +2076,10 @@ class ChatView:
         ):
             self.status = self._model_catalog_status()
 
+    def _finish_model_catalog_request(self, key: str) -> None:
+        self._model_picker_requests.discard(key)
+        self._update_model_catalog_status()
+
     def refresh_other_provider_catalogs(self) -> None:
         """Load enabled providers' model catalogs without delaying chat startup."""
         if not self.account_service or not hasattr(self.account_service, "active_accounts"):
@@ -2099,9 +2103,8 @@ class ChatView:
                 self._update_model_catalog_status()
                 self.app.invalidate()
 
-            def failed(reason, key=key):
-                self._model_picker_requests.discard(key)
-                self._update_model_catalog_status()
+            def failed(_reason, key=key):
+                self._finish_model_catalog_request(key)
                 self.app.invalidate()
 
             self._read_in_background(
@@ -2725,9 +2728,8 @@ class ChatView:
                                 self.open_palette(self.palette_mode)
                                 self.palette_search.text = query
 
-                        def failed(reason, key=key):
-                            self._model_picker_requests.discard(key)
-                            self._update_model_catalog_status()
+                        def failed(_reason, key=key):
+                            self._finish_model_catalog_request(key)
 
                         self._read_in_background(
                             lambda key=key: self.account_service.models(key),
