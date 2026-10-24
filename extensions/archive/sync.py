@@ -31,8 +31,7 @@ class Archive:
 
     def __init__(self, repository, files, events=None, memory_bytes=8 * 1024 * 1024):
         self.repository, self.files, self.events = repository, files, events
-        pending_file_cleanup = getattr(repository, "uploaded_file_cleanup_pending", None)
-        if callable(pending_file_cleanup) and pending_file_cleanup():
+        if repository.uploaded_file_cleanup_pending():
             files.purge_owned()
             repository.complete_uploaded_file_cleanup()
         from .downloads import DownloadHistory
@@ -49,7 +48,7 @@ class Archive:
         self.revision = 0
         self.closed = False
         self._repository_closed = False
-        self._deleted = repository.tombstones() if hasattr(repository, "tombstones") else set()
+        self._deleted = repository.tombstones()
 
     def conversations(self, account, **page):
         return self.repository.conversations(account, **page)
@@ -194,34 +193,25 @@ class Archive:
         """Atomically retain history hydrated while an accepted turn was saved."""
         key = (account, "conversation", remote)
         with self._write_lock:
-            append = getattr(self.repository, "append_turn", None)
-            if append is not None:
-                mapping = self.mappings.get(account.split("/")[0], Mapping())
-                value = mapping.normalize("conversation", value)
+            mapping = self.mappings.get(account.split("/")[0], Mapping())
+            value = mapping.normalize("conversation", value)
+            with self._lock:
+                if self.closed:
+                    raise OSError("Archive is closed")
+                if key in self._deleted:
+                    return
+                project = value.get("project_id")
+                project = unquote(project.removeprefix("@" + account + "/")) if project else None
+                if project and (account, "container", project) in self._deleted:
+                    value["project_id"] = None
+            try:
+                self.repository.append_turn(account, remote, value)
+            except OSError as error:
                 with self._lock:
-                    if self.closed:
-                        raise OSError("Archive is closed")
-                    if key in self._deleted:
-                        return
-                    project = value.get("project_id")
-                    project = (
-                        unquote(project.removeprefix("@" + account + "/")) if project else None
-                    )
-                    if project and (account, "container", project) in self._deleted:
-                        value["project_id"] = None
-                try:
-                    append(account, remote, value)
-                except OSError as error:
-                    with self._lock:
-                        self._state(key, "error", str(error))
-                    raise
-                with self._lock:
-                    self._written(key)
-                return
-            current = self.get(account, "conversation", remote)
-            merged = merge_conversation(current or {}, value)
-            value.pop("_archive_base_end", None)
-            self.put(account, "conversation", remote, dict(value, messages=merged["messages"]))
+                    self._state(key, "error", str(error))
+                raise
+            with self._lock:
+                self._written(key)
 
     def _state(self, key, state, error=None):
         self._states[key] = {
@@ -386,58 +376,39 @@ class Archive:
                                     if current
                                     else 0
                                 )
-                                if result.get("history_complete", True) is not False and callable(
-                                    getattr(self.repository, "messages", None)
-                                ):
-                                    # A local send can finish while provider history is in
-                                    # flight. Align against only the local tail that could
-                                    # have changed instead of loading a second full history.
-                                    offset = max(
-                                        0, min(base_end, current_total) - SYNC_MERGE_OVERLAP
+                                # A local send can finish while provider history is in
+                                # flight. Align against only the local tail that could
+                                # have changed instead of loading a second full history.
+                                offset = max(0, min(base_end, current_total) - SYNC_MERGE_OVERLAP)
+                                local_tail = []
+                                while offset < current_total:
+                                    batch = self.repository.messages(
+                                        account,
+                                        remote,
+                                        limit=min(500, current_total - offset),
+                                        offset=offset,
                                     )
-                                    local_tail = []
-                                    while offset < current_total:
-                                        batch = self.repository.messages(
-                                            account,
-                                            remote,
-                                            limit=min(500, current_total - offset),
-                                            offset=offset,
-                                        )
-                                        if not batch:
-                                            break
-                                        local_tail.extend(batch)
-                                        offset += len(batch)
-                                    merged = merge_conversation(
-                                        result, dict(current or {}, messages=local_tail)
+                                    if not batch:
+                                        break
+                                    local_tail.extend(batch)
+                                    offset += len(batch)
+                                merged = merge_conversation(
+                                    result, dict(current or {}, messages=local_tail)
+                                )
+                                if current:
+                                    header = dict(current)
+                                    header.pop("messages", None)
+                                    header.pop("history_window", None)
+                                    result = dict(
+                                        header,
+                                        messages=merged["messages"],
+                                        history_complete=merged.get(
+                                            "history_complete",
+                                            current.get("history_complete", True),
+                                        ),
                                     )
-                                    if current:
-                                        header = dict(current)
-                                        header.pop("messages", None)
-                                        header.pop("history_window", None)
-                                        result = dict(
-                                            header,
-                                            messages=merged["messages"],
-                                            history_complete=merged.get(
-                                                "history_complete",
-                                                current.get("history_complete", True),
-                                            ),
-                                        )
-                                    else:
-                                        result = merged
                                 else:
-                                    # Partial provider pages need the local prefix so a
-                                    # refresh cannot discard older archived messages.
-                                    current = self.get(*key)
-                                    if current and "messages" in current:
-                                        merged = merge_conversation(result, current)
-                                        result = dict(
-                                            current,
-                                            messages=merged["messages"],
-                                            history_complete=merged.get(
-                                                "history_complete",
-                                                current.get("history_complete", True),
-                                            ),
-                                        )
+                                    result = merged
                                 accept = True
                             if accept and not partial_written and not deferred_partial:
                                 self.put(*key, result)

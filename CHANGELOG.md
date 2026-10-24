@@ -20,6 +20,7 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 
 ### Changed
 
+- Make archive repository operations explicit and required; remove optional-method fallbacks that could load a complete conversation during a send or synchronization race.
 - Discard unknown application settings while loading configuration so removed preferences do not prevent startup; unsupported settings are not exposed in the application.
 - Remove redundant file/service-presence, duplicate import, README-text and stale-setting tests while keeping provider boundaries, data migration, lifecycle and user-visible behavior coverage.
 - Organize tests around neutral shared fixtures and focused archive, history, provider UI, profile and workspace modules; merge small related suites to avoid over-fragmenting the test tree.
