@@ -382,7 +382,7 @@ class TranscriptPrefetch:
                 return (
                     generation != self._generation
                     or self._target is None
-                    or self._target[0][0] != id(source)
+                    or self._target[0] != current
                 )
 
             source.prefetch(start, min(source.line_count, start + size), cancelled)
@@ -392,6 +392,8 @@ class TranscriptPrefetch:
                     min(source.line_count, start + 3 * size),
                     lambda: cancelled() or self._target != target,
                 )
+            if not cancelled():
+                source.prefetch(start, min(source.line_count, start + size), cancelled)
             return current if not cancelled() else None
 
         def finished(result=None):

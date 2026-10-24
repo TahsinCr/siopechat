@@ -3817,9 +3817,14 @@ class ChatView:
                     )
             self._virtual_selection_key = structure_key
         rows = VirtualTranscriptRows(layout)
-        scroll = self.transcript_window.vertical_scroll
-        if scroll > layout.line_count:
-            scroll = max(0, layout.line_count - viewport_height)
+        last_scroll = max(0, layout.line_count - viewport_height)
+        scroll = (
+            last_scroll
+            if self.follow_output
+            else min(max(0, self.transcript_window.vertical_scroll), last_scroll)
+        )
+        if self.transcript_window.vertical_scroll != scroll:
+            self.transcript_window.vertical_scroll = scroll
         if layout_is_current:
             self.history_pager.prefetch(layout, scroll, viewport_height)
         self._transcript_prefetch.request(layout, scroll, viewport_height)
