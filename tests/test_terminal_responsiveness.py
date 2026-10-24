@@ -3,22 +3,12 @@
 import asyncio
 import unittest
 
-from prompt_toolkit.data_structures import Size
-from prompt_toolkit.output import DummyOutput
-
-from tests import test_cli_interaction as interaction
-from tests.test_ui_controls import immediate
-
-
-class ResizableOutput(DummyOutput):
-    columns, rows = 120, 34
-
-    def get_size(self):
-        return Size(rows=self.rows, columns=self.columns)
+from tests import cli_support as interaction
+from tests.cli_support import ResizableOutput, immediate
 
 
 class ResponsiveSettingsTests(unittest.IsolatedAsyncioTestCase):
-    settle = interaction.InputTests.settle
+    settle = staticmethod(interaction.wait_until)
 
     async def test_settings_resize_and_scroll_to_focused_controls(self):
         output = ResizableOutput()

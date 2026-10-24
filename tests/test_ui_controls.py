@@ -17,22 +17,7 @@ from bootstrap import create_application
 from providers.chatgpt import BrowserSession, ChatGPTClient, SessionPaths
 from providers.chatgpt.errors import ChatGPTWebError
 from providers.models import Choice, FeatureState, Model, ModelCatalog
-from tests import test_cli_interaction as interaction
-
-terminal = interaction.terminal
-
-
-def immediate(read, success, failure, **kwargs):
-    try:
-        success(read())
-    except Exception as error:
-        failure(str(error))
-
-
-def click(fragment):
-    return fragment[2](
-        MouseEvent(Point(0, 0), MouseEventType.MOUSE_UP, MouseButton.LEFT, frozenset())
-    )
+from tests.cli_support import click, immediate, terminal, wait_until
 
 
 class UiControlsTests(unittest.TestCase):
@@ -250,7 +235,7 @@ class UiControlsTests(unittest.TestCase):
 
 
 class DialogInputTests(unittest.IsolatedAsyncioTestCase):
-    settle = interaction.InputTests.settle
+    settle = staticmethod(wait_until)
 
     async def test_settings_panel_edits_backspace_and_allows_new_chat_navigation(self):
         rows = [{"section": "application", "key": "model", "value": "abc", "title": "Model"}]

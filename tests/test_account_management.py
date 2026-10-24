@@ -7,8 +7,7 @@ from unittest.mock import Mock
 
 from settings import Settings
 from tests.account_fixture import configured_application as create_application
-from tests.test_cli_interaction import terminal
-from tests.test_ui_controls import immediate
+from tests.cli_support import immediate, terminal
 
 
 class EmptyAccountStartupTests(unittest.TestCase):

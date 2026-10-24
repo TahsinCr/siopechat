@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from cli.markdown import MessageRenderer, index_transcript, open_link, transcript_fragments
 from tests.account_fixture import configured_application as create_application
-from tests.test_cli_interaction import terminal
+from tests.cli_support import terminal
 
 
 class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
@@ -44,7 +44,7 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(view.transcript_window.vertical_scroll, target)
 
     def test_scroll_burst_renders_latest_viewport_in_one_queued_job(self):
-        from tests.test_cli_interaction import immediate
+        from tests.cli_support import immediate
 
         messages = [{"role": "user", "text": (f"Message {i}\n" * 20)} for i in range(100)]
         with terminal(initial_messages=messages) as (view, _):
@@ -160,7 +160,7 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
             open_link("https://example.com")
 
     async def test_terminal_mouse_event_reaches_rendered_markdown_link(self):
-        from tests.test_terminal_responsiveness import ResizableOutput
+        from tests.cli_support import ResizableOutput
 
         output = ResizableOutput()
         with terminal(

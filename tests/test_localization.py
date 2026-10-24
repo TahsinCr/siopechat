@@ -16,9 +16,8 @@ from cli.actions import _ACTION_NAMES, action_title
 from cli.library import SORT_OPTIONS
 from language import Catalog, literal
 from settings import DEFAULTS
-from tests import test_cli_interaction as interaction
-from tests.test_form_rendering import screen_text
-from tests.test_terminal_responsiveness import ResizableOutput
+from tests import cli_support as interaction
+from tests.cli_support import ResizableOutput, screen_text
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -124,7 +123,7 @@ class LocalizationTests(unittest.TestCase):
 
 
 class RussianTerminalTests(unittest.IsolatedAsyncioTestCase):
-    settle = interaction.InputTests.settle
+    settle = staticmethod(interaction.wait_until)
 
     async def test_russian_composer_settings_confirmation_and_help(self):
         output = ResizableOutput()

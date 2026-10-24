@@ -7,23 +7,13 @@ from unittest.mock import Mock
 from prompt_toolkit.styles import Style
 
 from providers import Capability
-from tests import test_cli_interaction as interaction
-from tests.test_account_ui import Accounts
-from tests.test_cli_interaction import terminal
-from tests.test_terminal_responsiveness import ResizableOutput
-from tests.test_ui_controls import immediate
-
-
-def screen_text(view):
-    screen = view.app.renderer._last_screen
-    return "\n".join(
-        "".join(cell.char for _, cell in sorted(row.items()))
-        for _, row in sorted(screen.data_buffer.items())
-    )
+from tests import cli_support as interaction
+from tests.cli_support import ResizableOutput, immediate, screen_text, terminal
+from tests.fakes import Accounts
 
 
 class FormsRenderTests(unittest.IsolatedAsyncioTestCase):
-    settle = interaction.InputTests.settle
+    settle = staticmethod(interaction.wait_until)
 
     async def test_filter_and_project_account_choices_are_painted_and_resize(self):
         service = Accounts()

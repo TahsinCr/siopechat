@@ -10,9 +10,9 @@ from pathlib import Path
 
 from providers.models import Choice, FeatureState, Model, ModelCatalog
 from settings import SettingsCatalog
-from tests import test_cli_interaction as interaction
+from tests import cli_support as interaction
 from tests.account_fixture import configured_application as create_application
-from tests.test_ui_controls import immediate
+from tests.cli_support import immediate
 from theme import ThemeService
 
 
@@ -171,7 +171,7 @@ with tempfile.TemporaryDirectory() as folder:
 
 
 class ProductKeyboardTests(unittest.IsolatedAsyncioTestCase):
-    settle = interaction.InputTests.settle
+    settle = staticmethod(interaction.wait_until)
 
     async def test_extension_action_palette_collects_required_arguments(self):
         from unittest.mock import Mock

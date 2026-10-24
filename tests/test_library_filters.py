@@ -10,9 +10,9 @@ from providers.gemini.history import conversations
 from providers.gemini.notebooks import project_from_native
 from providers.models import Conversation, Origin, Page
 from tests.account_fixture import configured_application as create_application
-from tests.test_account_ui import Accounts
-from tests.test_cli_interaction import terminal
-from tests.test_gemini_notebooks import notebook
+from tests.cli_support import terminal
+from tests.fakes import Accounts
+from tests.provider_fixtures import notebook
 
 
 class LibraryTests(unittest.TestCase):

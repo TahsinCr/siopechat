@@ -5,11 +5,11 @@ import unittest
 from unittest.mock import patch
 
 from extensions.layout.panes import SplitLayout, _Pane
-from tests import test_cli_interaction as interaction
+from tests import cli_support as interaction
 
 
 class SplitTests(unittest.IsolatedAsyncioTestCase):
-    settle = interaction.InputTests.settle
+    settle = staticmethod(interaction.wait_until)
 
     async def test_two_panes_render_focus_and_extension_disable(self):
         with interaction.terminal(layout_factory=SplitLayout) as (v, _):
@@ -106,7 +106,7 @@ class SplitTests(unittest.IsolatedAsyncioTestCase):
         from prompt_toolkit.data_structures import Point
         from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
 
-        from tests.test_terminal_responsiveness import ResizableOutput
+        from tests.cli_support import ResizableOutput
 
         with interaction.terminal(output=ResizableOutput(), layout_factory=SplitLayout) as (v, _):
             v.messages = [{"role": "assistant", "text": "Left"}]

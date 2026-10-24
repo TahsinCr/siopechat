@@ -16,7 +16,7 @@ from extensions.archive.sync import Archive
 from providers import ConversationBound, ReplaceText
 from providers.models import FeatureState, Model, ModelCatalog
 from tests.account_fixture import configured_application as create_application
-from tests.test_cli_interaction import terminal
+from tests.cli_support import terminal
 
 
 class SyncConcurrencyTests(unittest.TestCase):

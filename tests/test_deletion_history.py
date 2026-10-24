@@ -17,7 +17,7 @@ from extensions.archive.sync import Archive
 from providers import Capability
 from providers.errors import RemoteNotFound
 from providers.gemini import GeminiProvider
-from tests.test_cli_interaction import terminal
+from tests.cli_support import terminal
 
 
 def message(role, text, **extra):

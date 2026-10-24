@@ -12,10 +12,9 @@ from cli.projects import ProjectPanel
 from providers import Capability
 from providers.models import Origin, Project, Resource
 from providers.projects import ProjectEditing, ProjectOptions
-from tests import test_cli_interaction as interaction
-from tests.test_account_ui import Accounts
-from tests.test_cli_interaction import terminal
-from tests.test_ui_controls import immediate
+from tests import cli_support as interaction
+from tests.cli_support import immediate, terminal
+from tests.fakes import Accounts
 
 
 class ProjectWriteTests(unittest.IsolatedAsyncioTestCase):
@@ -36,7 +35,7 @@ class ProjectWriteTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ProjectFormTests(unittest.IsolatedAsyncioTestCase):
-    settle = interaction.InputTests.settle
+    settle = staticmethod(interaction.wait_until)
 
     async def test_edit_uses_the_shared_picker_and_opens_inline_on_the_project_tab(self):
         service = Accounts()

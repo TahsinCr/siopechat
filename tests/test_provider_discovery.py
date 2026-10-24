@@ -16,22 +16,8 @@ from providers.chatgpt.discovery import model_catalog
 from providers.chatgpt.errors import ChatGPTWebError
 from providers.chatgpt.formats import normalize_conversation
 from providers.models import ModelCatalog
+from tests.provider_fixtures import CATALOG
 
-CATALOG = {
-    "default_model_slug": "account-thinking",
-    "models": [
-        {
-            "slug": "account-thinking",
-            "title": "Account Thinking",
-            "thinking_efforts": [
-                {"thinking_effort": "standard", "full_label": "Standard", "is_default": True},
-                {"thinking_effort": "extended", "title": "Extended"},
-            ],
-        },
-        {"slug": "account-instant", "title": "Account Instant"},
-        {"slug": "locked", "is_available": False},
-    ],
-}
 PROJECT = {
     "gizmo": {
         "gizmo": {

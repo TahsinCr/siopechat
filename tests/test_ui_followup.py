@@ -11,7 +11,7 @@ from prompt_toolkit.layout.controls import FormattedTextControl
 
 from cli.widgets import BoundedTextControl
 from tests.account_fixture import configured_application as create_application
-from tests.test_cli_interaction import terminal
+from tests.cli_support import terminal
 
 
 class CursorTests(unittest.TestCase):

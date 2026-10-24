@@ -10,7 +10,7 @@ from pathlib import Path
 from cli.history import prepare_virtual_transcript
 from cli.transcript import VirtualTranscriptRows
 from tests.account_fixture import configured_application
-from tests.test_cli_interaction import terminal
+from tests.cli_support import terminal
 
 
 class TabMemoryReleaseTests(unittest.TestCase):

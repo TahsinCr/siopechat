@@ -19,9 +19,8 @@ from cli.widgets import TranscriptGutter
 from providers import Capability
 from providers.chatgpt import BrowserSession, ChatGPTClient, ChatGPTProvider, SessionPaths
 from providers.chatgpt.errors import ChatGPTWebError
-from tests import test_cli_interaction as interaction
-from tests.test_cli_interaction import terminal
-from tests.test_ui_controls import click, immediate
+from tests import cli_support as interaction
+from tests.cli_support import click, immediate, terminal
 
 
 class PolishTests(unittest.TestCase):
@@ -254,7 +253,7 @@ class PolishTests(unittest.TestCase):
 
 
 class FocusTests(unittest.IsolatedAsyncioTestCase):
-    settle = interaction.InputTests.settle
+    settle = staticmethod(interaction.wait_until)
 
     async def test_modified_enter_inserts_newline_without_sending(self):
         for sequence in (b"\x1b[13;2u", b"\x1b[27;2;13~", b"\x1b[13;2~", b"\n"):

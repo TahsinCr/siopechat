@@ -211,7 +211,7 @@ class AttachmentPolicyTests(unittest.TestCase):
         self.assertEqual(rejected, [])
 
     def test_attachment_queue_survives_tab_changes_during_picker_work(self):
-        from tests import test_cli_interaction as interaction
+        from tests import cli_support as interaction
 
         with interaction.terminal() as (view, _):
             view.pending_attachments = [
@@ -242,7 +242,7 @@ class AttachmentPolicyTests(unittest.TestCase):
             view.app.invalidate.assert_called_once()
 
     def test_send_from_another_tab_consumes_the_shared_attachment_queue_on_success(self):
-        from tests import test_cli_interaction as interaction
+        from tests import cli_support as interaction
 
         with interaction.terminal() as (view, _):
             attachment = {

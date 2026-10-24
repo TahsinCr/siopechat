@@ -6,19 +6,7 @@ from unittest.mock import AsyncMock
 from accounts import Accounts
 from providers.errors import ProviderError
 from providers.gemini.notebooks import Notebooks, project_from_native
-
-
-def notebook():
-    source = [None] * 22
-    source[1], source[2], source[5] = 11, "Research notes", "notebooks/abcdef/sources/source1"
-    detail = [None] * 15
-    detail[0], detail[1], detail[10], detail[12] = (
-        "My notebook",
-        "Notebook description",
-        [[source], []],
-        [2, None, None, None, 3],
-    )
-    return ["notebooks/abcdef", detail, ["Use citations"]]
+from tests.provider_fixtures import notebook
 
 
 class NotebookTests(unittest.IsolatedAsyncioTestCase):

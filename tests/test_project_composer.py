@@ -5,10 +5,9 @@ import unittest
 from unittest.mock import Mock, patch
 
 from providers.models import Choice, FeatureState, Model, ModelCatalog
-from tests import test_cli_interaction as interaction
-from tests.test_account_ui import Accounts
-from tests.test_form_rendering import screen_text
-from tests.test_terminal_responsiveness import ResizableOutput
+from tests import cli_support as interaction
+from tests.cli_support import ResizableOutput, screen_text
+from tests.fakes import Accounts
 
 
 def project_view(view):
@@ -20,7 +19,7 @@ def project_view(view):
 
 
 class ProjectComposerTests(unittest.IsolatedAsyncioTestCase):
-    settle = interaction.InputTests.settle
+    settle = staticmethod(interaction.wait_until)
 
     async def test_details_allow_typing_and_editing_hides_composer_and_metadata(self):
         output = ResizableOutput()

@@ -6,8 +6,7 @@ from unittest.mock import Mock, patch
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
 
-from tests.test_cli_interaction import terminal
-from tests.test_ui_controls import immediate
+from tests.cli_support import immediate, terminal
 
 
 class PartialSelectionTests(unittest.TestCase):

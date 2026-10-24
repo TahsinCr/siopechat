@@ -5,74 +5,14 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from providers import Capability
-from providers.models import Choice, FeatureState, Model, ModelCatalog
-from tests import test_cli_interaction as interaction
-from tests.test_ui_controls import immediate
-
-
-class Accounts:
-    def __init__(self):
-        self.selected = "chatgpt/default"
-        self.entries = [
-            {
-                "key": "chatgpt/default",
-                "provider": "chatgpt",
-                "id": "default",
-                "label": "GPT",
-                "icon": "◈",
-            },
-            {
-                "key": "gemini/personal",
-                "provider": "gemini",
-                "id": "personal",
-                "label": "Gemini",
-                "icon": "✦",
-            },
-        ]
-        self.backend = Mock()
-
-    def capabilities(self, key):
-        return (
-            frozenset({Capability.PROJECTS, Capability.PROJECT_CREATE})
-            if key.startswith("chatgpt")
-            else frozenset()
-        )
-
-    def active(self):
-        return self.selected
-
-    def cached_models(self, _key):
-        return None
-
-    def items(self):
-        return self.entries
-
-    def status(self, key):
-        return {"saved_snapshot": False, "authenticated": False, "account": key}
-
-    def cache(self, key):
-        return self.backend
-
-    def select(self, key):
-        self.selected = key
-
-    def list_chats(self, selected=None, cursor=None, account_keys=None):
-        return {"items": [], "cursor": None}
-
-    def callbacks(self, key):
-        model = Model(key, key, (Choice("standard", "Standart"),))
-        return {
-            "load_catalog": lambda: ModelCatalog(FeatureState.AVAILABLE, (model,)),
-            "list_projects_callback": lambda cursor=None: {"items": [], "cursor": None},
-            "session_action": lambda _: self.status(key),
-            "attach_file_callback": lambda path: {"id": "file-test", "name": "demo.pdf"},
-            "load_conversation": lambda _: {"messages": []},
-        }
+from providers.models import FeatureState, Model, ModelCatalog
+from tests import cli_support as interaction
+from tests.cli_support import immediate
+from tests.fakes import Accounts
 
 
 class AccountUiTests(unittest.IsolatedAsyncioTestCase):
-    settle = interaction.InputTests.settle
+    settle = staticmethod(interaction.wait_until)
 
     async def test_accounts_do_not_rewrite_other_tab_models_and_filter_is_multiselect(self):
         service = Accounts()

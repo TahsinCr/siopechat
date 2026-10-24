@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 from cli.markdown import MessageRenderer
 from tests.account_fixture import configured_application as create_application
-from tests.test_cli_interaction import terminal
+from tests.cli_support import terminal
 
 
 class OpeningPerformanceTests(unittest.IsolatedAsyncioTestCase):
@@ -114,7 +114,7 @@ class ArchivePollingPerformanceTests(unittest.IsolatedAsyncioTestCase):
     async def test_live_archive_polling_cannot_wait_for_storage_on_the_ui_thread(self):
         import asyncio
 
-        from tests import test_cli_interaction as interaction
+        from tests import cli_support as interaction
 
         with tempfile.TemporaryDirectory() as folder:
             api = create_application(Path(folder))
@@ -146,16 +146,14 @@ class ArchivePollingPerformanceTests(unittest.IsolatedAsyncioTestCase):
                     v._save_active_tab()
                     run = asyncio.create_task(v.app.run_async())
                     try:
-                        await interaction.InputTests.settle(self, lambda: v.app.is_running)
+                        await interaction.wait_until(lambda: v.app.is_running)
                         v.apply_archive_updates()
                         self.assertTrue(await asyncio.to_thread(entered.wait, 1))
                         v.input.text = "Typing during synchronization"
                         await asyncio.sleep(0.03)
                         self.assertEqual(v.input.text, "Typing during synchronization")
                         release.set()
-                        await interaction.InputTests.settle(
-                            self, lambda: not v._archive_read_pending
-                        )
+                        await interaction.wait_until(lambda: not v._archive_read_pending)
                         self.assertEqual(v.messages[0]["text"], "Synced")
                     finally:
                         release.set()

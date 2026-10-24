@@ -6,7 +6,7 @@ from unittest.mock import Mock
 
 from prompt_toolkit.output import DummyOutput
 
-from tests import test_cli_interaction as interaction
+from tests import cli_support as interaction
 
 
 class RecordingOutput(DummyOutput):
@@ -21,7 +21,7 @@ class RecordingOutput(DummyOutput):
 
 
 class KeyboardTests(unittest.IsolatedAsyncioTestCase):
-    settle = interaction.InputTests.settle
+    settle = staticmethod(interaction.wait_until)
 
     async def test_modified_enter_inserts_newline_plain_enter_sends_and_ctrl_d_survives(self):
         output = RecordingOutput()
