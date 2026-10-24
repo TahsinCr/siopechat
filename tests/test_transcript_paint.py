@@ -13,6 +13,58 @@ from tests.test_cli_interaction import terminal
 
 
 class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
+    def test_cumulative_layout_preserves_latest_viewport_during_prepend(self):
+        from cli.history import prepare_virtual_transcript
+
+        def messages(start, end=None):
+            return [
+                {"role": "user", "text": f"Message {i}", "_archive_ordinal": i}
+                for i in range(start, start + 80 if end is None else end)
+            ]
+
+        with terminal(initial_messages=messages(60, 180)) as (view, _):
+            previous = prepare_virtual_transcript(messages(100), view.transcript_width(), {}, True)
+            previous.ordinals = tuple(range(100, 180))
+            tab = view.tabs[view.active_tab]
+            tab["history_anchor"] = {"ordinal": 100, "offset": 0}
+            view._virtual_transcript = previous
+            view._virtual_tab_id = tab["tab_id"]
+            view._virtual_conversation_id = view.conversation_id
+            view.transcript_window.vertical_scroll = 0
+            view.follow_output = False
+            jobs = []
+            view._read_in_background = lambda read, ready, failed, **kw: jobs.append((read, ready))
+            view._virtual_transcript_rows(20)
+            read, ready = jobs[0]
+            value = read()
+            view.transcript_window.vertical_scroll = previous.ranges[70][0]
+            ready(value)
+            self.assertIs(view._virtual_transcript, value)
+            target = next(start for start, _, index in value.ranges if value.ordinals[index] == 170)
+            self.assertEqual(view.transcript_window.vertical_scroll, target)
+
+    def test_scroll_burst_renders_latest_viewport_in_one_queued_job(self):
+        from tests.test_cli_interaction import immediate
+
+        messages = [{"role": "user", "text": (f"Message {i}\n" * 20)} for i in range(100)]
+        with terminal(initial_messages=messages) as (view, _):
+            view.follow_output = False
+            view._read_in_background = immediate
+            view._virtual_transcript_rows(20)
+            layout = view._virtual_transcript
+            layout.clear()
+            view._transcript_prefetch.clear()
+            jobs = []
+            view._read_in_background = lambda read, ready, failed, **kw: jobs.append((read, ready))
+            for iteration in range(40):
+                view.transcript_window.vertical_scroll = 100 if iteration % 2 else 900
+                view._virtual_transcript_rows(20)
+            self.assertEqual(len(jobs), 1)
+            read, ready = jobs.pop()
+            ready(read())
+            self.assertIsNotNone(layout.cached_row(100))
+            self.assertLessEqual(layout.cache_bytes, layout.CACHE_BYTES)
+
     def test_markdown_link_click_opens_original_url_after_row_indexing(self):
         from prompt_toolkit.data_structures import Point
         from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
@@ -335,6 +387,62 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(set(virtual._pages), set())
         self.assertTrue(first_pages.issubset(virtual._pages))
         self.assertLessEqual(virtual.cache_bytes, virtual.CACHE_BYTES)
+
+    def test_cached_rows_stay_visible_while_another_page_is_rendering(self):
+        from cli.transcript import VirtualTranscript
+
+        layout = VirtualTranscript([{"role": "assistant", "text": "Ready"}], 48)
+        layout.prefetch(0, layout.line_count)
+        expected = layout.cached_row(0)
+        locked, release = threading.Event(), threading.Event()
+
+        def render_lock():
+            with layout._lock:
+                locked.set()
+                release.wait(2)
+
+        worker = threading.Thread(target=render_lock)
+        worker.start()
+        try:
+            self.assertTrue(locked.wait(2))
+            for _ in range(100):
+                self.assertEqual(layout.cached_row(0), expected)
+        finally:
+            release.set()
+            worker.join(2)
+        layout.clear()
+        self.assertIsNone(layout.cached_row(0))
+
+    def test_scroll_during_page_render_preserves_the_latest_visible_message(self):
+        from cli.history import prepare_virtual_transcript
+
+        def messages(start):
+            return [
+                {"role": "user", "text": f"Message {i}", "_archive_ordinal": i}
+                for i in range(start, start + 30)
+            ]
+
+        with terminal(initial_messages=messages(0)) as (view, _):
+            previous = prepare_virtual_transcript(messages(10), view.transcript_width(), {}, True)
+            previous.ordinals = tuple(range(10, 40))
+            tab = view.tabs[view.active_tab]
+            view._virtual_transcript = previous
+            view._virtual_tab_id = tab["tab_id"]
+            view._virtual_conversation_id = view.conversation_id
+            tab["history_anchor"] = {"ordinal": 10, "offset": 0}
+            view.follow_output = False
+            view.transcript_window.vertical_scroll = 0
+            callbacks = []
+            view._read_in_background = lambda read, ready, failed, **kw: callbacks.append(
+                (read, ready)
+            )
+            view._virtual_transcript_rows(20)
+            read, ready = callbacks[0]
+            value = read()
+            view.transcript_window.vertical_scroll = previous.ranges[4][0]
+            self.assertEqual(view.history_pager.anchor(tab)["ordinal"], 14)
+            ready(value)
+            self.assertEqual(view.transcript_window.vertical_scroll, value.ranges[14][0])
 
     def test_selection_tracks_the_same_message_after_older_history_is_inserted(self):
         with terminal(

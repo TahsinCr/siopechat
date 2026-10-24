@@ -2,6 +2,7 @@
 
 from bisect import bisect_right
 from collections import OrderedDict
+from copy import copy
 from threading import RLock
 
 from .markdown import (
@@ -21,13 +22,22 @@ class VirtualTranscript:
     CACHE_BYTES = 1024 * 1024
 
     def __init__(
-        self, messages, width, show_reasoning=True, renderer=None, cancelled=None, active_index=None
+        self,
+        messages,
+        width,
+        show_reasoning=True,
+        renderer=None,
+        cancelled=None,
+        active_index=None,
+        preserve_order=False,
+        previous=None,
     ):
         self.renderer = renderer or MessageRenderer()
         self.width = width
         self.show_reasoning = show_reasoning
         self._lock = RLock()
         self._pages = OrderedDict()
+        self._paint_pages = {}
         self._cache_bytes = 0
         self._disposed = False
         self._release_renderer = True
@@ -45,22 +55,57 @@ class VirtualTranscript:
                 for message in messages
             )
         )
-        self.entries = message_order(message[0] for message in self.messages)
+        self.entries = (
+            list(range(len(self.messages)))
+            if preserve_order
+            else message_order(message[0] for message in self.messages)
+        )
         if not show_reasoning:
             self.entries = [
                 index for index in self.entries if self.messages[index][0] != "reasoning"
             ]
         self.starts = []
         self.ranges = []
+        reusable = {}
+        previous_blocks = {}
+        if (
+            previous is not None
+            and not previous._disposed
+            and previous.width == width
+            and previous.renderer.tokens == self.renderer.tokens
+        ):
+            with previous._lock:
+                previous_messages = previous.messages
+                previous_blocks = dict(previous._large_code)
+                if previous_messages:
+                    for entry, (start, end, index) in enumerate(previous.ranges):
+                        reusable[previous_messages[index]] = (entry, index, end - start)
+        inherited = {}
         line = 0
         for entry_index, index in enumerate(self.entries):
             if cancelled and cancelled():
                 raise InterruptedError("Superseded transcript")
             role, text = self.messages[index]
-            block = self.renderer.large_code_block(text or "", self.width, self.PAGE_ROWS)
-            if block is None:
-                rendered = self._render(index)
-                count = max(1, rendered.count("\n"))
+            old = reusable.get((role, text))
+            if old is not None and (index == active_index) == (old[1] == previous.active_index):
+                old_entry, _, count = old
+                inherited[old_entry] = (entry_index, index)
+                if old_entry in previous_blocks:
+                    block, prefix = previous_blocks[old_entry]
+                    if block.source is not text:
+                        block = copy(block)
+                        block.source = text
+                    self._large_code[entry_index] = (block, prefix)
+            elif (
+                block := self.renderer.large_code_block(text or "", self.width, self.PAGE_ROWS)
+            ) is None:
+                count = self.renderer.line_count(
+                    role,
+                    text or "",
+                    self.width,
+                    index > 0,
+                    index == self.active_index,
+                )
             else:
                 prefix = self.renderer.code_prefix_rows(role, self.width)
                 self._large_code[entry_index] = (block, prefix)
@@ -69,6 +114,14 @@ class VirtualTranscript:
             self.ranges.append((line, line + count, index))
             line += count
         self.line_count = line + 1
+        if inherited:
+            with previous._lock:
+                for (entry, page), (rows, size) in previous._pages.items():
+                    if entry in inherited:
+                        new_entry, owner = inherited[entry]
+                        self._cache_page(
+                            new_entry, page, tuple((spans, owner) for spans, _ in rows), size
+                        )
 
     def _render(self, index):
         role, text = self.messages[index]
@@ -95,12 +148,16 @@ class VirtualTranscript:
         if size is None:
             size = sum(self._row_bytes(row) for row in rows)
         if size > self.CACHE_BYTES:
+            self._paint_pages = dict(self._pages)
             return
         self._pages[key] = (rows, size)
         self._cache_bytes += size
         while self._cache_bytes > self.CACHE_BYTES and self._pages:
             _, (_, removed_size) = self._pages.popitem(last=False)
             self._cache_bytes -= removed_size
+        # Publish immutable row references, not a second rendered copy. Painting
+        # can keep using ready rows while another page holds the render lock.
+        self._paint_pages = dict(self._pages)
 
     def _render_page(self, entry_index, page):
         if self._disposed:
@@ -210,20 +267,12 @@ class VirtualTranscript:
         if entry is None:
             return (), None
         key = self._page_key(entry, local // self.PAGE_ROWS)
-        if not self._lock.acquire(blocking=False):
+        cached = self._paint_pages.get(key)
+        if cached is None or self._disposed:
             return None
-        try:
-            if self._disposed:
-                return None
-            cached = self._pages.get(key)
-            if cached is None:
-                return None
-            self._pages.move_to_end(key)
-            rows = cached[0]
-            offset = local % self.PAGE_ROWS
-            return rows[offset] if offset < len(rows) else ((), self.entries[entry])
-        finally:
-            self._lock.release()
+        rows = cached[0]
+        offset = local % self.PAGE_ROWS
+        return rows[offset] if offset < len(rows) else ((), self.entries[entry])
 
     def prefetch(self, start, stop, cancelled=None):
         """Render pages intersecting a viewport plus its caller-selected overscan."""
@@ -265,13 +314,24 @@ class VirtualTranscript:
     def cache_bytes(self):
         return self._cache_bytes
 
+    @property
+    def resident_bytes(self):
+        """Budget render payloads and indexes; source strings belong to the tab."""
+        indexes = sum(
+            len(block.offsets) * block.offsets.itemsize + len(block.parts) * block.parts.itemsize
+            for block, _ in self._large_code.values()
+        )
+        return self._cache_bytes + self.renderer.cache_bytes + indexes + 256 * len(self.messages)
+
     def clear(self):
         with self._lock:
             self._pages.clear()
+            self._paint_pages = {}
             self._cache_bytes = 0
 
     def _release(self):
         self._pages.clear()
+        self._paint_pages = {}
         self._cache_bytes = 0
         self._large_code.clear()
         self.messages = ()
@@ -287,6 +347,60 @@ class VirtualTranscript:
                 self._release()
             finally:
                 self._lock.release()
+
+
+class TranscriptPrefetch:
+    """One render job and one latest viewport, shared by main and split panes."""
+
+    def __init__(self, submit, invalidate):
+        self.submit, self.invalidate = submit, invalidate
+        self._target = self._done = self._running = None
+        self._generation = 0
+
+    def clear(self):
+        self._generation += 1
+        self._target = self._done = None
+
+    def request(self, layout, top, height):
+        top = min(max(0, top), max(0, layout.line_count - height))
+        height = max(1, height)
+        key = (id(layout), top, height)
+        self._target = (key, layout)
+        if self._running is not None or self._done == key:
+            return
+        token, generation = object(), self._generation
+        self._running = token
+
+        def read():
+            target = self._target
+            if target is None or generation != self._generation:
+                return None
+            current, source = target
+            _, start, size = current
+
+            def cancelled():
+                return (
+                    generation != self._generation
+                    or self._target is None
+                    or self._target[0][0] != id(source)
+                )
+
+            source.prefetch(start, min(source.line_count, start + size), cancelled)
+            if not cancelled() and self._target == target:
+                source.prefetch(
+                    max(0, start - 2 * size),
+                    min(source.line_count, start + 3 * size),
+                    lambda: cancelled() or self._target != target,
+                )
+            return current if not cancelled() else None
+
+        def finished(result=None):
+            if self._running is token:
+                self._running = None
+                self._done = result if generation == self._generation else None
+                self.invalidate()
+
+        self.submit(read, finished, lambda _reason: finished())
 
 
 class VirtualTranscriptRows:

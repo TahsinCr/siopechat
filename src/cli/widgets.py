@@ -325,23 +325,42 @@ class ComposerPlaceholderProcessor(Processor):
 class TranscriptWindow(Window):
     """A Window with the multi-line wheel movement users expect in terminals."""
 
-    def __init__(self, *args: Any, on_manual_scroll: Callable[[], None], **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *args: Any,
+        on_manual_scroll: Callable[[], None],
+        get_content_height: Callable[[], int | None] | None = None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(*args, **kwargs)
         self.on_manual_scroll = on_manual_scroll
+        self.get_content_height = get_content_height
+        self.scroll_direction = 0
+
+    def _last_scroll(self, info):
+        # A background layout can be published before the terminal's next
+        # paint. Its old render_info must not clamp the new scroll position.
+        height = self.get_content_height() if self.get_content_height else None
+        if height is None:
+            height = info.content_height
+        return max(0, height - info.window_height)
 
     def _scroll_up(self) -> None:
         info = self.render_info
         if info is None:
             return
+        self.scroll_direction = -1
         self.on_manual_scroll()
-        self.vertical_scroll = max(0, self.vertical_scroll - 4)
+        last_scroll = self._last_scroll(info)
+        self.vertical_scroll = max(0, min(last_scroll, self.vertical_scroll) - 4)
 
     def _scroll_down(self) -> None:
         info = self.render_info
         if info is None:
             return
+        self.scroll_direction = 1
         self.on_manual_scroll()
-        last_scroll = max(0, info.content_height - info.window_height)
+        last_scroll = self._last_scroll(info)
         self.vertical_scroll = min(last_scroll, self.vertical_scroll + 4)
 
 

@@ -194,6 +194,12 @@ class WorkspaceTests(unittest.TestCase):
             self.assertEqual(v.tabs[0]["messages"][-1]["text"], "Answer 0")
 
     def test_closing_stream_keeps_sidebar_entry_and_reopens_same_state(self):
+        import gc
+        import weakref
+
+        class Source(str):
+            pass
+
         gate = threading.Event()
         started = threading.Event()
 
@@ -201,10 +207,15 @@ class WorkspaceTests(unittest.TestCase):
             started.set()
             if not gate.wait(2):
                 raise TimeoutError("test gate")
+            args[3]({"type": "reasoning", "text": "Background summary"})
             args[3]({"type": "replace", "text": "Background answer"})
             return {"conversation_id": "background-result"}
 
         with terminal() as (v, _):
+            historical = Source("History no longer needed by the stream\n" * 10_000)
+            historical_ref = weakref.ref(historical)
+            v.messages = [{"role": "assistant", "text": historical}]
+            del historical
             v.send_prompt = send
             v.input.text = "Background question"
             v.submit_prompt()
@@ -212,6 +223,9 @@ class WorkspaceTests(unittest.TestCase):
             original = v.tabs[0]
             try:
                 v.close_tab()
+                gc.collect()
+                self.assertIsNone(historical_ref())
+                self.assertEqual(len(original["messages"]), 2)
                 self.assertIsNot(v.tabs[0], original)
                 self.assertTrue(v.busy)
                 self.assertFalse(v.active_busy())

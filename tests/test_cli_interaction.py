@@ -46,6 +46,63 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
 
         await asyncio.wait_for(wait(), timeout)
 
+    async def test_transcript_home_end_share_history_actions_but_composer_keeps_editing(self):
+        with terminal(initial_messages=[{"role": "user", "text": "Prompt"}]) as (view, pipe):
+            view.scroll_transcript = Mock()
+            view.scroll_top = Mock()
+            view.scroll_bottom = Mock()
+            run = asyncio.create_task(view.app.run_async())
+            try:
+                await self.settle(lambda: view.app.is_running)
+                pipe.send_bytes(b"\x1b[5~")
+                await self.settle(lambda: view.scroll_transcript.call_count == 1)
+                view.scroll_transcript.assert_called_with(-1)
+                pipe.send_bytes(b"\x1b[6~")
+                await self.settle(lambda: view.scroll_transcript.call_count == 2)
+                view.scroll_transcript.assert_called_with(1)
+                view.app.layout.focus(view.transcript_control)
+                pipe.send_bytes(b"\x1b[H")
+                await self.settle(lambda: view.scroll_top.call_count == 1)
+                pipe.send_bytes(b"\x1b[F")
+                await self.settle(lambda: view.scroll_bottom.call_count == 1)
+                view.app.layout.focus(view.input)
+                view.input.text = "first line\nsecond line"
+                view.input.buffer.cursor_position = 4
+                pipe.send_bytes(b"\x1b[H")
+                await self.settle(lambda: view.input.buffer.cursor_position == 0)
+                pipe.send_bytes(b"\x1b[F")
+                await self.settle(lambda: view.input.buffer.cursor_position == 10)
+                view.scroll_top.assert_called_once_with()
+                view.scroll_bottom.assert_called_once_with()
+            finally:
+                if view.app.is_running:
+                    view.app.exit()
+                await run
+                view._reads.close()
+                view._render_reads.close()
+                view._operations.close()
+
+    async def test_chat_start_schedules_provider_preparation_off_the_ui_thread(self):
+        with terminal() as (view, _pipe):
+            service = Mock()
+            view.account_service = service
+            submitted = []
+            view._read_in_background = lambda read, *_args, **_kwargs: submitted.append(read)
+            view.refresh_provider_catalog = Mock()
+            view.refresh_sidebar = Mock()
+            view.refresh_open_conversation = Mock()
+            view.app.create_background_task = lambda coroutine: coroutine.close()
+
+            def run(*, pre_run):
+                pre_run()
+
+            view.app.run = run
+            view.run()
+
+        self.assertIn(service.prepare_enabled, submitted)
+        view.refresh_provider_catalog.assert_called_once_with()
+        view.refresh_sidebar.assert_called_once_with()
+
     async def test_settings_tab_can_switch_reopen_and_close_with_global_keys(self):
         with terminal(settings_rows=lambda: []) as (view, pipe):
             view._read_in_background = immediate

@@ -14,6 +14,10 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 - Add clean-install wheel and source-archive checks for the standalone provider package to CI.
 
 ### Changed
+- Cache Gemini and Claude model catalogs for five minutes with explicit refresh support, and decode large Claude JSON and Gemini RPC responses off the provider event loop.
+- Reuse ChatGPT's account HTTP pool for project options and edits; stream project source files from disk instead of loading their entire content into memory.
+- Prepare enabled accounts with saved sessions in bounded background workers at chat startup; provider requests share or wait for the same first-session initialization.
+- Reuse ChatGPT's account-scoped HTTP client and keep-alive pool for normal reads, while uploads and cancellable generation retain their isolated clients.
 - Replace the Gemini SDK and subclass wrappers with native HTTPS authentication, model discovery, RPC, disk uploads and bounded streaming parsing.
 - Remove the Gemini SDK dependency and its application-level cookie-cache initialization.
 - Render large fenced code messages through bounded transcript windows, avoiding full-message ANSI buffers and syntax tokenization.
@@ -22,6 +26,18 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 - Show each provider's projects as soon as its background refresh completes.
 
 ### Fixed
+- Route transcript PageUp/PageDown and Home/End through shared history navigation so keyboard scrolling loads adjacent SQL pages instead of stopping inside the current window; preserve Home/End editing in the composer.
+- Extend loaded history with older SQLite batches without removing already loaded messages; preserve provider order and message-ID scroll anchors through rapid direction changes.
+- Use the newly published transcript geometry for wheel and page-key bounds before the next terminal repaint, preventing stale heights from skipping visible content.
+- Stop history windows from oscillating between short thinking pages and long answers while idle: page transitions now consume the latest wheel or page-key direction instead of being triggered by every repaint.
+- Page displayed history over visible messages so hidden tool records cannot consume entire SQL windows; navigate older windows backwards across sparse ordinal gaps and retain raw archive records.
+- Display text contained in structured ChatGPT response blocks, including cached audio transcriptions, without requiring a history resync.
+- Preserve the latest explicit top/bottom history navigation during an in-flight SQL read and distinguish manual scrolling from automatic layout position changes.
+- Reuse bounded, content-keyed message line counts across SQL history windows even after rendered strings are evicted, avoiding full Markdown conversions solely to rebuild scroll geometry.
+- Share one latest-viewport render queue between main and split views; reuse unchanged message geometry and rendered rows when history grows instead of repeating Markdown conversions.
+- Keep cached transcript rows visible while Markdown pages render, and preserve the latest visible message when scrolling during an older history page's render preparation.
+- Serialize Gemini credential rotation and finish in-flight credential writes before cancellation releases their lock; persist the final Gemini cookies during shutdown.
+- Coalesce Claude's initial bootstrap, workspace selection and model discovery so simultaneous warmup and chat reads do not repeat the first handshake.
 - Read Gemini notebook membership from the general conversation list so notebook chats stay under their projects; preserve known membership when stale listing pages omit it during archive refresh or pagination.
 - Keep the sidebar divider aligned and default all project groups to collapsed, including projects inferred from conversation listings; load chats only when their group is opened.
 - Report accounts with missing sessions in listing errors instead of silently excluding their conversations and projects. Explicit refresh and project-chat expansion await fresh results while retaining the cached page if refresh fails; bound account listing workers.
@@ -45,7 +61,9 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 
 ### Changed
 
-- Open cached chats through overlapping SQLite windows of at most 80 messages and a 262,144-character serialized-record budget, with anchored scrolling and direct navigation to either end.
+- Read cached chats in SQLite batches of at most 80 visible messages and a 262,144-character serialized-record budget; read complete edge ranges off-thread for direct top/bottom navigation and reject mixed archive revisions.
+- Share lean source strings with transcript layouts, compress large ANSI cache entries within 256 KiB, and retain warm inactive tab layouts under a shared 4 MiB eviction budget.
+- Release queued render payloads and closed-tab caches immediately; detached generation keeps only the current turn until persistence completes.
 - Persist accepted turns by reconciling a bounded SQL tail. Upgrade archives transactionally to schema 5, retaining ordered messages and native provider metadata without duplicating full bodies in listing headers or the hot cache.
 - Reuse bounded Markdown caches across streaming updates, share message ordering across transcript views, and prepare inactive split panes off the terminal thread.
 

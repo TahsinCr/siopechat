@@ -1,8 +1,9 @@
-"""Bounded SQL history navigation; all disk reads run outside terminal painting."""
+"""Monotonic SQL history hydration; scrolling never replaces loaded messages."""
 
 from accounts import origin
 from providers.history import merge_conversation
 
+from .history import read_history
 from .markdown import visible_chat_message
 
 
@@ -18,7 +19,7 @@ def visible_window(value, local=()):
 
 
 class HistoryPager:
-    """Keep one overlapping message window per tab and preserve its visual anchor."""
+    """One contiguous loaded range per tab, extended at its edges in background."""
 
     def __init__(self, view):
         self.view = view
@@ -28,12 +29,25 @@ class HistoryPager:
         layout = getattr(view, "_virtual_transcript", None)
         if tab is not view.tabs[view.active_tab] or layout is None:
             return None
-        scroll = view.transcript_window.vertical_scroll
+        scroll = min(max(0, view.transcript_window.vertical_scroll), max(0, layout.line_count - 2))
+        ordinals = getattr(layout, "ordinals", ())
+        identifiers = getattr(layout, "message_ids", ())
         for start, end, index in layout.ranges:
-            if start <= scroll < end and index < len(view.messages):
-                ordinal = view.messages[index].get("_archive_ordinal")
+            if start <= scroll < end:
+                ordinal = (
+                    ordinals[index]
+                    if index < len(ordinals)
+                    else (
+                        view.messages[index].get("_archive_ordinal")
+                        if index < len(view.messages)
+                        else None
+                    )
+                )
                 if ordinal is not None:
-                    return {"ordinal": ordinal, "offset": scroll - start}
+                    result = {"ordinal": ordinal, "offset": scroll - start}
+                    if index < len(identifiers) and identifiers[index]:
+                        result["message_id"] = identifiers[index]
+                    return result
         return None
 
     @staticmethod
@@ -43,8 +57,15 @@ class HistoryPager:
                 return max(0, layout.line_count - height)
             if anchor.get("edge") == "top":
                 return 0
+            identifiers = getattr(layout, "message_ids", ())
+            target = anchor.get("message_id")
+            match = next(
+                (i for i, value in enumerate(identifiers) if target and value == target), None
+            )
             for start, end, index in layout.ranges:
-                if ordinals[index] == anchor.get("ordinal"):
+                if (match is not None and index == match) or (
+                    match is None and ordinals[index] == anchor.get("ordinal")
+                ):
                     return start + min(anchor["offset"], max(0, end - start - 1))
         return min(max(0, fallback), max(0, layout.line_count - height))
 
@@ -52,93 +73,136 @@ class HistoryPager:
         view = self.view
         tab = view.tabs[view.active_tab]
         window = tab.get("history_window")
-        if (
-            not window
-            or tab.get("busy")
-            or view.transcript_control.selected_text
-            or view.transcript_control.dragging
-        ):
+        direction = view.transcript_window.scroll_direction
+        if not window or not direction or tab.get("busy") or view.transcript_control.dragging:
             return
-        if window["end"] < window["total"] and scroll + 3 * height >= layout.line_count:
-            self.request("newer")
-        elif window["start"] and not view.follow_output and scroll < 2 * height:
-            self.request("older")
+        requested = True
+        if direction < 0 and window["start"] and not view.follow_output and scroll < 3 * height:
+            requested = self.request("older")
+        elif (
+            direction > 0
+            and window["end"] < window["total"]
+            and scroll + 4 * height >= layout.line_count
+        ):
+            requested = self.request("newer")
+        if requested:
+            view.transcript_window.scroll_direction = 0
 
     def request(self, direction, *, refresh=False):
+        if direction not in ("older", "newer", "top", "bottom"):
+            raise ValueError("Unknown history direction")
         view = self.view
         tab = view.tabs[view.active_tab]
         window = tab.get("history_window")
         archive = view.archive_service()
-        if not window or archive is None or tab.get("busy") or tab.get("history_read"):
+        if not window or archive is None or tab.get("busy"):
             return False
+        if tab.get("history_read"):
+            if direction in ("top", "bottom"):
+                tab["history_pending_edge"] = direction
+                return True
+            return False
+        backwards = direction in ("older", "top")
         if not refresh and (
-            (direction == "top" and window["start"] == 0)
-            or (direction == "bottom" and window["end"] == window["total"])
+            window["start"] == 0 if backwards else window["end"] >= window["total"]
         ):
             return False
-        count = max(1, window["end"] - window["start"])
-        if direction == "older":
-            if not window["start"]:
-                return False
-            start = max(0, window["start"] - max(1, count // 2))
-        elif direction == "newer":
-            if window["end"] >= window["total"]:
-                return False
-            start = window["start"] + max(1, count // 2)
-        else:
-            start = 0 if direction == "top" else None
-        anchor = {"edge": direction} if direction in ("top", "bottom") else self.anchor(tab)
-        request_scroll = view.transcript_window.vertical_scroll
-        if direction in ("top", "bottom"):
-            view.transcript_control.clear_selection()
         cid = tab["conversation_id"]
         key, remote = origin(cid, tab.get("account_key", view.account_key))
         token = object()
         tab["history_read"] = token
+        requested_anchor = self.anchor(tab)
+        revision = getattr(view, "_manual_scroll_revision", 0)
+
+        def cancelled():
+            return tab.get("history_read") is not token
+
+        def read():
+            options = (
+                {"start": window["start"], "complete": True}
+                if refresh
+                else {"before": window["start"], "complete": direction == "top"}
+                if backwards
+                else {"start": window["end"], "complete": direction == "bottom"}
+            )
+            if refresh and not window["total"]:
+                options = {"start": None}
+            result = read_history(archive, key, remote, cancelled=cancelled, **options)
+            old_version = tab.get("history_version")
+            if result and old_version and old_version != result.get("history_version"):
+                # A provider sync may have edited/reordered the archive. Re-read
+                # the loaded range as one revision instead of resurrecting old IDs.
+                result = read_history(
+                    archive,
+                    key,
+                    remote,
+                    start=min(window["start"], result["history_window"]["start"]),
+                    complete=True,
+                    cancelled=cancelled,
+                )
+                if result is not None:
+                    result["_replace_loaded"] = True
+            return result
 
         def finished(value):
-            if tab.get("history_read") is not token:
+            if cancelled():
                 return
             tab.pop("history_read", None)
+            pending = tab.pop("history_pending_edge", None)
             if (
                 value is None
-                or tab.get("conversation_id") != cid
-                or tab.get("busy")
                 or tab.get("history_window") is not window
-                or not any(item is tab for item in view.tabs)
-                or (
-                    tab is view.tabs[view.active_tab]
-                    and (view.transcript_control.selected_text or view.transcript_control.dragging)
-                )
+                or tab.get("busy")
+                or not any(x is tab for x in view.tabs)
             ):
+                view.app.invalidate()
                 return
             active = tab is view.tabs[view.active_tab]
-            moved_while_loading = (
-                active and view.transcript_window.vertical_scroll != request_scroll
+            anchor = self.anchor(tab) if active else requested_anchor
+            edge = pending or (
+                direction
+                if direction in ("top", "bottom")
+                and getattr(view, "_manual_scroll_revision", 0) == revision
+                else None
             )
-            current_anchor = view.history_pager.anchor(tab) if moved_while_loading else anchor
-            messages = visible_window(value, tab.get("messages", ()))
-            tab.update(messages=messages, history_window=value["history_window"])
+            incoming = value["messages"]
+            current = (
+                [] if value.pop("_replace_loaded", False) or refresh else tab.get("messages", ())
+            )
+            by_id = {
+                m.get("id") or ("ordinal", m.get("_archive_ordinal")): m
+                for m in (*current, *incoming)
+                if m.get("_archive_ordinal") is not None
+            }
+            messages = sorted(by_id.values(), key=lambda m: m["_archive_ordinal"])
+            messages = visible_window({"messages": messages}, tab.get("messages", ()))
+            extent = dict(value["history_window"])
+            if current:
+                extent.update(
+                    start=min(window["start"], extent["start"]),
+                    end=max(window["end"], extent["end"]),
+                )
+            tab.update(
+                messages=messages,
+                history_window=extent,
+                history_version=value.get("history_version"),
+            )
             if active:
                 view.messages = messages
-                # A late history page must preserve where the user is now, not
-                # jump back to the viewport that originally triggered the read.
-                tab["history_anchor"] = current_anchor
+                tab["history_anchor"] = {"edge": edge} if edge else anchor
                 view.transcript_control.clear_selection()
-                if not moved_while_loading:
-                    view.follow_output = direction == "bottom"
+                if edge:
+                    view.follow_output = edge == "bottom"
             view.app.invalidate()
+            if pending and active:
+                (view.scroll_top if pending == "top" else view.scroll_bottom)()
 
         def failed(reason):
-            if tab.get("history_read") is token:
+            if not cancelled():
                 tab.pop("history_read", None)
+                tab.pop("history_pending_edge", None)
                 view.status = view.tr("Arşiv okunamadı: ") + str(reason)
                 view.app.invalidate()
 
-        view._read_in_background(
-            lambda: archive.conversation_window(key, remote, start=start),
-            finished,
-            failed,
-            session_bound=False,
-        )
+        view._read_in_background(read, finished, failed, session_bound=False)
         return True

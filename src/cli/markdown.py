@@ -7,8 +7,10 @@ import re
 import shutil
 import subprocess
 import sys
+import zlib
 from array import array
 from collections import OrderedDict
+from hashlib import sha256
 from io import StringIO
 from threading import RLock
 from typing import Any
@@ -354,6 +356,17 @@ def visible_chat_message(message: dict[str, Any]) -> dict[str, str] | None:
     """Return user-facing turns while excluding web tool protocol nodes."""
     role = message.get("role")
     text = message.get("text")
+    if not text:
+        # Older archives retained structured text blocks without flattening them.
+        parts = []
+        for block in message.get("content") or ():
+            if not isinstance(block, dict):
+                continue
+            native = (block.get("metadata") or {}).get("value")
+            value = block.get("text") or (native.get("text") if isinstance(native, dict) else None)
+            if isinstance(value, str) and value:
+                parts.append(value)
+        text = "\n".join(parts)
     content_type = message.get("content_type")
     if message.get("hidden"):
         return None
@@ -575,10 +588,11 @@ class MessageRenderer:
         self._clear_requested = False
         self.theme = MARKDOWN_THEME
         self.tokens = {}
-        self.cache: OrderedDict[tuple[str, str, int, bool], str] = OrderedDict()
+        self.cache: OrderedDict[tuple[str, bytes, int], str | bytes] = OrderedDict()
         self.cache_limit = 1024
         self.cache_byte_limit = 1_000_000
         self.cache_bytes = 0
+        self._line_counts = OrderedDict()
 
     def configure(self, tokens):
         styles = dict(DEFAULT_MARKDOWN_STYLE)
@@ -603,15 +617,14 @@ class MessageRenderer:
             try:
                 self.cache.clear()
                 self.cache_bytes = 0
+                self._line_counts.clear()
                 self._clear_requested = False
             finally:
                 self._lock.release()
 
     @staticmethod
     def _cache_entry_bytes(key, value):
-        # Four bytes per code point is a safe UTF-8 upper bound and avoids
-        # allocating duplicate byte strings just to account for cache memory.
-        return 128 + 4 * (len(key[1]) + len(value))
+        return 256 + len(key[1]) + sys.getsizeof(value)
 
     def large_code_block(self, text, width, page_rows):
         if len(text) <= MAX_CODE_HIGHLIGHT_CHARS:
@@ -690,16 +703,43 @@ class MessageRenderer:
     ) -> str:
         with self._lock:
             try:
-                return self._render_cached(role, text, width, separated, active)
+                value = self._render_cached(role, text, width, separated, active)
+                key = self._line_count_key(role, text, width, separated, active)
+                self._line_counts[key] = max(1, value.count("\n"))
+                self._line_counts.move_to_end(key)
+                while len(self._line_counts) > self.cache_limit:
+                    self._line_counts.popitem(last=False)
+                return value
             finally:
                 if self._clear_requested:
                     self.clear_cache()
 
+    @staticmethod
+    def _line_count_key(role, text, width, separated, active):
+        # Keep no source or ANSI strings in navigation metadata.
+        return role, sha256(text.encode("utf-8")).digest(), width, active
+
+    def line_count(self, role, text, width, separated, active):
+        key = self._line_count_key(role, text, width, separated, active)
+        with self._lock:
+            count = self._line_counts.get(key)
+            if count is not None:
+                self._line_counts.move_to_end(key)
+                return count
+            value = self.render(role, render_chatgpt_annotations(text), width, separated, active)
+            count = max(1, value.count("\n"))
+            self._line_counts[key] = count
+            self._line_counts.move_to_end(key)
+            while len(self._line_counts) > self.cache_limit:
+                self._line_counts.popitem(last=False)
+            return count
+
     def _render_cached(self, role, text, width, separated, active):
-        key = (role, text, width, separated)
+        key = (role, sha256(text.encode("utf-8")).digest(), width)
         if not active and key in self.cache:
             self.cache.move_to_end(key)
-            return self.cache[key]
+            cached = self.cache[key]
+            return zlib.decompress(cached).decode("utf-8") if isinstance(cached, bytes) else cached
         buffer = StringIO()
         console = Console(
             file=buffer,
@@ -753,8 +793,9 @@ class MessageRenderer:
             previous = self.cache.pop(key, None)
             if previous is not None:
                 self.cache_bytes -= self._cache_entry_bytes(key, previous)
-            self.cache[key] = value
-            self.cache_bytes += self._cache_entry_bytes(key, value)
+            cached = zlib.compress(value.encode("utf-8"), 1) if len(value) > 8192 else value
+            self.cache[key] = cached
+            self.cache_bytes += self._cache_entry_bytes(key, cached)
             while len(self.cache) > self.cache_limit or self.cache_bytes > self.cache_byte_limit:
                 removed_key, removed_value = self.cache.popitem(last=False)
                 self.cache_bytes -= self._cache_entry_bytes(removed_key, removed_value)

@@ -7,7 +7,7 @@ from prompt_toolkit.mouse_events import MouseButton, MouseEventType
 
 from cli.history import prepare_virtual_transcript
 from cli.markdown import MessageRenderer
-from cli.transcript import VirtualTranscriptRows
+from cli.transcript import TranscriptPrefetch, VirtualTranscriptRows
 from cli.widgets import (
     BoundedTextControl,
     TranscriptControl,
@@ -313,12 +313,17 @@ class _Pane:
         self._transcript_roles = ()
         self.line_count = 1
         self._pending = None
-        self._prefetch_key = None
-        self._prefetch_running = False
         self._disposed = False
+        self._viewport_render = TranscriptPrefetch(
+            lambda read, ready, failed: self.view._read_in_background(
+                read, ready, failed, session_bound=False, cpu=True
+            ),
+            lambda: self.view.app.invalidate(),
+        )
         self.header = BoundedTextControl(self.render_header)
         self.control = TranscriptControl(self)
         self.body = TranscriptWindow(
+            get_content_height=lambda: self.layout.line_count if self.layout is not None else None,
             content=self.control,
             wrap_lines=True,
             style="class:transcript",
@@ -397,11 +402,14 @@ class _Pane:
         )
 
     def _release_layout(self):
+        payload = getattr(self, "_render_payload", None)
+        if payload is not None:
+            payload.clear()
+            self._render_payload = None
         layout, self.layout = self.layout, None
         if layout is not None:
             layout.dispose()
-        self._prefetch_key = None
-        self._prefetch_running = False
+        self._viewport_render.clear()
         self.message_ranges = []
         self.line_count = 1
         self.renderer.clear_cache(wait=False)
@@ -410,14 +418,15 @@ class _Pane:
         """Drop the inactive-pane pages when the main view owns this tab."""
         self.cache_key = None
         self._pending = None
-        self._prefetch_key = None
         self._release_layout()
 
     def _request_layout(self, tab, key, messages, width, tokens, active_index):
-        if self._pending == key:
+        if self._pending is not None:
             return
         self._pending = key
         renderer = self.renderer
+        payload = {"snapshot": messages}
+        self._render_payload = payload
 
         def cancelled():
             return (
@@ -429,32 +438,45 @@ class _Pane:
             )
 
         def ready(layout):
+            payload.clear()
             self._pending = None
             if cancelled() or self.renderer is not renderer:
                 layout.dispose()
             else:
-                self._release_layout()
+                previous = self.layout
+                if previous is not None:
+                    previous.dispose(retain_renderer=True)
+                self._viewport_render.clear()
                 self.layout = layout
                 self.cache_key = key
                 self.message_ranges = layout.ranges
                 self.line_count = layout.line_count
-                self._transcript_roles = tuple(role for role, _text in messages)
+                self._transcript_roles = tuple(role for role, _text in layout.messages)
             self.view.app.invalidate()
 
         def failed(_reason):
+            payload.clear()
             self._pending = None
             self.view.app.invalidate()
 
-        self.view._read_in_background(
-            lambda: prepare_virtual_transcript(
-                messages,
+        def read():
+            snapshot = payload.get("snapshot")
+            if snapshot is None:
+                raise InterruptedError("Pane closed")
+            return prepare_virtual_transcript(
+                snapshot,
                 width,
                 tokens,
                 key[2],
                 cancelled,
                 active_index,
                 renderer,
-            ),
+                preserve_order=bool(tab.get("history_window")),
+                previous=self.layout,
+            )
+
+        self.view._read_in_background(
+            read,
             ready,
             failed,
             session_bound=False,
@@ -462,30 +484,7 @@ class _Pane:
         )
 
     def _prefetch(self, layout, scroll, viewport_height):
-        overscan = max(1, viewport_height) * 2
-        start = max(0, scroll - overscan)
-        stop = min(layout.line_count, scroll + viewport_height + overscan)
-        key = (id(layout), start, stop)
-        if key == self._prefetch_key or self._prefetch_running:
-            return
-        self._prefetch_key = key
-        self._prefetch_running = True
-
-        def cancelled():
-            return self._disposed or self.layout is not layout or self._prefetch_key != key
-
-        def finished(_result=None):
-            if self._prefetch_key == key:
-                self._prefetch_running = False
-                self.view.app.invalidate()
-
-        self.view._read_in_background(
-            lambda: layout.prefetch(start, stop, cancelled),
-            finished,
-            lambda _reason: finished(),
-            session_bound=False,
-            cpu=True,
-        )
+        self._viewport_render.request(layout, scroll, viewport_height)
 
     def transcript_rows(self, viewport_height=1):
         if self._disposed:
@@ -500,7 +499,6 @@ class _Pane:
             self.cache_key = None
         key = self._current_key(tab, width, self.messages)
         if key != self.cache_key:
-            self._release_layout()
             active = len(self.messages) - 1 if tab.get("busy") else None
             messages = tuple(
                 (message.get("role"), message.get("text", "")) for message in self.messages
@@ -516,6 +514,7 @@ class _Pane:
                     key[2],
                     active_index=active,
                     renderer=self.renderer,
+                    preserve_order=bool(tab.get("history_window")),
                 )
                 self.cache_key = key
                 self.message_ranges = self.layout.ranges
@@ -532,7 +531,6 @@ class _Pane:
     def dispose(self):
         self._disposed = True
         self._pending = self.cache_key = None
-        self._prefetch_key = None
         self.messages, self.message_ranges, self._transcript_roles = [], [], ()
         self._release_layout()
         self.renderer.clear_cache(wait=False)

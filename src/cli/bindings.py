@@ -245,14 +245,10 @@ def key_bindings(view) -> KeyBindings:
         view.input.buffer.cancel_completion()
 
     def page_up(_event: Any) -> None:
-        view.pause_following()
-        view.transcript_window.vertical_scroll = max(
-            0, view.transcript_window.vertical_scroll - view.transcript_page_size()
-        )
+        view.scroll_transcript(-1)
 
     def page_down(_event: Any) -> None:
-        view.pause_following()
-        view.transcript_window.vertical_scroll += view.transcript_page_size()
+        view.scroll_transcript(1)
 
     def transcript_start(event: Any) -> None:
         if event.app.layout.current_control is view.input.control:
@@ -260,8 +256,7 @@ def key_bindings(view) -> KeyBindings:
                 view.input.buffer.document.get_start_of_line_position()
             )
         else:
-            view.pause_following()
-            view.transcript_window.vertical_scroll = 0
+            view.scroll_top()
 
     def transcript_end(event: Any) -> None:
         if event.app.layout.current_control is view.input.control:
@@ -269,8 +264,7 @@ def key_bindings(view) -> KeyBindings:
                 view.input.buffer.document.get_end_of_line_position()
             )
         else:
-            view.follow_output = True
-            view.transcript_window.vertical_scroll = 10**9
+            view.scroll_bottom()
         view.app.invalidate()
 
     for action_id, callback in (

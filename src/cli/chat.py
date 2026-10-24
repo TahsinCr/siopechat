@@ -38,7 +38,12 @@ from utils import clipboard
 
 from .actions import action_order, action_title
 from .bindings import key_bindings
-from .history import prepare_archive_snapshot, prepare_transcript, prepare_virtual_transcript
+from .history import (
+    prepare_archive_snapshot,
+    prepare_transcript,
+    prepare_virtual_transcript,
+    read_history,
+)
 from .layout import render_tab_bar, workspace_layout
 from .library import SORT_OPTIONS, build_sidebar_rows, merge_chat_listing
 from .markdown import (
@@ -232,6 +237,14 @@ class ChatView:
         from .paging import HistoryPager
 
         self.history_pager = HistoryPager(self)
+        from .transcript import TranscriptPrefetch
+
+        self._transcript_prefetch = TranscriptPrefetch(
+            lambda read, ready, failed: self._read_in_background(
+                read, ready, failed, session_bound=False, cpu=True
+            ),
+            lambda: self.app.invalidate(),
+        )
         self.event_loop: asyncio.AbstractEventLoop | None = None
         self.sidebar_items: list[dict[str, Any]] = []
         self.sidebar_index = 0
@@ -256,6 +269,9 @@ class ChatView:
 
         self.transcript_control = TranscriptControl(self)
         self.transcript_window = TranscriptWindow(
+            get_content_height=lambda: getattr(
+                getattr(self, "_virtual_transcript", None), "line_count", None
+            ),
             content=self.transcript_control,
             wrap_lines=False,
             right_margins=[],
@@ -451,12 +467,16 @@ class ChatView:
             tabs = [
                 (
                     tab,
-                    dict(
-                        ((key, value) for key, value in tab.items() if key != "messages"),
-                        follow_output=self.follow_output
-                        if tab is self.tabs[self.active_tab]
-                        else tab.get("follow_output", True),
-                    ),
+                    {
+                        key: tab.get(key)
+                        for key in (
+                            "conversation_id",
+                            "account_key",
+                            "busy",
+                            "archive_version",
+                            "history_window",
+                        )
+                    },
                 )
                 for tab in self.tabs
             ]
@@ -557,10 +577,12 @@ class ChatView:
             value = (
                 archive.get(key, "conversation", remote)
                 if snapshot is not None
-                else archive.conversation_window(
+                else read_history(
+                    archive,
                     key,
                     remote,
-                    start=None if tab.get("follow_output", True) else window.get("start"),
+                    start=window.get("start"),
+                    complete=bool(window),
                 )
             )
             if not value:
@@ -570,14 +592,20 @@ class ChatView:
 
             messages = visible_window(value, tab.get("messages", ()))
             if tab.get("messages") != messages:
+                if i != self.active_tab:
+                    cached_layout = tab.pop("render_layout", None)
+                    tab.pop("render_signature", None)
+                    if cached_layout is not None:
+                        cached_layout.dispose()
                 if i == self.active_tab and not self.follow_output:
                     tab["history_anchor"] = self.history_pager.anchor(tab)
                 tab["messages"] = messages
-                tab["history_window"] = value.get("history_window")
                 tab["title"] = value.get("title") or tab.get("title")
                 if i == self.active_tab:
                     self.messages = messages
                     self.title = tab["title"]
+            tab["history_window"] = value.get("history_window")
+            tab["history_version"] = value.get("history_version")
         self._invalidate_sidebar_rows()
         self.app.invalidate()
 
@@ -1183,13 +1211,19 @@ class ChatView:
         )
 
     def scroll_transcript(self, direction):
+        self.transcript_window.scroll_direction = direction
         self.pause_following()
-        self.transcript_window.vertical_scroll = max(
-            0, self.transcript_window.vertical_scroll + direction * self.transcript_page_size()
+        page = self.transcript_page_size()
+        layout = getattr(self, "_virtual_transcript", None)
+        line_count = layout.line_count if layout is not None else self.transcript_line_count
+        last = max(0, line_count - (page + 3))
+        self.transcript_window.vertical_scroll = min(
+            last, max(0, min(last, self.transcript_window.vertical_scroll) + direction * page)
         )
         self.app.invalidate()
 
     def scroll_top(self):
+        self.transcript_window.scroll_direction = 0
         if self.history_pager.request("top"):
             return
         self.pause_following()
@@ -2821,6 +2855,7 @@ class ChatView:
         self._restore_active_tab()
 
     def _restore_active_tab(self, *, focus: bool = True) -> None:
+        self.transcript_window.scroll_direction = 0
         self.transcript_control.clear_selection()
         tab = self.tabs[self.active_tab]
         tab.setdefault("tab_id", uuid.uuid4().hex)
@@ -3018,14 +3053,36 @@ class ChatView:
         if release_pane:
             release_pane(tab_id)
         tab.pop("history_read", None)
+        tab.pop("history_pending_edge", None)
         tab.pop("history_anchor", None)
+        payload = tab.pop("render_payload", None)
+        if payload is not None:
+            payload.clear()
+        cached_layout = tab.pop("render_layout", None)
+        tab.pop("render_signature", None)
+        if cached_layout is not None:
+            cached_layout.dispose()
         self.transcript_control.clear_selection()
         archive = self.archive_service()
         if archive and tab.get("conversation_id"):
             key, remote = origin(tab["conversation_id"], tab.get("account_key", self.account_key))
             archive.release(key, remote)
-        if not tab.get("busy"):
-            tab["messages"] = []
+        with self.lock:
+            if tab.get("busy"):
+                messages = tab.get("messages", [])
+                start = next(
+                    (
+                        i
+                        for i in range(len(messages) - 1, -1, -1)
+                        if messages[i].get("role") == "user"
+                    ),
+                    max(0, len(messages) - 1),
+                )
+                del messages[:start]
+                tab.pop("history_window", None)
+                tab.pop("history_version", None)
+            else:
+                tab["messages"] = []
         getattr(self, "_prepared_transcripts", {}).pop(tab_id, None)
         self.renderer.clear_cache(wait=False)
         if getattr(self, "_virtual_tab_id", None) == tab_id:
@@ -3037,8 +3094,7 @@ class ChatView:
             self._virtual_conversation_id = None
             self._virtual_signature = None
             self._virtual_pending_signature = None
-            self._virtual_prefetch_key = None
-            self._virtual_prefetch_done_key = None
+            self._transcript_prefetch.clear()
             self.transcript_control.rows = ()
         self._transcript_cache = ""
         self._transcript_signature = None
@@ -3444,6 +3500,24 @@ class ChatView:
         last = messages[-1]
         return id(messages), len(messages), id(first), id(last), id(last.get("text"))
 
+    def _trim_transcript_cache(self):
+        """Keep warm tab layouts under one shared budget, evicting inactive LRU tabs."""
+        active = self.tabs[self.active_tab]
+        cached = [
+            (tab.get("render_used", 0), tab, tab["render_layout"])
+            for tab in self.tabs
+            if tab.get("render_layout") is not None
+        ]
+        total = sum(layout.resident_bytes for _, _, layout in cached)
+        for _, tab, layout in sorted(cached, key=lambda item: item[0]):
+            if total <= 4 * 1024 * 1024:
+                break
+            if tab is not active:
+                total -= layout.resident_bytes
+                tab.pop("render_layout", None)
+                tab.pop("render_signature", None)
+                layout.dispose()
+
     def _virtual_transcript_rows(self, viewport_height):
         """Prepare transcript layout off-thread and retain only viewport pages."""
         from .transcript import VirtualTranscriptRows
@@ -3470,6 +3544,7 @@ class ChatView:
             message_key,
             active_index,
             tab.get("render_revision", 0),
+            bool(tab.get("history_window")),
         )
         layout = getattr(self, "_virtual_transcript", None)
         layout_is_current = (
@@ -3480,16 +3555,22 @@ class ChatView:
                 getattr(self, "_virtual_tab_id", None) != tab_id
                 or getattr(self, "_virtual_conversation_id", None) != conversation_id
             ):
-                if layout is not None:
+                owned = any(item.get("render_layout") is layout for item in self.tabs)
+                if layout is not None and not owned:
                     layout.dispose()
-                self._virtual_transcript = None
+                self._virtual_transcript = tab.get("render_layout")
+                self._virtual_signature = tab.get("render_signature")
                 self._virtual_pending_signature = None
-                layout = None
+                self._transcript_prefetch.clear()
+                layout = self._virtual_transcript
+                tab["render_used"] = time.monotonic()
             self._virtual_tab_id = tab_id
             self._virtual_conversation_id = conversation_id
-            self._request_virtual_transcript(
-                tab, width, reasoning, signature, active_index, viewport_height
-            )
+            if layout is None or getattr(self, "_virtual_signature", None) != signature:
+                self._request_virtual_transcript(
+                    tab, width, reasoning, signature, active_index, viewport_height
+                )
+            layout_is_current = getattr(self, "_virtual_signature", None) == signature
             layout = getattr(self, "_virtual_transcript", None)
         if layout is None:
             self.message_ranges = []
@@ -3515,43 +3596,7 @@ class ChatView:
             scroll = max(0, layout.line_count - viewport_height)
         if layout_is_current:
             self.history_pager.prefetch(layout, scroll, viewport_height)
-        overscan = 2 * viewport_height
-        start = max(0, scroll - overscan)
-        stop = min(layout.line_count, scroll + viewport_height + overscan)
-        prefetch_key = (id(layout), start, stop)
-        self._virtual_prefetch_key = prefetch_key
-        if prefetch_key != getattr(self, "_virtual_prefetch_done_key", None) and not getattr(
-            self, "_virtual_prefetch_inflight", False
-        ):
-            self._virtual_prefetch_inflight = True
-            self._virtual_prefetch_running_key = prefetch_key
-
-            def prefetch_finished(_result=None):
-                if self._virtual_prefetch_running_key == prefetch_key:
-                    self._virtual_prefetch_inflight = False
-                    self._virtual_prefetch_done_key = (
-                        prefetch_key if self._virtual_prefetch_key == prefetch_key else None
-                    )
-                    self.app.invalidate()
-
-            def prefetch():
-                def cancelled():
-                    return (
-                        self._virtual_prefetch_key != prefetch_key
-                        or getattr(self, "_virtual_transcript", None) is not layout
-                    )
-
-                layout.prefetch(scroll, min(layout.line_count, scroll + viewport_height), cancelled)
-                if not cancelled():
-                    layout.prefetch(start, stop, cancelled)
-
-            self._read_in_background(
-                prefetch,
-                prefetch_finished,
-                lambda _: prefetch_finished(),
-                session_bound=False,
-                cpu=True,
-            )
+        self._transcript_prefetch.request(layout, scroll, viewport_height)
         return rows
 
     def _request_virtual_transcript(
@@ -3587,6 +3632,7 @@ class ChatView:
         conversation_id = tab.get("conversation_id")
         scroll = self.transcript_window.vertical_scroll
         tab_id = tab.get("tab_id")
+        manual_revision = getattr(self, "_manual_scroll_revision", 0)
         tokens = dict(self.renderer.tokens)
         anchor = tab.get("history_anchor")
         previous = getattr(self, "_virtual_transcript", None)
@@ -3606,6 +3652,14 @@ class ChatView:
                 (message.get("role"), message.get("text", "")) for message in self.messages
             )
             ordinals = tuple(message.get("_archive_ordinal") for message in self.messages)
+            message_ids = tuple(message.get("id") for message in self.messages)
+        payload = {"snapshot": (messages, ordinals, message_ids)}
+        tab["render_payload"] = payload
+
+        def release_payload():
+            if tab.get("render_payload") is payload:
+                tab.pop("render_payload", None)
+            payload.clear()
 
         def still_active():
             current_active_index = (
@@ -3622,20 +3676,30 @@ class ChatView:
                 and self._virtual_message_key(self.messages) == signature[5]
                 and current_active_index == active_index
                 and tab.get("render_revision", 0) == signature[7]
+                and bool(tab.get("history_window")) == signature[8]
             )
 
         def read():
+            snapshot = payload.get("snapshot")
+            if snapshot is None:
+                raise InterruptedError("Transcript closed")
             value = prepare_virtual_transcript(
-                messages,
+                snapshot[0],
                 width,
                 tokens,
                 reasoning,
                 cancelled=lambda: not still_active(),
                 active_index=active_index,
                 renderer=shared_renderer,
+                preserve_order=signature[8],
+                previous=previous,
             )
+            value.ordinals = snapshot[1]
+            value.message_ids = snapshot[2]
             if value.line_count:
-                top = self.history_pager.position(value, ordinals, anchor, viewport_height, scroll)
+                top = self.history_pager.position(
+                    value, value.ordinals, anchor, viewport_height, scroll
+                )
                 value.prefetch(
                     top,
                     min(value.line_count, top + viewport_height),
@@ -3644,32 +3708,48 @@ class ChatView:
             return value
 
         def ready(value):
+            release_payload()
             if self._virtual_pending_signature == signature:
                 self._virtual_pending_signature = None
             if still_active() and tab.get("tab_id") == tab_id:
                 self._virtual_failed_signature = None
                 previous = getattr(self, "_virtual_transcript", None)
+                latest_anchor = anchor
+                if anchor is not None and (
+                    getattr(self, "_manual_scroll_revision", 0) != manual_revision
+                    or (not anchor.get("edge") and self.transcript_window.vertical_scroll != scroll)
+                ):
+                    latest_anchor = self.history_pager.anchor(tab) or anchor
                 if previous is not None and previous is not value:
                     previous.dispose(retain_renderer=previous.renderer is value.renderer)
                 self._virtual_transcript = value
                 if anchor is not None and tab.get("history_anchor") is anchor:
                     self.transcript_window.vertical_scroll = self.history_pager.position(
-                        value, ordinals, anchor, viewport_height, scroll
+                        value, value.ordinals, latest_anchor, viewport_height, scroll
                     )
                     tab.pop("history_anchor", None)
                 self._virtual_signature = signature
+                tab.update(
+                    render_layout=value, render_signature=signature, render_used=time.monotonic()
+                )
+                self._trim_transcript_cache()
                 self._virtual_tab_id = tab_id
                 self._virtual_conversation_id = conversation_id
-                self._virtual_prefetch_key = None
-                self._virtual_prefetch_done_key = None
+                self._transcript_prefetch.clear()
                 self.app.invalidate()
             else:
                 current = getattr(self, "_virtual_transcript", None)
                 value.dispose(
-                    retain_renderer=current is not None and current.renderer is value.renderer
+                    retain_renderer=(current is not None and current.renderer is value.renderer)
+                    or any(
+                        item.get("render_layout") is not None
+                        and item["render_layout"].renderer is value.renderer
+                        for item in self.tabs
+                    )
                 )
 
         def failed(_reason):
+            release_payload()
             if self._virtual_pending_signature == signature:
                 self._virtual_pending_signature = None
             self._virtual_failed_signature = signature
@@ -3788,6 +3868,8 @@ class ChatView:
         self.select_resume()
 
     def pause_following(self) -> None:
+        self._manual_scroll_revision = getattr(self, "_manual_scroll_revision", 0) + 1
+        self.tabs[self.active_tab].pop("history_pending_edge", None)
         self.follow_output = False
 
     def transcript_page_size(self) -> int:
@@ -3802,6 +3884,8 @@ class ChatView:
         self.scroll_bottom()
 
     def scroll_bottom(self, force: bool = True) -> None:
+        if force:
+            self.transcript_window.scroll_direction = 0
         if force and self.history_pager.request("bottom"):
             return
         if force:
@@ -4455,6 +4539,15 @@ class ChatView:
             )
             cached = None
         load_callback = self.load_conversation
+        cached_layout = target_tab.pop("render_layout", None)
+        target_tab.pop("render_signature", None)
+        if cached_layout is not None:
+            cached_layout.dispose()
+        if getattr(self, "_virtual_tab_id", None) == target_tab.get("tab_id"):
+            self._virtual_transcript = None
+            self._virtual_signature = None
+            self._virtual_pending_signature = None
+            self._transcript_prefetch.clear()
         target_tab.pop("history_window", None)
         target_tab.pop("history_read", None)
         token = uuid.uuid4().hex
@@ -4532,6 +4625,7 @@ class ChatView:
                     target_tab.update(
                         messages=visible_messages,
                         history_window=conversation.get("history_window"),
+                        history_version=conversation.get("history_version"),
                         conversation_id=conversation_id,
                         title=conversation.get("title") or self.tr("Untitled"),
                         project=project,
@@ -4892,6 +4986,22 @@ class ChatView:
                     self.load_preferences,
                     self.apply_preferences,
                     lambda reason: setattr(self, "status", reason),
+                    session_bound=False,
+                )
+            if self.account_service and hasattr(self.account_service, "prepare_enabled"):
+
+                def show_warmup_failures(failures):
+                    reason = failures.get(self.account_key)
+                    if reason and not self.active_busy() and not self.catalog_loading:
+                        self.status = self.tr("Sağlayıcı bağlantısı hazırlanamadı: {0}").format(
+                            reason
+                        )
+                        self.app.invalidate()
+
+                self._read_in_background(
+                    self.account_service.prepare_enabled,
+                    show_warmup_failures,
+                    lambda _: None,
                     session_bound=False,
                 )
             self.refresh_provider_catalog()

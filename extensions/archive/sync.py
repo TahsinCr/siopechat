@@ -63,6 +63,7 @@ class Archive:
         with self._lock:
             if self._repository_closed or (account, "conversation", remote) in self._deleted:
                 return None
+        page.setdefault("visible_only", True)
         return self.repository.conversation_window(account, remote, **page)
 
     def release(self, account, remote):

@@ -6,6 +6,9 @@ class Mapping:
 
     def normalize(self, kind, value):
         result = dict(value)
+        if kind == "conversation":
+            result.pop("history_window", None)
+            result.pop("history_version", None)
         # These are the only dictionaries archive normalization mutates. Text
         # bodies and native metadata remain read-only until SQL serialization.
         for collection in ("items", "resources"):

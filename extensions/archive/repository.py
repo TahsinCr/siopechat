@@ -77,7 +77,17 @@ class Repository(Protocol):
     def messages(self, account, remote, limit=100, offset=0): ...
     def message_ordinal(self, account, remote, message_id): ...
     def replace_conversation_tail(self, account, remote, start, value): ...
-    def conversation_window(self, account, remote, *, start=None, limit=80, max_chars=262144): ...
+    def conversation_window(
+        self,
+        account,
+        remote,
+        *,
+        start=None,
+        before=None,
+        visible_only=False,
+        limit=80,
+        max_chars=262144,
+    ): ...
     def resources(self, account, owner_kind, owner): ...
     def tombstones(self): ...
     def delete(self, account, kind, remote): ...
@@ -291,6 +301,9 @@ class SQLiteRepository:
 
     def put(self, account, kind, remote, value):
         if kind == "conversation":
+            value = {
+                k: v for k, v in value.items() if k not in ("history_window", "history_version")
+            }
             digest = _digest_json(value)
             header = {k: v for k, v in value.items() if k not in ("messages", "metadata")}
             if "messages" in value:
@@ -782,7 +795,7 @@ class SQLiteRepository:
             header = {
                 key: item
                 for key, item in value.items()
-                if key not in ("messages", "metadata", "history_window")
+                if key not in ("messages", "metadata", "history_window", "history_version")
                 and not key.startswith("_archive_sql_")
             }
             record_header = dict(header, _archive_sql_messages=True)
@@ -881,21 +894,36 @@ class SQLiteRepository:
             )
         return True
 
-    def conversation_window(self, account, remote, *, start=None, limit=80, max_chars=262144):
+    def conversation_window(
+        self,
+        account,
+        remote,
+        *,
+        start=None,
+        before=None,
+        visible_only=False,
+        limit=80,
+        max_chars=262144,
+    ):
         """Read a bounded history window using the ordinal index, newest first by default.
 
         A single message is never truncated, even if it exceeds the character budget.
         All queries share a read transaction so a concurrent sync cannot mix revisions.
         """
-        if not 1 <= limit <= 500 or max_chars < 1 or (start is not None and start < 0):
+        if (
+            not 1 <= limit <= 500
+            or max_chars < 1
+            or (start is not None and start < 0)
+            or (before is not None and before < 0)
+        ):
             raise ValueError("invalid conversation window")
         with self._connect() as db:
             db.execute("BEGIN")
             row = db.execute(
-                "SELECT metadata FROM conversations WHERE account=? AND remote=? "
-                "AND EXISTS(SELECT 1 FROM records WHERE account=? AND kind='conversation' "
-                "AND remote=?)",
-                (account, remote, account, remote),
+                "SELECT c.metadata,r.digest FROM conversations c JOIN records r "
+                "ON r.account=c.account AND r.remote=c.remote AND r.kind='conversation' "
+                "WHERE c.account=? AND c.remote=?",
+                (account, remote),
             ).fetchone()
             if row is None:
                 return None
@@ -906,13 +934,26 @@ class SQLiteRepository:
                 (account, remote),
             ).fetchone()
             total = last[0] + 1 if last else 0
-            tail = start is None or start >= total
+            visible = (
+                " AND role IN ('user','assistant','reasoning')"
+                " AND (length(text)>0 OR EXISTS(SELECT 1 FROM json_each(messages.metadata,'$.content') AS block"
+                " WHERE block.type='object' AND (length(json_extract(block.value,'$.text'))>0 OR "
+                "length(json_extract(block.value,'$.metadata.value.text'))>0)))"
+                " AND (role!='assistant' OR channel IS NULL OR channel IN ('analysis','commentary','final'))"
+                if visible_only
+                else ""
+            )
+            tail = before is not None or start is None or start >= total
             start = min(start or 0, max(0, total - 1))
+            if before is not None:
+                start = 0
             order = "DESC" if tail else "ASC"
             rows = db.execute(
                 "SELECT ordinal,metadata FROM messages WHERE account=? AND conversation=? "
-                f"AND ordinal>=? ORDER BY ordinal {order} LIMIT ?",
-                (account, remote, start, limit),
+                f"AND ordinal>=? {visible} "
+                + ("AND ordinal<? " if before is not None else "")
+                + f"ORDER BY ordinal {order} LIMIT ?",
+                (account, remote, start, *((before,) if before is not None else ()), limit),
             )
             messages, size = [], 0
             for ordinal, metadata in rows:
@@ -927,8 +968,24 @@ class SQLiteRepository:
                 messages.reverse()
             first = messages[0]["_archive_ordinal"] if messages else 0
             end = messages[-1]["_archive_ordinal"] + 1 if messages else 0
+            if visible_only:
+                if not db.execute(
+                    "SELECT 1 FROM messages WHERE account=? AND conversation=? AND ordinal<?"
+                    + visible
+                    + " LIMIT 1",
+                    (account, remote, first),
+                ).fetchone():
+                    first = 0
+                if not db.execute(
+                    "SELECT 1 FROM messages WHERE account=? AND conversation=? AND ordinal>=?"
+                    + visible
+                    + " LIMIT 1",
+                    (account, remote, end),
+                ).fetchone():
+                    end = total
             return dict(
                 header,
+                history_version=row[1],
                 messages=messages,
                 history_window={
                     "start": first,
