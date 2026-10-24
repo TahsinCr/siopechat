@@ -9,11 +9,16 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 ## [Unreleased]
 
 ### Added
+
 - Add section-level project and conversation creation buttons to the sidebar using the existing creation actions.
 - Store account sessions, model catalogs and verification records in a private, account-scoped SQLite repository with an injectable provider credential contract.
 - Add clean-install wheel and source-archive checks for the standalone provider package to CI.
+- Expand the optional process-tree profiler to record CPU, RSS/USS/PSS memory, disk I/O, handles, threads and processes, with metadata-only storage snapshots categorized by browser profile, cache, account data, archive and downloads.
+- Publish a host-independent provider client, account factory and complete typed backend contract; the provider directory includes standalone packaging and portable API tests.
+- Show a stop button in place of Send while the active chat is generating; pressing Esc twice within three seconds also stops it, with an inline status hint after the first press.
 
 ### Changed
+
 - Cache Gemini and Claude model catalogs for five minutes with explicit refresh support, and decode large Claude JSON and Gemini RPC responses off the provider event loop.
 - Reuse ChatGPT's account HTTP pool for project options and edits; stream project source files from disk instead of loading their entire content into memory.
 - Prepare enabled accounts with saved sessions in bounded background workers at chat startup; provider requests share or wait for the same first-session initialization.
@@ -24,8 +29,15 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 - Keep uploaded file metadata without retaining their bytes, and remove legacy archive copies during the schema v5 migration.
 - Document the irreversible schema v5 cleanup and pre-upgrade backup scope in all README versions.
 - Show each provider's projects as soon as its background refresh completes.
+- Read cached chats in SQLite batches of at most 80 visible messages and a 262,144-character serialized-record budget; read complete edge ranges off-thread for direct top/bottom navigation and reject mixed archive revisions.
+- Share lean source strings with transcript layouts, compress large ANSI cache entries within 256 KiB, and retain warm inactive tab layouts under a shared 4 MiB eviction budget.
+- Release queued render payloads and closed-tab caches immediately; detached generation keeps only the current turn until persistence completes.
+- Persist accepted turns by reconciling a bounded SQL tail. Upgrade archives transactionally to schema 5, retaining ordered messages and native provider metadata without duplicating full bodies in listing headers or the hot cache.
+- Reuse bounded Markdown caches across streaming updates, share message ordering across transcript views, and prepare inactive split panes off the terminal thread.
+- Prioritize the visible transcript before rendering a two-screen buffer above and below it, keep recently visited rows in a one-megabyte LRU, and avoid rescanning the full message list on every terminal paint.
 
 ### Fixed
+
 - Route transcript PageUp/PageDown and Home/End through shared history navigation so keyboard scrolling loads adjacent SQL pages instead of stopping inside the current window; preserve Home/End editing in the composer.
 - Extend loaded history with older SQLite batches without removing already loaded messages; preserve provider order and message-ID scroll anchors through rapid direction changes.
 - Use the newly published transcript geometry for wheel and page-key bounds before the next terminal repaint, preventing stale heights from skipping visible content.
@@ -52,25 +64,6 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 - Stop ChatGPT file uploads by cancelling the synchronous transfer, and reject files changed after preflight.
 - Keep split-pane transcript render caches bounded and release inactive pane pages.
 - Retain failed provider backends for a later `close()` retry instead of discarding them.
-
-### Added
-
-- Expand the optional process-tree profiler to record CPU, RSS/USS/PSS memory, disk I/O, handles, threads and processes, with metadata-only storage snapshots categorized by browser profile, cache, account data, archive and downloads.
-- Publish a host-independent provider client, account factory and complete typed backend contract; the provider directory includes standalone packaging and portable API tests.
-- Show a stop button in place of Send while the active chat is generating; pressing Esc twice within three seconds also stops it, with an inline status hint after the first press.
-
-### Changed
-
-- Read cached chats in SQLite batches of at most 80 visible messages and a 262,144-character serialized-record budget; read complete edge ranges off-thread for direct top/bottom navigation and reject mixed archive revisions.
-- Share lean source strings with transcript layouts, compress large ANSI cache entries within 256 KiB, and retain warm inactive tab layouts under a shared 4 MiB eviction budget.
-- Release queued render payloads and closed-tab caches immediately; detached generation keeps only the current turn until persistence completes.
-- Persist accepted turns by reconciling a bounded SQL tail. Upgrade archives transactionally to schema 5, retaining ordered messages and native provider metadata without duplicating full bodies in listing headers or the hot cache.
-- Reuse bounded Markdown caches across streaming updates, share message ordering across transcript views, and prepare inactive split panes off the terminal thread.
-
-- Prioritize the visible transcript before rendering a two-screen buffer above and below it, keep recently visited rows in a one-megabyte LRU, and avoid rescanning the full message list on every terminal paint.
-
-### Fixed
-
 - Persist the provider runtime's canonical response snapshot even after a UI callback fails, so archived answers and reasoning are not truncated.
 - Keep response cancellation available while staged files are re-uploaded to another provider account; cancellation now stops the in-flight upload before chat submission.
 - Repaint the old and newly selected download-history rows when their cached fragments are reused.
