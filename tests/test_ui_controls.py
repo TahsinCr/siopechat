@@ -115,7 +115,6 @@ class UiControlsTests(unittest.TestCase):
                 return {
                     "settings": config,
                     "translations": api.languages.merged(config["application"]["language"]),
-                    "tokens": api.themes.resolve(config["application"]["theme"]),
                 }
 
             def change(section, key, value):
@@ -220,18 +219,18 @@ class UiControlsTests(unittest.TestCase):
         rows = [
             {
                 "section": "application",
-                "key": "theme",
-                "title": "Theme",
-                "value": "default",
-                "choices": ["default", "custom"],
+                "key": "language",
+                "title": "Language",
+                "value": "en",
+                "choices": ["en", "tr"],
             }
         ]
         with terminal(settings_rows=lambda: rows) as (view, _):
             view._read_in_background = immediate
             view.settings_dialog.open()
             view.settings_dialog.cycle_choice(1)
-            self.assertEqual(view.settings_dialog.editor.text, "custom")
-            self.assertEqual(rows[0]["value"], "default")
+            self.assertEqual(view.settings_dialog.editor.text, "tr")
+            self.assertEqual(rows[0]["value"], "en")
 
 
 class DialogInputTests(unittest.IsolatedAsyncioTestCase):

@@ -12,7 +12,7 @@ It uses your own signed-in web sessions. There are no API keys to configure, and
 
 ![SiopeChat terminal workspace](assets/siopechat.png)
 
-*An actual terminal capture with the Graphite theme and demonstration data.*
+*An actual terminal capture with the fixed default style and demonstration data.*
 
 ## What is included
 
@@ -21,7 +21,7 @@ It uses your own signed-in web sessions. There are no API keys to configure, and
 - ChatGPT and Claude projects, plus Gemini notebooks, with instructions and source management where supported.
 - Search, account filters and date/name ordering shared by projects and chats.
 - A SQLite archive that displays saved history first and synchronizes in the background.
-- A command palette, configurable shortcuts, mouse controls, local extensions and JSON/Python themes.
+- A command palette, configurable shortcuts, mouse controls and local extensions.
 - English, Turkish and Russian interface catalogs.
 
 **v1.3-beta** adds provider-aware file attachments with desktop file selection, preflight checks and a shared queue across chat tabs. Sent files leave the composer immediately and return if a request fails. This release also improves streaming responsiveness, transcript memory use and archive handling. Core workflows are covered by automated tests; provider compatibility and native behavior across platforms still benefit from everyday use. The Python package version is `1.3b0`.
@@ -148,43 +148,26 @@ def activate(context):
     context.action(Action("my_feature.hello", "Hello", lambda: "Hello"))
 
 
-SPEC = ExtensionSpec("my_feature", activate, api_version=2)
+SPEC = ExtensionSpec("my_feature", activate, api_version=3)
 ```
 
 Each extension must include a `manifest.json` beside `plugin.py`. It declares metadata without executing Python:
 
 ```json
-{"id": "my_feature", "api_version": 2, "requires": []}
+{"id": "my_feature", "api_version": 3, "requires": []}
 ```
 
 Keep `requires` consistent with `ExtensionSpec`. Disabled extensions are not imported; enabling one loads its Python module. The manifest and `ExtensionSpec` must declare the same API version.
 
-Extension API 2 has no dependency-injection container. Register extension-owned services with `context.provide()` and release other resources with `context.on_dispose()`.
+Register extension-owned services with `context.provide()` and release other resources with `context.on_dispose()`.
 
-Restart to discover the package, then enable or disable it in **Settings → Extensions**. Settings live under `extensions.my_feature`; contributed language bundles are namespaced and merged with the application catalog. Declare dependencies with `requires=("archive",)` when needed. Actions can declare input fields for the command palette; extensions can also contribute services, views and themes.
+Restart to discover the package, then enable or disable it in **Settings → Extensions**. Settings live under `extensions.my_feature`; contributed language bundles are namespaced and merged with the application catalog. Declare dependencies with `requires=("archive",)` when needed. Actions can declare input fields for the command palette; extensions can also contribute services and views.
 
 For archive access, use `context.api.get("archive")`. Its `conversations`, `messages` and `resources` methods provide paginated records scoped by provider/account. The replaceable repository contract and SQLite adapter live in `extensions/archive/repository.py`; provider normalization lives in `adapters.py`.
 
-Extensions and Python themes execute local code. Load only packages you trust. Keep network work out of render functions and use the shared lifecycle for cleanup.
+Extensions execute local code. Load only packages you trust. Keep network work out of render functions and use the shared lifecycle for cleanup.
 
 Archive lists have a stable remote-ID order; UI sorting is applied separately. `siopechat action archive.inspect` reports missing references and unreferenced content files. `siopechat action archive.collect` previews cleanup; pass `'{"dry_run": false}'` as the action arguments only when you want to remove the candidates. Collection preserves shared references, unknown files and files saved within the last hour. A database from a newer schema version is rejected before its schema is changed.
-
-## Themes
-
-Place a JSON theme in `themes/` and select its `id` under **Settings → General → Theme**:
-
-```json
-{
-  "id": "my-theme",
-  "tokens": {"background": "#202020", "foreground": "#dedede", "accent": "#b7a3e3"},
-  "styles": {"tab.active": "bold #b7a3e3"},
-  "options": {"sidebar_width": 28, "message_width": 100, "composer_max_lines": 6, "tab_width": 26}
-}
-```
-
-Missing values inherit the defaults. Colors use six-digit hexadecimal notation; terminal styles use Prompt Toolkit syntax and `markdown` styles use Rich syntax. Supported option ranges are 16–40 cells for the sidebar, 40–160 for message width, 3–16 composer lines and 12–40 cells per tab.
-
-For computed themes, export the same dictionary as `THEME` from a Python file. [Graphite](themes/graphite.py) is an example. Extensions can register themes through `context.theme(...)`. Invalid optional themes are reported without preventing the default theme from loading.
 
 ## Development
 

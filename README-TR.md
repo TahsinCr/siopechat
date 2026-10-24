@@ -12,7 +12,7 @@ Uygulama, giriş yaptığınız kendi web oturumlarınızı kullanır. API anaht
 
 ![SiopeChat terminal çalışma alanı](assets/siopechat.png)
 
-*Graphite teması ve örnek verilerle alınmış gerçek terminal görüntüsü.*
+*Sabit varsayılan stilli ve örnek verili gerçek terminal görüntüsü.*
 
 ## Neler sunuyor?
 
@@ -21,7 +21,7 @@ Uygulama, giriş yaptığınız kendi web oturumlarınızı kullanır. API anaht
 - ChatGPT ve Claude projeleri, Gemini defterleri; desteklendiği ölçüde talimat ve kaynak yönetimi.
 - Proje ve sohbetlere uygulanan arama, hesap filtresi, tarih ve isim sıralaması.
 - Kayıtlı geçmişi önce gösterip arka planda eşitleyen SQLite arşivi.
-- Komut paleti, değiştirilebilir kısayollar, fare desteği, yerel eklentiler ve JSON/Python temaları.
+- Komut paleti, değiştirilebilir kısayollar, fare desteği ve yerel eklentiler.
 - İngilizce, Türkçe ve Rusça arayüz katalogları.
 
 **v1.3-beta**, sağlayıcıya göre dosya seçimi, yükleme öncesi limit kontrolü ve sekmeler arasında korunan ortak ek kuyruğu sunar. Gönderim başlar başlamaz ekleme alanı temizlenir; istek başarısız olursa dosyalar kuyruğa geri gelir. Bu sürüm akış yanıtlarının tepkisini, transcript bellek kullanımını ve arşiv işlemlerini de iyileştirir. Temel akışlar otomatik testlerle kontrol edilir; sağlayıcı uyumluluğu ve farklı sistemlerdeki yerel davranışlar günlük kullanımda da sınanmalıdır. Python paket sürümü `1.3b0` olur.
@@ -148,43 +148,26 @@ def activate(context):
     context.action(Action("my_feature.hello", "Hello", lambda: "Hello"))
 
 
-SPEC = ExtensionSpec("my_feature", activate, api_version=2)
+SPEC = ExtensionSpec("my_feature", activate, api_version=3)
 ```
 
 Her eklentide `plugin.py` yanında bir `manifest.json` bulunmalıdır. Dosya, Python kodunu çalıştırmadan eklenti bilgilerini bildirir:
 
 ```json
-{"id": "my_feature", "api_version": 2, "requires": []}
+{"id": "my_feature", "api_version": 3, "requires": []}
 ```
 
 `requires` alanını `ExtensionSpec` ile aynı tutun. Kapalı eklentiler import edilmez; etkinleştirildiğinde Python modülü yüklenir. Manifest ve `ExtensionSpec` aynı API sürümünü belirtmelidir.
 
-Eklenti API'si 2'de bağımlılık enjeksiyonu container'ı yoktur. Eklentiye ait servisleri `context.provide()` ile kaydedin; diğer kaynakları `context.on_dispose()` ile temizleyin.
+Eklentiye ait servisleri `context.provide()` ile kaydedin; diğer kaynakları `context.on_dispose()` ile temizleyin.
 
-Paketin keşfedilmesi için yeniden başlatın; ardından **Ayarlar → Eklentiler** bölümünden açıp kapatın. Ayarları `extensions.my_feature` altında tutulur. Dil paketleri ad alanlarına ayrılır ve uygulama kataloğuyla birleştirilir. Gerektiğinde `requires=("archive",)` ile bağımlılık bildirin. Aksiyonlar komut paletine giriş alanları sunabilir; eklentiler ayrıca servis, görünüm ve tema kaydedebilir.
+Paketin keşfedilmesi için yeniden başlatın; ardından **Ayarlar → Eklentiler** bölümünden açıp kapatın. Ayarları `extensions.my_feature` altında tutulur. Dil paketleri ad alanlarına ayrılır ve uygulama kataloğuyla birleştirilir. Gerektiğinde `requires=("archive",)` ile bağımlılık bildirin. Aksiyonlar komut paletine giriş alanları sunabilir; eklentiler ayrıca servis ve görünüm kaydedebilir.
 
 Arşive `context.api.get("archive")` ile erişilir. `conversations`, `messages` ve `resources` metotları sağlayıcı/hesap kapsamlı, sayfalanabilir kayıtlar sunar. Değiştirilebilir repository sözleşmesi ve SQLite adaptörü `extensions/archive/repository.py`, sağlayıcı normalleştirmeleri `adapters.py` içindedir.
 
-Eklentiler ve Python temaları yerel kod çalıştırır. Yalnız güvendiğiniz paketleri yükleyin. Ağ işlerini çizim fonksiyonlarında yürütmeyin; kaynak temizliğinde ortak yaşam döngüsünü kullanın.
+Eklentiler yerel kod çalıştırır. Yalnız güvendiğiniz paketleri yükleyin. Ağ işlerini çizim fonksiyonlarında yürütmeyin; kaynak temizliğinde ortak yaşam döngüsünü kullanın.
 
 Arşiv listeleri uzak kimliğe göre kararlı sıradadır; arayüz sıralaması ayrıca uygulanır. `siopechat action archive.inspect`, eksik dosya referanslarını ve sahipsiz içerikleri bildirir. `siopechat action archive.collect` yalnız temizlik önizlemesi yapar; adayları silmek istediğinizde aksiyon parametresi olarak `'{"dry_run": false}'` verin. Ortak kullanılan dosyalar, bilinmeyen dosyalar ve son bir saatte kaydedilen içerikler korunur. Daha yeni şemaya ait veritabanı değiştirilmeden reddedilir.
-
-## Temalar
-
-`themes/` altına bir JSON teması koyup `id` değerini **Ayarlar → Genel → Tema** bölümünden seçin:
-
-```json
-{
-  "id": "my-theme",
-  "tokens": {"background": "#202020", "foreground": "#dedede", "accent": "#b7a3e3"},
-  "styles": {"tab.active": "bold #b7a3e3"},
-  "options": {"sidebar_width": 28, "message_width": 100, "composer_max_lines": 6, "tab_width": 26}
-}
-```
-
-Eksik değerler varsayılanlardan alınır. Renkler altı haneli hexadecimal gösterim, terminal stilleri Prompt Toolkit, `markdown` stilleri Rich sözdizimi kullanır. Desteklenen aralıklar: sol panel 16–40 hücre, mesaj genişliği 40–160 hücre, yazma alanı 3–16 satır ve sekme başına 12–40 hücre.
-
-Hesaplanan değerler için aynı sözlüğü bir Python dosyasından `THEME` adıyla dışa aktarın. [Graphite](themes/graphite.py) örnek alınabilir. Eklentiler `context.theme(...)` kullanabilir. Hatalı isteğe bağlı temalar bildirilir; varsayılan temanın yüklenmesi engellenmez.
 
 ## Geliştirme
 

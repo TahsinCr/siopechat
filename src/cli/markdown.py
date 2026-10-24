@@ -28,7 +28,11 @@ from rich.syntax import Syntax
 from rich.text import Text
 from rich.theme import Theme
 
-from .styles import DEFAULT_MARKDOWN_STYLE
+from .styles import (
+    DEFAULT_MARKDOWN_STYLE,
+    DEFAULT_REASONING_MARKER,
+    DEFAULT_ROLE_BACKGROUNDS,
+)
 
 ANNOTATION_PATTERN = re.compile(r"\ue200([^\ue201\ue202]+)(?:\ue202(.*?))?\ue201")
 FILE_CITATION_PATTERN = re.compile(r"[ \t]*\[F\d+:L\d+(?:[ \t]*[-–—][ \t]*L?\d+)?\]")
@@ -36,7 +40,7 @@ WRITING_DIRECTIVE_PATTERN = re.compile(
     r"(?m)^[\ue200]?\s*:::writing\{(?P<attributes>[^}\n]*)\}\s*$"
 )
 
-MARKDOWN_THEME = Theme(DEFAULT_MARKDOWN_STYLE)
+DEFAULT_MARKDOWN_THEME = Theme(DEFAULT_MARKDOWN_STYLE)
 MAX_CODE_HIGHLIGHT_CHARS = 64 * 1024
 
 
@@ -244,8 +248,8 @@ class ChatMarkdown(Markdown):
         "code_block": HighlightedCodeBlock,
     }
 
-    def __init__(self, markup, **kwargs):
-        super().__init__(markup, **kwargs)
+    def __init__(self, markup):
+        super().__init__(markup, code_theme="monokai")
         # Linkify prose only: code blocks and inline code retain their original text.
         pattern = re.compile(r"(?:https?://|sandbox:/|computer:///)[^\s<>\"]+")
         for block in self.parsed:
@@ -583,32 +587,20 @@ def index_transcript_window(ansi, ranges, start, stop):
 
 
 class MessageRenderer:
-    def __init__(self):
+    def __init__(self, labels=None):
         self._lock = RLock()
         self._clear_requested = False
-        self.theme = MARKDOWN_THEME
-        self.tokens = {}
+        self.labels = {
+            "reasoning_label": "Düşünme özeti",
+            "waiting_label": "Yanıt hazırlanıyor…",
+        }
+        if labels:
+            self.labels.update(labels)
         self.cache: OrderedDict[tuple[str, bytes, int], str | bytes] = OrderedDict()
         self.cache_limit = 1024
         self.cache_byte_limit = 1_000_000
         self.cache_bytes = 0
         self._line_counts = OrderedDict()
-
-    def configure(self, tokens):
-        styles = dict(DEFAULT_MARKDOWN_STYLE)
-        if tokens.get("foreground"):
-            for name in (
-                "markdown.text",
-                "markdown.paragraph",
-                "markdown.list",
-                "markdown.item.number",
-                "markdown.item.bullet",
-            ):
-                styles[name] = tokens["foreground"]
-        styles.update(tokens.get("markdown", {}))
-        self.theme = Theme(styles)
-        self.tokens = dict(tokens)
-        self.clear_cache()
 
     def clear_cache(self, *, wait=True):
         """Release all formatted message strings held by this renderer."""
@@ -635,7 +627,7 @@ class MessageRenderer:
     def code_prefix_rows(self, role, width):
         if role != "reasoning":
             return 0
-        label = Text(self.tokens.get("reasoning_label", "Düşünme özeti"))
+        label = Text(self.labels["reasoning_label"])
         console = Console(width=width, force_terminal=False)
         return len(label.wrap(console, max(1, width), overflow="fold"))
 
@@ -650,17 +642,15 @@ class MessageRenderer:
             no_color=False,
             width=width,
             soft_wrap=False,
-            theme=self.theme,
+            theme=DEFAULT_MARKDOWN_THEME,
             legacy_windows=False,
         )
-        background = self.tokens.get(
-            role + "_background", "#1c2732" if role == "reasoning" else "#181818"
-        )
+        background = DEFAULT_ROLE_BACKGROUNDS.get(role, "#181818")
         if include_label and role == "reasoning":
             console.print(
                 Text(
-                    self.tokens.get("reasoning_label", "Düşünme özeti"),
-                    style=f"{self.tokens.get('reasoning_marker', '#75b5ef')} on {background}",
+                    self.labels["reasoning_label"],
+                    style=f"{DEFAULT_REASONING_MARKER} on {background}",
                 )
             )
         rows = block.rows(start, stop)
@@ -748,18 +738,17 @@ class MessageRenderer:
             no_color=False,
             width=width,
             soft_wrap=False,
-            theme=self.theme,
+            theme=DEFAULT_MARKDOWN_THEME,
             # Preserve OSC-8 targets in the ANSI transcript on Windows too;
             # legacy console detection otherwise strips clickable link data.
             legacy_windows=False,
         )
-        defaults = {"user": "#303030", "reasoning": "#1c2732"}
-        background = self.tokens.get(role + "_background", defaults.get(role, "#181818"))
+        background = DEFAULT_ROLE_BACKGROUNDS.get(role, "#181818")
         if role == "reasoning":
             console.print(
                 Text(
-                    self.tokens.get("reasoning_label", "Düşünme özeti"),
-                    style=f"{self.tokens.get('reasoning_marker', '#75b5ef')} on {background}",
+                    self.labels["reasoning_label"],
+                    style=f"{DEFAULT_REASONING_MARKER} on {background}",
                 )
             )
         if text:
@@ -767,7 +756,7 @@ class MessageRenderer:
             content = (
                 Text(code, style="markdown.code", no_wrap=False, overflow="fold")
                 if code is not None
-                else ChatMarkdown(text, code_theme="monokai")
+                else ChatMarkdown(text)
             )
             console.print(
                 Padding(
@@ -780,9 +769,7 @@ class MessageRenderer:
         elif active:
             console.print(
                 Padding(
-                    Text(
-                        self.tokens.get("waiting_label", "Yanıt hazırlanıyor…"), style="dim italic"
-                    ),
+                    Text(self.labels["waiting_label"], style="dim italic"),
                     (0, 1),
                     style=f"on {background}",
                 )

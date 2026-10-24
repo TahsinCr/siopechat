@@ -20,12 +20,10 @@ class ArchitectureTests(unittest.TestCase):
             "extension",
             "backend",
             "language",
-            "theme",
         ):
             self.assertTrue((ROOT / "src" / f"{name}.py").is_file(), name)
             self.assertFalse((ROOT / "src" / name).is_dir(), name)
         self.assertTrue((ROOT / "extensions/layout/plugin.py").is_file())
-        self.assertTrue((ROOT / "themes/soft.json").is_file())
         self.assertTrue((ROOT / "src/lang/tr.json").is_file())
         for name in ("services", "conversations", "jobs", "core", "app"):
             self.assertFalse((ROOT / "src" / name).exists(), name)

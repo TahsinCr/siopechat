@@ -1,4 +1,4 @@
-"""Public configuration, headless boundaries, themes and keyboard UX."""
+"""Public configuration, headless boundaries and keyboard UX."""
 
 import asyncio
 import os
@@ -13,7 +13,6 @@ from settings import SettingsCatalog
 from tests import cli_support as interaction
 from tests.account_fixture import configured_application as create_application
 from tests.cli_support import immediate
-from theme import ThemeService
 
 
 class ProductServicesTests(unittest.TestCase):
@@ -45,7 +44,7 @@ class ProductServicesTests(unittest.TestCase):
         )
         self.assertNotIn("default", self.api.settings.snapshot()["providers"])
 
-    def test_account_preferences_survive_restart_and_theme_changes(self):
+    def test_account_preferences_survive_restart_and_ui_updates(self):
         self.accounts.select(self.gemini)
         self.accounts.remember(self.gemini, "flash", "extended")
         catalog = ModelCatalog(
@@ -57,7 +56,6 @@ class ProductServicesTests(unittest.TestCase):
             v.apply_preferences(
                 {
                     "settings": self.api.settings.snapshot(),
-                    "tokens": self.api.themes.resolve("default"),
                 }
             )
             self.assertEqual((v.model, v.effort), ("flash", "extended"))
@@ -104,7 +102,6 @@ class ProductServicesTests(unittest.TestCase):
             v.apply_preferences(
                 {
                     "settings": self.api.settings.snapshot(),
-                    "tokens": self.api.themes.resolve("default"),
                 }
             )
             self.assertEqual(v.tabs[0]["account_key"], self.gemini)
@@ -112,31 +109,19 @@ class ProductServicesTests(unittest.TestCase):
             self.assertIsNone(v.conversation_id)
             self.assertEqual(v.tabs[0]["messages"][0]["text"], "Keep")
 
-    def test_python_theme_and_extension_discovery_are_isolated(self):
+    def test_extension_discovery_is_isolated(self):
         from extension import ExtensionSpec
 
-        directory = self.root / "themes"
-        directory.mkdir()
-        (directory / "custom.py").write_text(
-            'THEME = {"id": "custom", "tokens": {"accent": "#abcdef"}, "options": {"tab_width": 20}}'
-        )
-        (directory / "broken.py").write_text('raise RuntimeError("bad theme")')
-        service = ThemeService()
-        service.load_directory(directory)
-        self.assertEqual(service.resolve("custom")["options"]["tab_width"], 20)
-        self.assertIn("broken.py", service.failures)
-        with self.assertRaises(ValueError):
-            service.register("test", "bad", {}, options={"tab_width": 1000})
         directory = self.root / "extensions" / "sample"
         directory.mkdir(parents=True)
-        (directory / "manifest.json").write_text('{"id":"sample","api_version":2,"requires":[]}')
+        (directory / "manifest.json").write_text('{"id":"sample","api_version":3,"requires":[]}')
         (directory / "helper.py").write_text('VALUE = "ok"')
         (directory / "plugin.py").write_text(
-            'from extension import ExtensionSpec, Action\nfrom .helper import VALUE\ndef activate(ctx):\n    ctx.action(Action("sample.hello", "Hello", lambda: VALUE))\nSPEC = ExtensionSpec("sample", activate, api_version=2)\n'
+            'from extension import ExtensionSpec, Action\nfrom .helper import VALUE\ndef activate(ctx):\n    ctx.action(Action("sample.hello", "Hello", lambda: VALUE))\nSPEC = ExtensionSpec("sample", activate, api_version=3)\n'
         )
         manager = self.api.get("extensions")
         with self.assertRaises(ValueError):
-            manager.register(ExtensionSpec("old_api", lambda _: None, api_version=1))
+            manager.register(ExtensionSpec("old_api", lambda _: None, api_version=2))
         manager.load_directory(directory.parent)
         self.assertEqual(asyncio.run(self.api.actions.invoke("sample.hello")), "ok")
         self.api.get("extensions").disable("sample")
@@ -146,9 +131,9 @@ class ProductServicesTests(unittest.TestCase):
         directory = self.root / "extensions" / "lazy"
         directory.mkdir(parents=True)
         marker = directory / "imported"
-        (directory / "manifest.json").write_text('{"id":"lazy","api_version":2,"requires":[]}')
+        (directory / "manifest.json").write_text('{"id":"lazy","api_version":3,"requires":[]}')
         (directory / "plugin.py").write_text(
-            'from pathlib import Path\nfrom extension import ExtensionSpec\nPath(__file__).with_name("imported").touch()\nSPEC = ExtensionSpec("lazy", lambda ctx: None, api_version=2)\n'
+            'from pathlib import Path\nfrom extension import ExtensionSpec\nPath(__file__).with_name("imported").touch()\nSPEC = ExtensionSpec("lazy", lambda ctx: None, api_version=3)\n'
         )
         self.api.settings.update_extension("lazy", {"enabled": False})
         manager = self.api.get("extensions")
@@ -222,14 +207,6 @@ class ProductKeyboardTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 v.app.exit()
                 await run
-
-    async def test_invalid_frontend_theme_falls_back_without_losing_context(self):
-        with interaction.terminal() as (v, _):
-            service = ThemeService()
-            service.register("test", "broken", {}, markdown={"markdown.text": "not-a-real-style"})
-            v.apply_preferences({"tokens": service.resolve("broken")})
-            self.assertIn("varsayılan", v.status)
-            self.assertEqual(v.theme_options, {})
 
     async def test_ctrl_d_responds_with_draft_and_ctrl_p_works_from_settings(self):
         with interaction.terminal(settings_rows=lambda: []) as (v, pipe):

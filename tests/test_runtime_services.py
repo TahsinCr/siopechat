@@ -80,7 +80,7 @@ class RuntimeServiceTests(unittest.IsolatedAsyncioTestCase):
             context.provide("resource", Resource())
             context.subscribe(seen.append, event_type=ServiceChanged)
 
-        manager.register(ExtensionSpec("sample", activate, api_version=2))
+        manager.register(ExtensionSpec("sample", activate, api_version=3))
         self.assertTrue(manager.activate("sample"))
         self.api.provide("other", "other", object())
         self.assertTrue(seen)
@@ -107,7 +107,7 @@ class RuntimeServiceTests(unittest.IsolatedAsyncioTestCase):
         resource = Resource()
         manager.register(
             ExtensionSpec(
-                "sample", lambda context: context.provide("resource", resource), api_version=2
+                "sample", lambda context: context.provide("resource", resource), api_version=3
             )
         )
         manager.activate("sample")
@@ -161,18 +161,3 @@ class RuntimeServiceTests(unittest.IsolatedAsyncioTestCase):
         await second
         self.assertEqual(calls, ["started", "finished"])
         self.assertTrue(self.api.runtime._closed)
-
-
-class ThemeTests(unittest.TestCase):
-    def test_invalid_optional_theme_does_not_prevent_loading_healthy_theme(self):
-        from theme import ThemeService
-
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / "broken.json").write_text("invalid")
-            (root / "healthy.json").write_text('{"id":"healthy","tokens":{"accent":"#123456"}}')
-            themes = ThemeService()
-            themes.load_directory(root)
-        self.assertIn("healthy", themes.available())
-        self.assertEqual(themes.resolve("healthy")["accent"], "#123456")
-        self.assertEqual(themes.failures, {"broken.json": "invalid_theme"})

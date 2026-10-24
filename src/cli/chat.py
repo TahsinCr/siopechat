@@ -46,6 +46,7 @@ from .history import (
 from .layout import render_tab_bar, workspace_layout
 from .library import SORT_OPTIONS, build_sidebar_rows, merge_chat_listing
 from .markdown import (
+    DEFAULT_MARKDOWN_THEME,
     MessageRenderer,
     index_transcript,
     render_chatgpt_annotations,
@@ -55,7 +56,11 @@ from .markdown import (
 from .projects import ProjectPanel
 from .session import SessionDialog
 from .settings import SettingsDialog
-from .styles import DEFAULT_TERMINAL_STYLE, terminal_style
+from .styles import (
+    DEFAULT_COMPOSER_MAX_LINES,
+    DEFAULT_MESSAGE_WIDTH,
+    DEFAULT_TERMINAL_STYLE,
+)
 from .widgets import (
     BoundedTextControl,
     ComposerPlaceholderProcessor,
@@ -1496,21 +1501,13 @@ class ChatView:
         ):
             self.effort = self.catalog.effort(self.model, self.effort_preference)
             self._save_active_tab()
-        tokens = preferences.get("tokens", {})
         render_labels = {
             "reasoning_label": self.tr("Düşünme özeti"),
             "waiting_label": self.tr("Yanıt hazırlanıyor…"),
         }
-        try:
-            self.app.style = terminal_style(tokens)
-            self.renderer.configure(dict(tokens, **render_labels))
-            self.theme_options = tokens.get("options", {})
-            self._transcript_signature = None
-        except Exception:
-            self.app.style = Style.from_dict(DEFAULT_TERMINAL_STYLE)
-            self.renderer.configure(render_labels)
-            self.theme_options = {}
-            self.status = self.tr("Tema stilleri geçersiz; varsayılan görünüm kullanılıyor")
+        if self.renderer.labels != render_labels:
+            self.renderer = MessageRenderer(render_labels)
+        self._transcript_signature = None
         if (
             self.account_service
             and self.account_key
@@ -1554,9 +1551,8 @@ class ChatView:
         self.project_chat_errors.clear()
         self.history_cursor = self.project_cursor = None
         self.history_loading = False
-        render_tokens = dict(self.renderer.tokens)
-        self.renderer = MessageRenderer()
-        self.renderer.configure(render_tokens)
+        render_labels = dict(self.renderer.labels)
+        self.renderer = MessageRenderer(render_labels)
         self.message_selection = False
         self.selected_message = 0
         self.selected_message_ref = None
@@ -3465,7 +3461,7 @@ class ChatView:
         tab,
         messages,
         width,
-        tokens,
+        labels,
         reasoning,
         text,
         ranges,
@@ -3491,7 +3487,7 @@ class ChatView:
         cache[key] = dict(
             width=width,
             conversation_id=tab.get("conversation_id"),
-            tokens=tokens,
+            labels=labels,
             reasoning=reasoning,
             message_key=message_key or self._virtual_message_key(tab.get("messages", [])),
             revision=revision,
@@ -3538,7 +3534,7 @@ class ChatView:
         if (
             snapshot
             and snapshot["width"] == width
-            and snapshot["tokens"] == self.renderer.tokens
+            and snapshot["labels"] == self.renderer.labels
             and snapshot["reasoning"] == self.show_reasoning
             and snapshot.get("conversation_id") == tab.get("conversation_id")
             and snapshot["message_key"] == message_key
@@ -3560,7 +3556,7 @@ class ChatView:
             self._render_pending = pending
             if key not in pending:
                 pending.add(key)
-                tokens, reasoning = dict(self.renderer.tokens), self.show_reasoning
+                labels, reasoning = dict(self.renderer.labels), self.show_reasoning
                 conversation_id = tab.get("conversation_id")
                 message_key = self._virtual_message_key(tab.get("messages", []))
                 revision = tab.get("render_revision", 0)
@@ -3569,7 +3565,7 @@ class ChatView:
                     return prepare_transcript(
                         messages,
                         width,
-                        tokens,
+                        labels,
                         reasoning,
                         cancelled=lambda: (
                             not any(tab is x for x in self.tabs)
@@ -3589,7 +3585,7 @@ class ChatView:
                             tab,
                             messages,
                             width,
-                            tokens,
+                            labels,
                             reasoning,
                             *result,
                             message_key=message_key,
@@ -3606,7 +3602,7 @@ class ChatView:
                 snapshot
                 and snapshot.get("conversation_id") == tab.get("conversation_id")
                 and snapshot["width"] == width
-                and snapshot["tokens"] == self.renderer.tokens
+                and snapshot["labels"] == self.renderer.labels
                 and snapshot["reasoning"] == self.show_reasoning
             ):
                 self._transcript_roles = snapshot["roles"]
@@ -3626,7 +3622,7 @@ class ChatView:
                 color_system="truecolor",
                 no_color=False,
                 width=width,
-                theme=self.renderer.theme,
+                theme=DEFAULT_MARKDOWN_THEME,
             )
             console.print(
                 Text(
@@ -3671,12 +3667,7 @@ class ChatView:
             return shutil.get_terminal_size((100, 24)).columns
 
     def sidebar_width(self) -> int:
-        preferred = getattr(self, "theme_options", {}).get("sidebar_width")
-        return (
-            max(16, min(preferred, self.terminal_width() - 24))
-            if preferred
-            else max(22, min(30, self.terminal_width() // 4))
-        )
+        return max(22, min(30, self.terminal_width() // 4))
 
     def workspace_width(self) -> int:
         return max(
@@ -3700,7 +3691,7 @@ class ChatView:
 
     def transcript_width(self) -> int:
         return min(
-            getattr(self, "theme_options", {}).get("message_width", 100),
+            DEFAULT_MESSAGE_WIDTH,
             max(8, self.main_width() - 5),
         )
 
@@ -3773,7 +3764,7 @@ class ChatView:
             conversation_id,
             width,
             reasoning,
-            repr(self.renderer.tokens),
+            repr(self.renderer.labels),
             message_key,
             active_index,
             tab.get("render_revision", 0),
@@ -3866,14 +3857,14 @@ class ChatView:
         scroll = self.transcript_window.vertical_scroll
         tab_id = tab.get("tab_id")
         manual_revision = getattr(self, "_manual_scroll_revision", 0)
-        tokens = dict(self.renderer.tokens)
+        labels = dict(self.renderer.labels)
         anchor = tab.get("history_anchor")
         previous = getattr(self, "_virtual_transcript", None)
         shared_renderer = (
             previous.renderer
             if previous is not None
             and previous.width == width
-            and previous.renderer.tokens == tokens
+            and previous.renderer.labels == labels
             else None
         )
 
@@ -3905,7 +3896,7 @@ class ChatView:
                 and self.tabs[self.active_tab] is tab
                 and self.transcript_width() == width
                 and self.show_reasoning == reasoning
-                and repr(self.renderer.tokens) == signature[4]
+                and repr(self.renderer.labels) == signature[4]
                 and self._virtual_message_key(self.messages) == signature[5]
                 and current_active_index == active_index
                 and tab.get("render_revision", 0) == signature[7]
@@ -3919,7 +3910,7 @@ class ChatView:
             value = prepare_virtual_transcript(
                 snapshot[0],
                 width,
-                tokens,
+                labels,
                 reasoning,
                 cancelled=lambda: not still_active(),
                 active_index=active_index,
@@ -4065,7 +4056,7 @@ class ChatView:
 
     def composer_height(self):
         return min(
-            getattr(self, "theme_options", {}).get("composer_max_lines", 6),
+            DEFAULT_COMPOSER_MAX_LINES,
             self.composer_line_count(),
         )
 

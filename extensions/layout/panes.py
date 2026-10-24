@@ -304,7 +304,7 @@ class _ClickablePane(HSplit):
 class _Pane:
     def __init__(self, view, key):
         self.view, self.key = view, key
-        self.renderer = MessageRenderer()
+        self.renderer = MessageRenderer(view.renderer.labels)
         self.cache_key = None
         self.layout = None
         self.follow = True
@@ -394,7 +394,7 @@ class _Pane:
             self.view.show_reasoning,
             bool(tab.get("busy")),
             tab.get("render_revision", 0),
-            repr(self.view.renderer.tokens),
+            repr(self.view.renderer.labels),
         )
 
     def _release_layout(self):
@@ -416,7 +416,7 @@ class _Pane:
         self._pending = None
         self._release_layout()
 
-    def _request_layout(self, tab, key, messages, width, tokens, active_index):
+    def _request_layout(self, tab, key, messages, width, labels, active_index):
         if self._pending is not None:
             return
         self._pending = key
@@ -462,7 +462,7 @@ class _Pane:
             return prepare_virtual_transcript(
                 snapshot,
                 width,
-                tokens,
+                labels,
                 key[2],
                 cancelled,
                 active_index,
@@ -488,10 +488,8 @@ class _Pane:
         tab = self.tab()
         width = self.view.transcript_width()
         self.messages = tab.get("messages", [])
-        if self.renderer.theme is not self.view.renderer.theme:
-            self.renderer = MessageRenderer()
-            self.renderer.theme = self.view.renderer.theme
-            self.renderer.tokens = self.view.renderer.tokens
+        if self.renderer.labels != self.view.renderer.labels:
+            self.renderer = MessageRenderer(self.view.renderer.labels)
             self.cache_key = None
         key = self._current_key(tab, width, self.messages)
         if key != self.cache_key:
@@ -499,14 +497,14 @@ class _Pane:
             messages = tuple(
                 (message.get("role"), message.get("text", "")) for message in self.messages
             )
-            tokens = dict(self.view.renderer.tokens)
+            labels = dict(self.view.renderer.labels)
             if self.view.app.is_running:
-                self._request_layout(tab, key, messages, width, tokens, active)
+                self._request_layout(tab, key, messages, width, labels, active)
             else:
                 self.layout = prepare_virtual_transcript(
                     messages,
                     width,
-                    tokens,
+                    labels,
                     key[2],
                     active_index=active,
                     renderer=self.renderer,

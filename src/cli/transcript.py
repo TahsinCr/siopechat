@@ -72,7 +72,7 @@ class VirtualTranscript:
             previous is not None
             and not previous._disposed
             and previous.width == width
-            and previous.renderer.tokens == self.renderer.tokens
+            and previous.renderer.labels == self.renderer.labels
         ):
             with previous._lock:
                 previous_messages = previous.messages

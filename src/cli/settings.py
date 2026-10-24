@@ -362,7 +362,6 @@ class SettingsDialog:
             "model": self.view.tr("Yeni sohbetlerin varsayılan modeli."),
             "effort": self.view.tr("Seçili modelin sunduğu düşünme seviyesi."),
             "language": self.view.tr("Arayüz dili."),
-            "theme": self.view.tr("Arayüz görünümü."),
             "mouse": self.view.tr("Tıklama ve fare etkileşimi."),
             "show_reasoning": self.view.tr("Sağlayıcının sunduğu düşünme özetlerini göster."),
             "enabled": self.view.tr("Eklentinin özelliklerini etkinleştir veya kapat."),

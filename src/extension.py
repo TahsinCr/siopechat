@@ -19,12 +19,11 @@ from providers import ProviderRegistry
 from runtime import Runtime
 from settings import SettingField, Settings
 from tasks import TaskService
-from theme import ThemeService
 from views import View, Views
 
 
 class ExtensionAPI:
-    version = 2
+    version = 3
 
     def __init__(self, settings: Settings, runtime: Runtime | None = None):
         self.runtime = runtime if runtime is not None else Runtime()
@@ -37,7 +36,6 @@ class ExtensionAPI:
             ("actions", ActionService(self.events)),
             ("views", Views(self.events)),
             ("languages", Catalog()),
-            ("themes", ThemeService()),
         ):
             self.provide("application", name, service)
 
@@ -69,10 +67,6 @@ class ExtensionAPI:
     def languages(self):
         return self.get("languages")
 
-    @property
-    def themes(self):
-        return self.get("themes")
-
     def provide(self, owner, name, service):
         self.runtime.provide(owner, name, service)
 
@@ -80,7 +74,7 @@ class ExtensionAPI:
         return self.runtime.get(name)
 
     def _withdraw_contributions(self, owner):
-        for registry in (self.actions, self.views, self.languages, self.themes):
+        for registry in (self.actions, self.views, self.languages):
             registry.unregister(owner)
         self.settings.unregister(owner)
 
@@ -180,9 +174,6 @@ class ExtensionContext:
 
     def translations(self, locale, messages):
         self.api.languages.register(self.owner, locale, messages)
-
-    def theme(self, theme_id, tokens, **options):
-        self.api.themes.register(self.owner, theme_id, tokens, **options)
 
 
 class ExtensionManager:

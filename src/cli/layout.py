@@ -10,6 +10,7 @@ from prompt_toolkit.layout.menus import CompletionsMenu
 from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Frame
 
+from .styles import DEFAULT_TAB_WIDTH
 from .widgets import TranscriptGutter, fit_text, on_click
 
 
@@ -273,10 +274,7 @@ def render_tab_bar(view):
     indices = sorted(sorted(entries, key=lambda i: (abs(i - view.active_tab), i))[:count])
     base, remainder = divmod(available, max(1, len(indices)))
     for position, i in enumerate(indices):
-        tab_width = min(
-            getattr(view, "theme_options", {}).get("tab_width", 26),
-            base + (position < remainder),
-        )
+        tab_width = min(DEFAULT_TAB_WIDTH, base + (position < remainder))
         tab = view.tabs[i]
         title = group_titles.get(i) or (
             view.title if i == view.active_tab else tab.get("title", view.tr("Sohbet"))

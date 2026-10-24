@@ -65,7 +65,7 @@ def read_history(
 def prepare_virtual_transcript(
     messages,
     width,
-    tokens,
+    labels,
     reasoning,
     cancelled=None,
     active_index=None,
@@ -78,8 +78,7 @@ def prepare_virtual_transcript(
         if cancelled and cancelled():
             raise InterruptedError("Superseded transcript")
         if renderer is None:
-            renderer = MessageRenderer()
-            renderer.configure(tokens)
+            renderer = MessageRenderer(labels)
         renderer.cache_byte_limit = 256 * 1024
         renderer.cache_limit = 512
         transcript = VirtualTranscript(
@@ -98,7 +97,7 @@ def prepare_virtual_transcript(
 def prepare_transcript(
     messages,
     width,
-    tokens,
+    labels,
     reasoning,
     cancelled=None,
     *,
@@ -110,8 +109,7 @@ def prepare_transcript(
         if cancelled and cancelled():
             raise InterruptedError("Superseded transcript")
         if renderer is None:
-            renderer = MessageRenderer()
-            renderer.configure(tokens)
+            renderer = MessageRenderer(labels)
         text, ranges = renderer.transcript(messages, width, reasoning, cancelled, active_index)
         ansi = transcript_fragments(text)
         return text, ranges, ansi, index_transcript(ansi, ranges) if index_rows else ()

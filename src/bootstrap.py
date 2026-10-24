@@ -86,12 +86,6 @@ def create_application(root: Path | None = None):
     )
     for bundle in sorted(Path(language_file).parent.glob("*.json")):
         api.languages.load("application", bundle.stem, bundle)
-    from themes import __file__ as themes_file
-
-    api.themes.load_directory(Path(themes_file).parent)
-    custom_themes = root / "themes"
-    if custom_themes.resolve() != Path(themes_file).parent.resolve():
-        api.themes.load_directory(custom_themes)
     panel = SettingsCatalog(api)
     api.views.register("application", View("settings", "Settings", lambda: panel))
     api.actions.register("application", Action("settings.show", "Show settings", panel.rows))

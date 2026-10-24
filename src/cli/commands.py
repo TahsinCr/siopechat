@@ -161,7 +161,6 @@ def run_fullscreen(
         return {
             "settings": config,
             "translations": api.languages.merged(config["application"]["language"]),
-            "tokens": api.themes.resolve(config["application"]["theme"]),
         }
 
     def change_setting(section, name, value):

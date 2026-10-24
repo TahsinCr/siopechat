@@ -24,4 +24,4 @@ def activate(context):
     )
 
 
-SPEC = ExtensionSpec("archive", activate, api_version=2)
+SPEC = ExtensionSpec("archive", activate, api_version=3)

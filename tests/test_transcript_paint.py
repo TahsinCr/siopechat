@@ -110,7 +110,7 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
                 tab,
                 [],
                 width,
-                dict(view.renderer.tokens),
+                dict(view.renderer.labels),
                 view.show_reasoning,
                 text,
                 [],

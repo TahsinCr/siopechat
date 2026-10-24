@@ -83,7 +83,6 @@ DEFAULTS = {
     "version": 1,
     "application": {
         "language": "en",
-        "theme": "default",
         "model": "",
         "effort": "medium",
         "mouse": True,
@@ -157,6 +156,8 @@ class Settings:
         for section in ("application", "keybindings", "providers", "extensions", "accounts"):
             if not isinstance(data.get(section), dict):
                 raise ValueError(f"settings section {section} must be an object")
+        if set(data["application"]) - DEFAULTS["application"].keys():
+            raise ValueError("unknown application settings")
         providers = data["providers"]
         if not providers or not all(
             isinstance(v, dict) and type(v.get("enabled")) is bool for v in providers.values()
@@ -210,7 +211,7 @@ class Settings:
             for provider, key in selected.items()
         ):
             raise ValueError("invalid per-provider account selection")
-        for key in ("language", "theme", "effort", "download_directory"):
+        for key in ("language", "effort", "download_directory"):
             if not isinstance(data["application"].get(key), str):
                 raise ValueError(f"invalid application setting {key}")
         if (
@@ -418,8 +419,6 @@ class SettingsCatalog:
         for row in rows:
             if row["key"] == "language":
                 row["choices"] = self.languages.locales()
-            elif row["key"] == "theme":
-                row["choices"] = self.api.themes.available()
         rows.extend(
             {
                 "section": f"providers.{provider_id}",

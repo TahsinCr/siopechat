@@ -1,4 +1,4 @@
-"""Terminal and Markdown styles derived from shared semantic theme tokens."""
+"""Fixed terminal and Markdown styles used by the CLI."""
 
 DEFAULT_MARKDOWN_STYLE = {
     "markdown.text": "#e5e7eb",
@@ -19,6 +19,16 @@ DEFAULT_MARKDOWN_STYLE = {
     "markdown.item.number": "#e5e7eb",
 }
 
+DEFAULT_ROLE_BACKGROUNDS = {
+    "user": "#303030",
+    "assistant": "#181818",
+    "reasoning": "#1c2732",
+}
+DEFAULT_REASONING_MARKER = "#75b5ef"
+DEFAULT_TAB_WIDTH = 26
+DEFAULT_MESSAGE_WIDTH = 100
+DEFAULT_COMPOSER_MAX_LINES = 6
+
 DEFAULT_TERMINAL_STYLE = {
     "provider.chatgpt": "#ffffff",
     "provider.gemini": "#8ecfff",
@@ -37,28 +47,28 @@ DEFAULT_TERMINAL_STYLE = {
     "settings.search": "bg:#292d32 #d8e3ee",
     "settings.editor": "bg:#30363d #ffffff",
     "settings.value": "#90b6d4",
-    "settings": "bg:#202020 #dedede",
+    "settings": "bg:#252525 #dedede",
     "settings.title": "bold #c3a6ff",
-    "settings.nav": "bg:#252525 #b7b7b7",
+    "settings.nav": "bg:#252525 #dedede",
     "settings.category": "bg:#252525 #b7b7b7",
     "settings.category.active": "bg:#294858 bold #e0f3ff",
     "message.selected": "bg:#34516b #ffffff",
     "chat.context": "#a4b5c7",
-    "brand": "bg:#252525 bold #c3a6ff",
+    "brand": "bg:#202020 bold #c3a6ff",
     "transcript": "bg:#202020 #dedede",
-    "metadata.project": "bg:#242424 bold #679bd4",
+    "metadata.project": "bold #75b5ef",
     "metadata.temporary": "bg:#242424 bold #c3a6ff",
     "tab.divider": "bg:#202020 #454545",
-    "role.user": "bg:#202020 bold #86d49b",
+    "role.user": "bg:#202020 #86d49b",
     "role.reasoning": "bg:#202020 #75b5ef",
     "role.assistant": "bg:#202020 #f0ad66",
-    "metadata.effort": "bg:#242424 bold #86d49b",
+    "metadata.effort": "bold #86d49b",
     "tab.close": "#929292",
     "selection": "bold #e1e1e1",
-    "sidebar": "bg:#252525 #c7c7c7",
+    "sidebar": "bg:#252525 #dedede",
     "": "bg:#202020 #dedede",
     "toolbar": "bg:#262626 #dedede",
-    "button": "#bcbcbc",
+    "button": "#c3a6ff",
     "button.focused": "bg:#414141 #ffffff",
     "title": "bold #eeeeee",
     "chat.header": "bg:#242424 #c7c7c7",
@@ -68,7 +78,7 @@ DEFAULT_TERMINAL_STYLE = {
     "sidebar.search": "bg:#202020 #dedede",
     "sidebar.selected": "bg:#393939 #ffffff bold",
     "sidebar.item": "#ffffff",
-    "sidebar.muted": "#929292",
+    "sidebar.muted": "#939393",
     "tabs": "bg:#202020 #999999",
     "tab.active": "bg:#202020 bold #a9cfff",
     "tab": "bg:#202020 #929292",
@@ -76,13 +86,13 @@ DEFAULT_TERMINAL_STYLE = {
     "palette.search": "bg:#202020 #eeeeee",
     "palette.selected": "bg:#393939 #ffffff bold",
     "palette.item": "#c7c7c7",
-    "separator": "#6b7280",
+    "separator": "#505050",
     "activity": "#9ca3af",
     "composer": "bg:#292929 #f9fafb",
     "prompt": "bg:#292929 bold #f9fafb",
     "placeholder": "bg:#292929 #9ca3af",
     "metadata": "bg:#272727 #9ca3af",
-    "metadata.model": "bg:#242424 bold #f0ad66",
+    "metadata.model": "bold #f0ad66",
     "metadata.ready": "bg:#272727 #86efac",
     "help": "bg:#242424 #9ca3af",
     "dialog.body": "bg:#252525 #dedede",
@@ -107,32 +117,3 @@ DEFAULT_TERMINAL_STYLE = {
     "completion-menu.meta.completion": "bg:#303030 #9ca3af",
     "completion-menu.meta.completion.current": "bg:#414141 #eeeeee",
 }
-
-
-def terminal_style(tokens):
-    from prompt_toolkit.styles import Style
-
-    style = dict(DEFAULT_TERMINAL_STYLE)
-    if not tokens:
-        return Style.from_dict(style)
-    bg, fg = tokens["background"], tokens["foreground"]
-    style.update(
-        {
-            "": f"bg:{bg} {fg}",
-            "transcript": f"bg:{bg} {fg}",
-            "button": tokens["accent"],
-            "brand": f"bg:{bg} bold {tokens['accent']}",
-            "separator": tokens["border"],
-            "sidebar": f"bg:{tokens['surface']} {fg}",
-            "settings": f"bg:{bg} {fg}",
-            "settings.nav": f"bg:{tokens['surface']} {fg}",
-            "sidebar.muted": tokens["muted"],
-            "dialog.body": f"bg:{tokens['surface']} {fg}",
-        }
-    )
-    for name in ("model", "effort", "project"):
-        style["metadata." + name] = f"bold {tokens[name]}"
-    for role in ("user", "assistant", "reasoning"):
-        style["role." + role] = f"bg:{bg} {tokens[role + '_marker']}"
-    style.update(tokens.get("styles", {}))
-    return Style.from_dict(style)

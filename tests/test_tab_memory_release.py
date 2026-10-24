@@ -63,7 +63,7 @@ class TabMemoryReleaseTests(unittest.TestCase):
                         layout = prepare_virtual_transcript(
                             view.messages,
                             view.transcript_width(),
-                            view.renderer.tokens,
+                            view.renderer.labels,
                             True,
                             renderer=view.renderer,
                         )
@@ -162,7 +162,7 @@ class TabMemoryReleaseTests(unittest.TestCase):
                             layout = prepare_virtual_transcript(
                                 view.messages,
                                 view.transcript_width(),
-                                view.renderer.tokens,
+                                view.renderer.labels,
                                 True,
                                 renderer=view.renderer,
                             )

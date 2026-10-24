@@ -44,6 +44,10 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 - Reuse bounded Markdown caches across streaming updates, share message ordering across transcript views, and prepare inactive split panes off the terminal thread.
 - Prioritize the visible transcript before rendering a two-screen buffer above and below it, keep recently visited rows in a one-megabyte LRU, and avoid rescanning the full message list on every terminal paint.
 
+### Removed
+
+- Remove selectable application themes and theme contributions from the extension API; the CLI now uses one fixed default appearance and extensions must use API v3.
+
 ### Fixed
 
 - Serialize Gemini session shutdown and credential removal with connection setup so an in-flight login cannot recreate a session after sign-out; retry transient refresh network/server failures with bounded backoff.
