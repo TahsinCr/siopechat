@@ -146,6 +146,12 @@ class Settings:
                 raise ValueError("config.json must contain an object")
             if isinstance(value.get("providers"), dict):
                 value["providers"].pop("default", None)  # Migrate the former selector.
+            if isinstance(value.get("application"), dict):
+                value["application"] = {
+                    key: item
+                    for key, item in value["application"].items()
+                    if key in DEFAULTS["application"]
+                }
             self._data = _merge(DEFAULTS, value)
         self._validate_document(self._data)
 
