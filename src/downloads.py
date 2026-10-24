@@ -104,12 +104,7 @@ class Downloads:
     def _write_history(archive, rows):
         if not rows:
             return {}
-        put_many = getattr(archive.downloads, "put_many", None)
-        if callable(put_many):
-            return put_many(rows) or {}
-        for row in rows:
-            archive.downloads.put(row)
-        return {}
+        return archive.downloads.put_many(rows) or {}
 
     def _finish_history_write(self, written, stale):
         stale = stale or {}

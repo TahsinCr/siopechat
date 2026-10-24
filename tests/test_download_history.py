@@ -111,22 +111,6 @@ class DownloadHistoryTests(unittest.TestCase):
         self.assertEqual(stored["name"], "latest.txt")
         self.assertEqual(stored["_revision"], 2)
 
-    def test_legacy_single_row_put_still_updates_existing_record(self):
-        history = self.archive.downloads
-        row = {
-            "id": "legacy",
-            "created": 1,
-            "state": "completed",
-            "account": "gemini/a",
-            "name": "old.txt",
-        }
-        history.put(row)
-        history.put({**row, "name": "new.txt"})
-
-        stored = history.list()[0]
-        self.assertEqual(stored["name"], "new.txt")
-        self.assertEqual(stored["_revision"], 2)
-
     def test_refresh_reads_each_download_directory_once(self):
         first = self.download()
         self.service.fetch("gemini/a", "https://example.com/b.txt")
@@ -163,17 +147,19 @@ class DownloadHistoryTests(unittest.TestCase):
 
     def test_interrupted_record_and_schema_one_migrate_without_data_loss(self):
         self.archive.put("gemini/a", "conversation", "chat", {"title": "Saved", "messages": []})
-        self.archive.downloads.put(
-            dict(
-                id="old",
-                created=1,
-                state="downloading",
-                account="gemini/a",
-                conversation_id="chat",
-                size=3,
-                name="old.txt",
-                path=None,
-            )
+        self.archive.downloads.put_many(
+            [
+                dict(
+                    id="old",
+                    created=1,
+                    state="downloading",
+                    account="gemini/a",
+                    conversation_id="chat",
+                    size=3,
+                    name="old.txt",
+                    path=None,
+                )
+            ]
         )
         with closing(sqlite3.connect(self.repo.path)) as db:
             db.execute("UPDATE schema_version SET version=1")

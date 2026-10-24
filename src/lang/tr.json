@@ -477,7 +477,6 @@
   "ui.move this chat or choose its project; /project info shows details": "move this chat or choose its project; /project info shows details",
   "ui.sohbeti projeye taşı veya projeden çıkar": "sohbeti projeye taşı veya projeden çıkar",
   "ui.synchronize models, projects, chats and history": "synchronize models, projects, chats and history",
-  "ui.alias of /refresh; scopes: all, library, conversation": "alias of /refresh; scopes: all, library, conversation",
   "ui.select a model ID for this session": "select a model ID for this session",
   "ui.show the provider effort value": "show the provider effort value",
   "ui.search actions and commands": "search actions and commands",

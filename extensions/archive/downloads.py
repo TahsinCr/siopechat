@@ -21,28 +21,6 @@ class DownloadHistory:
             records.append(record)
         return records
 
-    def put(self, record):
-        """Keep the legacy upsert behavior while advancing its stored revision."""
-        value = dict(record)
-        with self.repository._connect() as db:
-            db.execute("BEGIN IMMEDIATE")
-            current = db.execute(
-                "SELECT revision FROM downloads WHERE id=?", (value["id"],)
-            ).fetchone()
-            revision = max(
-                1,
-                int(value.get("_revision", 0)),
-                (int(current[0]) + 1) if current else 1,
-            )
-            value.pop("_revision", None)
-            db.execute(
-                "INSERT INTO downloads(id,created,revision,payload) VALUES(?,?,?,?) "
-                "ON CONFLICT(id) DO UPDATE SET created=excluded.created, "
-                "revision=excluded.revision, payload=excluded.payload",
-                (record["id"], record["created"], revision, encode(value)),
-            )
-        return {}
-
     def put_many(self, records):
         """Persist newer rows in one transaction; return conflicting DB copies."""
         stale = {}

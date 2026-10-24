@@ -477,7 +477,6 @@
   "ui.move this chat or choose its project; /project info shows details": "Выбрать проект чата; /project info: сведения",
   "ui.sohbeti projeye taşı veya projeden çıkar": "Переместить чат в проект или убрать из проекта",
   "ui.synchronize models, projects, chats and history": "Синхронизировать модели, проекты, чаты и историю",
-  "ui.alias of /refresh; scopes: all, library, conversation": "Синоним /refresh; области: all, library, conversation",
   "ui.select a model ID for this session": "Выбрать модель",
   "ui.show the provider effort value": "Выбрать усилие провайдера",
   "ui.search actions and commands": "Поиск действий и команд",

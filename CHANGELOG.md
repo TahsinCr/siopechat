@@ -95,6 +95,7 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 ### Removed
 
 - Remove deprecated CLI aliases `/quit`, `/delete-project`, `/proje`, `/private`, `/sync` and `/file`; canonical commands remain available.
+- Remove the legacy single-record download-history write API and its fallback; all history writes use the revision-aware batch contract.
 - Remove the `CHATGPT_WEB_MODEL` environment override in favor of the selected account's model catalog and current chat preference.
 - Require extensions to provide a manifest and an explicit matching API version; remove the implicit version-1 and manifest-less extension paths.
 - Remove the archive history import shim and use the provider package's shared history module directly.
