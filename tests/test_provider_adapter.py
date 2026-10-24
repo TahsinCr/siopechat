@@ -216,7 +216,7 @@ class ProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
         path.write_text("fixture")
         self.client.upload_file = lambda name, mime, data, **kwargs: (
             {"id": "file", "size_bytes": data.stat().st_size}
-            if data == path
+            if isinstance(data, Path) and data.resolve() == path.resolve()
             else self.fail("expected a disk path")
         )
         editor = ChatGPTProjectEditor(self.session, lambda _: self.client)
