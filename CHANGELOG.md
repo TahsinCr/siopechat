@@ -4,9 +4,11 @@ All notable changes to SiopeChat are documented here.
 
 The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
-Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-beta`).
+Python distributions use the corresponding PEP 440 version (`1.4b0` for `v1.4-beta`).
 
 ## [Unreleased]
+
+## [1.4-beta] - 2026-10-24
 
 ### Added
 
@@ -53,6 +55,14 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 ### Removed
 
 - Remove selectable application themes and theme contributions from the extension API; the CLI now uses one fixed default appearance and extensions must use API v3.
+
+- Remove the vendored dependency-injection container. Runtime now keeps explicitly owned service instances, and extension API 2 uses `context.provide()` and `context.on_dispose()` without container scopes or injection decorators.
+- Remove deprecated CLI aliases `/quit`, `/delete-project`, `/proje`, `/private`, `/sync` and `/file`; canonical commands remain available.
+- Remove the legacy single-record download-history write API and its fallback; all history writes use the revision-aware batch contract.
+- Remove the `CHATGPT_WEB_MODEL` environment override in favor of the selected account's model catalog and current chat preference.
+- Require extensions to provide a manifest and an explicit matching API version; remove the implicit version-1 and manifest-less extension paths.
+- Remove the archive history import shim and use the provider package's shared history module directly.
+- Call the required archive repository history methods directly during partial-history merging; remove optional method-discovery fallbacks.
 
 ### Fixed
 
@@ -108,16 +118,6 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 - Avoid re-queuing first-page records already fetched by an explicit library sync, pace ChatGPT history pages, honor provider retry delays after HTTP 429, and identify rate-limited sync failures in the status line while retaining cached data.
 - Keep an existing archive intact when a partial provider history page cannot prove contiguous coverage, and report a response as completed if cancellation arrives during its durable save.
 - Bound in-memory transcript history to the active page window during scrolling and refresh, while keeping the complete conversation in SQLite.
-
-### Removed
-
-- Remove the vendored dependency-injection container. Runtime now keeps explicitly owned service instances, and extension API 2 uses `context.provide()` and `context.on_dispose()` without container scopes or injection decorators.
-- Remove deprecated CLI aliases `/quit`, `/delete-project`, `/proje`, `/private`, `/sync` and `/file`; canonical commands remain available.
-- Remove the legacy single-record download-history write API and its fallback; all history writes use the revision-aware batch contract.
-- Remove the `CHATGPT_WEB_MODEL` environment override in favor of the selected account's model catalog and current chat preference.
-- Require extensions to provide a manifest and an explicit matching API version; remove the implicit version-1 and manifest-less extension paths.
-- Remove the archive history import shim and use the provider package's shared history module directly.
-- Call the required archive repository history methods directly during partial-history merging; remove optional method-discovery fallbacks.
 
 ## [1.3-beta] - 2026-10-22
 
