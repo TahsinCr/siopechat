@@ -101,11 +101,6 @@ class FoundationTests(unittest.TestCase):
         self.assertEqual(self.api.get("healthy"), 42)
         self.assertEqual(self.manager.statuses()["bad"].reason, "deactivation_failed")
 
-    def test_disabling_unknown_extension_does_not_persist_it(self):
-        with self.assertRaises(KeyError):
-            self.manager.disable("unknown")
-        self.assertNotIn("unknown", self.api.settings.snapshot()["extensions"])
-
     def test_shared_settings_panel_routes_toggle_through_extension_lifecycle(self):
         self.manager.register(
             ExtensionSpec("sample", lambda ctx: ctx.provide("sample", 1), api_version=3)

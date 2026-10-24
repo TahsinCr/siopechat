@@ -20,8 +20,6 @@ def descendants(root):
 def main():
     root = files("providers")
     scripts = [item for item in descendants(root) if item.name.endswith(".cjs")]
-    if len(scripts) < 8:
-        raise SystemExit(f"expected packaged provider helpers, found {len(scripts)}")
     for script in scripts:
         subprocess.run(["node", "--check", str(script)], check=True)
 

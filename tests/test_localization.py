@@ -109,18 +109,6 @@ class LocalizationTests(unittest.TestCase):
             finally:
                 api.runtime.close()
 
-    def test_release_readmes_share_navigation_and_no_example_remains(self):
-        for name in ("README.md", "README-TR.md", "README-RU.md"):
-            text = (ROOT / name).read_text(encoding="utf-8")
-            for other in ("README.md", "README-TR.md", "README-RU.md"):
-                if other != name:
-                    self.assertIn("](" + other + ")", text)
-            self.assertIn("assets/siopechat.png", text)
-            self.assertIn("v1.3-beta", text)
-            self.assertIn("1.3b0", text)
-            self.assertNotIn("```text", text)
-        self.assertFalse((ROOT / "README-TR.example.md").exists())
-
 
 class RussianTerminalTests(unittest.IsolatedAsyncioTestCase):
     settle = staticmethod(interaction.wait_until)

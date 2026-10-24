@@ -1,4 +1,3 @@
-import importlib.util
 import json
 import os
 import subprocess
@@ -9,12 +8,8 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
-HAS_DEPENDENCIES = all(
-    importlib.util.find_spec(name) is not None for name in ("httpx", "prompt_toolkit", "rich")
-)
 
 
-@unittest.skipUnless(HAS_DEPENDENCIES, "application dependencies are required")
 class ApplicationTests(unittest.TestCase):
     def setUp(self):
         import backend as module

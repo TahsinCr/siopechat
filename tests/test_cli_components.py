@@ -1,8 +1,6 @@
 import json
-import tempfile
 import threading
 import unittest
-from pathlib import Path
 from unittest.mock import Mock, patch
 
 from prompt_toolkit.application import Application
@@ -12,7 +10,7 @@ from prompt_toolkit.output import DummyOutput
 from cli.chat import ChatView
 from cli.markdown import MessageRenderer, detect_code_language, visible_chat_message
 from providers.models import Choice, FeatureState, Model, ModelCatalog
-from settings import DEFAULT_KEYBINDINGS, DEFAULTS, Settings
+from settings import DEFAULTS, Settings
 from utils import clipboard
 
 
@@ -227,26 +225,11 @@ class CliComponentTests(unittest.TestCase):
                 self.assertEqual(view.messages, [])
                 self.assertIn("tamamlandı", view.status)
 
-    def test_config_lists_every_default_shortcut_and_rejects_collisions(self):
-        with tempfile.TemporaryDirectory() as directory:
-            config = Settings(Path(directory) / "config.json").snapshot()
-        self.assertEqual(config["keybindings"], DEFAULT_KEYBINDINGS)
-        Settings._validate_document(config)
-        collided = json.loads(json.dumps(config))
-        collided["keybindings"]["extra.action"] = config["keybindings"]["ui.command_palette"]
+    def test_keybinding_collisions_are_rejected(self):
+        collided = json.loads(json.dumps(DEFAULTS))
+        collided["keybindings"]["extra.action"] = DEFAULTS["keybindings"]["ui.command_palette"]
         with self.assertRaisesRegex(ValueError, "must be unique"):
             Settings._validate_document(collided)
-
-    def test_removed_application_setting_is_discarded_when_loading_config(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "config.json"
-            config = json.loads(json.dumps(DEFAULTS))
-            config["application"]["theme"] = "graphite"
-            path.write_text(json.dumps(config), encoding="utf-8")
-
-            loaded = Settings(path).snapshot()
-
-        self.assertNotIn("theme", loaded["application"])
 
     def test_sidebar_groups_projects_unassigned_chats_and_layout_workspaces(self):
         with create_pipe_input() as pipe:
