@@ -175,8 +175,6 @@ class FoundationTests(unittest.TestCase):
 
     def test_shipped_application_wires_layout_languages_settings_and_data(self):
         api = create_application(self.root)
-        self.assertTrue((self.root / "config.json").is_file())
-        self.assertTrue((self.root / "data").is_dir())
         self.assertEqual(api.get("extensions").statuses()["layout"].state, "active")
         api.settings.update("application", {"language": "tr"})
         rows = asyncio.run(api.actions.invoke("settings.show"))

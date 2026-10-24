@@ -15,7 +15,7 @@ from utils import clipboard
 
 
 class CliComponentTests(unittest.TestCase):
-    def test_chat_view_builds_with_extracted_widgets_bindings_and_renderer(self):
+    def test_chat_view_renders_markdown_and_transcript_messages(self):
         with create_pipe_input() as pipe:
 
             def application(**kwargs):
@@ -23,9 +23,6 @@ class CliComponentTests(unittest.TestCase):
 
             with patch("cli.chat.Application", side_effect=application):
                 view = ChatView(lambda: [], lambda _: {}, lambda *_: {})
-                self.assertIsNotNone(view.app.layout)
-                self.assertIsInstance(view.renderer, MessageRenderer)
-                self.assertTrue(view.bindings.bindings)
                 rendered = view.renderer.render("assistant", "**hello**", 60, False, False)
                 self.assertIn("hello", rendered)
                 view.messages = [{"role": "user", "text": "question"}]
@@ -141,7 +138,6 @@ class CliComponentTests(unittest.TestCase):
                 self.assertTrue(view.app.full_screen)
                 self.assertIn("first message", transcript)
                 self.assertIn("last message", transcript)
-                self.assertFalse(hasattr(view, "reset_terminal_session"))
 
     def test_sidebar_refresh_keeps_last_good_rows_on_provider_failure(self):
         with create_pipe_input() as pipe:

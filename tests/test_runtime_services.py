@@ -82,7 +82,8 @@ class RuntimeServiceTests(unittest.IsolatedAsyncioTestCase):
 
         manager.register(ExtensionSpec("sample", activate, api_version=3))
         self.assertTrue(manager.activate("sample"))
-        self.api.provide("other", "other", object())
+        other_resource = object()
+        self.api.provide("other", "other", other_resource)
         self.assertTrue(seen)
         await manager.disable_async("sample")
         self.assertEqual(closed, ["scoped", "async"])
@@ -91,7 +92,7 @@ class RuntimeServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(seen), before)
         with self.assertRaises(LookupError):
             self.api.get("resource")
-        self.assertIsNotNone(self.api.get("other"))
+        self.assertIs(self.api.get("other"), other_resource)
 
     async def test_async_cleanup_failure_can_be_retried_without_stopping_other_services(self):
         manager = ExtensionManager(self.api)
@@ -110,10 +111,12 @@ class RuntimeServiceTests(unittest.IsolatedAsyncioTestCase):
                 "sample", lambda context: context.provide("resource", resource), api_version=3
             )
         )
+        other_resource = object()
+        self.api.provide("other", "other", other_resource)
         manager.activate("sample")
         await manager.disable_async("sample")
         self.assertEqual(manager.statuses()["sample"].state, "failed")
-        self.assertIsNotNone(self.api.get("settings"))
+        self.assertIs(self.api.get("other"), other_resource)
         await manager.disable_async("sample")
         self.assertEqual(manager.statuses()["sample"].state, "disabled")
         self.assertEqual(resource.attempts, 2)
