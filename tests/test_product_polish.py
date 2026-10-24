@@ -113,6 +113,8 @@ class ProductServicesTests(unittest.TestCase):
             self.assertEqual(v.tabs[0]["messages"][0]["text"], "Keep")
 
     def test_python_theme_and_extension_discovery_are_isolated(self):
+        from extension import ExtensionSpec
+
         directory = self.root / "themes"
         directory.mkdir()
         (directory / "custom.py").write_text(
@@ -127,12 +129,15 @@ class ProductServicesTests(unittest.TestCase):
             service.register("test", "bad", {}, options={"tab_width": 1000})
         directory = self.root / "extensions" / "sample"
         directory.mkdir(parents=True)
-        (directory / "manifest.json").write_text('{"id":"sample","api_version":1,"requires":[]}')
+        (directory / "manifest.json").write_text('{"id":"sample","api_version":2,"requires":[]}')
         (directory / "helper.py").write_text('VALUE = "ok"')
         (directory / "plugin.py").write_text(
-            'from extension import ExtensionSpec, Action\nfrom .helper import VALUE\ndef activate(ctx):\n    ctx.action(Action("sample.hello", "Hello", lambda: VALUE))\nSPEC = ExtensionSpec("sample", activate, api_version=1)\n'
+            'from extension import ExtensionSpec, Action\nfrom .helper import VALUE\ndef activate(ctx):\n    ctx.action(Action("sample.hello", "Hello", lambda: VALUE))\nSPEC = ExtensionSpec("sample", activate, api_version=2)\n'
         )
-        self.api.get("extensions").load_directory(directory.parent)
+        manager = self.api.get("extensions")
+        with self.assertRaises(ValueError):
+            manager.register(ExtensionSpec("old_api", lambda _: None, api_version=1))
+        manager.load_directory(directory.parent)
         self.assertEqual(asyncio.run(self.api.actions.invoke("sample.hello")), "ok")
         self.api.get("extensions").disable("sample")
         self.assertFalse(self.api.actions.search("sample.hello"))
@@ -141,9 +146,9 @@ class ProductServicesTests(unittest.TestCase):
         directory = self.root / "extensions" / "lazy"
         directory.mkdir(parents=True)
         marker = directory / "imported"
-        (directory / "manifest.json").write_text('{"id":"lazy","api_version":1,"requires":[]}')
+        (directory / "manifest.json").write_text('{"id":"lazy","api_version":2,"requires":[]}')
         (directory / "plugin.py").write_text(
-            'from pathlib import Path\nfrom extension import ExtensionSpec\nPath(__file__).with_name("imported").touch()\nSPEC = ExtensionSpec("lazy", lambda ctx: None, api_version=1)\n'
+            'from pathlib import Path\nfrom extension import ExtensionSpec\nPath(__file__).with_name("imported").touch()\nSPEC = ExtensionSpec("lazy", lambda ctx: None, api_version=2)\n'
         )
         self.api.settings.update_extension("lazy", {"enabled": False})
         manager = self.api.get("extensions")

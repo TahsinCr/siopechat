@@ -24,7 +24,7 @@ from views import View, Views
 
 
 class ExtensionAPI:
-    version = 1
+    version = 2
 
     def __init__(self, settings: Settings, runtime: Runtime | None = None):
         self.runtime = runtime if runtime is not None else Runtime()
@@ -40,10 +40,6 @@ class ExtensionAPI:
             ("themes", ThemeService()),
         ):
             self.provide("application", name, service)
-
-    @property
-    def container(self):
-        return self.runtime.container
 
     @property
     def events(self):
@@ -126,7 +122,6 @@ class ExtensionContext:
     def __init__(self, owner: str, api: ExtensionAPI):
         self.owner = owner
         self.api = api
-        self.container = api.container.create_scope()
         self._cleanup: list[Callable] = []
 
     def on_dispose(self, callback: Callable):
@@ -145,7 +140,6 @@ class ExtensionContext:
             except Exception:
                 failed.append(callback)
         self._cleanup.extend(reversed(failed))
-        self.container.shutdown()
         if failed:
             raise RuntimeError("extension_cleanup_failed")
 
@@ -164,7 +158,6 @@ class ExtensionContext:
             except Exception:
                 failed.append(callback)
         self._cleanup.extend(reversed(failed))
-        await self.container.shutdown_async()
         if failed:
             raise RuntimeError("extension_cleanup_failed")
 

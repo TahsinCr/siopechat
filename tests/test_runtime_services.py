@@ -10,7 +10,6 @@ from runtime import ServiceChanged
 from settings import Settings, SettingsChanged
 from tasks import JobChanged, JobState
 from tests.fakes import ControlledProvider, request
-from utils.container import DependencyContainer
 from utils.events import EventBus
 
 
@@ -21,19 +20,24 @@ class RuntimeServiceTests(unittest.IsolatedAsyncioTestCase):
         self.api = ExtensionAPI(Settings(Path(self.directory.name) / "config.json"))
         self.addAsyncCleanup(self.api.runtime.aclose)
 
-    async def test_shared_services_resolve_from_the_upstream_container(self):
-        self.assertIsInstance(self.api.container, DependencyContainer)
+    async def test_runtime_registers_and_resolves_owned_services(self):
         self.assertIsInstance(self.api.events, EventBus)
-        self.assertEqual(type(self.api.container).__module__, "utils.container")
-        self.assertIs(self.api.get("actions"), self.api.container.resolve("actions"))
-        shared = object()
+        self.assertIs(self.api.get("actions"), self.api.actions)
+        closed = []
+
+        class Service:
+            def close(self):
+                closed.append(True)
+
+        shared = Service()
         self.api.provide("sample", "shared", shared)
-        self.api.container.singleton(
-            "consumer", factory=lambda dependency: dependency, dependencies={"dependency": "shared"}
-        )
-        self.assertIs(self.api.container.resolve("consumer"), shared)
+        self.assertIs(self.api.get("shared"), shared)
         with self.assertRaises(ValueError):
             self.api.provide("other", "shared", object())
+        self.api.withdraw("sample")
+        self.assertEqual(closed, [True])
+        with self.assertRaises(LookupError):
+            self.api.get("shared")
 
     async def test_actions_settings_and_tasks_publish_through_the_same_bus(self):
         events = []
@@ -57,7 +61,7 @@ class RuntimeServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(isinstance(event, JobChanged) for event in events))
         self.assertGreater(self.api.events.stats.failed, 0)
 
-    async def test_extension_uses_scopes_and_async_resource_cleanup(self):
+    async def test_extension_provided_resources_use_explicit_cleanup(self):
         manager = ExtensionManager(self.api)
         closed = []
 
@@ -72,12 +76,11 @@ class RuntimeServiceTests(unittest.IsolatedAsyncioTestCase):
         seen = []
 
         def activate(context):
-            context.container.scoped("scoped", factory=Scoped)
-            context.container.resolve("scoped")
+            context.on_dispose(Scoped().close)
             context.provide("resource", Resource())
             context.subscribe(seen.append, event_type=ServiceChanged)
 
-        manager.register(ExtensionSpec("sample", activate, api_version=1))
+        manager.register(ExtensionSpec("sample", activate, api_version=2))
         self.assertTrue(manager.activate("sample"))
         self.api.provide("other", "other", object())
         self.assertTrue(seen)
@@ -104,7 +107,7 @@ class RuntimeServiceTests(unittest.IsolatedAsyncioTestCase):
         resource = Resource()
         manager.register(
             ExtensionSpec(
-                "sample", lambda context: context.provide("resource", resource), api_version=1
+                "sample", lambda context: context.provide("resource", resource), api_version=2
             )
         )
         manager.activate("sample")
@@ -125,7 +128,7 @@ class RuntimeServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(settings.path.read_bytes(), before)
         self.assertTrue(tasks._closed)
         self.assertTrue(api.events.closed)
-        self.assertTrue(api.container.closed)
+        self.assertTrue(api.runtime._closed)
         await api.runtime.aclose()
 
     async def test_cross_thread_bus_publication_reaches_bounded_ui_queue(self):
@@ -157,7 +160,7 @@ class RuntimeServiceTests(unittest.IsolatedAsyncioTestCase):
         release.set()
         await second
         self.assertEqual(calls, ["started", "finished"])
-        self.assertTrue(self.api.container.closed)
+        self.assertTrue(self.api.runtime._closed)
 
 
 class ThemeTests(unittest.TestCase):

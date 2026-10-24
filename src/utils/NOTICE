@@ -2,5 +2,5 @@ Vendored from https://github.com/TahsinCr/vehicle-autonomy-core
 Commit: 2bac9cd5b1cbeae82b7d3beef670a37d7ee5caa2
 Copyright (C) 2026 TahsinCr
 License: GPL-3.0-only; full text in LICENSE.
-Local adaptation: dependency package renamed to utils.container; relative imports preserved.
+Local adaptation: the events package is exposed as utils.events; relative imports are preserved.
 Implementation algorithms are retained. Formatting may follow the host project.

@@ -94,6 +94,7 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 
 ### Removed
 
+- Remove the vendored dependency-injection container. Runtime now keeps explicitly owned service instances, and extension API 2 uses `context.provide()` and `context.on_dispose()` without container scopes or injection decorators.
 - Remove deprecated CLI aliases `/quit`, `/delete-project`, `/proje`, `/private`, `/sync` and `/file`; canonical commands remain available.
 - Remove the legacy single-record download-history write API and its fallback; all history writes use the revision-aware batch contract.
 - Remove the `CHATGPT_WEB_MODEL` environment override in favor of the selected account's model catalog and current chat preference.

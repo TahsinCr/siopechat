@@ -148,16 +148,18 @@ def activate(context):
     context.action(Action("my_feature.hello", "Hello", lambda: "Hello"))
 
 
-SPEC = ExtensionSpec("my_feature", activate, api_version=1)
+SPEC = ExtensionSpec("my_feature", activate, api_version=2)
 ```
 
 Для каждого расширения рядом с `plugin.py` необходим `manifest.json`. Он описывает расширение без выполнения Python:
 
 ```json
-{"id": "my_feature", "api_version": 1, "requires": []}
+{"id": "my_feature", "api_version": 2, "requires": []}
 ```
 
 Поле `requires` должно совпадать с `ExtensionSpec`. Отключённые расширения не импортируются; модуль загружается при включении. Манифест и `ExtensionSpec` должны указывать одну версию API.
+
+В API расширений версии 2 нет контейнера внедрения зависимостей. Регистрируйте сервисы расширения через `context.provide()`, а остальные ресурсы освобождайте через `context.on_dispose()`.
 
 Перезапустите приложение для обнаружения пакета, затем включайте и отключайте его в **Настройки → Расширения**. Настройки хранятся в `extensions.my_feature`. Языковые пакеты разделены по пространствам имён и объединяются с каталогом приложения. При необходимости укажите зависимость `requires=("archive",)`. Действия могут объявлять поля ввода для палитры команд; расширения также регистрируют сервисы, представления и темы.
 
