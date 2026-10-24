@@ -497,7 +497,7 @@
   "ui.show available commands": "show available commands",
   "ui.quit SiopeChat": "quit SiopeChat",
   "ui.Request stopped: {0}": "Request stopped: {0}",
-  "help_body": "**Commands**\n\n/new · /tab-next · /tab-prev · /tab-close · /tabs-close\n/pane-next · /pane-prev · /split · /split-down · /unsplit\n/search · /resume · /projects · /project · /project info\n/project-new · /project-edit · /project-delete\n/project-source-add · /project-source-remove\n/model · /effort · /temporary · /attach · /filter\n/sync · /delete · /rename · /copy · /remove · /clear\n/settings · /session · /actions · /action ID · /exit\n\nCtrl+A selects text, Ctrl+C copies a selection, Ctrl+V pastes.\nOnly provider-published thinking is shown. Provider retention rules apply to temporary chats.\nF1 closes this help.\n\n**Navigation**\n\n{navigation}\n\n**Configured shortcuts**\n\n{shortcuts}",
+  "help_body": "**Commands**\n\n/new · /tab-next · /tab-prev · /tab-close · /tabs-close\n/pane-next · /pane-prev · /split · /split-down · /unsplit\n/search · /resume · /projects · /project · /project info\n/project-new · /project-edit · /project-delete\n/project-source-add · /project-source-remove\n/model · /effort · /temporary · /attach · /filter\n/refresh · /delete · /rename · /copy · /remove · /clear\n/settings · /session · /actions · /action ID · /exit\n\nCtrl+A selects text, Ctrl+C copies a selection, Ctrl+V pastes.\nOnly provider-published thinking is shown. Provider retention rules apply to temporary chats.\nF1 closes this help.\n\n**Navigation**\n\n{navigation}\n\n**Configured shortcuts**\n\n{shortcuts}",
   "ui.Gizlilik": "Privacy",
   "ui.İsim (A–Z)": "Name (A–Z)",
   "ui.İsim (Z–A)": "Name (Z–A)",

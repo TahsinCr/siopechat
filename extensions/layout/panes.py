@@ -367,10 +367,6 @@ class _Pane:
     def transcript_cursor_position(self):
         return self.cursor()
 
-    def render(self):
-        """Keep compatibility with existing layout callers; rows stay virtual."""
-        return self.transcript_rows(1)
-
     @property
     def app(self):
         return self.view.app

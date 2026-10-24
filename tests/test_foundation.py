@@ -44,7 +44,7 @@ class FoundationTests(unittest.TestCase):
             context.theme("broken-theme", {"accent": "#123456"})
             raise RuntimeError("secret diagnostic")
 
-        self.manager.register(ExtensionSpec("broken", activate))
+        self.manager.register(ExtensionSpec("broken", activate, api_version=1))
         self.assertFalse(self.manager.activate("broken"))
         closed.assert_called_once()
         self.assertEqual(self.manager.statuses()["broken"].reason, "activation_failed")
@@ -62,8 +62,10 @@ class FoundationTests(unittest.TestCase):
         def transfer(context):
             context.provide("transfer", context.api.get("archive"))
 
-        self.manager.register(ExtensionSpec("archive", base))
-        self.manager.register(ExtensionSpec("transfer", transfer, requires=("archive",)))
+        self.manager.register(ExtensionSpec("archive", base, api_version=1))
+        self.manager.register(
+            ExtensionSpec("transfer", transfer, api_version=1, requires=("archive",))
+        )
         self.assertTrue(self.manager.activate("transfer"))
         self.manager.disable("archive")
         self.assertEqual(self.manager.statuses()["transfer"].state, "unavailable")
@@ -75,19 +77,25 @@ class FoundationTests(unittest.TestCase):
 
     def test_missing_or_cyclic_dependencies_do_not_execute_extensions(self):
         activate = Mock()
-        self.manager.register(ExtensionSpec("missing", activate, requires=("unknown",)))
+        self.manager.register(
+            ExtensionSpec("missing", activate, api_version=1, requires=("unknown",))
+        )
         self.assertFalse(self.manager.activate("missing"))
         activate.assert_not_called()
-        self.manager.register(ExtensionSpec("a", activate, requires=("b",)))
-        self.manager.register(ExtensionSpec("b", activate, requires=("a",)))
+        self.manager.register(ExtensionSpec("a", activate, api_version=1, requires=("b",)))
+        self.manager.register(ExtensionSpec("b", activate, api_version=1, requires=("a",)))
         with self.assertRaises(ValueError):
             self.manager.activate("a")
         activate.assert_not_called()
 
     def test_unrelated_extension_survives_failure_and_cleanup_errors(self):
-        self.manager.register(ExtensionSpec("healthy", lambda ctx: ctx.provide("healthy", 42)))
         self.manager.register(
-            ExtensionSpec("bad", lambda ctx: lambda: (_ for _ in ()).throw(ValueError()))
+            ExtensionSpec("healthy", lambda ctx: ctx.provide("healthy", 42), api_version=1)
+        )
+        self.manager.register(
+            ExtensionSpec(
+                "bad", lambda ctx: lambda: (_ for _ in ()).throw(ValueError()), api_version=1
+            )
         )
         self.manager.activate("healthy")
         self.manager.activate("bad")
@@ -101,7 +109,9 @@ class FoundationTests(unittest.TestCase):
         self.assertNotIn("unknown", self.api.settings.snapshot()["extensions"])
 
     def test_shared_settings_panel_routes_toggle_through_extension_lifecycle(self):
-        self.manager.register(ExtensionSpec("sample", lambda ctx: ctx.provide("sample", 1)))
+        self.manager.register(
+            ExtensionSpec("sample", lambda ctx: ctx.provide("sample", 1), api_version=1)
+        )
         self.manager.activate("sample")
         panel = SettingsPanel(self.api)
         asyncio.run(panel.change("extensions.sample", "enabled", False))

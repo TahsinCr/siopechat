@@ -77,7 +77,7 @@ class RuntimeServiceTests(unittest.IsolatedAsyncioTestCase):
             context.provide("resource", Resource())
             context.subscribe(seen.append, event_type=ServiceChanged)
 
-        manager.register(ExtensionSpec("sample", activate))
+        manager.register(ExtensionSpec("sample", activate, api_version=1))
         self.assertTrue(manager.activate("sample"))
         self.api.provide("other", "other", object())
         self.assertTrue(seen)
@@ -103,7 +103,9 @@ class RuntimeServiceTests(unittest.IsolatedAsyncioTestCase):
 
         resource = Resource()
         manager.register(
-            ExtensionSpec("sample", lambda context: context.provide("resource", resource))
+            ExtensionSpec(
+                "sample", lambda context: context.provide("resource", resource), api_version=1
+            )
         )
         manager.activate("sample")
         await manager.disable_async("sample")

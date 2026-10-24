@@ -68,7 +68,7 @@ class PolishTests(unittest.TestCase):
             v.conversation_id = "chat"
             v.input.text = "Keep draft"
             v.sidebar_items = [{"id": "chat", "title": "Chat"}]
-            v.handle_command("/proje g-p-work")
+            v.handle_command("/project g-p-work")
             move.assert_called_once_with("chat", "g-p-work")
             self.assertEqual(v.sidebar_items[0]["project_id"], "g-p-work")
             self.assertEqual(v.messages[0]["text"], "Keep history")

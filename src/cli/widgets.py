@@ -262,11 +262,8 @@ class SlashCommandCompleter(Completer):
         ("/search", "search saved conversations"),
         ("/projects", "show provider project support"),
         ("/temporary", "new temporary conversation without local recording"),
-        ("/private", "new temporary conversation"),
         ("/project", "move this chat or choose its project; /project info shows details"),
-        ("/proje", "sohbeti projeye taşı veya projeden çıkar"),
         ("/refresh", "synchronize models, projects, chats and history"),
-        ("/sync", "alias of /refresh; scopes: all, library, conversation"),
         ("/model", "select a model ID for this session"),
         ("/effort", "show the provider effort value"),
         ("/actions", "search actions and commands"),
@@ -286,7 +283,6 @@ class SlashCommandCompleter(Completer):
         ("/clear", "clear the displayed transcript"),
         ("/help", "show available commands"),
         ("/exit", "quit SiopeChat"),
-        ("/quit", "quit SiopeChat"),
     )
 
     def __init__(self, translate=lambda source: source):

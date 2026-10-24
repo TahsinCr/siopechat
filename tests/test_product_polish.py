@@ -127,9 +127,10 @@ class ProductServicesTests(unittest.TestCase):
             service.register("test", "bad", {}, options={"tab_width": 1000})
         directory = self.root / "extensions" / "sample"
         directory.mkdir(parents=True)
+        (directory / "manifest.json").write_text('{"id":"sample","api_version":1,"requires":[]}')
         (directory / "helper.py").write_text('VALUE = "ok"')
         (directory / "plugin.py").write_text(
-            'from extension import ExtensionSpec, Action\nfrom .helper import VALUE\ndef activate(ctx):\n    ctx.action(Action("sample.hello", "Hello", lambda: VALUE))\nSPEC = ExtensionSpec("sample", activate)\n'
+            'from extension import ExtensionSpec, Action\nfrom .helper import VALUE\ndef activate(ctx):\n    ctx.action(Action("sample.hello", "Hello", lambda: VALUE))\nSPEC = ExtensionSpec("sample", activate, api_version=1)\n'
         )
         self.api.get("extensions").load_directory(directory.parent)
         self.assertEqual(asyncio.run(self.api.actions.invoke("sample.hello")), "ok")
@@ -142,7 +143,7 @@ class ProductServicesTests(unittest.TestCase):
         marker = directory / "imported"
         (directory / "manifest.json").write_text('{"id":"lazy","api_version":1,"requires":[]}')
         (directory / "plugin.py").write_text(
-            'from pathlib import Path\nfrom extension import ExtensionSpec\nPath(__file__).with_name("imported").touch()\nSPEC = ExtensionSpec("lazy", lambda ctx: None)\n'
+            'from pathlib import Path\nfrom extension import ExtensionSpec\nPath(__file__).with_name("imported").touch()\nSPEC = ExtensionSpec("lazy", lambda ctx: None, api_version=1)\n'
         )
         self.api.settings.update_extension("lazy", {"enabled": False})
         manager = self.api.get("extensions")
@@ -151,6 +152,22 @@ class ProductServicesTests(unittest.TestCase):
         self.assertEqual(manager.statuses()["lazy"].state, "disabled")
         self.assertTrue(manager.enable("lazy"))
         self.assertTrue(marker.exists())
+
+    def test_extension_without_manifest_is_rejected_before_import(self):
+        directory = self.root / "extensions" / "manifest_required"
+        directory.mkdir(parents=True)
+        marker = directory / "imported"
+        (directory / "plugin.py").write_text(
+            "from pathlib import Path\n"
+            'Path(__file__).with_name("imported").touch()\n'
+            'raise RuntimeError("must not import")\n'
+        )
+
+        manager = self.api.get("extensions")
+        manager.load_directory(directory.parent)
+
+        self.assertFalse(marker.exists())
+        self.assertEqual(manager.statuses()["manifest_required"].state, "failed")
 
     def test_application_composition_does_not_import_cli(self):
         script = """import builtins,tempfile

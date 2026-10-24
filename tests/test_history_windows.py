@@ -525,7 +525,7 @@ class RenderReuseTests(unittest.TestCase):
             view.select_tab(0)
             pane = _Pane(view, key)
             view.layout_controller._panes[key] = pane
-            pane.render()
+            pane.transcript_rows(1)
             self.assertTrue(pane.renderer.cache)
             view.close_tab()
             self.assertFalse(pane.messages)

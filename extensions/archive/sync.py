@@ -10,8 +10,9 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from urllib.parse import unquote
 
+from providers.history import merge_conversation
+
 from .adapters import MAPPINGS, Mapping
-from .history import merge_conversation
 from .repository import encode
 
 SYNC_MERGE_OVERLAP = 80

@@ -148,16 +148,16 @@ def activate(context):
     context.action(Action("my_feature.hello", "Hello", lambda: "Hello"))
 
 
-SPEC = ExtensionSpec("my_feature", activate)
+SPEC = ExtensionSpec("my_feature", activate, api_version=1)
 ```
 
-`plugin.py` yanındaki isteğe bağlı `manifest.json`, Python çalıştırmadan eklentinin bilgilerini bildirir:
+Her eklentide `plugin.py` yanında bir `manifest.json` bulunmalıdır. Dosya, Python kodunu çalıştırmadan eklenti bilgilerini bildirir:
 
 ```json
 {"id": "my_feature", "api_version": 1, "requires": []}
 ```
 
-`requires` alanını `ExtensionSpec` ile aynı tutun. Kapalı eklentiler import edilmez; etkinleştirildiğinde Python modülü yüklenir. Manifesti olmayan mevcut paketler de desteklenir.
+`requires` alanını `ExtensionSpec` ile aynı tutun. Kapalı eklentiler import edilmez; etkinleştirildiğinde Python modülü yüklenir. Manifest ve `ExtensionSpec` aynı API sürümünü belirtmelidir.
 
 Paketin keşfedilmesi için yeniden başlatın; ardından **Ayarlar → Eklentiler** bölümünden açıp kapatın. Ayarları `extensions.my_feature` altında tutulur. Dil paketleri ad alanlarına ayrılır ve uygulama kataloğuyla birleştirilir. Gerektiğinde `requires=("archive",)` ile bağımlılık bildirin. Aksiyonlar komut paletine giriş alanları sunabilir; eklentiler ayrıca servis, görünüm ve tema kaydedebilir.
 

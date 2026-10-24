@@ -437,7 +437,7 @@ class SQLiteRepository:
 
     def append_turn(self, account, remote, value):
         """Reconcile only the bounded tail, never decode/rewrite the complete history."""
-        from .history import merge_conversation
+        from providers.history import merge_conversation
 
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")

@@ -148,16 +148,16 @@ def activate(context):
     context.action(Action("my_feature.hello", "Hello", lambda: "Hello"))
 
 
-SPEC = ExtensionSpec("my_feature", activate)
+SPEC = ExtensionSpec("my_feature", activate, api_version=1)
 ```
 
-An optional `manifest.json` beside `plugin.py` declares metadata without executing Python:
+Each extension must include a `manifest.json` beside `plugin.py`. It declares metadata without executing Python:
 
 ```json
 {"id": "my_feature", "api_version": 1, "requires": []}
 ```
 
-Keep `requires` consistent with `ExtensionSpec`. Disabled extensions are not imported; enabling one loads its Python module. Existing packages without a manifest remain supported.
+Keep `requires` consistent with `ExtensionSpec`. Disabled extensions are not imported; enabling one loads its Python module. The manifest and `ExtensionSpec` must declare the same API version.
 
 Restart to discover the package, then enable or disable it in **Settings → Extensions**. Settings live under `extensions.my_feature`; contributed language bundles are namespaced and merged with the application catalog. Declare dependencies with `requires=("archive",)` when needed. Actions can declare input fields for the command palette; extensions can also contribute services, views and themes.
 

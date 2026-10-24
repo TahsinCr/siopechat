@@ -1,4 +1,4 @@
-"""Compatibility backend service: local IPC, sessions and legacy snapshots."""
+"""Application service for local IPC, sessions and conversation snapshots."""
 
 from __future__ import annotations
 
@@ -675,7 +675,7 @@ class BackendService:
             set_private_permissions(socket_path, 384)
             server.listen(8)
             server.settimeout(0.5)
-            with ThreadPoolExecutor(max_workers=8, thread_name_prefix="legacy-ipc") as workers:
+            with ThreadPoolExecutor(max_workers=8, thread_name_prefix="siopechat-ipc") as workers:
                 while not stopping:
                     try:
                         connection, _ = server.accept()

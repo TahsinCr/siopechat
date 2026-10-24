@@ -11,12 +11,12 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from accounts import identity
 from bootstrap import create_application
-from extensions.archive.history import merge_conversation
 from extensions.archive.repository import Files, SQLiteRepository
 from extensions.archive.sync import Archive
 from providers import Capability
 from providers.errors import RemoteNotFound
 from providers.gemini import GeminiProvider
+from providers.history import merge_conversation
 from tests.cli_support import terminal
 
 

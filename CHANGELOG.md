@@ -92,6 +92,13 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 - Close the runtime before removing the paging test's temporary SQLite directory, fixing the Windows CI file-lock failure.
 - Avoid re-queuing first-page records already fetched by an explicit library sync, pace ChatGPT history pages, honor provider retry delays after HTTP 429, and identify rate-limited sync failures in the status line while retaining cached data.
 
+### Removed
+
+- Remove deprecated CLI aliases `/quit`, `/delete-project`, `/proje`, `/private`, `/sync` and `/file`; canonical commands remain available.
+- Remove the `CHATGPT_WEB_MODEL` environment override in favor of the selected account's model catalog and current chat preference.
+- Require extensions to provide a manifest and an explicit matching API version; remove the implicit version-1 and manifest-less extension paths.
+- Remove the archive history import shim and use the provider package's shared history module directly.
+
 ## [1.3-beta] - 2026-10-22
 
 ### Added

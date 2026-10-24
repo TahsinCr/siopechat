@@ -105,8 +105,8 @@ class ExtensionAPI:
 class ExtensionSpec:
     id: str
     activate: Callable
+    api_version: int
     requires: tuple[str, ...] = ()
-    api_version: int = 1
     version: str = "0.1.0"
 
 
@@ -224,13 +224,19 @@ class ExtensionManager:
             )
             try:
                 manifest_path = path.parent / "manifest.json"
-                manifest = json.loads(manifest_path.read_text()) if manifest_path.is_file() else {}
+                if not manifest_path.is_file():
+                    raise ValueError("extension manifest is required")
+                manifest = json.loads(manifest_path.read_text())
+                if not isinstance(manifest, dict):
+                    raise ValueError("invalid extension manifest")
+                api_version = manifest.get("api_version")
                 if (
-                    manifest.get("id", name) != name
-                    or manifest.get("api_version", 1) != self.api.version
+                    manifest.get("id") != name
+                    or type(api_version) is not int
+                    or api_version != self.api.version
                 ):
                     raise ValueError("invalid extension manifest")
-                requires = manifest.get("requires", [])
+                requires = manifest.get("requires")
                 if not isinstance(requires, list) or not all(isinstance(x, str) for x in requires):
                     raise ValueError("invalid extension dependencies")
 
@@ -239,8 +245,8 @@ class ExtensionManager:
                     path=path,
                     package=package,
                     name=name,
+                    api_version=api_version,
                     requires=tuple(requires),
-                    has_manifest=manifest_path.is_file(),
                 ):
                     parent = types.ModuleType(package)
                     parent.__path__ = [str(path.parent)]
@@ -251,20 +257,20 @@ class ExtensionManager:
                     spec.loader.exec_module(module)
                     if not isinstance(module.SPEC, ExtensionSpec) or module.SPEC.id != name:
                         raise ValueError("extension directory and SPEC.id must match")
-                    if module.SPEC.api_version != self.api.version:
-                        raise ValueError("incompatible extension API version")
-                    if has_manifest and tuple(module.SPEC.requires) != requires:
+                    if module.SPEC.api_version != api_version:
+                        raise ValueError("extension API version differs from manifest")
+                    if tuple(module.SPEC.requires) != requires:
                         raise ValueError("extension dependencies differ from manifest")
-                    if not has_manifest:
-                        self._specs[name] = module.SPEC
-                        for dependency in module.SPEC.requires:
-                            if dependency not in self._specs or not self.activate(
-                                dependency, (name,)
-                            ):
-                                raise ValueError("extension dependency unavailable")
                     return module.SPEC.activate(context)
 
-                self.register(ExtensionSpec(name, activate, requires=tuple(requires)))
+                self.register(
+                    ExtensionSpec(
+                        name,
+                        activate,
+                        api_version=api_version,
+                        requires=tuple(requires),
+                    )
+                )
             except Exception:
                 self._status(name, "failed", "discovery_failed")
         for name in tuple(self._specs):

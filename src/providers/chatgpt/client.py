@@ -431,7 +431,6 @@ class ChatGPTClient:
         catalog = self.model_catalog()
         model = (
             model
-            or os.environ.get("CHATGPT_WEB_MODEL")
             or (previous.get("default_model_slug") if previous else None)
             or catalog.default_model
         )
@@ -712,8 +711,8 @@ class ChatGPTClient:
         now = datetime.now().astimezone()
         offset = now.utcoffset()
         offset_minutes = -int(offset.total_seconds() / 60) if offset else 0
-        model = os.environ.get("CHATGPT_WEB_MODEL")
-        if not model and conversation:
+        model = None
+        if conversation:
             candidate = conversation.get("default_model_slug")
             if isinstance(candidate, str) and candidate:
                 model = candidate

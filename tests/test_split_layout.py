@@ -27,7 +27,7 @@ class SplitTests(unittest.IsolatedAsyncioTestCase):
                 await self.settle(lambda: v.transcript_window.render_info is not None)
                 self.assertEqual(v.layout_controller.columns(), 2)
                 pane = next(iter(v.layout_controller._panes.values()))
-                pane.render()
+                pane.transcript_rows(1)
                 self.assertTrue(pane.message_ranges)
                 self.assertEqual(pane.body.left_margins[0].get_width(None), 3)
                 self.assertLess(v.main_width(), v.workspace_width())
@@ -85,12 +85,12 @@ class SplitTests(unittest.IsolatedAsyncioTestCase):
             v.tabs[0]["busy"] = True
             pane = _Pane(v, v.tabs[0]["tab_id"])
             with patch.object(pane.renderer, "render", wraps=pane.renderer.render) as render:
-                pane.render()
+                pane.transcript_rows(1)
                 self.assertFalse(render.call_args_list[0].args[-1])
                 self.assertTrue(render.call_args_list[-1].args[-1])
                 calls = render.call_count
                 self.assertLessEqual(pane.layout.cache_bytes, 1024 * 1024)
-                pane.render()
+                pane.transcript_rows(1)
                 self.assertEqual(render.call_count, calls)
 
     async def test_pending_split_can_cancel_and_cannot_duplicate_same_tab(self):

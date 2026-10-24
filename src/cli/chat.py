@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import shutil
 import threading
 import time
@@ -258,7 +257,7 @@ class ChatView:
         self.invoke_action = invoke_action
         self.conversation_id = conversation_id
         self.title = title
-        self.model = model or os.environ.get("CHATGPT_WEB_MODEL", "")
+        self.model = model or ""
         self.effort_preference = effort_preference
         self.effort: str | None = None
         self.load_catalog = load_catalog
@@ -2916,7 +2915,6 @@ class ChatView:
                     "command.downloads": "/downloads",
                     "command.session": "/session",
                     "command.quit": "/exit",
-                    "command.quit_alias": "/quit",
                 }[action_id]
             )
             return
@@ -4307,7 +4305,7 @@ class ChatView:
             self.session_dialog.open()
             return
         name, _, argument = command.partition(" ")
-        if name in ("/exit", "/quit"):
+        if name == "/exit":
             self.request_quit()
         elif name == "/new":
             self.new_tab()
@@ -4332,7 +4330,7 @@ class ChatView:
             self.project_panel.add_source()
         elif name == "/project-source-remove":
             self.project_panel.remove_source()
-        elif name in ("/attach", "/file"):
+        elif name == "/attach":
             self.open_attachment()
         elif name == "/filter":
             self.open_filters()
@@ -4345,7 +4343,7 @@ class ChatView:
                 self.layout_controller.unsplit()
         elif name == "/delete":
             self.delete_record("conversation", argument.strip() or None)
-        elif name in ("/project-delete", "/delete-project"):
+        elif name == "/project-delete":
             if argument.strip():
                 self.delete_record("container", argument.strip())
             else:
@@ -4368,16 +4366,16 @@ class ChatView:
                 self.select_effort(None if effort == "default" else effort)
             else:
                 self.open_palette("effort")
-        elif name in ("/project", "/proje"):
+        elif name == "/project":
             if argument.strip() == "info":
                 self.show_project_details()
             elif argument.strip():
                 self.choose_project(argument.strip())
             else:
                 self.open_project_picker()
-        elif name in ("/temporary", "/private"):
+        elif name == "/temporary":
             self.new_temporary_chat()
-        elif name in ("/refresh", "/sync"):
+        elif name == "/refresh":
             self.synchronize(argument.strip() or "all")
         elif name == "/action":
             action_id, _, raw_arguments = argument.strip().partition(" ")
@@ -4507,7 +4505,7 @@ class ChatView:
             self.append_system(
                 self.text(
                     "help_body",
-                    f"**Commands**\n\n- `/new` start a conversation\n- `/tab-next` or `/tab-prev` switch tabs\n- `/tab-close` close the current tab\n- `/search` search saved conversations\n- `/projects` list projects; `/proje` or `/project [ID]` move this chat or choose its project; `/project info` opens details\n- `/temporary` or `/private` starts a temporary chat without local conversation files\n- `/model [MODEL_ID]` choose from the account's model catalog\n- `/effort [ID|default]` choose an effort offered by the selected model\n- `/refresh` refresh models, projects and chats (F10 by default)\n- `/actions` open searchable actions and commands\n- `/settings` opens categorized settings and accounts in a workspace tab\n- `/action ID` run an application action\n- `/resume` search recent conversations\n- `/resume ID` open a conversation directly\n- `/history` reload this conversation\n- `/rename TITLE` rename this conversation\n- `/delete [ID]` delete a chat; `/project-delete [ID]` delete a project and its contents (confirmation required)\n- `/copy` copy the latest assistant response\n- `/remove` remove the latest pending image\n- `/clear` clear the displayed transcript\n- `/exit` or `/quit` quit\n\n**Text editing**\n\nCtrl+A selects composer text; Ctrl+C copies a selection; Ctrl+V pastes. Click a message, then Ctrl+A / Ctrl+C to copy that message.\nTemporary chat uses the provider history-disabled request; provider retention rules still apply.\n\n\n**Navigation**\n\n{navigation_help}\n**Configured shortcuts**\n\n{shortcut_lines}",
+                    f"**Commands**\n\n- `/new` start a conversation\n- `/tab-next` or `/tab-prev` switch tabs\n- `/tab-close` close the current tab\n- `/search` search saved conversations\n- `/projects` list projects; `/project [ID]` move this chat or choose its project; `/project info` opens details\n- `/temporary` starts a temporary chat without local conversation files\n- `/model [MODEL_ID]` choose from the account's model catalog\n- `/effort [ID|default]` choose an effort offered by the selected model\n- `/refresh` refresh models, projects and chats (F10 by default)\n- `/actions` open searchable actions and commands\n- `/settings` opens categorized settings and accounts in a workspace tab\n- `/action ID` run an application action\n- `/resume` search recent conversations\n- `/resume ID` open a conversation directly\n- `/history` reload this conversation\n- `/rename TITLE` rename this conversation\n- `/delete [ID]` delete a chat; `/project-delete [ID]` delete a project and its contents (confirmation required)\n- `/copy` copy the latest assistant response\n- `/remove` remove the latest pending image\n- `/clear` clear the displayed transcript\n- `/exit` quit\n\n**Text editing**\n\nCtrl+A selects composer text; Ctrl+C copies a selection; Ctrl+V pastes. Click a message, then Ctrl+A / Ctrl+C to copy that message.\nTemporary chat uses the provider history-disabled request; provider retention rules still apply.\n\n\n**Navigation**\n\n{navigation_help}\n**Configured shortcuts**\n\n{shortcut_lines}",
                 ).format(navigation=navigation_help, shortcuts=shortcut_lines)
             )
             self.messages[-1]["local_help"] = True

@@ -63,4 +63,4 @@ def activate(context: ExtensionContext) -> None:
         )
 
 
-SPEC = ExtensionSpec("layout", activate)
+SPEC = ExtensionSpec("layout", activate, api_version=1)
