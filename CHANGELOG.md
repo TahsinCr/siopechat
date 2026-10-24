@@ -42,6 +42,8 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 
 ### Fixed
 
+- Add the missing synchronization failure status to all three language catalogs.
+
 - Route transcript PageUp/PageDown and Home/End through shared history navigation so keyboard scrolling loads adjacent SQL pages instead of stopping inside the current window; preserve Home/End editing in the composer.
 - Extend loaded history with older SQLite batches without removing already loaded messages; preserve provider order and message-ID scroll anchors through rapid direction changes.
 - Use the newly published transcript geometry for wheel and page-key bounds before the next terminal repaint, preventing stale heights from skipping visible content.
