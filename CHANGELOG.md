@@ -45,6 +45,7 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 
 - Fix Ruff import-order and formatting failures so CI can continue to the test and package checks.
 - Compare project upload paths by canonical file identity in CI tests, accounting for macOS temporary-directory symlinks.
+- Keep the CLI startup scheduling test independent of a native console on headless Windows runners.
 - Add the missing synchronization failure status to all three language catalogs.
 
 - Route transcript PageUp/PageDown and Home/End through shared history navigation so keyboard scrolling loads adjacent SQL pages instead of stopping inside the current window; preserve Home/End editing in the composer.

@@ -2,7 +2,7 @@
 
 import asyncio
 import unittest
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from unittest.mock import Mock, patch
 
 from prompt_toolkit.application import Application
@@ -97,7 +97,11 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
                 pre_run()
 
             view.app.run = run
-            view.run()
+            with patch(
+                "prompt_toolkit.patch_stdout.patch_stdout", return_value=nullcontext()
+            ) as stdout_patch:
+                view.run()
+            stdout_patch.assert_called_once_with(raw=True)
 
         self.assertIn(service.prepare_enabled, submitted)
         view.refresh_provider_catalog.assert_called_once_with()
