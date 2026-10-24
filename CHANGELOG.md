@@ -10,6 +10,7 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 
 ### Added
 
+- Add one-time Linux, macOS and Windows installers that check Python and Node.js, reuse known virtual environments and install the checkout's dependencies.
 - Add a root-level `run_tests.py` command for application and provider tests, provider smoke checks, and JavaScript tests.
 - Add section-level project and conversation creation buttons to the sidebar using the existing creation actions.
 - Store account sessions, model catalogs and verification records in a private, account-scoped SQLite repository with an injectable provider credential contract.
@@ -20,6 +21,7 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 
 ### Changed
 
+- Make launch scripts select an existing supported environment consistently and check Python 3.10+ and Node.js 22+ without installing dependencies at startup.
 - Make archive repository operations explicit and required; remove optional-method fallbacks that could load a complete conversation during a send or synchronization race.
 - Discard unknown application settings while loading configuration so removed preferences do not prevent startup; unsupported settings are not exposed in the application.
 - Remove redundant file/service-presence, duplicate import, README-text and stale-setting tests while keeping provider boundaries, data migration, lifecycle and user-visible behavior coverage.

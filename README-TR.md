@@ -28,13 +28,16 @@ Uygulama, giriş yaptığınız kendi web oturumlarınızı kullanır. API anaht
 
 ## Kurulum ve giriş
 
-Üç sağlayıcı için de Python **3.10+** gerekir. Giriş yardımcıları ve ChatGPT istek imzalayıcısı Node.js **22+**, açıkça başlatılan giriş işlemi ise Chrome/Chromium kullanır. Unicode destekli bir terminal kullanın; gerçek renk ve fare raporlama desteği önerilir.
+Üç sağlayıcı için de Python **3.10+** gerekir. Giriş yardımcıları ve ChatGPT istek imzalayıcısı Node.js **22+** kullanır; kurulum ve başlatma araçları iki sürümü de önceden denetler. Chrome/Chromium yalnızca açıkça başlatılan giriş işlemi için gerekir. Unicode destekli bir terminal kullanın; gerçek renk ve fare raporlama desteği önerilir.
 
-Projeyi indirdiğiniz dizinde, kendi Python ortamınızla kurun:
+Depoyu indirdiğiniz dizinde tek seferlik kurulum aracını çalıştırın. Python 3.10+ ve Node.js 22+ sürümlerini denetler, bulduğu uyumlu sanal ortamı kullanır ve SiopeChat ile Python bağımlılıklarını o ortama kurar. Ortam bulamazsa `python/` oluşturur; mevcut bir dizini silmez veya üzerine yazmaz.
 
-```sh
-python -m pip install -e .
-```
+| Sistem | Kurulum aracı |
+| --- | --- |
+| Linux / macOS terminali | `./install.sh` |
+| macOS Finder | `install.command` |
+| Windows PowerShell | `./install.ps1` |
+| Windows Komut İstemi | `install.bat` |
 
 | Sistem | Başlatma |
 | --- | --- |
@@ -44,7 +47,9 @@ python -m pip install -e .
 | Windows PowerShell | `./siopechat.ps1` |
 | Kurulu konsol komutu | `siopechat` |
 
-Başlatıcılar, varsa proje dizinindeki `python/` ortamını kullanır; yeni bir ortam oluşturmaz.
+Kurulum ve başlatma araçları ortamları şu sırayla arar: `python/`, `.venv/`, `venv/`, `env/`. Başka bir ortam kullanmak için `SIOPECHAT_VENV` değişkenini ortam dizinine ayarlayın; göreli yollar depo dizinine göre çözülür. Uygun ortam yoksa yalnızca kurulum aracı yenisini oluşturur. Bozuk veya uyumsuz mevcut dizinlere dokunulmaz. Depoyu güncelledikten sonra değişen bağımlılıkları kurmak için kurulum aracını yeniden çalıştırın. Başlatıcılar her açılışta paket kurmaz ve ağa çıkmaz; yalnızca gerekli sürümleri denetleyip ortamı başlatır.
+
+Son kullanıcı kurulumu `pyproject.toml` içindeki sürüm aralıklarını pip ile kullanır; uv yüklemek gerekmez. `uv.lock`, CI ve geliştirme ortamlarında tam bağımlılık çözümünü sabitlemeye devam eder.
 
 Yeni kurulum hesap eklenmeden başlar. İlk hesabınızı Ayarlar → Hesaplar bölümünden ekleyin; otomatik ChatGPT hesap kaydı oluşturulmaz.
 

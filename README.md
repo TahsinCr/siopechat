@@ -28,13 +28,16 @@ It uses your own signed-in web sessions. There are no API keys to configure, and
 
 ## Install and sign in
 
-You need Python **3.10+** for all three providers; Node.js **22+** for login helpers and the ChatGPT request signer; and Chrome/Chromium for the explicit sign-in step. Use a Unicode terminal. True color and mouse reporting are recommended.
+You need Python **3.10+** for all three providers and Node.js **22+** for login helpers and the ChatGPT request signer. The included installers and launchers check both versions before continuing. Chrome/Chromium is needed only for the explicit sign-in step. Use a Unicode terminal. True color and mouse reporting are recommended.
 
-Install from this checkout in your Python environment:
+Run the one-time installer from the checkout. It checks Python 3.10+ and Node.js 22+, reuses a supported virtual environment if it finds one, and installs SiopeChat plus its Python dependencies there. If no environment exists, it creates `python/` without replacing an existing directory.
 
-```sh
-python -m pip install -e .
-```
+| Platform | Installer |
+| --- | --- |
+| Linux / macOS terminal | `./install.sh` |
+| macOS Finder | `install.command` |
+| Windows PowerShell | `./install.ps1` |
+| Windows Command Prompt | `install.bat` |
 
 | Platform | Launcher |
 | --- | --- |
@@ -44,7 +47,9 @@ python -m pip install -e .
 | Windows PowerShell | `./siopechat.ps1` |
 | Installed console command | `siopechat` |
 
-Launchers reuse a `python/` environment in the checkout when present; they do not create one.
+Installers and launchers look for environments in this order: `python/`, `.venv/`, `venv/`, `env/`. Set `SIOPECHAT_VENV` to a different environment directory to override that lookup; relative paths are resolved from the checkout. Installers only create an environment when none is available, and they leave an existing but invalid directory untouched. Run an installer again after updating the checkout to install changed dependencies. Launchers check the required runtimes and start the selected environment directly; they do not install packages or access the network on each launch.
+
+The installer uses the dependency ranges in `pyproject.toml` with pip, so uv is not required for end-user installation. `uv.lock` remains the exact dependency resolution used by CI and development workflows.
 
 New installations start without any accounts. Add your first account under Settings → Accounts; SiopeChat does not create a ChatGPT account entry automatically.
 
