@@ -493,12 +493,13 @@ class Archive:
                 raise RuntimeError(state.get("error") or "Senkronizasyon yeniden denenecek")
         return saved()
 
-    def refresh(self, account=None, kinds=None):
+    def refresh(self, account=None, kinds=None, exclude=()):
         """Recheck records touched in this session, without waiting for remote reads."""
+        excluded = set(exclude or ())
         with self._lock:
             entries = list(self._fetchers.items())
         for key, fetch in entries:
-            if (account is not None and key[0] != account) or (
+            if key in excluded or (account is not None and key[0] != account) or (
                 kinds is not None and key[1] not in kinds
             ):
                 continue

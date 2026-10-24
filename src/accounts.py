@@ -1878,6 +1878,10 @@ class Accounts:
                         archive.refresh(
                             account=account,
                             kinds={"chats", "containers", "container", "container_chats"},
+                            exclude={
+                                (account, "chats", ""),
+                                (account, "containers", ""),
+                            },
                         )
                 if scope in ("all", "conversation") and conversation_id:
                     context, _ = origin(conversation_id, account)

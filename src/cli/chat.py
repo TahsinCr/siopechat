@@ -413,6 +413,25 @@ class ChatView:
             self._sync_state_signature = signature
         return self._sync_state_rows
 
+    def sync_failure_detail(self, failures):
+        if not failures or not all(
+            "provider rate limit" in str(item.get("error") or "").casefold()
+            for item in failures
+        ):
+            return None
+        providers = {
+            str(item.get("account", "")).split("/", 1)[0]
+            for item in failures
+            if item.get("account")
+        }
+        if len(providers) == 1:
+            provider = next(iter(providers))
+            name = {"chatgpt": "ChatGPT", "claude": "Claude", "gemini": "Gemini"}.get(
+                provider, provider
+            )
+            return self.tr("{0} hız sınırı").format(name)
+        return self.tr("Sağlayıcı hız sınırı")
+
     def synchronize(self, scope="all"):
         if getattr(self, "_synchronize_pending", False):
             self.status = self.tr("Eşitleme zaten sürüyor")
@@ -3291,6 +3310,18 @@ class ChatView:
                     ]
                 )
             if failures:
+                detail = self.sync_failure_detail(failures)
+                if detail:
+                    return FormattedText(
+                        [
+                            (
+                                "class:sync.error",
+                                self.tr(
+                                    " ! {0} kayıt · {1} · önbellek korunuyor "
+                                ).format(len(failures), detail),
+                            )
+                        ]
+                    )
                 return FormattedText(
                     [
                         (

@@ -2,6 +2,7 @@
 
 import asyncio
 import concurrent.futures
+import math
 import threading
 from collections import OrderedDict
 from contextlib import contextmanager
@@ -81,6 +82,8 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
         self._http_lock = threading.RLock()
         self._temporary_conversations = OrderedDict()
         self._gate = asyncio.Lock()
+        self._history_list_gate = asyncio.Lock()
+        self._history_list_next_request = 0.0
         self.editor = ChatGPTProjectEditor(
             self.session, self._factory, client_scope=self._client_scope
         )
@@ -374,8 +377,25 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
             with self._client_scope() as client:
                 return client.list_page(offset, limit)
 
-        async with self._gate:
-            raw = await asyncio.to_thread(read)
+        loop = asyncio.get_running_loop()
+        async with self._history_list_gate:
+            delay = self._history_list_next_request - loop.time()
+            if delay > 0:
+                await asyncio.sleep(delay)
+            try:
+                async with self._gate:
+                    raw = await asyncio.to_thread(read)
+            except RateLimited as error:
+                retry_after = error.retry_after
+                if (
+                    not isinstance(retry_after, (int, float))
+                    or not math.isfinite(retry_after)
+                    or retry_after <= 0
+                ):
+                    retry_after = 2.0
+                self._history_list_next_request = loop.time() + max(0.75, retry_after)
+                raise
+            self._history_list_next_request = loop.time() + 0.75
         items = raw.get("items", [])
         if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
             raise ValueError("invalid conversation page")

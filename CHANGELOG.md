@@ -80,6 +80,7 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 - Preserve drafts, text selections and live responses when older SQL pages finish loading, and refresh streamed thinking even before the final answer changes.
 - Count distinct files across Claude's full conversation tree before sending attachments, limit the new files to the remaining conversation quota, and stop safely when the provider cannot confirm current usage.
 - Close the runtime before removing the paging test's temporary SQLite directory, fixing the Windows CI file-lock failure.
+- Avoid re-queuing first-page records already fetched by an explicit library sync, pace ChatGPT history pages, honor provider retry delays after HTTP 429, and identify rate-limited sync failures in the status line while retaining cached data.
 
 ## [1.3-beta] - 2026-10-22
 
