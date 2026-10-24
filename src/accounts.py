@@ -79,6 +79,8 @@ class Accounts:
         self._active_pending = {}
         self._active_values = {}
         self._active_writer_running = False
+        self._legacy_cache_migration_lock = threading.Lock()
+        self._legacy_cache_migration_complete = False
         for item in self.items():
             key = item["key"]
             for kind, filename in (
@@ -450,6 +452,10 @@ class Accounts:
         the other providers from becoming ready. Accounts without saved
         credentials are skipped rather than prompting or opening a browser.
         """
+        try:
+            self._migrate_legacy_account_cache()
+        except Exception as error:
+            _LOG.warning("Account cache migration could not finish: %s", error)
         accounts = [
             item
             for item in self.items()
@@ -478,6 +484,154 @@ class Accounts:
         with ThreadPoolExecutor(max_workers=min(3, len(accounts))) as pool:
             results = pool.map(prepare, accounts)
             return {key: error for key, error in results if error}
+
+    def _migrate_legacy_account_cache(self):
+        """Move per-account JSON cache state to its existing SQLite owner.
+
+        Conversation history belongs to the archive when that extension is
+        available. The account database holds the same fallback records only
+        while the archive extension is disabled. Legacy files are removed only
+        after a durable destination record exists.
+        """
+        with self._legacy_cache_migration_lock:
+            if self._legacy_cache_migration_complete:
+                return
+            complete = True
+            for item in self.items():
+                key = item["key"]
+                try:
+                    self._migrate_account_cache(key)
+                except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
+                    complete = False
+                    _LOG.warning("Could not migrate local cache for %s: %s", key, error)
+            self._legacy_cache_migration_complete = complete
+
+    def _migrate_account_cache(self, key):
+        backend = self.cache(key)
+        archive = self.archive()
+
+        def cached_records(kind):
+            after = ""
+            while True:
+                limit = 1 if kind == "conversation" else 64
+                rows = self.repository.cache_records_page(key, kind, after=after, limit=limit)
+                if not rows:
+                    return
+                after = rows[-1][0]
+                yield from rows
+
+        def save_conversation(remote, conversation):
+            if not isinstance(conversation, dict) or conversation.get("temporary"):
+                return False
+            saved_id = conversation.get("remote_id") or conversation.get("id") or remote
+            context, saved_remote = origin(saved_id, key)
+            if context != key or saved_remote != remote:
+                return False
+            record = dict(conversation)
+            record.update(id=identity(key, remote), remote_id=remote, context=key)
+            if archive:
+                if archive.deleted(key, "conversation", remote):
+                    return True
+                if archive.conversation_window(key, remote) is None:
+                    archive.put(key, "conversation", remote, record)
+                return archive.conversation_window(key, remote) is not None
+            if self.repository.cache_is_deleted(key, remote):
+                return True
+            if not self.repository.cache_exists(key, "conversation", remote):
+                self.repository.cache_put(key, "conversation", remote, record)
+            return self.repository.cache_exists(key, "conversation", remote)
+
+        if archive:
+            # Bring forward fallback rows from runs where the archive extension
+            # was disabled, without replacing a newer canonical archive record.
+            for remote, _ in cached_records("tombstone"):
+                if not archive.deleted(key, "conversation", remote):
+                    archive.delete(key, "conversation", remote)
+                if archive.deleted(key, "conversation", remote):
+                    self.repository.cache_delete(key, "tombstone", remote)
+            for remote, conversation in cached_records("conversation"):
+                if save_conversation(remote, conversation):
+                    self.repository.cache_delete(key, "conversation", remote)
+
+        cache_dir = backend.conversation_cache_dir()
+        if cache_dir.is_dir():
+            for marker in sorted(cache_dir.glob("*.deleted")):
+                remote = marker.stem
+                try:
+                    conversation_path = backend.conversation_cache_path(remote)
+                except Exception:
+                    continue
+                if archive:
+                    if not archive.deleted(key, "conversation", remote):
+                        archive.delete(key, "conversation", remote)
+                    durable = archive.deleted(key, "conversation", remote)
+                else:
+                    self.repository.cache_mark_deleted(key, remote)
+                    durable = self.repository.cache_is_deleted(key, remote)
+                if durable:
+                    conversation_path.unlink(missing_ok=True)
+                    marker.unlink(missing_ok=True)
+
+            for path in sorted(cache_dir.glob("*.json")):
+                remote = path.stem
+                try:
+                    backend.conversation_cache_path(remote)
+                    conversation = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, ValueError, json.JSONDecodeError):
+                    continue
+                if archive and archive.deleted(key, "conversation", remote):
+                    durable = True
+                else:
+                    durable = save_conversation(remote, conversation)
+                if durable:
+                    path.unlink(missing_ok=True)
+
+        active_path = backend.active_conversation_path()
+        legacy_remote = None
+        if active_path.is_file():
+            try:
+                pointer = json.loads(active_path.read_text(encoding="utf-8"))
+                candidate = pointer.get("conversation_id") if isinstance(pointer, dict) else None
+                if isinstance(candidate, str) and candidate:
+                    context, legacy_remote = origin(candidate, key)
+                    if context != key:
+                        legacy_remote = None
+            except (OSError, ValueError, json.JSONDecodeError):
+                legacy_remote = None
+
+        if archive:
+            current = archive.get(key, "pointer", "active")
+            fallback_remote = self.repository.cache_active(key)
+            if fallback_remote and archive.deleted(key, "conversation", fallback_remote):
+                self.repository.cache_set_active(key, None)
+                fallback_remote = None
+            if legacy_remote and archive.deleted(key, "conversation", legacy_remote):
+                active_path.unlink(missing_ok=True)
+                legacy_remote = None
+            target = current.get("remote") if isinstance(current, dict) else None
+            if target and archive.deleted(key, "conversation", target):
+                target = None
+                archive.put(key, "pointer", "active", {"remote": None})
+                current = archive.get(key, "pointer", "active")
+            if current is None:
+                target = fallback_remote or legacy_remote
+                if target and archive.deleted(key, "conversation", target):
+                    target = None
+                if target:
+                    archive.put(key, "pointer", "active", {"remote": target})
+                    current = archive.get(key, "pointer", "active")
+            durable = current is not None or not (fallback_remote or legacy_remote)
+            if durable:
+                self.repository.cache_set_active(key, None)
+                if legacy_remote is not None:
+                    active_path.unlink(missing_ok=True)
+        else:
+            current = self.repository.cache_active(key)
+            if current is None and legacy_remote:
+                self.repository.cache_set_active(key, legacy_remote)
+                current = self.repository.cache_active(key)
+            if current is not None and legacy_remote is not None:
+                active_path.unlink(missing_ok=True)
 
     def models(self, key, force=False):
         if not self.enabled(key.split("/")[0]):
@@ -853,6 +1007,12 @@ class Accounts:
             value = archive.get(key, "conversation", remote)
             if value is not None:
                 return value
+        if remote and self.repository.cache_is_deleted(key, remote):
+            return None
+        if remote:
+            value = self.repository.cache_get(key, "conversation", remote)
+            if value is not None:
+                return value
         return self.cache(key).load_cached_conversation(remote)
 
     def active_conversation(self, key):
@@ -861,6 +1021,9 @@ class Accounts:
             pointer = archive.get(key, "pointer", "active")
             if pointer is not None:
                 return pointer.get("remote")
+        remote = self.repository.cache_active(key)
+        if remote:
+            return remote
         return self.cache(key).active_conversation_id()
 
     def cached_window(self, key, remote=None):
@@ -916,16 +1079,41 @@ class Accounts:
 
     def set_active(self, key, value):
         _, remote = origin(value, key)
+        if remote and self.repository.cache_is_deleted(key, remote):
+            remote = None
         archive = self.archive()
         if archive:
             try:
                 archive.put(key, "pointer", "active", {"remote": remote})
             except OSError:
-                pass
-        self.cache(key).set_active_conversation(remote)
+                self.repository.cache_set_active(key, remote)
+                return
+            self.repository.cache_set_active(key, None)
+        else:
+            self.repository.cache_set_active(key, remote)
 
     def cache(self, key):
         return BackendService(self.directory(key), legacy_fallback=key == "chatgpt/default")
+
+    def cache_conversation(self, key, conversation, *, make_active=True):
+        remote = conversation.get("remote_id") or conversation.get("id")
+        context, remote = origin(remote, key)
+        if context != key or not remote or conversation.get("temporary"):
+            return
+        if self.repository.cache_is_deleted(key, remote):
+            return
+        record = dict(conversation, id=identity(key, remote), remote_id=remote, context=key)
+        archive = self.archive()
+        if archive:
+            if archive.deleted(key, "conversation", remote):
+                return
+            archive.put(key, "conversation", remote, record)
+            self.repository.cache_delete(key, "conversation", remote)
+        else:
+            if not self.repository.cache_put(key, "conversation", remote, record):
+                return
+        if make_active:
+            self.set_active(key, remote)
 
     def chat_record(self, key, chat):
         if chat.metadata.get("project_membership_known") and not chat.project_id:
@@ -1115,7 +1303,7 @@ class Accounts:
         if archive and archive.deleted(key, "conversation", remote):
             raise RemoteNotFound("Bu sohbet sağlayıcıdan silindi")
         if archive and archive.conversation_window(key, remote) is None:
-            legacy = self.cache(key).load_cached_conversation(remote)
+            legacy = self.cached(key, remote)
             if legacy and not legacy.get("temporary"):
                 archive.put(
                     key, "conversation", remote, dict(legacy, id=identity(key, remote), context=key)
@@ -1135,7 +1323,7 @@ class Accounts:
             if not record.get("project_id"):
                 record["project_id"] = previous.get("project_id")
             if not archive:
-                self.cache(key).cache_conversation(dict(record, id=remote), make_active=False)
+                self.cache_conversation(key, dict(record, id=remote), make_active=False)
             return record
 
         return self.read_record(key, "conversation", remote, fetch, force, window=window)
@@ -1362,7 +1550,7 @@ class Accounts:
                             )
                             self.set_active(key, remote_id)
                         else:
-                            self.cache(key).cache_conversation(record)
+                            self.cache_conversation(key, record)
                     except (OSError, ValueError):
                         cache_warning = "Yanıt alındı ancak yerel arşive kaydedilemedi"
                 return {
@@ -1804,7 +1992,21 @@ class Accounts:
                             self._chat_projects.pop(member_key, None)
                 for _, target_kind, target in removed:
                     if target_kind == "conversation":
-                        self.cache(key).mark_conversation_deleted(target)
+                        pointer = archive.get(key, "pointer", "active") if archive else None
+                        if isinstance(pointer, dict) and pointer.get("remote") == target:
+                            self.set_active(key, None)
+                        if archive:
+                            self.repository.cache_delete(key, "conversation", target)
+                            self.repository.cache_delete(key, "tombstone", target)
+                        else:
+                            self.repository.cache_mark_deleted(key, target)
+                        legacy = self.cache(key)
+                        legacy.conversation_cache_path(target).unlink(missing_ok=True)
+                        legacy.conversation_cache_path(target).with_suffix(".deleted").unlink(
+                            missing_ok=True
+                        )
+                        if legacy.active_conversation_id() == target:
+                            legacy.set_active_conversation(None)
                         self._chat_projects.pop((key, target), None)
             except OSError as error:
                 raise RuntimeError(

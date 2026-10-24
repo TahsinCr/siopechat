@@ -19,6 +19,10 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 
 ### Changed
 
+- Move legacy per-account conversation caches, active-chat pointers and deletion markers into the existing SQLite stores. The account database migration is additive and preserves its session/catalog schema; the archive remains the canonical history store when enabled.
+- Count models across selected accounts of enabled providers and show how many provider catalogs are ready; fetch missing catalogs in the background without holding up chat startup.
+- Keep the composer available while a known chat's local history and provider refresh load; merge late history with any turn already sent from the tab.
+- Continue provider chat, project and expanded-project-chat pagination in the background so cached first pages remain usable while the rest of the library fills in.
 - Cache Gemini and Claude model catalogs for five minutes with explicit refresh support, and decode large Claude JSON and Gemini RPC responses off the provider event loop.
 - Reuse ChatGPT's account HTTP pool for project options and edits; stream project source files from disk instead of loading their entire content into memory.
 - Prepare enabled accounts with saved sessions in bounded background workers at chat startup; provider requests share or wait for the same first-session initialization.
@@ -48,6 +52,7 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 - Reuse bounded, content-keyed message line counts across SQL history windows even after rendered strings are evicted, avoiding full Markdown conversions solely to rebuild scroll geometry.
 - Share one latest-viewport render queue between main and split views; reuse unchanged message geometry and rendered rows when history grows instead of repeating Markdown conversions.
 - Keep cached transcript rows visible while Markdown pages render, and preserve the latest visible message when scrolling during an older history page's render preparation.
+- Clear a chat's background-sync marker on refresh failure while retaining the last cached history.
 - Serialize Gemini credential rotation and finish in-flight credential writes before cancellation releases their lock; persist the final Gemini cookies during shutdown.
 - Coalesce Claude's initial bootstrap, workspace selection and model discovery so simultaneous warmup and chat reads do not repeat the first handshake.
 - Read Gemini notebook membership from the general conversation list so notebook chats stay under their projects; preserve known membership when stale listing pages omit it during archive refresh or pagination.

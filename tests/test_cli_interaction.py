@@ -467,11 +467,13 @@ class ProviderUiTests(unittest.TestCase):
                 i for i, row in enumerate(view.sidebar_rows) if row["kind"] == "project"
             )
             view.toggle_sidebar_group()
-            list_chats.assert_called_once_with("g-p-work", None)
+            self.assertEqual(
+                list_chats.call_args_list,
+                [unittest.mock.call("g-p-work", None), unittest.mock.call("g-p-work", "page2")],
+            )
             self.assertIn("One", str(view.render_sidebar()))
-            self.assertIn("Daha fazla sohbet", str(view.render_sidebar()))
+            self.assertIn("Two", str(view.render_sidebar()))
             view.load_project_chats("g-p-work", more=True)
-            self.assertEqual(list_chats.call_args.args, ("g-p-work", "page2"))
             self.assertIn("Two", str(view.render_sidebar()))
             view.messages = [{"role": "user", "text": "Keep this chat"}]
             view.show_project_details("g-p-work")

@@ -149,7 +149,7 @@ class DeleteAndCacheTests(unittest.TestCase):
         self.assertIn(chat["id"], result["removed"])
         self.assertIsNone(self.accounts.cached(self.key, "c_abc"))
         self.assertIsNone(self.accounts.cache(self.key).load_cached_conversation("c_abc"))
-        self.assertTrue(
+        self.assertFalse(
             self.accounts.cache(self.key)
             .conversation_cache_path("c_abc")
             .with_suffix(".deleted")

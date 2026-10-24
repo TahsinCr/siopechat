@@ -39,6 +39,63 @@ class AccountTests(unittest.TestCase):
         self.accounts = self.api.get("accounts")
         self.gemini = self.accounts.add("gemini", "Personal Gemini")
 
+    def test_legacy_account_json_moves_to_archive_before_source_is_removed(self):
+        backend = self.accounts.cache(self.gemini)
+        remote = "legacy-cache-chat"
+        conversation_path = backend.conversation_cache_path(remote)
+        backend.atomic_json_write(
+            conversation_path,
+            {
+                "id": remote,
+                "title": "Local history",
+                "messages": [{"id": "m1", "role": "user", "text": "saved"}],
+            },
+        )
+        backend.set_active_conversation(remote)
+
+        self.accounts._migrate_legacy_account_cache()
+
+        archive = self.accounts.archive()
+        self.assertEqual(archive.get(self.gemini, "conversation", remote)["title"], "Local history")
+        self.assertEqual(archive.get(self.gemini, "pointer", "active"), {"remote": remote})
+        self.assertFalse(conversation_path.exists())
+        self.assertFalse(backend.active_conversation_path().exists())
+
+    def test_legacy_deleted_marker_migrates_as_tombstone(self):
+        backend = self.accounts.cache(self.gemini)
+        remote = "legacy-deleted-chat"
+        backend.cache_conversation(
+            {"id": remote, "title": "Deleted", "messages": [{"role": "user", "text": "old"}]}
+        )
+        marker = backend.conversation_cache_path(remote).with_suffix(".deleted")
+        backend.mark_conversation_deleted(remote)
+
+        self.accounts._migrate_legacy_account_cache()
+
+        self.assertTrue(self.accounts.archive().deleted(self.gemini, "conversation", remote))
+        self.assertFalse(marker.exists())
+        self.assertIsNone(self.accounts.archive().get(self.gemini, "conversation", remote))
+
+    def test_legacy_cache_uses_account_database_when_archive_is_disabled(self):
+        backend = self.accounts.cache(self.gemini)
+        remote = "fallback-cache-chat"
+        conversation_path = backend.conversation_cache_path(remote)
+        backend.atomic_json_write(
+            conversation_path,
+            {
+                "id": remote,
+                "title": "Fallback",
+                "messages": [{"role": "assistant", "text": "kept"}],
+            },
+        )
+
+        with patch.object(self.accounts, "archive", return_value=None):
+            self.accounts._migrate_account_cache(self.gemini)
+
+        cached = self.accounts.repository.cache_get(self.gemini, "conversation", remote)
+        self.assertEqual(cached["title"], "Fallback")
+        self.assertFalse(conversation_path.exists())
+
     def test_project_refresh_reports_each_provider_as_soon_as_it_finishes(self):
         fast_key, slow_key = "chatgpt/fast", "claude/slow"
         account_items = [

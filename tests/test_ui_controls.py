@@ -66,6 +66,49 @@ class UiControlsTests(unittest.TestCase):
             self.assertIsNone(view.history_cursor)
             self.assertFalse(view.history_loading)
 
+    def test_history_pages_continue_in_background_until_provider_history_is_complete(self):
+        pages = {
+            "page-1": {"items": [{"id": "two", "title": "Older 1"}], "cursor": "page-2"},
+            "page-2": {"items": [{"id": "three", "title": "Older 2"}], "cursor": None},
+        }
+        fetch = Mock(side_effect=lambda cursor: pages[cursor])
+        with terminal(list_history_page=fetch) as (view, _):
+            view._read_in_background = immediate
+            view.sidebar_items = [{"id": "one", "title": "Latest"}]
+            view.history_cursor = "page-1"
+
+            view.load_more_history()
+
+            self.assertEqual(
+                fetch.call_args_list, [unittest.mock.call("page-1"), unittest.mock.call("page-2")]
+            )
+            self.assertEqual([item["id"] for item in view.sidebar_items], ["one", "two", "three"])
+            self.assertIsNone(view.history_cursor)
+
+    def test_project_and_expanded_project_chat_pages_finish_in_background(self):
+        project_pages = {
+            None: {"items": [{"id": "project-1", "name": "One"}], "cursor": "p2"},
+            "p2": {"items": [{"id": "project-2", "name": "Two"}], "cursor": None},
+        }
+        chat_pages = {
+            None: {"items": [{"id": "chat-1", "title": "One"}], "cursor": "c2"},
+            "c2": {"items": [{"id": "chat-2", "title": "Two"}], "cursor": None},
+        }
+        project_fetch = Mock(side_effect=lambda cursor: project_pages[cursor])
+        chat_fetch = Mock(side_effect=lambda _project, cursor: chat_pages[cursor])
+        with terminal(list_projects=project_fetch, list_project_chats=chat_fetch) as (view, _):
+            view._read_in_background = immediate
+
+            view.refresh_projects()
+            view.load_project_chats("project-1")
+
+            self.assertEqual(set(view.project_items), {"project-1", "project-2"})
+            self.assertEqual({item["id"] for item in view.sidebar_items}, {"chat-1", "chat-2"})
+            self.assertEqual(project_fetch.call_count, 2)
+            self.assertEqual(chat_fetch.call_count, 2)
+            self.assertIsNone(view.project_cursor)
+            self.assertIsNone(view.project_chat_cursors["project-1"])
+
     def test_transcript_status_redraw_reuses_complete_render(self):
         with terminal(initial_messages=[{"role": "assistant", "text": "Hello"}]) as (view, _):
             with patch.object(view.renderer, "render", wraps=view.renderer.render) as render:

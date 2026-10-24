@@ -155,6 +155,8 @@ class ChatView:
         self.move_conversation = move_conversation
         self.history_cursor = None
         self.history_loading = False
+        self._history_page_token = 0
+        self._history_seen_cursors: set[str] = set()
         self.list_conversations = list_conversations
         self.load_conversation = load_conversation
         self.send_prompt = send_prompt
@@ -185,6 +187,8 @@ class ChatView:
         self.project_chats_loaded: set[str] = set()
         self.project_chats_loading: set[str] = set()
         self.project_chat_cursors: dict[str, str | None] = {}
+        self._project_seen_cursors: set[str] = set()
+        self._project_chat_seen_cursors: dict[str, set[str]] = {}
         self.project_chat_errors: dict[str, str] = {}
         self.selected_message = 0
         self.message_selection = False
@@ -1687,25 +1691,38 @@ class ChatView:
         elif self.sidebar_index >= first + height:
             self.sidebar_window.vertical_scroll = self.sidebar_index - height + 1
 
-    def load_more_history(self):
+    def load_more_history(self, *, generation=None):
         if not self.list_history_page or not self.history_cursor or self.history_loading:
             return
+        generation = self.sidebar_refresh_generation if generation is None else generation
         self.history_loading = True
+        self._history_page_token += 1
+        token = self._history_page_token
         self._invalidate_sidebar_rows()
         self.app.invalidate()
         cursor = self.history_cursor
+        self._history_seen_cursors.add(cursor)
 
         def loaded(page):
+            if token != self._history_page_token or generation != self.sidebar_refresh_generation:
+                return
             by_id = {item["id"]: item for item in self.sidebar_items if item.get("id")}
             for item in page["items"]:
                 if item.get("id"):
                     by_id[item["id"]] = merge_chat_listing(by_id.get(item["id"]), item)
             self.sidebar_items = list(by_id.values())
-            self.history_cursor = page.get("cursor") if page.get("cursor") != cursor else None
+            next_cursor = page.get("cursor")
+            if next_cursor == cursor or next_cursor in self._history_seen_cursors:
+                next_cursor = None
+            self.history_cursor = next_cursor
             self.history_loading = False
             self.filter_sidebar()
+            if next_cursor:
+                self.load_more_history(generation=generation)
 
         def failed(reason):
+            if token != self._history_page_token or generation != self.sidebar_refresh_generation:
+                return
             self.history_loading = False
             self._invalidate_sidebar_rows()
             self.status = str(reason)
@@ -1720,6 +1737,10 @@ class ChatView:
             return
         self.sidebar_refresh_generation += 1
         generation = self.sidebar_refresh_generation
+        self._history_page_token += 1
+        self._history_seen_cursors.clear()
+        self.history_cursor = None
+        self.history_loading = False
         self.sidebar_loading = True
         self.app.invalidate()
 
@@ -1787,6 +1808,8 @@ class ChatView:
                         "Sol panel yenilenemedi; son kayıtlar korunuyor"
                     )
                 self.filter_sidebar()
+                if sidebar_error is None and cursor:
+                    self.load_more_history(generation=generation)
                 if getattr(self, "sidebar_refresh_pending", False):
                     self.sidebar_refresh_pending = False
                     self.refresh_sidebar()
@@ -1890,7 +1913,7 @@ class ChatView:
             self.effort = tab.get("effort")
             self.last_response_model = tab.get("response_model")
             if not self.active_busy():
-                self.status = self.tr("{0} model · hazır").format(len(catalog.chat_models))
+                self._update_model_catalog_status()
             if self.palette_visible and self.palette_mode in ("models", "effort"):
                 query = self.palette_search.text
                 self.open_palette(self.palette_mode)
@@ -1907,6 +1930,79 @@ class ChatView:
             self.app.invalidate()
 
         self._read_in_background(callback, success, failure, session_bound=False)
+
+    def _selected_model_accounts(self) -> list[dict[str, Any]]:
+        if not self.account_service or not hasattr(self.account_service, "active_accounts"):
+            return [{"key": self.account_key}]
+        try:
+            accounts = list(self.account_service.active_accounts())
+        except TypeError:
+            return []
+        return [item for item in accounts if isinstance(item, dict) and item.get("key")]
+
+    def _model_catalog_status(self) -> str:
+        accounts = self._selected_model_accounts()
+        ready = 0
+        models = 0
+        for account in accounts:
+            key = account["key"]
+            catalog = self._account_catalogs.get(key)
+            if (
+                catalog is None
+                and self.account_service
+                and hasattr(self.account_service, "cached_models")
+            ):
+                catalog = self.account_service.cached_models(key)
+                if catalog is not None:
+                    self._account_catalogs[key] = catalog
+            if catalog and catalog.state == FeatureState.AVAILABLE:
+                ready += 1
+                models += len(catalog.chat_models)
+        return self.tr("{0} model · {1}/{2} sağlayıcı").format(models, ready, len(accounts))
+
+    def _update_model_catalog_status(self) -> None:
+        if (
+            self.tab_kind == "chat"
+            and not self.conversation_id
+            and not self.messages
+            and not self.active_busy()
+        ):
+            self.status = self._model_catalog_status()
+
+    def refresh_other_provider_catalogs(self) -> None:
+        """Load enabled providers' model catalogs without delaying chat startup."""
+        if not self.account_service or not hasattr(self.account_service, "active_accounts"):
+            return
+        accounts = self._selected_model_accounts()
+        self._update_model_catalog_status()
+        for account in accounts:
+            key = account["key"]
+            catalog = self._account_catalogs.get(key)
+            if catalog is None and hasattr(self.account_service, "cached_models"):
+                catalog = self.account_service.cached_models(key)
+                if catalog is not None:
+                    self._account_catalogs[key] = catalog
+            if key == self.account_key or key in self._model_picker_requests:
+                continue
+            self._model_picker_requests.add(key)
+
+            def loaded(value, key=key):
+                self._model_picker_requests.discard(key)
+                self._account_catalogs[key] = value
+                self._update_model_catalog_status()
+                self.app.invalidate()
+
+            def failed(reason, key=key):
+                self._model_picker_requests.discard(key)
+                self._update_model_catalog_status()
+                self.app.invalidate()
+
+            self._read_in_background(
+                lambda key=key: self.account_service.models(key),
+                loaded,
+                failed,
+                session_bound=False,
+            )
 
     def normalize_model_selection(self):
         if self.catalog.state != FeatureState.AVAILABLE or self.active_busy():
@@ -1985,7 +2081,14 @@ class ChatView:
         account_key = self.account_key
         if self.list_projects_callback is None or account_key in self._project_requests:
             return
+        if not more:
+            self._project_seen_cursors.clear()
         cursor = self.project_cursor if more else None
+        if cursor:
+            if cursor in self._project_seen_cursors:
+                self.project_cursor = None
+                return
+            self._project_seen_cursors.add(cursor)
         token = uuid.uuid4().hex
         self._project_requests[account_key] = token
         self.projects_loading = True
@@ -2064,9 +2167,8 @@ class ChatView:
                 failure(self.tr("Proje listesi geçersiz"), finished=True)
                 return
             next_cursor = result.get("cursor")
-            if cursor and next_cursor == cursor:
-                failure(self.tr("Sağlayıcı aynı proje sayfasını döndürdü"), finished=True)
-                return
+            if next_cursor and next_cursor in self._project_seen_cursors:
+                next_cursor = None
             failed = set(result.get("failed_accounts", []))
             projects = (
                 dict(self.project_items)
@@ -2101,6 +2203,8 @@ class ChatView:
             self.filter_sidebar()
             if self.palette_visible and self.palette_mode == "projects":
                 self.open_project_picker(getattr(self, "project_picker_purpose", "select"))
+            if next_cursor:
+                self.refresh_projects(more=True)
 
         def failure(reason, *, finished=False):
             current = (
@@ -2121,7 +2225,15 @@ class ChatView:
     def load_project_chats(self, project_id: str, more: bool = False) -> None:
         if self.list_project_chats_callback is None or project_id in self.project_chats_loading:
             return
+        seen = self._project_chat_seen_cursors.setdefault(project_id, set())
+        if not more:
+            seen.clear()
         cursor = self.project_chat_cursors.get(project_id) if more else None
+        if cursor:
+            if cursor in seen:
+                self.project_chat_cursors[project_id] = None
+                return
+            seen.add(cursor)
         self.project_chats_loading.add(project_id)
         self._invalidate_sidebar_rows()
         self.app.invalidate()
@@ -2131,9 +2243,8 @@ class ChatView:
                 failure(self.tr("Proje sohbetleri geçersiz"))
                 return
             next_cursor = result.get("cursor")
-            if cursor and next_cursor == cursor:
-                failure(self.tr("Sağlayıcı aynı sohbet sayfasını döndürdü"))
-                return
+            if next_cursor and next_cursor in seen:
+                next_cursor = None
             items = {item["id"]: item for item in self.sidebar_items if item.get("id")}
             for item in result["items"]:
                 if not isinstance(item, dict) or not item.get("id"):
@@ -2150,6 +2261,8 @@ class ChatView:
             self.project_chat_errors.pop(project_id, None)
             self.project_chat_cursors[project_id] = next_cursor
             self.filter_sidebar()
+            if next_cursor:
+                self.load_project_chats(project_id, more=True)
 
         def failure(reason):
             self.project_chats_loading.discard(project_id)
@@ -2499,6 +2612,7 @@ class ChatView:
                         def loaded(value, key=key):
                             self._model_picker_requests.discard(key)
                             self._account_catalogs[key] = value
+                            self._update_model_catalog_status()
                             if self.palette_visible and self.palette_mode in ("models", "actions"):
                                 query = self.palette_search.text
                                 self.open_palette(self.palette_mode)
@@ -2506,7 +2620,7 @@ class ChatView:
 
                         def failed(reason, key=key):
                             self._model_picker_requests.discard(key)
-                            self.status = self.tr("Model kataloğu alınamadı: ") + key
+                            self._update_model_catalog_status()
 
                         self._read_in_background(
                             lambda key=key: self.account_service.models(key),
@@ -4537,7 +4651,6 @@ class ChatView:
                 temporary=False,
                 kind="chat",
             )
-            cached = None
         load_callback = self.load_conversation
         cached_layout = target_tab.pop("render_layout", None)
         target_tab.pop("render_signature", None)
@@ -4556,8 +4669,9 @@ class ChatView:
         self.status = self.tr("Loading conversation…")
         target_tab.update(loading=True, loading_started=self.loading_started, load_token=token)
         if self.account_service:
-            # The provider resolves its remote parent/context itself. UI history
-            # hydration does not have to block typing or a send to a known ID.
+            # The conversation ID is already known, so keep the composer usable
+            # while local history and provider synchronization arrive. Their
+            # results are merged with any turn the user starts in the meantime.
             row = next((x for x in self.sidebar_items if x.get("id") == conversation_id), {})
             project_id = row.get("project_id")
             project = dict(self.project_items.get(project_id, {}))
@@ -4565,11 +4679,9 @@ class ChatView:
                 project["id"] = project_id
             target_tab.update(
                 conversation_id=conversation_id,
-                messages=target_tab["messages"] if cached is not None else [],
-                title=target_tab["title"]
-                if cached is not None
-                else row.get("title") or self.tr("Sohbet"),
-                project=target_tab.get("project", {}) if cached is not None else project,
+                messages=[],
+                title=row.get("title") or self.tr("Sohbet"),
+                project=project,
                 loading=False,
                 syncing=True,
             )
@@ -4604,13 +4716,10 @@ class ChatView:
                         return
                     if target_tab is self.tabs[self.active_tab]:
                         self._save_active_tab()
-                    if target_tab.get("busy"):
-                        # Account persistence will append to the hydrated archive.
-                        # Never replace the composer/stream while it is running.
-                        target_tab["syncing"] = False
-                        self.app.invalidate()
-                        return
                     visible_messages = messages
+                    # History can finish after a local send has started. Merge
+                    # against the current tab snapshot so pending turns and the
+                    # active stream survive while missing history is inserted.
                     visible_messages = merge_conversation(
                         {"messages": visible_messages}, {"messages": target_tab.get("messages", [])}
                     )["messages"]
@@ -4659,12 +4768,21 @@ class ChatView:
 
                 self._dispatch_ui(apply_conversation)
                 if cached is not None and self.archive_service():
+
+                    def sync_failed(reason):
+                        if (
+                            not any(tab is target_tab for tab in self.tabs)
+                            or target_tab.get("load_token") != token
+                        ):
+                            return
+                        target_tab["syncing"] = False
+                        self.status = self.tr("Senkronizasyon: ") + reason
+                        self.app.invalidate()
+
                     self._read_in_background(
                         lambda: load_callback(conversation_id),
                         lambda _: self.apply_archive_updates(),
-                        lambda reason: setattr(
-                            self, "status", self.tr("Senkronizasyon: ") + reason
-                        ),
+                        sync_failed,
                         session_bound=False,
                     )
                 elif cached is not None:
@@ -5005,6 +5123,7 @@ class ChatView:
                     session_bound=False,
                 )
             self.refresh_provider_catalog()
+            self.refresh_other_provider_catalogs()
             self.refresh_sidebar()
             if self.load_on_start and self.conversation_id is not None:
                 self.resume_conversation(self.conversation_id)

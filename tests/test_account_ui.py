@@ -3,7 +3,7 @@
 import asyncio
 import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from providers import Capability
 from providers.models import Choice, FeatureState, Model, ModelCatalog
@@ -41,6 +41,9 @@ class Accounts:
 
     def active(self):
         return self.selected
+
+    def cached_models(self, _key):
+        return None
 
     def items(self):
         return self.entries
@@ -128,6 +131,84 @@ class AccountUiTests(unittest.IsolatedAsyncioTestCase):
             self.assertIs(v.catalog, expected)
             v.open_palette("models")
             self.assertEqual([i["id"] for i in v.palette_items], ["model.select:chatgpt/default"])
+
+    async def test_new_chat_status_counts_all_enabled_provider_catalogs(self):
+        service = Accounts()
+        service.entries.append(
+            {
+                "key": "claude/work",
+                "provider": "claude",
+                "id": "work",
+                "label": "Claude",
+                "icon": "✳",
+            }
+        )
+        service.active_accounts = lambda: service.entries
+        catalogs = {
+            "chatgpt/default": ModelCatalog(
+                FeatureState.AVAILABLE, (Model("g1", "GPT 1"), Model("g2", "GPT 2"))
+            ),
+            "gemini/personal": ModelCatalog(
+                FeatureState.AVAILABLE,
+                (Model("gm1", "Gemini 1"), Model("gm2", "Gemini 2"), Model("gm3", "Gemini 3")),
+            ),
+            "claude/work": ModelCatalog(
+                FeatureState.AVAILABLE,
+                (Model("c1", "Claude 1"), Model("c2", "Claude 2"), Model("c3", "Claude 3")),
+            ),
+        }
+        service.models = lambda key: catalogs[key]
+        with interaction.terminal(account_service=service) as (view, _):
+            view._read_in_background = immediate
+            view._account_catalogs["chatgpt/default"] = catalogs["chatgpt/default"]
+            view.catalog = catalogs["chatgpt/default"]
+            view.refresh_other_provider_catalogs()
+
+            self.assertIn("8", view.status)
+            self.assertIn("3/3", view.status)
+
+    async def test_cached_conversation_can_send_before_provider_refresh_finishes(self):
+        service = Accounts()
+        service.active_accounts = lambda: service.entries
+        service.archive = lambda: object()
+        service.cached_models = lambda _key: ModelCatalog(
+            FeatureState.AVAILABLE, (Model("gpt-test", "GPT test"),)
+        )
+        cached = {"title": "Cached history", "messages": [{"role": "user", "text": "Earlier"}]}
+        service.cached_window = lambda _key, _remote: cached
+        provider_load = Mock(side_effect=AssertionError("provider refresh must stay in background"))
+        callbacks = service.callbacks("chatgpt/default")
+        callbacks["load_conversation"] = provider_load
+        service.callbacks = lambda _key: callbacks
+
+        with interaction.terminal(account_service=service) as (view, _):
+            conversation_id = "@chatgpt/default/remote-chat"
+            view.sidebar_items = [{"id": conversation_id, "title": "Cached history"}]
+            pending_reads = []
+            view._reads.submit = lambda read: pending_reads.append(read) or True
+            provider_refreshes = []
+            view._read_in_background = lambda *args, **kwargs: provider_refreshes.append(args)
+
+            view.resume_conversation(conversation_id)
+            self.assertFalse(view.loading_conversation)
+            view.input.text = "Continue while syncing"
+            with patch("cli.chat.threading.Thread") as thread:
+                view.submit_prompt()
+            thread.return_value.start.assert_called_once_with()
+            self.assertTrue(view.tabs[view.active_tab]["busy"])
+
+            pending_reads.pop()()
+
+            self.assertFalse(view.loading_conversation)
+            self.assertIn("Earlier", [message["text"] for message in view.messages])
+            self.assertIn("Continue while syncing", [message["text"] for message in view.messages])
+            self.assertTrue(view.tabs[view.active_tab]["busy"])
+            self.assertTrue(view.tabs[view.active_tab]["syncing"])
+            self.assertEqual(len(provider_refreshes), 1)
+            provider_load.assert_not_called()
+            provider_refreshes[0][2]("offline")
+            self.assertFalse(view.tabs[view.active_tab]["syncing"])
+            self.assertIn("offline", view.status)
 
     async def test_slow_other_account_catalog_never_blocks_current_refresh(self):
         service = Accounts()

@@ -146,7 +146,7 @@
   "ui.Ayar bağlantısı kurulmamış": "Настройки не подключены",
   "ui.Tema stilleri geçersiz; varsayılan görünüm kullanılıyor": "Некорректные стили темы; используется стандартное оформление",
   "ui.Düzenler": "Компоновки",
-  "ui.{0} model · hazır": "Моделей: {0} · готово",
+  "ui.{0} model · {1}/{2} sağlayıcı": "Моделей: {0} · провайдеров {1}/{2}",
   "ui.Model kataloğu alınamadı: {0} · F10 yeniden dene": "Не удалось загрузить каталог моделей: {0} · F10: повторить",
   "ui.Sağlayıcı bağlantısı hazırlanamadı: {0}": "Не удалось подготовить подключение провайдера: {0}",
   "ui.Proje bilgileri yükleniyor…": "Загрузка сведений о проекте…",

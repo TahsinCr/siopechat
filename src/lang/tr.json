@@ -146,7 +146,7 @@
   "ui.Ayar bağlantısı kurulmamış": "Ayar bağlantısı kurulmamış",
   "ui.Tema stilleri geçersiz; varsayılan görünüm kullanılıyor": "Tema stilleri geçersiz; varsayılan görünüm kullanılıyor",
   "ui.Düzenler": "Düzenler",
-  "ui.{0} model · hazır": "{0} model · hazır",
+  "ui.{0} model · {1}/{2} sağlayıcı": "{0} model · {1}/{2} sağlayıcı",
   "ui.Model kataloğu alınamadı: {0} · F10 yeniden dene": "Model kataloğu alınamadı: {0} · F10 yeniden dene",
   "ui.Sağlayıcı bağlantısı hazırlanamadı: {0}": "Sağlayıcı bağlantısı hazırlanamadı: {0}",
   "ui.Proje bilgileri yükleniyor…": "Proje bilgileri yükleniyor…",

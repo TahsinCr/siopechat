@@ -146,7 +146,7 @@
   "ui.Ayar bağlantısı kurulmamış": "Settings are not connected",
   "ui.Tema stilleri geçersiz; varsayılan görünüm kullanılıyor": "Invalid theme styles; using defaults",
   "ui.Düzenler": "Layouts",
-  "ui.{0} model · hazır": "{0} models · ready",
+  "ui.{0} model · {1}/{2} sağlayıcı": "{0} models · {1}/{2} providers",
   "ui.Model kataloğu alınamadı: {0} · F10 yeniden dene": "Could not load model catalog: {0} · F10 to retry",
   "ui.Sağlayıcı bağlantısı hazırlanamadı: {0}": "Could not prepare provider connection: {0}",
   "ui.Proje bilgileri yükleniyor…": "Loading project details…",
