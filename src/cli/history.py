@@ -12,9 +12,11 @@ _render_gate = threading.Semaphore(1)
 
 
 def read_history(
-    archive, account, remote, *, start=None, before=None, complete=False, cancelled=None
+    archive, account, remote, *, start=None, before=None, complete=False, until=None, cancelled=None
 ):
     """Read lean history batches; never combine different SQLite revisions."""
+    if until is not None and (before is not None or start is None or until <= start):
+        raise ValueError("invalid bounded history range")
     for attempt in range(2):
         cursor, boundary = start, before
         result, messages, version = None, [], None
@@ -36,17 +38,28 @@ def read_history(
                 result = {k: v for k, v in page.items() if k != "messages"}
                 result["history_window"] = dict(window)
                 version = current_version
-            messages.extend(
+            page_messages = [
                 m for item in page.get("messages", ()) if (m := visible_chat_message(item))
-            )
+            ]
+            if until is not None and boundary is None:
+                page_messages = [
+                    message
+                    for message in page_messages
+                    if message.get("_archive_ordinal") is not None
+                    and message["_archive_ordinal"] < until
+                ]
+            messages.extend(page_messages)
             extent = result["history_window"]
             extent.update(
                 start=min(extent["start"], window["start"]), end=max(extent["end"], window["end"])
             )
+            if until is not None and boundary is None:
+                extent["end"] = min(extent["end"], until)
             if (
                 not complete
                 or (boundary is not None and window["start"] == 0)
                 or (boundary is None and window["end"] >= window["total"])
+                or (until is not None and window["end"] >= until)
             ):
                 messages.sort(key=lambda m: m.get("_archive_ordinal", -1))
                 return dict(result, messages=messages)
@@ -149,7 +162,15 @@ def prepare_archive_snapshot(
         ):
             continue
         window = record.get("history_window") or {}
-        value = read_history(archive, key, remote, start=window.get("start"), complete=bool(window))
+        has_window = window.get("end", 0) > window.get("start", 0)
+        value = read_history(
+            archive,
+            key,
+            remote,
+            start=window.get("start") if has_window else None,
+            complete=has_window,
+            until=window["end"] if has_window else None,
+        )
         values[key, "conversation", remote] = value
     for cid, kind in identities:
         if cid:

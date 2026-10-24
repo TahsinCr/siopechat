@@ -337,8 +337,10 @@ class TaskService:
                     try:
                         job.result = await asyncio.shield(writing)
                     except asyncio.CancelledError:
-                        await asyncio.shield(writing)
-                        raise
+                        # The provider has already completed and persistence has
+                        # started. Finish that accepted write, then report success;
+                        # cancelling here would mislabel durable data as discarded.
+                        job.result = await asyncio.shield(writing)
                 self._changed(job_id, JobState.COMPLETED)
         except asyncio.CancelledError:
             self._changed(job_id, JobState.CANCELLED)

@@ -310,7 +310,10 @@ class AsyncPagingUITests(unittest.IsolatedAsyncioTestCase):
                             view.transcript_window._scroll_up()
                             view.app.invalidate()
                             await settle(lambda: view.tabs[0]["history_window"]["start"] < 320)
-                            self.assertEqual(len(view.messages), 400)
+                            self.assertEqual(
+                                [message["id"] for message in view.messages],
+                                [str(index) for index in range(240, 400)],
+                            )
                             self.assertEqual(view.input.text, "Unsent draft")
                             view.close_tab()
                             self.assertEqual(view.messages, [])

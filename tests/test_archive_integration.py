@@ -10,6 +10,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
+from cli.history import prepare_archive_snapshot
 from extensions.archive.repository import Files, SQLiteRepository, encode
 from extensions.archive.sync import Archive
 from providers import Capability
@@ -116,6 +117,61 @@ class ArchiveIntegrationTests(unittest.TestCase):
                 ["Earlier", "New question", "Published summary", "New completed reply"],
             )
             self.assertEqual(view.input.text, "Next draft")
+
+    def test_archive_revision_refreshes_only_the_resident_transcript_window(self):
+        archive = self.api.get("archive")
+        account, remote = self.gemini, "long-window"
+        history = [
+            {"id": f"m{i}", "role": "assistant", "text": f"message-{i}"} for i in range(1000)
+        ]
+        archive.put(account, "conversation", remote, {"title": "Long", "messages": history})
+        archive._state((account, "conversation", remote), "ready")
+
+        with terminal(account_service=self.accounts) as (view, _):
+            view.account_key = account
+            window = {"start": 400, "end": 480, "total": 1000}
+            visible = [
+                dict(item, _archive_ordinal=i) for i, item in enumerate(history[400:480], 400)
+            ]
+            tab = view.tabs[0]
+            tab.update(
+                conversation_id=f"@{account}/{remote}",
+                account_key=account,
+                history_window=window,
+                history_version="old-version",
+                archive_version=0,
+                messages=visible,
+            )
+            view.messages = visible
+            record = {
+                key: tab.get(key)
+                for key in (
+                    "conversation_id",
+                    "account_key",
+                    "busy",
+                    "archive_version",
+                    "history_window",
+                )
+            }
+            snapshot = prepare_archive_snapshot(
+                archive,
+                self.accounts.active_accounts(),
+                [(tab, record)],
+                [],
+                [],
+                account,
+                archive.revision,
+            )
+            with patch.object(archive, "get", wraps=archive.get) as full_read:
+                view.apply_archive_updates(snapshot)
+
+        self.assertFalse(
+            any(call.args[1:3] == ("conversation", remote) for call in full_read.call_args_list)
+        )
+        self.assertEqual(
+            [item["_archive_ordinal"] for item in view.messages], list(range(400, 480))
+        )
+        self.assertEqual(tab["history_window"], window)
 
     def test_sync_updates_keep_draft_and_do_not_restore_deleted_first_page_rows(self):
         archive = self.api.get("archive")

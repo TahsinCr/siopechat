@@ -182,7 +182,7 @@ class PagingUITests(unittest.TestCase):
             HistoryPager.position(layout, (100, 101, 102), anchor, 20, 0), layout.ranges[1][0] + 1
         )
 
-    def test_last_edge_request_keeps_fetched_prefix_and_loads_missing_tail(self):
+    def test_last_edge_request_loads_the_requested_tail_page(self):
         from types import SimpleNamespace
 
         from tests.cli_support import terminal
@@ -195,15 +195,14 @@ class PagingUITests(unittest.TestCase):
             }
             for a, b in ((0, 40), (120, 200))
         ]
+        archive = SimpleNamespace(conversation_window=Mock(side_effect=pages))
         with terminal(initial_messages=original) as (view, _):
             tab = view.tabs[0]
             tab.update(
                 conversation_id="@chatgpt/default/chat",
                 history_window={"start": 40, "end": 120, "total": 200},
             )
-            view.archive_service = lambda: SimpleNamespace(
-                conversation_window=Mock(side_effect=pages)
-            )
+            view.archive_service = lambda: archive
             jobs = []
             view._read_in_background = lambda read, ready, failed, **kw: jobs.append((read, ready))
             self.assertTrue(view.history_pager.request("older"))
@@ -214,8 +213,125 @@ class PagingUITests(unittest.TestCase):
             self.assertEqual([m["id"] for m in view.messages], [str(i) for i in range(120)])
             read, ready = jobs.pop(0)
             ready(read())
-            self.assertEqual([m["id"] for m in view.messages], [str(i) for i in range(200)])
+            self.assertEqual([m["id"] for m in view.messages], [str(i) for i in range(120, 200)])
             self.assertTrue(view.follow_output)
+
+    def test_edge_navigation_reads_only_the_requested_archive_page(self):
+        from types import SimpleNamespace
+
+        from tests.cli_support import terminal
+
+        current = [dict(message(i, 20), _archive_ordinal=i) for i in range(40, 120)]
+        pages = [
+            {
+                "messages": [dict(message(i, 20), _archive_ordinal=i) for i in range(0, 80)],
+                "history_window": {"start": 0, "end": 80, "total": 200},
+            },
+            {
+                "messages": [dict(message(i, 20), _archive_ordinal=i) for i in range(120, 200)],
+                "history_window": {"start": 120, "end": 200, "total": 200},
+            },
+        ]
+        archive = SimpleNamespace(conversation_window=Mock(side_effect=pages))
+        with terminal(initial_messages=current) as (view, _):
+            tab = view.tabs[0]
+            tab.update(
+                conversation_id="@chatgpt/default/chat",
+                history_window={"start": 40, "end": 120, "total": 200},
+            )
+            view.archive_service = lambda: archive
+            jobs = []
+            view._read_in_background = lambda read, ready, failed, **kw: jobs.append((read, ready))
+
+            self.assertTrue(view.history_pager.request("top"))
+            read, ready = jobs.pop()
+            ready(read())
+            archive.conversation_window.assert_called_once_with("chatgpt/default", "chat", start=0)
+            self.assertEqual(tab["history_window"], {"start": 0, "end": 80, "total": 200})
+            self.assertEqual([m["_archive_ordinal"] for m in view.messages], list(range(80)))
+
+            self.assertTrue(view.history_pager.request("bottom"))
+            read, ready = jobs.pop()
+            ready(read())
+            archive.conversation_window.assert_called_with("chatgpt/default", "chat", start=None)
+            self.assertEqual(tab["history_window"], {"start": 120, "end": 200, "total": 200})
+            self.assertEqual([m["_archive_ordinal"] for m in view.messages], list(range(120, 200)))
+
+    def test_refresh_without_a_resident_range_loads_only_the_tail_page(self):
+        from types import SimpleNamespace
+
+        from tests.cli_support import terminal
+
+        page = {
+            "messages": [dict(message(i, 20), _archive_ordinal=i) for i in range(320, 400)],
+            "history_window": {"start": 320, "end": 400, "total": 400},
+        }
+        archive = SimpleNamespace(conversation_window=Mock(return_value=page))
+        with terminal(initial_messages=[]) as (view, _):
+            tab = view.tabs[0]
+            tab.update(
+                conversation_id="@chatgpt/default/chat",
+                history_window={"start": 0, "end": 0, "total": 400},
+            )
+            view.archive_service = lambda: archive
+            jobs = []
+            view._read_in_background = lambda read, ready, failed, **kw: jobs.append((read, ready))
+
+            self.assertTrue(view.history_pager.request("bottom", refresh=True))
+            read, ready = jobs.pop()
+            ready(read())
+
+        archive.conversation_window.assert_called_once_with("chatgpt/default", "chat", start=None)
+        self.assertEqual([m["_archive_ordinal"] for m in view.messages], list(range(320, 400)))
+
+    def test_scrolling_keeps_a_bounded_contiguous_resident_message_range(self):
+        from types import SimpleNamespace
+
+        from cli.paging import MAX_LOADED_MESSAGES
+        from tests.cli_support import terminal
+
+        cases = (
+            ("older", 240, 480, 160, 240, 160, 400),
+            ("newer", 160, 400, 400, 480, 240, 480),
+        )
+        for direction, first, end, page_first, page_end, kept_first, kept_end in cases:
+            with self.subTest(direction=direction):
+                current = [dict(message(i, 20), _archive_ordinal=i) for i in range(first, end)]
+                incoming = [
+                    dict(message(i, 20), _archive_ordinal=i) for i in range(page_first, page_end)
+                ]
+                page = {
+                    "messages": incoming,
+                    "history_window": {
+                        "start": page_first,
+                        "end": page_end,
+                        "total": 1000,
+                    },
+                }
+                with terminal(initial_messages=current) as (view, _):
+                    tab = view.tabs[0]
+                    tab.update(
+                        conversation_id="@chatgpt/default/chat",
+                        history_window={"start": first, "end": end, "total": 1000},
+                    )
+                    view.archive_service = lambda: SimpleNamespace(
+                        conversation_window=Mock(return_value=page)
+                    )
+                    jobs = []
+                    view._read_in_background = lambda read, ready, failed, **kw: jobs.append(
+                        (read, ready)
+                    )
+                    self.assertTrue(view.history_pager.request(direction))
+                    read, ready = jobs.pop()
+                    ready(read())
+
+                    ordinals = [m["_archive_ordinal"] for m in view.messages]
+                    self.assertEqual(len(ordinals), MAX_LOADED_MESSAGES)
+                    self.assertEqual(ordinals, list(range(kept_first, kept_end)))
+                    self.assertEqual(
+                        tab["history_window"],
+                        {"start": kept_first, "end": kept_end, "total": 1000},
+                    )
 
     def test_direction_reversal_keeps_new_prefix_and_the_latest_viewport(self):
         from types import SimpleNamespace
@@ -306,8 +422,14 @@ class PagingUITests(unittest.TestCase):
                 view.messages.pop()
                 view._read_in_background = immediate
                 self.assertTrue(view.history_pager.request("top"))
-                self.assertEqual([m["id"] for m in view.messages], [str(i) for i in range(400)])
-                self.assertFalse(view.history_pager.request("bottom"))
+                self.assertEqual([m["id"] for m in view.messages], [str(i) for i in range(80)])
+                self.assertEqual(
+                    view.tabs[0]["history_window"], {"start": 0, "end": 80, "total": 400}
+                )
+                self.assertTrue(view.history_pager.request("bottom"))
+                self.assertEqual(
+                    [m["id"] for m in view.messages], [str(i) for i in range(320, 400)]
+                )
                 view._reads.close()
                 view._render_reads.close()
                 view._operations.close()

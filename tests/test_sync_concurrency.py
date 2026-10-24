@@ -186,6 +186,40 @@ class SyncConcurrencyTests(unittest.TestCase):
             ).fetchone()[0]
         self.assertEqual(digest, hashlib.sha256(encode(value).encode()).hexdigest())
 
+    def test_gapped_partial_provider_page_cannot_delete_archived_tail(self):
+        account, remote = "gemini/a", "gapped-partial-chat"
+        key = account, "conversation", remote
+        history = [{"id": f"m{i}", "role": "user", "text": f"archived-{i}"} for i in range(5000)]
+        self.archive.put(
+            account,
+            "conversation",
+            remote,
+            {"history_complete": True, "messages": history},
+        )
+        entered, release = threading.Event(), threading.Event()
+
+        def fetch():
+            entered.set()
+            if not release.wait(3):
+                raise TimeoutError("test barrier")
+            return {"history_complete": False, "messages": history[2500:2580]}
+
+        with patch.object(
+            self.repo, "replace_conversation_tail", wraps=self.repo.replace_conversation_tail
+        ) as replace_tail:
+            self.archive.read(account, "conversation", remote, fetch, force=True, window=True)
+            self.assertTrue(entered.wait(1))
+            future = self.archive._pending[key]
+            release.set()
+            future.result(3)
+
+        replace_tail.assert_not_called()
+        first = self.archive.conversation_window(account, remote, start=0, limit=1)
+        tail = self.archive.conversation_window(account, remote, limit=1)
+        self.assertEqual(first["messages"][0]["text"], "archived-0")
+        self.assertEqual(tail["messages"][0]["text"], "archived-4999")
+        self.assertEqual(tail["history_window"]["total"], 5000)
+
     def test_cold_snapshot_cannot_replace_a_concurrent_new_write_in_hot_cache(self):
         self.archive.put("gemini/a", "conversation", "one", {"title": "old"})
         self.archive._hot.clear()

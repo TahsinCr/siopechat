@@ -102,6 +102,8 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 - Count distinct files across Claude's full conversation tree before sending attachments, limit the new files to the remaining conversation quota, and stop safely when the provider cannot confirm current usage.
 - Close the runtime before removing the paging test's temporary SQLite directory, fixing the Windows CI file-lock failure.
 - Avoid re-queuing first-page records already fetched by an explicit library sync, pace ChatGPT history pages, honor provider retry delays after HTTP 429, and identify rate-limited sync failures in the status line while retaining cached data.
+- Keep an existing archive intact when a partial provider history page cannot prove contiguous coverage, and report a response as completed if cancellation arrives during its durable save.
+- Bound in-memory transcript history to the active page window during scrolling and refresh, while keeping the complete conversation in SQLite.
 
 ### Removed
 

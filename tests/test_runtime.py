@@ -151,6 +151,32 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(persisted[0].text, "partial response")
         self.assertEqual(persisted[0].conversation_id, "remote-one")
 
+    async def test_cancel_during_persistence_finishes_accepted_response(self):
+        persist_started = asyncio.Event()
+        persist_release = asyncio.Event()
+        persisted = []
+
+        async def persist(snapshot):
+            persist_started.set()
+            await persist_release.wait()
+            persisted.append(snapshot.text)
+            return "saved"
+
+        job = self.runtime.submit(request(), on_complete=persist)
+        await self.started(self.gpt)
+        self.gpt.release("one")
+        await asyncio.wait_for(persist_started.wait(), 1)
+
+        stopping = asyncio.create_task(self.runtime.cancel(job))
+        await asyncio.sleep(0)
+        self.assertEqual(self.runtime.snapshot(job).state, JobState.CANCELLING)
+        persist_release.set()
+
+        result = await asyncio.wait_for(stopping, 1)
+        self.assertEqual(result.state, JobState.COMPLETED)
+        self.assertEqual(await self.runtime.result(job), "saved")
+        self.assertEqual(persisted, ["partial response"])
+
     async def test_cancel_queued_does_not_affect_running_job(self):
         running = self.runtime.submit(request())
         queued = self.runtime.submit(request("two"))

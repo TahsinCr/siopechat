@@ -6,6 +6,8 @@ from providers.history import merge_conversation
 from .history import read_history
 from .markdown import visible_chat_message
 
+MAX_LOADED_MESSAGES = 240
+
 
 def visible_window(value, local=()):
     messages = [m for item in value.get("messages", ()) if (m := visible_chat_message(item))]
@@ -118,30 +120,45 @@ class HistoryPager:
             return tab.get("history_read") is not token
 
         def read():
-            options = (
-                {"start": window["start"], "complete": True}
-                if refresh
-                else {"before": window["start"], "complete": direction == "top"}
-                if backwards
-                else {"start": window["end"], "complete": direction == "bottom"}
-            )
-            if refresh and not window["total"]:
+            if refresh:
+                options = (
+                    {"start": window["start"], "complete": True, "until": window["end"]}
+                    if window["end"] > window["start"]
+                    else {"start": None}
+                )
+            elif direction == "top":
+                options = {"start": 0}
+            elif direction == "bottom":
                 options = {"start": None}
+            elif backwards:
+                options = {"before": window["start"]}
+            else:
+                options = {"start": window["end"]}
             result = read_history(archive, key, remote, cancelled=cancelled, **options)
             old_version = tab.get("history_version")
             if result and old_version and old_version != result.get("history_version"):
-                # A provider sync may have edited/reordered the archive. Re-read
-                # the loaded range as one revision instead of resurrecting old IDs.
-                result = read_history(
-                    archive,
-                    key,
-                    remote,
-                    start=min(window["start"], result["history_window"]["start"]),
-                    complete=True,
-                    cancelled=cancelled,
-                )
+                # Re-read only the affected page or resident range. A refresh must
+                # not turn a bounded viewport into a full-history materialization.
+                if direction == "top":
+                    result = read_history(archive, key, remote, start=0, cancelled=cancelled)
+                elif direction == "bottom":
+                    result = read_history(archive, key, remote, cancelled=cancelled)
+                else:
+                    start = min(window["start"], result["history_window"]["start"])
+                    end = max(window["end"], result["history_window"]["end"])
+                    result = read_history(
+                        archive,
+                        key,
+                        remote,
+                        start=start,
+                        complete=True,
+                        until=end,
+                        cancelled=cancelled,
+                    )
                 if result is not None:
                     result["_replace_loaded"] = True
+            elif result and direction in ("top", "bottom"):
+                result["_replace_loaded"] = True
             return result
 
         def finished(value):
@@ -182,6 +199,16 @@ class HistoryPager:
                     start=min(window["start"], extent["start"]),
                     end=max(window["end"], extent["end"]),
                 )
+            archived = [m for m in messages if m.get("_archive_ordinal") is not None]
+            pending_messages = [m for m in messages if m.get("_archive_ordinal") is None]
+            if len(archived) > MAX_LOADED_MESSAGES:
+                if direction == "older":
+                    archived = archived[:MAX_LOADED_MESSAGES]
+                    extent["end"] = min(extent["end"], archived[-1]["_archive_ordinal"] + 1)
+                else:
+                    archived = archived[-MAX_LOADED_MESSAGES:]
+                    extent["start"] = max(extent["start"], archived[0]["_archive_ordinal"])
+                messages = archived + pending_messages
             tab.update(
                 messages=messages,
                 history_window=extent,

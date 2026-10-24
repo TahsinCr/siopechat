@@ -689,15 +689,17 @@ class ChatView:
                 self._archive_revision = -1
                 continue
             window = tab.get("history_window") or {}
+            has_window = window.get("end", 0) > window.get("start", 0)
             value = (
-                archive.get(key, "conversation", remote)
+                snapshot.get(key, "conversation", remote)
                 if snapshot is not None
                 else read_history(
                     archive,
                     key,
                     remote,
-                    start=window.get("start"),
-                    complete=bool(window),
+                    start=window.get("start") if has_window else None,
+                    complete=has_window,
+                    until=window["end"] if has_window else None,
                 )
             )
             if not value:

@@ -93,6 +93,7 @@ class Repository(Protocol):
     def containers(self, account, limit=50, offset=0): ...
     def messages(self, account, remote, limit=100, offset=0): ...
     def message_ordinal(self, account, remote, message_id): ...
+    def message_ordinals(self, account, remote, message_ids): ...
     def partial_history_window(self, account, remote, start, *, prefix, tail): ...
     def replace_conversation_tail(self, account, remote, start, value): ...
     def conversation_window(
@@ -779,6 +780,30 @@ class SQLiteRepository:
                 (account, remote, message_id),
             ).fetchone()
         return row[0] if row else None
+
+    def message_ordinals(self, account, remote, message_ids):
+        """Resolve provider IDs in bounded SQL batches, preserving their input order."""
+        ids = tuple(message_ids)
+        if not ids:
+            return ()
+        positions = {}
+        with self._connect() as db:
+            for offset in range(0, len(ids), 400):
+                batch = tuple(dict.fromkeys(ids[offset : offset + 400]))
+                if not batch:
+                    continue
+                placeholders = ",".join("?" for _ in batch)
+                rows = db.execute(
+                    "SELECT remote,MIN(ordinal),COUNT(*) FROM messages "
+                    f"WHERE account=? AND conversation=? AND remote IN ({placeholders}) "
+                    "GROUP BY remote",
+                    (account, remote, *batch),
+                )
+                positions.update(
+                    (message_id, ordinal if count == 1 else None)
+                    for message_id, ordinal, count in rows
+                )
+        return tuple(positions.get(message_id) for message_id in ids)
 
     def partial_history_window(self, account, remote, start, *, prefix, tail):
         """Load only merge_conversation's leading overlap and bounded alignment tail."""

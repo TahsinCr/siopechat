@@ -242,13 +242,37 @@ class Archive:
         if self.events and not self.events.closed:
             self.events.publish(SyncChanged(*key, state))
 
-    def _merge_partial_history(self, account, remote, value, current):
-        """Merge a provider tail against a bounded SQL suffix, preserving its prefix."""
+    def _merge_partial_history(self, account, remote, value, current, expected_end):
+        """Merge only a provider page proven to cover the archived suffix without gaps."""
         messages = value.get("messages")
-        if not current or not messages:
+        if not current or not messages or expected_end <= 0:
             return False
-        anchor = self.repository.message_ordinal(account, remote, messages[0].get("id"))
-        if anchor is None:
+        message_ids = [message.get("id") for message in messages]
+        if any(not isinstance(message_id, (str, int)) for message_id in message_ids):
+            return False
+        if any(not message_id for message_id in message_ids) or len(set(message_ids)) != len(
+            message_ids
+        ):
+            return False
+        ordinals = self.repository.message_ordinals(account, remote, message_ids)
+        known = [(index, ordinal) for index, ordinal in enumerate(ordinals) if ordinal is not None]
+        if not known:
+            return False
+        anchor = known[0][1]
+        if known[0][0] != 0 or anchor >= expected_end:
+            return False
+        archived = [(index, ordinal) for index, ordinal in known if ordinal < expected_end]
+        if len(archived) != expected_end - anchor or any(
+            ordinal != anchor + index for index, (_, ordinal) in enumerate(archived)
+        ):
+            return False
+        last_archived_index = archived[-1][0]
+        if any(ordinal is None for ordinal in ordinals[: last_archived_index + 1]):
+            return False
+        newer = [(index, ordinal) for index, ordinal in known if ordinal >= expected_end]
+        if any(ordinal != expected_end + index for index, (_, ordinal) in enumerate(newer)):
+            return False
+        if newer and any(ordinal is None for ordinal in ordinals[last_archived_index + 1 :]):
             return False
         start = max(0, anchor - SYNC_MERGE_OVERLAP)
         local_tail = self.repository.partial_history_window(
@@ -328,6 +352,7 @@ class Archive:
                             if key in self._deleted:
                                 return None
                             partial_written = False
+                            deferred_partial = False
                             if (
                                 kind == "conversation"
                                 and "messages" in result
@@ -335,24 +360,20 @@ class Archive:
                             ):
                                 current = self.conversation_window(account, remote)
                                 partial_written = self._merge_partial_history(
-                                    account, remote, result, current
+                                    account, remote, result, current, base_end
                                 )
                                 if partial_written:
                                     accept = True
                                 elif current is not None:
-                                    # Keep a lossless fallback if provider IDs no longer
-                                    # overlap; this path is rare and must not drop history.
-                                    current = self.get(*key)
-                                    if current and "messages" in current:
-                                        merged = merge_conversation(result, current)
-                                        result = dict(
-                                            current,
-                                            messages=merged["messages"],
-                                            history_complete=False,
-                                        )
-                                        accept = True
+                                    # A partial page that cannot prove contiguous coverage
+                                    # must never replace the durable transcript. A later
+                                    # refresh can retry without risking an SQL suffix delete.
+                                    deferred_partial = True
+                                    with self._lock:
+                                        self._checked[key] = time.monotonic()
                             if (
                                 not partial_written
+                                and not deferred_partial
                                 and not accept
                                 and kind == "conversation"
                                 and "messages" in result
@@ -418,7 +439,7 @@ class Archive:
                                             ),
                                         )
                                 accept = True
-                            if accept and not partial_written:
+                            if accept and not partial_written and not deferred_partial:
                                 self.put(*key, result)
                                 with self._lock:
                                     self._checked[key] = time.monotonic()

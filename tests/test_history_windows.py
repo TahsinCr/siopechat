@@ -254,6 +254,21 @@ class HistoryReadTests(unittest.TestCase):
         self.assertTrue(all(m["text"] == "new" for m in value["messages"]))
         self.assertEqual(source.conversation_window.call_count, 4)
 
+    def test_bounded_complete_read_stops_at_the_requested_resident_end(self):
+        from types import SimpleNamespace
+
+        from cli.history import read_history
+
+        source = SimpleNamespace(
+            conversation_window=Mock(return_value=self.page("v", 40, 100, total=200))
+        )
+        value = read_history(source, "chatgpt/a", "chat", start=40, complete=True, until=65)
+        self.assertEqual(
+            [message["_archive_ordinal"] for message in value["messages"]], list(range(40, 65))
+        )
+        self.assertEqual(value["history_window"], {"start": 40, "end": 65, "total": 200})
+        source.conversation_window.assert_called_once_with("chatgpt/a", "chat", start=40)
+
     def test_continuous_revision_changes_fail_without_publishing_a_partial_read(self):
         from types import SimpleNamespace
 
