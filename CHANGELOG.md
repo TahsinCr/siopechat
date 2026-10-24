@@ -43,6 +43,7 @@ Python distributions use the corresponding PEP 440 version (`1.3b0` for `v1.3-be
 
 ### Fixed
 
+- Pin GitHub Actions to Node 24-compatible releases and prevent parallel `uv` cache saves from racing across CI jobs.
 - Fix Ruff import-order and formatting failures so CI can continue to the test and package checks.
 - Compare project upload paths by canonical file identity in CI tests, accounting for macOS temporary-directory symlinks.
 - Keep the CLI startup scheduling test independent of a native console on headless Windows runners.
