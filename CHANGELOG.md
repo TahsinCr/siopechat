@@ -22,6 +22,7 @@ Python distributions use the corresponding PEP 440 version (`1.4b0` for `v1.4-be
 
 ### Fixed
 
+- Build the downloads empty state only with layout options supported by the pinned Prompt Toolkit version, avoiding an application startup crash.
 - Show cached project-chat pages from SQLite as soon as a project is expanded, then reconcile provider pages in the background and update the same sidebar entries.
 - Preserve inactive transcript caches when a conversation load or render completes after a tab switch; do not dispose a layout still owned by another tab.
 - Keep the active transcript viewport rendered after tab switches, cancel stale viewport-prefetch targets, and clamp each tab's scroll position to its current transcript.

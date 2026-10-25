@@ -7,7 +7,6 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import (
     DynamicContainer,
     HSplit,
-    VerticalAlign,
     VSplit,
     Window,
     WindowAlign,
@@ -109,10 +108,16 @@ class DownloadsPanel:
             right_margins=[ScrollbarMargin(display_arrows=True)],
             style="class:downloads.list",
         )
-        self.empty_window = Window(
-            content=FormattedTextControl(self.empty_state),
-            align=WindowAlign.CENTER,
-            vertical_align=VerticalAlign.CENTER,
+        self.empty_window = HSplit(
+            [
+                Window(),
+                Window(
+                    content=FormattedTextControl(self.empty_state),
+                    align=WindowAlign.CENTER,
+                    height=3,
+                ),
+                Window(),
+            ],
             style="class:downloads.empty",
         )
         keys = KeyBindings()
