@@ -69,6 +69,7 @@ class TranscriptControl(UIControl):
             end - 2: index
             for start, end, index in getattr(self.view, "message_ranges", ())
             if end - start > 1
+            and self.view.messages[index].get("role") in ("user", "assistant")
         }
         self._toolbar_fragments = {}
         cursor = self.view.transcript_cursor_position()
@@ -116,7 +117,7 @@ class TranscriptControl(UIControl):
             return []
         message = self.view.messages[index]
         role = message.get("role")
-        if role not in ("user", "reasoning", "assistant"):
+        if role not in ("user", "assistant"):
             return []
         actions = [("copy", "⧉", self.view.tr("Copy"))]
         if role == "assistant":
@@ -432,7 +433,7 @@ class TranscriptWindow(Window):
 
 
 class TranscriptGutter(Margin):
-    """Monochrome role marks identify the first row of each rendered message."""
+    """Compact pictograms identify the first row of each rendered message."""
 
     def __init__(self, view):
         self.view = view
@@ -449,7 +450,7 @@ class TranscriptGutter(Margin):
             for start, _, index in getattr(self.view, "message_ranges", [])
             if 0 <= index < len(roles)
         }
-        markers = {"user": "●", "assistant": "◆", "reasoning": "✦"}
+        markers = {"user": "👤", "assistant": "🤖", "reasoning": "🧠"}
         rows = []
         for row in range(height):
             position = window_render_info.visible_line_to_row_col.get(row)
