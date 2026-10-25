@@ -1,30 +1,34 @@
 """Fixed terminal and Markdown styles used by the CLI."""
 
 DEFAULT_MARKDOWN_STYLE = {
-    "markdown.text": "#e5e7eb",
-    "markdown.paragraph": "#e5e7eb",
-    "markdown.h1": "bold #f3f4f6",
-    "markdown.h2": "bold #f3f4f6",
-    "markdown.h3": "bold #f3f4f6",
-    "markdown.h4": "bold #e5e7eb",
-    "markdown.h5": "bold #d1d5db",
-    "markdown.h6": "bold #d1d5db",
-    "markdown.link": "underline #22d3ee",
-    "markdown.link_url": "underline #22d3ee",
-    "markdown.code": "#22d3ee",
-    "markdown.block_quote": "#9ca3af",
-    "markdown.hr": "#606060",
-    "markdown.list": "#e5e7eb",
-    "markdown.item.bullet": "#e5e7eb",
-    "markdown.item.number": "#e5e7eb",
+    "markdown.text": "#dce3e8",
+    "markdown.paragraph": "#dce3e8",
+    "markdown.h1": "bold #f0f4f7",
+    "markdown.h2": "bold #c9dce8",
+    "markdown.h3": "bold #b8cedd",
+    "markdown.h4": "bold #d2dce3",
+    "markdown.h5": "bold #c4d0d8",
+    "markdown.h6": "bold #b7c3cc",
+    "markdown.link": "underline #79c5d0",
+    "markdown.link_url": "underline #79c5d0",
+    "markdown.code": "#d7c2e9",
+    "markdown.block_quote": "#b0bdc7",
+    "markdown.hr": "#52616d",
+    "markdown.list": "#dce3e8",
+    "markdown.item.bullet": "#a9c6d6",
+    "markdown.item.number": "#a9c6d6",
+    "markdown.table.border": "#52616d",
+    "markdown.table.header": "bold #dce8ef",
 }
 
+DEFAULT_MESSAGE_FOREGROUND = "#dce3e8"
+
 DEFAULT_ROLE_BACKGROUNDS = {
-    "user": "#303030",
-    "assistant": "#181818",
-    "reasoning": "#1c2732",
+    "user": "#293740",
+    "assistant": "#242a30",
+    "reasoning": "#202e3a",
 }
-DEFAULT_REASONING_MARKER = "#75b5ef"
+DEFAULT_REASONING_MARKER = "bold #8eb9dc"
 DEFAULT_TAB_WIDTH = 26
 DEFAULT_MESSAGE_WIDTH = 100
 DEFAULT_COMPOSER_MAX_LINES = 6
@@ -53,17 +57,19 @@ DEFAULT_TERMINAL_STYLE = {
     "settings.category": "bg:#252525 #b7b7b7",
     "settings.category.active": "bg:#294858 bold #e0f3ff",
     "message.selected": "bg:#34516b #ffffff",
-    "message.toolbar": "bg:#202020 #748391",
-    "message.toolbar.action": "bg:#29343d #a9cde3",
+    "message.toolbar.user": f"bg:{DEFAULT_ROLE_BACKGROUNDS['user']} #91a5b1",
+    "message.toolbar.assistant": f"bg:{DEFAULT_ROLE_BACKGROUNDS['assistant']} #8998a4",
+    "message.toolbar.reasoning": f"bg:{DEFAULT_ROLE_BACKGROUNDS['reasoning']} #8ca8bd",
+    "message.toolbar.action": "bg:#353c42 #d5dce1",
     "chat.context": "#a4b5c7",
     "brand": "bg:#252525 bold #c3a6ff",
     "transcript": "bg:#202020 #dedede",
     "metadata.project": "bg:#242424 bold #679bd4",
     "metadata.temporary": "bg:#242424 bold #c3a6ff",
     "tab.divider": "bg:#202020 #454545",
-    "role.user": "bg:#202020 bold #86d49b",
-    "role.reasoning": "bg:#202020 #75b5ef",
-    "role.assistant": "bg:#202020 #f0ad66",
+    "role.user": "bg:#202020 bold #92cfb8",
+    "role.reasoning": "bg:#202020 #8eb9dc",
+    "role.assistant": "bg:#202020 #adc1cf",
     "metadata.effort": "bg:#242424 bold #86d49b",
     "tab.close": "#929292",
     "selection": "bold #e1e1e1",

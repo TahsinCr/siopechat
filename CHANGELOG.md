@@ -15,7 +15,7 @@ Python distributions use the corresponding PEP 440 version (`1.4b0` for `v1.4-be
 
 ### Changed
 
-- Attach transcript action chips directly to their owning message and retain a single clear separator before the next message.
+- Restyle the transcript as role-colored message cards with integrated action chips and a cohesive Markdown palette, while preserving virtual paging and bounded large-code rendering.
 
 ### Fixed
 

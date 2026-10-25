@@ -114,6 +114,8 @@ class TranscriptControl(UIControl):
             return []
         message = self.view.messages[index]
         role = message.get("role")
+        if role not in ("user", "reasoning", "assistant"):
+            return []
         actions = [("copy", "⧉", self.view.tr("Copy"))]
         if role == "assistant":
             if message.get("_toolbar_sources"):
@@ -123,16 +125,17 @@ class TranscriptControl(UIControl):
         tab = self.view.tabs[self.view.active_tab]
         tab_id = tab.get("tab_id")
         labels = [f"{icon} {label}" for _, icon, label in actions]
-        connector = "  ↳ " if width >= 16 else "↳ "
-        separator = "   ·   " if width >= 52 else " · " if width >= 22 else " "
-        full_width = get_cwidth(connector) + sum(get_cwidth(label) + 2 for label in labels)
+        message_width = min(width, self.view.transcript_width())
+        prefix = " " if message_width >= 2 else ""
+        separator = " "
+        full_width = get_cwidth(prefix) + sum(get_cwidth(label) + 2 for label in labels)
         full_width += get_cwidth(separator) * (len(labels) - 1)
-        compact = full_width > width
+        compact = full_width > message_width
         if compact:
-            connector = "↳ " if width >= 12 else ""
-            separator = " " if width >= 14 else ""
-        padded = not compact or width >= 16
-        fragments = [("class:message.toolbar", connector)]
+            separator = " " if message_width >= 14 else ""
+        padded = not compact or message_width >= 16
+        toolbar_style = f"class:message.toolbar.{role}"
+        fragments = [(toolbar_style, prefix)]
         for position, (action, icon, label) in enumerate(actions):
             value = icon if compact else f"{icon} {label}"
 
@@ -147,7 +150,10 @@ class TranscriptControl(UIControl):
                 )
             )
             if position + 1 < len(actions):
-                fragments.append(("class:message.toolbar", separator))
+                fragments.append((toolbar_style, separator))
+        used_width = sum(get_cwidth(fragment[1]) for fragment in fragments)
+        if used_width < message_width:
+            fragments.append((toolbar_style, " " * (message_width - used_width)))
         return fragments
 
     def mouse_handler(self, mouse_event):
@@ -441,7 +447,7 @@ class TranscriptGutter(Margin):
             for start, _, index in getattr(self.view, "message_ranges", [])
             if 0 <= index < len(roles)
         }
-        markers = {"user": ">", "reasoning": "🧠", "assistant": "🤖"}
+        markers = {"user": "›", "reasoning": "◌", "assistant": "✦"}
         rows = []
         for row in range(height):
             position = window_render_info.visible_line_to_row_col.get(row)

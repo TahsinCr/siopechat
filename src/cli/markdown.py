@@ -30,6 +30,7 @@ from rich.theme import Theme
 
 from .styles import (
     DEFAULT_MARKDOWN_STYLE,
+    DEFAULT_MESSAGE_FOREGROUND,
     DEFAULT_REASONING_MARKER,
     DEFAULT_ROLE_BACKGROUNDS,
 )
@@ -233,7 +234,7 @@ class CompactBlockQuote(BlockQuote):
     def __rich_console__(self, console: Console, options: Any) -> Any:
         quote_options = options.update(width=max(1, options.max_width - 4))
         lines = console.render_lines(self.elements, quote_options, style=self.style)
-        rail = Segment("│ ", RichStyle(color="#6b7280", dim=True))
+        rail = Segment("│ ", RichStyle(color="#8193a0", dim=True))
         for line in lines:
             yield rail
             yield from line
@@ -249,7 +250,7 @@ class ChatMarkdown(Markdown):
     }
 
     def __init__(self, markup):
-        super().__init__(markup, code_theme="monokai")
+        super().__init__(markup, code_theme="github-dark")
         # Linkify prose only: code blocks and inline code retain their original text.
         pattern = re.compile(r"(?:https?://|sandbox:/|computer:///)[^\s<>\"]+")
         for block in self.parsed:
@@ -754,7 +755,14 @@ class MessageRenderer:
         rows = block.rows(start, stop)
         if rows:
             content = Text("\n", style="markdown.code").join(rows)
-            console.print(Padding(content, (0, 1), style=f"#dedede on {background}", expand=True))
+            console.print(
+                Padding(
+                    content,
+                    (0, 1),
+                    style=f"{DEFAULT_MESSAGE_FOREGROUND} on {background}",
+                    expand=True,
+                )
+            )
         return buffer.getvalue()
 
     def transcript(self, messages, width, show_reasoning=True, cancelled=None, active_index=None):
@@ -861,7 +869,7 @@ class MessageRenderer:
                 Padding(
                     content,
                     (0, 1),
-                    style=f"#dedede on {background}",
+                    style=f"{DEFAULT_MESSAGE_FOREGROUND} on {background}",
                     expand=True,
                 )
             )
