@@ -11,6 +11,7 @@ Python distributions use the corresponding PEP 440 version (`1.4b0` for `v1.4-be
 ### Added
 
 - Add compact per-message copy controls for user and assistant messages; assistant replies also expose source links and explicit model/effort details when the provider supplied them.
+- Support Claude Incognito chats through the temporary-chat control; verify the provider marks the conversation temporary before sending and reject project-scoped temporary chats.
 - Save the terminal's open tabs and selected tab in a private temporary session file, then restore conversations from the local archive and synchronize them in the background on startup.
 
 ### Changed

@@ -241,11 +241,32 @@ class ClaudeTransport:
         path = base + "/chat_conversations/" + cid
         if v.get("conversation_id"):
             history = await self.session.request("GET", path)
+            if v.get("temporary") and history.get("is_temporary") is not True:
+                raise ProviderError("Claude geçici sohbeti doğrulanamadı; mesaj gönderilmedi")
             parent = history.get("current_leaf_message_uuid")
         else:
+            create_payload = {"uuid": cid, "name": ""}
+            if v.get("temporary"):
+                create_payload["is_temporary"] = True
             created = await self.session.request(
-                "POST", base + "/chat_conversations", json={"uuid": cid, "name": ""}
+                "POST", base + "/chat_conversations", json=create_payload
             )
+            if v.get("temporary") and (
+                not isinstance(created, dict) or created.get("is_temporary") is not True
+            ):
+                try:
+                    created = await self.session.request("GET", path)
+                except Exception:
+                    created = None
+                if not isinstance(created, dict) or created.get("is_temporary") is not True:
+                    try:
+                        await self.request("delete_chat", conversation_id=cid)
+                    except Exception:
+                        raise ProviderError(
+                            "Claude geçici sohbeti doğrulayamadı; mesaj gönderilmedi ve "
+                            "boş sohbet temizliği doğrulanamadı"
+                        ) from None
+                    raise ProviderError("Claude geçici sohbeti doğrulayamadı; mesaj gönderilmedi")
             parent = created.get("current_leaf_message_uuid") if isinstance(created, dict) else None
             if pid:
                 await self.request("move_chat", conversation_id=cid, project_id=pid)

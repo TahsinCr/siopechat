@@ -28,6 +28,7 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
     capabilities = frozenset(
         {
             Capability.CHAT,
+            Capability.TEMPORARY,
             Capability.AUTH,
             Capability.HISTORY,
             Capability.MODELS,
@@ -283,10 +284,10 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
 
     async def stream(self, request):
         validate_request(self, request)
-        if request.temporary:
+        if request.temporary and request.project_id:
             raise FeatureUnavailable(
                 Capability.TEMPORARY,
-                "not_available",
+                "projects_not_supported",
             )
         if not session_exists(self.credential_file) and not self.transport.authenticated:
             raise AccountPaused("Claude hesabını Hesaplar bölümünden doğrulayın")
@@ -299,6 +300,7 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
                 project_id=request.project_id,
                 model=request.model,
                 effort=request.effort,
+                temporary=request.temporary,
                 attachments=request.attachments,
             ):
                 if event["type"] == "bound":
