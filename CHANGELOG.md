@@ -10,6 +10,7 @@ Python distributions use the corresponding PEP 440 version (`1.4b0` for `v1.4-be
 
 ### Added
 
+- Add a compact, clickable one-line toolbar below each message for copying; assistant replies also expose source links and explicit model/effort details when the provider supplied them.
 - Save the terminal's open tabs and selected tab in a private temporary session file, then restore conversations from the local archive and synchronize them in the background on startup.
 
 ### Fixed

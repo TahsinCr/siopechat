@@ -20,6 +20,9 @@ class TranscriptControl(UIControl):
     def __init__(self, view):
         self.view = view
         self.rows = ()
+        self._content_width = 0
+        self._toolbar_rows = {}
+        self._toolbar_fragments = {}
         self.clear_selection()
 
     def clear_selection(self):
@@ -59,10 +62,21 @@ class TranscriptControl(UIControl):
     def create_content(self, width, height):
         self.rows = self.view.transcript_rows(viewport_height=height)
         rows = self.rows
+        self._content_width = width
+        self._toolbar_rows = {
+            end - 1: index
+            for start, end, index in getattr(self.view, "message_ranges", ())
+            if end > start
+        }
+        self._toolbar_fragments = {}
         cursor = self.view.transcript_cursor_position()
         cursor = Point(0, min(max(0, cursor.y), max(0, len(rows) - 1)))
 
         def get_line(number):
+            if number in self._toolbar_rows:
+                fragments = self._message_toolbar(self._toolbar_rows[number], width)
+                self._toolbar_fragments[number] = fragments
+                return fragments
             if hasattr(rows, "paint_row"):
                 row = rows.paint_row(number)
                 if row is None:
@@ -95,6 +109,42 @@ class TranscriptControl(UIControl):
             get_line=get_line, line_count=len(rows), cursor_position=cursor, show_cursor=False
         )
 
+    def _message_toolbar(self, index, width):
+        if not 0 <= index < len(self.view.messages):
+            return []
+        message = self.view.messages[index]
+        role = message.get("role")
+        actions = [("copy", "⧉", self.view.tr("Copy"))]
+        if role == "assistant":
+            if message.get("_toolbar_sources"):
+                actions.append(("sources", "↗", self.view.tr("Sources")))
+            if message.get("_toolbar_details"):
+                actions.append(("details", "ⓘ", self.view.tr("Answer details")))
+        tab = self.view.tabs[self.view.active_tab]
+        tab_id = tab.get("tab_id")
+        labels = [f"{icon} {label}" for _, icon, label in actions]
+        full_width = sum(get_cwidth(label) for label in labels) + 2 * (len(labels) - 1) + 2
+        compact = full_width > width
+        prefix = "  " if width >= 10 else " "
+        separator = "  " if width >= 13 else " "
+        fragments = [("class:message.toolbar", prefix)]
+        for position, (action, icon, label) in enumerate(actions):
+            value = icon if compact else f"{icon} {label}"
+
+            def run_action(selected=action, target_tab=tab_id, target_message=message):
+                return self.view.message_toolbar_action(target_tab, target_message, selected)
+
+            fragments.append(
+                (
+                    "class:message.toolbar.action",
+                    value,
+                    on_click(run_action),
+                )
+            )
+            if position + 1 < len(actions):
+                fragments.append(("class:message.toolbar", separator))
+        return fragments
+
     def mouse_handler(self, mouse_event):
         if mouse_event.button != MouseButton.LEFT:
             return NotImplemented
@@ -118,8 +168,16 @@ class TranscriptControl(UIControl):
                 self._select_to(mouse_event.position)
             if self.selected_text:
                 return None
+            spans = self._toolbar_fragments.get(line)
+            if spans is None and line in self._toolbar_rows:
+                spans = self._message_toolbar(
+                    self._toolbar_rows[line], self._content_width
+                )
+                self._toolbar_fragments[line] = spans
+            if spans is None:
+                spans = self.rows[line][0]
             position = 0
-            for span in self.rows[line][0]:
+            for span in spans:
                 end = position + len(span[1])
                 if position <= mouse_event.position.x < end and len(span) > 2:
                     # The view resolves files with the originating account/chat context.

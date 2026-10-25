@@ -66,6 +66,7 @@ class VirtualTranscript:
             ]
         self.starts = []
         self.ranges = []
+        self.body_counts = []
         reusable = {}
         previous_blocks = {}
         if (
@@ -79,7 +80,7 @@ class VirtualTranscript:
                 previous_blocks = dict(previous._large_code)
                 if previous_messages:
                     for entry, (start, end, index) in enumerate(previous.ranges):
-                        reusable[previous_messages[index]] = (entry, index, end - start)
+                        reusable[previous_messages[index]] = (entry, index, end - start - 1)
         inherited = {}
         line = 0
         for entry_index, index in enumerate(self.entries):
@@ -110,6 +111,8 @@ class VirtualTranscript:
                 prefix = self.renderer.code_prefix_rows(role, self.width)
                 self._large_code[entry_index] = (block, prefix)
                 count = prefix + block.line_count + 2
+            self.body_counts.append(count)
+            count += 1
             self.starts.append(line)
             self.ranges.append((line, line + count, index))
             line += count
@@ -168,7 +171,7 @@ class VirtualTranscript:
             self._pages.move_to_end(key)
             return cached[0]
         message_index = self.entries[entry_index]
-        count = self.ranges[entry_index][1] - self.ranges[entry_index][0]
+        count = self.body_counts[entry_index]
         start = page * self.PAGE_ROWS
         large_code = self._large_code.get(entry_index)
         if large_code is not None:
@@ -248,6 +251,8 @@ class VirtualTranscript:
         entry, local = self._entry_for_line(line)
         if entry is None:
             return (), None
+        if local == self.body_counts[entry]:
+            return (), self.entries[entry]
         with self._lock:
             if self._disposed:
                 return (), None
@@ -266,6 +271,8 @@ class VirtualTranscript:
         entry, local = self._entry_for_line(line)
         if entry is None:
             return (), None
+        if local == self.body_counts[entry]:
+            return (), self.entries[entry]
         key = self._page_key(entry, local // self.PAGE_ROWS)
         cached = self._paint_pages.get(key)
         if cached is None or self._disposed:
@@ -296,6 +303,7 @@ class VirtualTranscript:
             entry_start, entry_end, _ = self.ranges[entry]
             local_start = max(start, entry_start) - entry_start
             local_end = min(stop, entry_end) - entry_start
+            local_end = min(local_end, self.body_counts[entry])
             if local_end <= local_start:
                 continue
             first_page = local_start // self.PAGE_ROWS

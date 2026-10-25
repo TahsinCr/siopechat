@@ -53,6 +53,8 @@ DEFAULT_TERMINAL_STYLE = {
     "settings.category": "bg:#252525 #b7b7b7",
     "settings.category.active": "bg:#294858 bold #e0f3ff",
     "message.selected": "bg:#34516b #ffffff",
+    "message.toolbar": "bg:#202020 #8b98a5",
+    "message.toolbar.action": "bg:#202020 underline #8ecfff",
     "chat.context": "#a4b5c7",
     "brand": "bg:#252525 bold #c3a6ff",
     "transcript": "bg:#202020 #dedede",

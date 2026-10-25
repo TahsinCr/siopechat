@@ -4867,6 +4867,70 @@ class ChatView:
         self.status = self.tr("Sent latest response to the terminal clipboard")
         self.app.invalidate()
 
+    def _toolbar_message_index(self, tab_id, message_ref):
+        if not self.tabs or self.tabs[self.active_tab].get("tab_id") != tab_id:
+            return None
+        messages = self.tabs[self.active_tab].get("messages", ())
+        index = next((i for i, item in enumerate(messages) if item is message_ref), None)
+        if index is None:
+            message_id = message_ref.get("id")
+            ordinal = message_ref.get("_archive_ordinal")
+            index = next(
+                (
+                    i
+                    for i, item in enumerate(messages)
+                    if message_id
+                    and item.get("id") == message_id
+                    and (ordinal is None or item.get("_archive_ordinal") == ordinal)
+                ),
+                None,
+            )
+        return index
+
+    def open_message_toolbar_source(self, tab_id, message_ref, url):
+        index = self._toolbar_message_index(tab_id, message_ref)
+        if index is None:
+            self.status = self.tr("This message is no longer loaded")
+            self.app.invalidate()
+            return
+        self.open_message_link(url, index)
+
+    def message_toolbar_action(self, tab_id, message_ref, action):
+        """Run a read-only toolbar action against the exact message and tab shown."""
+        index = self._toolbar_message_index(tab_id, message_ref)
+        if index is None:
+            self.status = self.tr("This message is no longer loaded")
+            self.app.invalidate()
+            return
+        messages = self.tabs[self.active_tab].get("messages", ())
+        message = messages[index]
+        if action == "copy":
+            text = render_chatgpt_annotations(message.get("text") or "")
+            if not text:
+                self.status = self.tr("This message has no text to copy")
+            elif clipboard.copy_text(text):
+                self.status = self.tr("Message copied")
+            else:
+                self.app.output.write_raw(clipboard.terminal_sequence(text))
+                self.app.output.flush()
+                self.status = self.tr("Sent message to the terminal clipboard")
+            self.app.invalidate()
+            return
+        if action == "sources":
+            sources = message.get("_toolbar_sources", ())
+            if sources:
+                self.forms.show_message_info(
+                    self.tr("Sources"),
+                    sources=sources,
+                    source_context=(tab_id, message),
+                )
+            return
+        if action == "details":
+            details = message.get("_toolbar_details", ())
+            if details:
+                self.forms.show_message_info(self.tr("Answer details"), details=details)
+            return
+
     def open_resume(self) -> None:
         if self.palette_visible:
             self.close_overlays()

@@ -356,7 +356,97 @@ def message_order(roles):
     return ordered
 
 
-def visible_chat_message(message: dict[str, Any]) -> dict[str, str] | None:
+def _source_items(message: dict[str, Any]) -> tuple[dict[str, str], ...]:
+    """Keep only explicit citation links needed by the message toolbar."""
+    metadata = message.get("metadata")
+    roots = [message]
+    if isinstance(metadata, dict):
+        roots.append(metadata)
+        roots.extend(
+            value
+            for key in ("metadata", "native_candidate", "candidate", "native")
+            if isinstance((value := metadata.get(key)), dict)
+        )
+
+    sources = []
+    seen = set()
+
+    def append(value):
+        if isinstance(value, str):
+            title, url = value, value
+        elif isinstance(value, dict):
+            web = value.get("web")
+            source = web if isinstance(web, dict) else value.get("source")
+            source = source if isinstance(source, dict) else value
+            url = source.get("url") or source.get("uri") or source.get("href")
+            title = source.get("title") or source.get("name") or value.get("title")
+        else:
+            return
+        if (
+            not isinstance(url, str)
+            or len(url) > 2048
+            or any(ord(char) < 32 or ord(char) == 127 for char in url)
+        ):
+            return
+        try:
+            parsed = urlsplit(url)
+            if parsed.scheme not in ("http", "https") or not parsed.hostname:
+                return
+        except ValueError:
+            return
+        if url in seen:
+            return
+        seen.add(url)
+        label = " ".join(str(title or url).split())[:200]
+        sources.append({"title": label, "url": url})
+
+    for root in roots:
+        for key in ("citations", "sources"):
+            values = root.get(key)
+            if isinstance(values, (list, tuple)):
+                for value in values[:12 - len(sources)]:
+                    append(value)
+        for key in ("grounding_metadata", "groundingMetadata"):
+            grounding = root.get(key)
+            if not isinstance(grounding, dict):
+                continue
+            chunks = grounding.get("grounding_chunks") or grounding.get("groundingChunks")
+            if isinstance(chunks, (list, tuple)):
+                for value in chunks[:12 - len(sources)]:
+                    append(value)
+        if len(sources) >= 12:
+            break
+    return tuple(sources)
+
+
+def _message_details(message: dict[str, Any]) -> tuple[tuple[str, str], ...]:
+    """Expose explicit per-message model settings, never inferred conversation state."""
+    metadata = message.get("metadata")
+    roots = [message]
+    if isinstance(metadata, dict):
+        roots.extend((metadata, metadata.get("metadata", {})))
+    details = []
+    for label, keys in (
+        ("Model", ("model", "model_slug")),
+        ("Effort", ("effort", "reasoning_effort", "thinking_level")),
+    ):
+        value = next(
+            (
+                root[key]
+                for root in roots
+                if isinstance(root, dict)
+                for key in keys
+                if isinstance(root.get(key), str) and root[key].strip()
+            ),
+            None,
+        )
+        if value:
+            clean = "".join(char for char in value if ord(char) >= 32 and ord(char) != 127)
+            details.append((label, " ".join(clean.split())[:120]))
+    return tuple(details)
+
+
+def visible_chat_message(message: dict[str, Any]) -> dict[str, Any] | None:
     """Return user-facing turns while excluding web tool protocol nodes."""
     role = message.get("role")
     text = message.get("text")
@@ -395,11 +485,19 @@ def visible_chat_message(message: dict[str, Any]) -> dict[str, str] | None:
         visible = False
     if not visible or not isinstance(text, str) or not text:
         return None
-    return {"role": "reasoning" if reasoning else role, "text": text} | {
+    visible = {"role": "reasoning" if reasoning else role, "text": text} | {
         key: message[key]
         for key in ("id", "local_pending", "_archive_ordinal")
         if key in message and message[key] is not None
     }
+    if role == "assistant" and not reasoning:
+        sources = _source_items(message)
+        details = _message_details(message)
+        if sources:
+            visible["_toolbar_sources"] = sources
+        if details:
+            visible["_toolbar_details"] = details
+    return visible
 
 
 OSC_LINK = re.compile(r"\x1b\]8;[^;]*;([^\x1b\x07]*)(?:\x1b\\|\x07)")
@@ -678,9 +776,10 @@ class MessageRenderer:
                 index == active_index,
             )
             count = value.count("\n")
-            ranges.append((line, line + count, index))
-            line += count
+            ranges.append((line, line + count + 1, index))
+            line += count + 1
             pieces.append(value)
+            pieces.append("\n")
         return "".join(pieces), ranges
 
     def render(

@@ -164,6 +164,103 @@ class Forms:
         self.view.app.layout.focus(self.confirm_buttons[1])
         self.view.app.invalidate()
 
+    def show_message_info(self, title, *, details=(), sources=(), source_context=None):
+        """Show read-only metadata for the message whose toolbar was clicked."""
+        from .widgets import fit_text, on_click
+
+        self.inline_project = None
+        self.fields = {}
+        self.error = ""
+        body = []
+        content_height = 1
+        if details:
+            body.append(
+                Window(
+                    height=1,
+                    content=FormattedTextControl(self.view.tr("Answer details")),
+                    style="class:settings.title",
+                )
+            )
+            content_height += 1
+            for label, value in details:
+                body.append(
+                    Window(
+                        height=1,
+                        content=FormattedTextControl(
+                            [
+                                ("class:metadata", f"{self.view.tr(label)} · "),
+                                ("class:dialog.body", value),
+                            ]
+                        ),
+                        wrap_lines=True,
+                    )
+                )
+                content_height += 1
+        if sources:
+            body.append(Window(height=1))
+            body.append(
+                Window(
+                    height=1,
+                    content=FormattedTextControl(self.view.tr("Sources")),
+                    style="class:settings.title",
+                )
+            )
+            content_height += 2
+            width = max(16, min(72, self.view.main_width() - 12))
+            for source in sources:
+                label = fit_text(source.get("title") or source["url"], width)
+                url = source["url"]
+                body.append(
+                    Window(
+                        height=1,
+                        content=FormattedTextControl(
+                            [("class:dialog.body", f"  {label}")]
+                        ),
+                        wrap_lines=False,
+                    )
+                )
+                body.append(
+                    Window(
+                        height=1,
+                        content=FormattedTextControl(
+                            [
+                                (
+                                    "class:markdown.link",
+                                    "  ↗ " + fit_text(url, max(12, width - 2)),
+                                    on_click(
+                                        lambda url=url: self.view.open_message_toolbar_source(
+                                            *source_context, url
+                                        )
+                                    ),
+                                )
+                            ]
+                        ),
+                        wrap_lines=False,
+                    )
+                )
+                content_height += 2
+
+        self.close_button = Button(self.view.tr("Kapat"), handler=self.close)
+        pane = ScrollablePane(
+            HSplit(body, padding=0),
+            height=lambda: D(
+                min=1,
+                preferred=min(content_height, max(1, self.view.app.output.get_size().rows - 10)),
+                max=max(1, self.view.app.output.get_size().rows - 10),
+            ),
+        )
+        self.container = Dialog(
+            title=title,
+            body=pane,
+            buttons=[self.close_button],
+            width=min(84, max(50, self.view.main_width() - 4)),
+            with_background=False,
+        )
+        self.visible = True
+        self.view.app.layout.update_parents_relations()
+        self.view.app.layout.focus(self.close_button)
+        self.view.app.invalidate()
+
     def close(self):
         self.visible = False
         self.view.app.layout.focus(
