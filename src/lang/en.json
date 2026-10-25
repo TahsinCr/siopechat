@@ -243,6 +243,7 @@
   "ui.Kayıtlı geçmiş · arka planda eşitleniyor": "Saved history · synchronizing in background",
   "ui.Load failed: {0}": "Load failed: {0}",
   "ui.Sohbetler yükleniyor…": "Loading conversations…",
+  "ui.Sohbetler eşitleniyor…": "Refreshing project conversations…",
   "ui.Projeyi seçerek sohbetleri yükleyin": "Select the project to load its chats",
   "ui.Daha fazla sohbet…": "More conversations…",
   "ui.Henüz proje yok": "No projects yet",

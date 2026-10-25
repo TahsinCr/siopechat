@@ -182,6 +182,8 @@ def build_sidebar_rows(view) -> None:
             if not collapsed:
                 if project_id in view.project_chats_loading:
                     rows.append({"kind": "message", "title": view.tr("Sohbetler yükleniyor…")})
+                if project_id in view._project_chat_refreshes:
+                    rows.append({"kind": "message", "title": view.tr("Sohbetler eşitleniyor…")})
                 if project_id in view.project_chat_errors:
                     rows.append({"kind": "message", "title": view.project_chat_errors[project_id]})
                 if (

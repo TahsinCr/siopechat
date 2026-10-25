@@ -243,6 +243,7 @@
   "ui.Kayıtlı geçmiş · arka planda eşitleniyor": "Сохранённая история · синхронизация в фоне",
   "ui.Load failed: {0}": "Ошибка загрузки: {0}",
   "ui.Sohbetler yükleniyor…": "Загрузка чатов…",
+  "ui.Sohbetler eşitleniyor…": "Обновление чатов проекта…",
   "ui.Projeyi seçerek sohbetleri yükleyin": "Выберите проект, чтобы загрузить чаты",
   "ui.Daha fazla sohbet…": "Ещё чаты…",
   "ui.Henüz proje yok": "Проектов пока нет",

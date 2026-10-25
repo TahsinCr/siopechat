@@ -1065,6 +1065,16 @@ class Accounts:
                 return value
         return self.cached(key, remote)
 
+    def cached_project_chats(self, value, fallback, cursor=None):
+        """Return one cached provider project-chat page without starting a refresh."""
+        key, remote = origin(value, fallback)
+        archive = self.archive()
+        if not remote or archive is None or archive.deleted(key, "container", remote):
+            return None
+        page_key = remote + ":" + (cursor or "")
+        page = archive.get(key, "container_chats", page_key)
+        return page if isinstance(page, dict) else None
+
     def queue_active(self, key, value):
         """Coalesce UI pointer writes; never perform SQLite/fsync in navigation."""
         with self._lock:

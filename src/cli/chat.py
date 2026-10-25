@@ -279,6 +279,9 @@ class ChatView:
         self.projects_loaded = False
         self.project_chats_loaded: set[str] = set()
         self.project_chats_loading: set[str] = set()
+        self._project_chat_pages_loading: set[tuple[str, str]] = set()
+        self._project_chat_page_ids: dict[tuple[str, str], set[str]] = {}
+        self._project_chat_refreshes: dict[str, int] = {}
         self.project_chat_cursors: dict[str, str | None] = {}
         self._project_seen_cursors: set[str] = set()
         self._project_chat_seen_cursors: dict[str, set[str]] = {}
@@ -952,6 +955,15 @@ class ChatView:
                 for item in removed:
                     self.project_items.pop(item, None)
                     self.project_chats_loaded.discard(item)
+                    self._project_chat_page_ids = {
+                        page: ids
+                        for page, ids in self._project_chat_page_ids.items()
+                        if page[0] != item
+                    }
+                    self._project_chat_pages_loading = {
+                        page for page in self._project_chat_pages_loading if page[0] != item
+                    }
+                    self._project_chat_refreshes.pop(item, None)
                     for projects in self._account_projects.values():
                         projects.pop(item, None)
                 # Keep tabs and drafts, but never allow a deleted remote ID to be reused.
@@ -1549,6 +1561,9 @@ class ChatView:
         self.catalog_loading = self.sidebar_loading = self.projects_loading = False
         self.project_chats_loading.clear()
         self.project_chats_loaded.clear()
+        self._project_chat_pages_loading.clear()
+        self._project_chat_page_ids.clear()
+        self._project_chat_refreshes.clear()
         self.project_chat_cursors.clear()
         self.project_chat_errors.clear()
         self.history_cursor = self.project_cursor = None
@@ -1776,7 +1791,10 @@ class ChatView:
         key = f"project:{row['id']}" if row["kind"] == "project" else f"section:{row['id']}"
         if key in self.sidebar_collapsed:
             self.sidebar_collapsed.remove(key)
-            if row["kind"] == "project" and row["id"] not in self.project_chats_loaded:
+            if row["kind"] == "project" and (
+                row["id"] not in self.project_chats_loaded
+                or row["id"] in self.project_chat_errors
+            ):
                 self.load_project_chats(row["id"])
         else:
             self.sidebar_collapsed.add(key)
@@ -2330,55 +2348,137 @@ class ChatView:
         self._read_in_background(lambda: callback(cursor), success, failure, session_bound=False)
 
     def load_project_chats(self, project_id: str, more: bool = False) -> None:
-        if self.list_project_chats_callback is None or project_id in self.project_chats_loading:
+        if self.list_project_chats_callback is None:
             return
         seen = self._project_chat_seen_cursors.setdefault(project_id, set())
         if not more:
             seen.clear()
+            self.project_chat_errors.pop(project_id, None)
         cursor = self.project_chat_cursors.get(project_id) if more else None
         if cursor:
             if cursor in seen:
                 self.project_chat_cursors[project_id] = None
                 return
             seen.add(cursor)
+        page_key = (project_id, cursor or "")
+        if page_key in self._project_chat_pages_loading:
+            return
+        self._project_chat_pages_loading.add(page_key)
         self.project_chats_loading.add(project_id)
         self._invalidate_sidebar_rows()
         self.app.invalidate()
 
-        def success(result):
+        def release_page() -> None:
+            self._project_chat_pages_loading.discard(page_key)
+            if not any(page[0] == project_id for page in self._project_chat_pages_loading):
+                self.project_chats_loading.discard(project_id)
+
+        def refresh_failed(reason):
+            self._finish_project_chat_refresh(project_id)
+            if project_id in self.project_items:
+                self.project_chat_errors[project_id] = str(reason)
+                self.filter_sidebar()
+
+        def apply_page(result, *, cached=False, refreshing=False):
             if not isinstance(result, dict) or not isinstance(result.get("items"), list):
-                failure(self.tr("Proje sohbetleri geçersiz"))
+                reason = self.tr("Proje sohbetleri geçersiz")
+                if refreshing:
+                    refresh_failed(reason)
+                else:
+                    failure(reason)
+                return
+            release_page()
+            if project_id not in self.project_items:
+                if refreshing:
+                    self._finish_project_chat_refresh(project_id)
                 return
             next_cursor = result.get("cursor")
             if next_cursor and next_cursor in seen:
                 next_cursor = None
             items = {item["id"]: item for item in self.sidebar_items if item.get("id")}
+            page_ids = {
+                item["id"]
+                for item in result["items"]
+                if isinstance(item, dict) and item.get("id")
+            }
+            for removed in self._project_chat_page_ids.get(page_key, set()) - page_ids:
+                existing = items.get(removed)
+                if existing and existing.get("project_id") == project_id:
+                    items.pop(removed, None)
             for item in result["items"]:
                 if not isinstance(item, dict) or not item.get("id"):
-                    failure(self.tr("Proje sohbet kimliği eksik"))
+                    reason = self.tr("Proje sohbet kimliği eksik")
+                    if refreshing:
+                        refresh_failed(reason)
+                    else:
+                        failure(reason)
                     return
-                items[item["id"]] = dict(
+                normalized = dict(
                     item,
                     project_id=project_id,
                     project_name=self.project_items.get(project_id, {}).get("name"),
                 )
+                items[item["id"]] = merge_chat_listing(items.get(item["id"]), normalized)
             self.sidebar_items = list(items.values())
+            self._project_chat_page_ids[page_key] = page_ids
             self.project_chats_loaded.add(project_id)
-            self.project_chats_loading.discard(project_id)
             self.project_chat_errors.pop(project_id, None)
             self.project_chat_cursors[project_id] = next_cursor
             self.filter_sidebar()
+            if refreshing:
+                self._finish_project_chat_refresh(project_id)
+            if cached:
+                self._start_project_chat_refresh(project_id)
+                self._read_in_background(
+                    lambda: self.list_project_chats_callback(project_id, cursor),
+                    lambda refreshed: apply_page(refreshed, refreshing=True),
+                    refresh_failed,
+                    session_bound=False,
+                )
             if next_cursor:
                 self.load_project_chats(project_id, more=True)
 
         def failure(reason):
-            self.project_chats_loading.discard(project_id)
-            self.project_chat_errors[project_id] = reason
+            release_page()
+            if project_id in self.project_items:
+                self.project_chat_errors[project_id] = str(reason)
             self.filter_sidebar()
 
+        def read_page():
+            cached_page = (
+                self.account_service.cached_project_chats(project_id, self.account_key, cursor)
+                if self.account_service
+                else None
+            )
+            if isinstance(cached_page, dict) and isinstance(cached_page.get("items"), list):
+                return cached_page, True
+            return self.list_project_chats_callback(project_id, cursor), False
+
         self._read_in_background(
-            lambda: self.list_project_chats_callback(project_id, cursor), success, failure
+            read_page,
+            lambda result: apply_page(result[0], cached=result[1]),
+            failure,
+            # Canonical project IDs are account-scoped; let their page finish
+            # reconciling even if the user switches the active account meanwhile.
+            session_bound=False,
         )
+
+    def _start_project_chat_refresh(self, project_id: str) -> None:
+        self._project_chat_refreshes[project_id] = self._project_chat_refreshes.get(project_id, 0) + 1
+        self._invalidate_sidebar_rows()
+        self.app.invalidate()
+
+    def _finish_project_chat_refresh(self, project_id: str) -> None:
+        pending = self._project_chat_refreshes.get(project_id, 0)
+        if pending > 0:
+            if pending > 1:
+                self._project_chat_refreshes[project_id] = pending - 1
+            else:
+                self._project_chat_refreshes.pop(project_id, None)
+        else:
+            self._project_chat_refreshes.pop(project_id, None)
+        self._invalidate_sidebar_rows()
+        self.app.invalidate()
 
     def project_messages(self, project):
         resources = project.get("resources") or []
