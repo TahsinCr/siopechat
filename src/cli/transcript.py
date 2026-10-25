@@ -10,6 +10,7 @@ from .markdown import (
     group_reasoning_entries,
     index_transcript,
     index_transcript_window,
+    join_reasoning_texts,
     message_order,
     render_chatgpt_annotations,
     transcript_fragments,
@@ -146,7 +147,7 @@ class VirtualTranscript:
 
     def _entry_text(self, entry_index):
         _, texts = self._entry_key(entry_index)
-        return texts[0] if len(texts) == 1 else "\n\n".join(texts)
+        return texts[0] if len(texts) == 1 else join_reasoning_texts(texts)
 
     def _render(self, entry_index):
         role, _ = self.groups[entry_index]

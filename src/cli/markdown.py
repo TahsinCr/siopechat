@@ -369,6 +369,11 @@ def group_reasoning_entries(entries, roles):
     return tuple((role, tuple(indices)) for role, indices in groups)
 
 
+def join_reasoning_texts(texts):
+    """Stack adjacent thought records with no blank row between them."""
+    return "  \n".join(text.rstrip("\r\n") for text in texts)
+
+
 def _source_items(message: dict[str, Any]) -> tuple[dict[str, str], ...]:
     """Keep only explicit citation links needed by the message toolbar."""
     metadata = message.get("metadata")
@@ -789,9 +794,10 @@ class MessageRenderer:
         for entry, (role, indices) in enumerate(groups):
             if cancelled and cancelled():
                 raise InterruptedError("Sohbet yüklemesi daha yeni bir seçimle değiştirildi")
-            text = "\n\n".join(
+            texts = tuple(
                 render_chatgpt_annotations(messages[index]["text"]) for index in indices
             )
+            text = join_reasoning_texts(texts) if len(texts) > 1 else texts[0]
             value = self.render(
                 role,
                 text,
