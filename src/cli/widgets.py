@@ -64,9 +64,9 @@ class TranscriptControl(UIControl):
         rows = self.rows
         self._content_width = width
         self._toolbar_rows = {
-            end - 1: index
+            end - 2: index
             for start, end, index in getattr(self.view, "message_ranges", ())
-            if end > start
+            if end - start > 1
         }
         self._toolbar_fragments = {}
         cursor = self.view.transcript_cursor_position()
@@ -123,11 +123,16 @@ class TranscriptControl(UIControl):
         tab = self.view.tabs[self.view.active_tab]
         tab_id = tab.get("tab_id")
         labels = [f"{icon} {label}" for _, icon, label in actions]
-        full_width = sum(get_cwidth(label) for label in labels) + 2 * (len(labels) - 1) + 2
+        connector = "  ↳ " if width >= 16 else "↳ "
+        separator = "   ·   " if width >= 52 else " · " if width >= 22 else " "
+        full_width = get_cwidth(connector) + sum(get_cwidth(label) + 2 for label in labels)
+        full_width += get_cwidth(separator) * (len(labels) - 1)
         compact = full_width > width
-        prefix = "  " if width >= 10 else " "
-        separator = "  " if width >= 13 else " "
-        fragments = [("class:message.toolbar", prefix)]
+        if compact:
+            connector = "↳ " if width >= 12 else ""
+            separator = " " if width >= 14 else ""
+        padded = not compact or width >= 16
+        fragments = [("class:message.toolbar", connector)]
         for position, (action, icon, label) in enumerate(actions):
             value = icon if compact else f"{icon} {label}"
 
@@ -137,7 +142,7 @@ class TranscriptControl(UIControl):
             fragments.append(
                 (
                     "class:message.toolbar.action",
-                    value,
+                    f" {value} " if padded else value,
                     on_click(run_action),
                 )
             )

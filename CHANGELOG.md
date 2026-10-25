@@ -13,6 +13,10 @@ Python distributions use the corresponding PEP 440 version (`1.4b0` for `v1.4-be
 - Add a compact, clickable one-line toolbar below each message for copying; assistant replies also expose source links and explicit model/effort details when the provider supplied them.
 - Save the terminal's open tabs and selected tab in a private temporary session file, then restore conversations from the local archive and synchronize them in the background on startup.
 
+### Changed
+
+- Attach transcript action chips directly to their owning message and retain a single clear separator before the next message.
+
 ### Fixed
 
 - Show cached project-chat pages from SQLite as soon as a project is expanded, then reconcile provider pages in the background and update the same sidebar entries.

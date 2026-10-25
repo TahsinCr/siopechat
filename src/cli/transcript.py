@@ -251,7 +251,7 @@ class VirtualTranscript:
         entry, local = self._entry_for_line(line)
         if entry is None:
             return (), None
-        if local == self.body_counts[entry]:
+        if local >= self.body_counts[entry] - 1:
             return (), self.entries[entry]
         with self._lock:
             if self._disposed:
@@ -271,7 +271,7 @@ class VirtualTranscript:
         entry, local = self._entry_for_line(line)
         if entry is None:
             return (), None
-        if local == self.body_counts[entry]:
+        if local >= self.body_counts[entry] - 1:
             return (), self.entries[entry]
         key = self._page_key(entry, local // self.PAGE_ROWS)
         cached = self._paint_pages.get(key)
@@ -303,7 +303,7 @@ class VirtualTranscript:
             entry_start, entry_end, _ = self.ranges[entry]
             local_start = max(start, entry_start) - entry_start
             local_end = min(stop, entry_end) - entry_start
-            local_end = min(local_end, self.body_counts[entry])
+            local_end = min(local_end, max(1, self.body_counts[entry] - 1))
             if local_end <= local_start:
                 continue
             first_page = local_start // self.PAGE_ROWS
