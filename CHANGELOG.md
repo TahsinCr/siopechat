@@ -15,7 +15,7 @@ Python distributions use the corresponding PEP 440 version (`1.4b0` for `v1.4-be
 
 ### Changed
 
-- Make user, assistant, and reasoning rows unmistakable with localized role labels, larger pictogram markers, and clearer card/action contrast; reserve gutter width in Markdown wrapping to keep long lines visible.
+- Distinguish user, assistant, and reasoning messages with centered monochrome marks and separate near-black grayscale cards; remove role text that crowded the transcript gutter.
 
 ### Fixed
 

@@ -21,17 +21,17 @@ DEFAULT_MARKDOWN_STYLE = {
     "markdown.table.header": "bold #dce8ef",
 }
 
-DEFAULT_MESSAGE_FOREGROUND = "#dce3e8"
+DEFAULT_MESSAGE_FOREGROUND = "#dedede"
 
 DEFAULT_ROLE_BACKGROUNDS = {
-    "user": "#30414a",
-    "assistant": "#252f36",
-    "reasoning": "#26394a",
+    "user": "#303030",
+    "assistant": "#242424",
+    "reasoning": "#1b1b1b",
 }
-DEFAULT_REASONING_MARKER = "bold #8eb9dc"
+DEFAULT_REASONING_MARKER = "bold #a6a6a6"
 DEFAULT_TAB_WIDTH = 26
 DEFAULT_MESSAGE_WIDTH = 100
-DEFAULT_TRANSCRIPT_GUTTER_WIDTH = 10
+DEFAULT_TRANSCRIPT_GUTTER_WIDTH = 4
 DEFAULT_COMPOSER_MAX_LINES = 6
 
 DEFAULT_TERMINAL_STYLE = {
@@ -57,20 +57,20 @@ DEFAULT_TERMINAL_STYLE = {
     "settings.nav": "bg:#252525 #b7b7b7",
     "settings.category": "bg:#252525 #b7b7b7",
     "settings.category.active": "bg:#294858 bold #e0f3ff",
-    "message.selected": "bg:#34516b #ffffff",
-    "message.toolbar.user": f"bg:{DEFAULT_ROLE_BACKGROUNDS['user']} #91a5b1",
-    "message.toolbar.assistant": f"bg:{DEFAULT_ROLE_BACKGROUNDS['assistant']} #8998a4",
-    "message.toolbar.reasoning": f"bg:{DEFAULT_ROLE_BACKGROUNDS['reasoning']} #8ca8bd",
-    "message.toolbar.action": "bg:#414d56 #e0e6ea",
+    "message.selected": "bg:#414141 #ffffff",
+    "message.toolbar.user": f"bg:{DEFAULT_ROLE_BACKGROUNDS['user']} #c4c4c4",
+    "message.toolbar.assistant": f"bg:{DEFAULT_ROLE_BACKGROUNDS['assistant']} #bcbcbc",
+    "message.toolbar.reasoning": f"bg:{DEFAULT_ROLE_BACKGROUNDS['reasoning']} #a0a0a0",
+    "message.toolbar.action": "bg:#3b3b3b #e0e0e0",
     "chat.context": "#a4b5c7",
     "brand": "bg:#252525 bold #c3a6ff",
     "transcript": "bg:#202020 #dedede",
     "metadata.project": "bg:#242424 bold #679bd4",
     "metadata.temporary": "bg:#242424 bold #c3a6ff",
     "tab.divider": "bg:#202020 #454545",
-    "role.user": "bg:#202020 bold #a0d8c0",
-    "role.reasoning": "bg:#202020 bold #9bc3e1",
-    "role.assistant": "bg:#202020 bold #c0d4e0",
+    "role.user": "bg:#202020 bold #bdbdbd",
+    "role.reasoning": "bg:#202020 bold #8f8f8f",
+    "role.assistant": "bg:#202020 bold #eeeeee",
     "metadata.effort": "bg:#242424 bold #86d49b",
     "tab.close": "#929292",
     "selection": "bold #e1e1e1",

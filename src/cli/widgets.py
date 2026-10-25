@@ -432,7 +432,7 @@ class TranscriptWindow(Window):
 
 
 class TranscriptGutter(Margin):
-    """Role badges identify the first display row of each rendered message."""
+    """Monochrome role marks identify the first row of each rendered message."""
 
     def __init__(self, view):
         self.view = view
@@ -449,20 +449,20 @@ class TranscriptGutter(Margin):
             for start, _, index in getattr(self.view, "message_ranges", [])
             if 0 <= index < len(roles)
         }
-        markers = {
-            "user": f"👤 {self.view.tr('You')}",
-            "assistant": f"🤖 {self.view.tr('Answer')}",
-            "reasoning": f"🧠 {self.view.tr('Thought')}",
-        }
+        markers = {"user": "●", "assistant": "◆", "reasoning": "✦"}
         rows = []
         for row in range(height):
             position = window_render_info.visible_line_to_row_col.get(row)
             role = starts.get(position[0]) if position and position[1] == 0 else None
             marker = markers.get(role, "")
+            marker_width = get_cwidth(marker)
+            left = max(0, (width - marker_width) // 2)
+            right = max(0, width - marker_width - left)
+            marker = " " * left + marker + " " * right
             rows.append(
                 (
                     "class:role." + role if role else "class:transcript",
-                    marker + " " * max(0, width - get_cwidth(marker)) + "\n",
+                    marker + "\n",
                 )
             )
         return rows
