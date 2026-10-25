@@ -60,6 +60,7 @@ from .styles import (
     DEFAULT_COMPOSER_MAX_LINES,
     DEFAULT_MESSAGE_WIDTH,
     DEFAULT_TERMINAL_STYLE,
+    DEFAULT_TRANSCRIPT_GUTTER_WIDTH,
 )
 from .widgets import (
     BoundedTextControl,
@@ -3905,7 +3906,7 @@ class ChatView:
     def transcript_width(self) -> int:
         return min(
             DEFAULT_MESSAGE_WIDTH,
-            max(8, self.main_width() - 5),
+            max(8, self.main_width() - DEFAULT_TRANSCRIPT_GUTTER_WIDTH - 2),
         )
 
     def transcript_rows(self, viewport_height=None):

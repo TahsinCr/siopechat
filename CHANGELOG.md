@@ -15,7 +15,7 @@ Python distributions use the corresponding PEP 440 version (`1.4b0` for `v1.4-be
 
 ### Changed
 
-- Restyle the transcript as role-colored message cards with integrated action chips and a cohesive Markdown palette, while preserving virtual paging and bounded large-code rendering.
+- Make user, assistant, and reasoning rows unmistakable with localized role labels, larger pictogram markers, and clearer card/action contrast; reserve gutter width in Markdown wrapping to keep long lines visible.
 
 ### Fixed
 

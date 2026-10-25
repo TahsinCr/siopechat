@@ -13,6 +13,8 @@ from prompt_toolkit.layout.processors import Processor, Transformation
 from prompt_toolkit.mouse_events import MouseButton, MouseEventType
 from prompt_toolkit.utils import get_cwidth
 
+from .styles import DEFAULT_TRANSCRIPT_GUTTER_WIDTH
+
 
 class TranscriptControl(UIControl):
     """Paint only requested transcript rows; selection never rebuilds all spans."""
@@ -131,8 +133,8 @@ class TranscriptControl(UIControl):
         full_width = get_cwidth(prefix) + sum(get_cwidth(label) + 2 for label in labels)
         full_width += get_cwidth(separator) * (len(labels) - 1)
         compact = full_width > message_width
-        if compact:
-            separator = " " if message_width >= 14 else ""
+        if compact and message_width < 14:
+            separator = ""
         padded = not compact or message_width >= 16
         toolbar_style = f"class:message.toolbar.{role}"
         fragments = [(toolbar_style, prefix)]
@@ -430,13 +432,13 @@ class TranscriptWindow(Window):
 
 
 class TranscriptGutter(Margin):
-    """Role markers follow the first display row of each rendered message."""
+    """Role badges identify the first display row of each rendered message."""
 
     def __init__(self, view):
         self.view = view
 
     def get_width(self, get_ui_content):
-        return 3
+        return DEFAULT_TRANSCRIPT_GUTTER_WIDTH
 
     def create_margin(self, window_render_info, width, height):
         roles = getattr(self.view, "_transcript_roles", None)
@@ -447,7 +449,11 @@ class TranscriptGutter(Margin):
             for start, _, index in getattr(self.view, "message_ranges", [])
             if 0 <= index < len(roles)
         }
-        markers = {"user": "›", "reasoning": "◌", "assistant": "✦"}
+        markers = {
+            "user": f"👤 {self.view.tr('You')}",
+            "assistant": f"🤖 {self.view.tr('Answer')}",
+            "reasoning": f"🧠 {self.view.tr('Thought')}",
+        }
         rows = []
         for row in range(height):
             position = window_render_info.visible_line_to_row_col.get(row)

@@ -24,13 +24,14 @@ DEFAULT_MARKDOWN_STYLE = {
 DEFAULT_MESSAGE_FOREGROUND = "#dce3e8"
 
 DEFAULT_ROLE_BACKGROUNDS = {
-    "user": "#293740",
-    "assistant": "#242a30",
-    "reasoning": "#202e3a",
+    "user": "#30414a",
+    "assistant": "#252f36",
+    "reasoning": "#26394a",
 }
 DEFAULT_REASONING_MARKER = "bold #8eb9dc"
 DEFAULT_TAB_WIDTH = 26
 DEFAULT_MESSAGE_WIDTH = 100
+DEFAULT_TRANSCRIPT_GUTTER_WIDTH = 10
 DEFAULT_COMPOSER_MAX_LINES = 6
 
 DEFAULT_TERMINAL_STYLE = {
@@ -60,16 +61,16 @@ DEFAULT_TERMINAL_STYLE = {
     "message.toolbar.user": f"bg:{DEFAULT_ROLE_BACKGROUNDS['user']} #91a5b1",
     "message.toolbar.assistant": f"bg:{DEFAULT_ROLE_BACKGROUNDS['assistant']} #8998a4",
     "message.toolbar.reasoning": f"bg:{DEFAULT_ROLE_BACKGROUNDS['reasoning']} #8ca8bd",
-    "message.toolbar.action": "bg:#353c42 #d5dce1",
+    "message.toolbar.action": "bg:#414d56 #e0e6ea",
     "chat.context": "#a4b5c7",
     "brand": "bg:#252525 bold #c3a6ff",
     "transcript": "bg:#202020 #dedede",
     "metadata.project": "bg:#242424 bold #679bd4",
     "metadata.temporary": "bg:#242424 bold #c3a6ff",
     "tab.divider": "bg:#202020 #454545",
-    "role.user": "bg:#202020 bold #92cfb8",
-    "role.reasoning": "bg:#202020 #8eb9dc",
-    "role.assistant": "bg:#202020 #adc1cf",
+    "role.user": "bg:#202020 bold #a0d8c0",
+    "role.reasoning": "bg:#202020 bold #9bc3e1",
+    "role.assistant": "bg:#202020 bold #c0d4e0",
     "metadata.effort": "bg:#242424 bold #86d49b",
     "tab.close": "#929292",
     "selection": "bold #e1e1e1",
