@@ -139,6 +139,7 @@ def run_fullscreen(
     from accounts import identity, origin
 
     from .chat import run_tui
+    from .tab_session import TabSessionStore
     from .settings import SettingsPanel
 
     accounts = api.get("accounts")
@@ -146,13 +147,19 @@ def run_fullscreen(
     key = accounts.active()
     if key != "chatgpt/default":
         cached_conversation, conversation_id = None, None
+    session_store = TabSessionStore(Path(api.get("paths")) / "data" / "session.json")
+    initial_session = (
+        session_store.load()
+        if conversation_id is None and cached_conversation is None
+        else None
+    )
     cached = {
         name: value
         for name, value in (cached_conversation or {}).items()
         if name not in ("messages", "metadata")
     }
     cached_conversation = None
-    if not conversation_id:
+    if not conversation_id and initial_session is None:
         candidate = accounts.active_conversation(key)
         conversation_id = candidate if isinstance(candidate, str) else cached.get("id")
 
@@ -206,6 +213,8 @@ def run_fullscreen(
         account_service=accounts,
         action_host=action_host,
         layout_factory=layout_factory,
+        initial_session=initial_session,
+        session_store=session_store,
         keybindings=api.settings.snapshot()["keybindings"],
         settings_rows=SettingsPanel(api).rows,
         change_setting=change_setting,

@@ -95,7 +95,11 @@ class SplitLayout:
                     (
                         i
                         for i, state in enumerate(view.tabs)
-                        if state.get("conversation_id") == tab.conversation_id
+                        if state.get("tab_id") == tab.id
+                        or (
+                            state.get("account_key") == key
+                            and state.get("conversation_id") == tab.conversation_id
+                        )
                     ),
                     None,
                 )

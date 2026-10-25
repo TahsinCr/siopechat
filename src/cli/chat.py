@@ -238,6 +238,9 @@ class ChatView:
         self.settings_rows_callback = settings_rows
         self.change_setting = change_setting
         self.load_preferences = load_preferences
+        self.session_store = None
+        self.session_restored = False
+        self._restoring_session = False
         self.session_action = session_action
         self.session_state = {}
         self.session_epoch = 0
@@ -1036,6 +1039,107 @@ class ChatView:
             "loading": self.loading_conversation,
             "loading_started": self.loading_started,
         }
+
+    def _persist_session(self) -> None:
+        if self.session_store is None or self._restoring_session:
+            return
+        try:
+            self._save_active_tab()
+            layout = (
+                self.layout_controller.snapshot("Temporary session")
+                if self.layout_controller
+                else None
+            )
+            self.session_store.save(self.tabs, self.active_tab, layout)
+        except (OSError, TypeError, ValueError) as error:
+            self.status = self.tr("Oturum düzeni kaydedilemedi: {0}").format(error)
+
+    def restore_session(self, session: dict) -> bool:
+        if not isinstance(session, dict) or not isinstance(session.get("tabs"), list):
+            return False
+        available_accounts = (
+            {item["key"] for item in self.account_service.items()}
+            if self.account_service
+            else {self.account_key}
+        )
+        tabs = []
+        source_indexes = []
+        for index, saved in enumerate(session["tabs"]):
+            if not isinstance(saved, dict):
+                continue
+            key = saved.get("account_key", "")
+            if key and key not in available_accounts:
+                continue
+            project = saved.get("project")
+            project = project if isinstance(project, dict) else {}
+            conversation_id = saved.get("conversation_id")
+            kind = saved.get("kind", "chat")
+            tabs.append(
+                {
+                    "account_key": key or self.account_key,
+                    "catalog": self._account_catalogs.get(key) or ModelCatalog(FeatureState.UNKNOWN),
+                    "conversation_id": conversation_id,
+                    "kind": kind,
+                    "title": saved.get("title") or self.tr("New conversation"),
+                    "messages": [],
+                    "model": saved.get("model", ""),
+                    "effort": saved.get("effort"),
+                    "effort_preference": saved.get("effort_preference") or "",
+                    "draft": saved.get("draft", ""),
+                    "project": dict(project),
+                    "temporary": False,
+                    "busy": False,
+                    "loading": False,
+                    "syncing": bool(conversation_id),
+                    "completed_pending": False,
+                    "follow_output": True,
+                    "tab_id": saved["tab_id"],
+                    "needs_hydration": bool(conversation_id) or kind == "project",
+                    "restore_selection": bool(conversation_id),
+                }
+            )
+            source_indexes.append(index)
+        if not tabs:
+            tabs = [dict(self._new_tab_state(), tab_id=uuid.uuid4().hex)]
+            source_indexes = [0]
+        active_source = session.get("active_tab", 0)
+        self.active_tab = min(
+            range(len(source_indexes)),
+            key=lambda index: (abs(source_indexes[index] - active_source), source_indexes[index] > active_source),
+        )
+        self.tabs = tabs
+        self.session_restored = True
+        self._restoring_session = True
+        try:
+            self._restore_active_tab(focus=False)
+            layout = session.get("layout")
+            if self.layout_controller and isinstance(layout, dict):
+                try:
+                    self.layout_controller.restore(layout)
+                    self._restore_active_tab(focus=False)
+                except (KeyError, TypeError, ValueError):
+                    pass
+        finally:
+            self._restoring_session = False
+        return True
+
+    def _hydrate_restored_tab(self, tab: dict[str, Any]) -> None:
+        if not tab.pop("needs_hydration", False):
+            return
+        if tab.get("kind") == "project":
+            project_id = (tab.get("project") or {}).get("id")
+            if project_id:
+                model, effort = tab.get("model", ""), tab.get("effort")
+                self.show_project_details(project_id)
+                tab.update(model=model, effort=effort)
+                if tab is self.tabs[self.active_tab]:
+                    self.model, self.effort = model, effort
+                    self._save_active_tab()
+            return
+        conversation_id = tab.get("conversation_id")
+        if conversation_id:
+            tab["restore_selection"] = True
+            self.resume_conversation(conversation_id)
 
     def tr(self, source):
         from language import literal
@@ -2547,6 +2651,7 @@ class ChatView:
         self.title = self.current_project.get("name") or self.tr("Proje")
         self.messages = [{"role": "system", "text": self.tr("Proje bilgileri yükleniyor…")}]
         self._save_active_tab()
+        self._persist_session()
         self.scroll_bottom()
 
         def success(project):
@@ -3161,6 +3266,7 @@ class ChatView:
                     self.refresh_provider_catalog()
         self.restore_account_preference()
         self._save_active_tab()
+        self._persist_session()
 
     def switch_tab(self, offset: int) -> None:
         self.close_overlays()
@@ -3172,6 +3278,9 @@ class ChatView:
         self._save_active_tab()
         self.active_tab = (self.active_tab + offset) % len(self.tabs)
         self._restore_active_tab()
+        if not self._restoring_session:
+            self._hydrate_restored_tab(self.tabs[self.active_tab])
+            self._persist_session()
 
     def _restore_active_tab(self, *, focus: bool = True) -> None:
         self.transcript_window.scroll_direction = 0
@@ -3299,6 +3408,7 @@ class ChatView:
             self.tabs.pop(self.active_tab)
             self.active_tab = min(self.active_tab, len(self.tabs) - 1)
         self._restore_active_tab()
+        self._persist_session()
 
     def close_all_tabs(self) -> None:
         """Close idle tabs atomically; retain a clean draft as the last tab."""
@@ -3359,6 +3469,7 @@ class ChatView:
             self.layout_controller.pending = None
             self.layout_controller.active_group()
         self.status = self.tr("Sekmeler kapatıldı")
+        self._persist_session()
         self.app.invalidate()
 
     def _discard_tab_render_cache(self, tab):
@@ -4864,8 +4975,14 @@ class ChatView:
             key, remote = origin(conversation_id, self.account_key)
             if key != self.account_key:
                 self.bind_account(key)
+            restore_selection = bool(target_tab.pop("restore_selection", False))
+            saved_model = target_tab.get("model") if restore_selection else None
+            saved_effort = target_tab.get("effort") if restore_selection else None
             self.model, self.effort = "", None
             self.restore_account_preference()
+            if saved_model:
+                self.model = saved_model
+                self.effort = saved_effort
             target_tab.update(
                 account_key=key,
                 catalog=self.catalog,
@@ -5247,6 +5364,8 @@ class ChatView:
                 else:
                     self.status = self.tr("Yanıt tamamlandı: {0}").format(tab["title"])
                     self.app.invalidate()
+                if any(item is tab for item in self.tabs):
+                    self._persist_session()
 
             self._dispatch_ui(finish_turn)
 
@@ -5280,7 +5399,9 @@ class ChatView:
             self.refresh_provider_catalog()
             self.refresh_other_provider_catalogs()
             self.refresh_sidebar()
-            if self.load_on_start and self.conversation_id is not None:
+            if self.session_restored:
+                self._hydrate_restored_tab(self.tabs[self.active_tab])
+            elif self.load_on_start and self.conversation_id is not None:
                 self.resume_conversation(self.conversation_id)
             else:
                 self.refresh_open_conversation()
@@ -5294,8 +5415,8 @@ class ChatView:
             self._reads.close()
             self._render_reads.close()
             self._operations.close()
+            self._persist_session()
             if self.forget_temporary and not self.busy:
-                self._save_active_tab()
                 for tab in self.tabs:
                     if tab.get("temporary") and tab.get("conversation_id"):
                         try:
@@ -5328,6 +5449,8 @@ def run_tui(
     list_project_chats: Callable[..., dict[str, Any]] | None = None,
     initial_project: dict[str, Any] | None = None,
     refresh_on_start: bool = False,
+    initial_session: dict | None = None,
+    session_store=None,
     **callbacks,
 ) -> None:
     view = ChatView(
@@ -5354,5 +5477,8 @@ def run_tui(
         refresh_on_start,
         **callbacks,
     )
+    view.session_store = session_store
+    if initial_session is not None:
+        view.restore_session(initial_session)
     initial_messages = None
     view.run()

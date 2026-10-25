@@ -8,6 +8,10 @@ Python distributions use the corresponding PEP 440 version (`1.4b0` for `v1.4-be
 
 ## [Unreleased]
 
+### Added
+
+- Save the terminal's open tabs and selected tab in a private temporary session file, then restore conversations from the local archive and synchronize them in the background on startup.
+
 ### Fixed
 
 - Show cached project-chat pages from SQLite as soon as a project is expanded, then reconcile provider pages in the background and update the same sidebar entries.
