@@ -4,8 +4,15 @@ from datetime import datetime
 
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.layout import DynamicContainer, HSplit, VSplit, Window
-from prompt_toolkit.layout.controls import UIContent, UIControl
+from prompt_toolkit.layout import (
+    DynamicContainer,
+    HSplit,
+    VerticalAlign,
+    VSplit,
+    Window,
+    WindowAlign,
+)
+from prompt_toolkit.layout.controls import FormattedTextControl, UIContent, UIControl
 from prompt_toolkit.layout.margins import ScrollbarMargin
 from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Button, TextArea
@@ -64,7 +71,7 @@ class _DownloadsRowsControl(UIControl):
             if self._rows:
                 cached = self.panel.render_row(index, self._width)
             else:
-                cached = [("class:help", "  " + self.panel.view.tr("İndirme kaydı yok"))]
+                cached = []
             self._fragments[index] = cached
         return cached
 
@@ -83,9 +90,15 @@ class DownloadsPanel:
         self.render_revision = 0
         self._records_by_id = {}
         self._rows_by_id = {}
+        self.active_count = 0
         self.filters = ("all", "active", "completed", "deleted", "failed")
         self.sorts = ("newest", "oldest", "name", "largest", "name_desc", "smallest")
-        self.search = TextArea(height=1, prompt=view.tr("Ara  "), multiline=False)
+        self.search = TextArea(
+            height=1,
+            prompt=view.tr("Ara  "),
+            multiline=False,
+            style="class:settings.search",
+        )
         self.search.buffer.on_text_changed += lambda _: self.rebuild()
         self.control = _DownloadsRowsControl(self)
         self.window = SelectionWindow(
@@ -94,6 +107,13 @@ class DownloadsPanel:
             wrap_lines=False,
             always_hide_cursor=True,
             right_margins=[ScrollbarMargin(display_arrows=True)],
+            style="class:downloads.list",
+        )
+        self.empty_window = Window(
+            content=FormattedTextControl(self.empty_state),
+            align=WindowAlign.CENTER,
+            vertical_align=VerticalAlign.CENTER,
+            style="class:downloads.empty",
         )
         keys = KeyBindings()
         for key, callback in (
@@ -120,26 +140,33 @@ class DownloadsPanel:
             Button(view.tr("Kapat"), handler=view.close_tab, width=12),
         ]
         self.action_buttons = actions
-        wide_toolbar = VSplit([self.filter_button, self.sort_button, refresh])
-        small_toolbar = HSplit([VSplit([self.filter_button, refresh]), self.sort_button])
-        wide_actions = VSplit(actions)
-        small_actions = HSplit([VSplit(actions[:2]), VSplit(actions[2:])])
+        wide_toolbar = VSplit(
+            [self.filter_button, self.sort_button, refresh], style="class:downloads.toolbar"
+        )
+        small_toolbar = HSplit(
+            [VSplit([self.filter_button, refresh]), self.sort_button],
+            style="class:downloads.toolbar",
+        )
+        wide_actions = VSplit(actions, style="class:downloads.actions")
+        small_actions = HSplit(
+            [VSplit(actions[:2]), VSplit(actions[2:])], style="class:downloads.actions"
+        )
         self.container = HSplit(
             [
                 Window(
-                    content=BoundedTextControl(
-                        lambda: [("class:settings.title", "  " + view.tr("İndirmeler"))]
-                    ),
+                    content=BoundedTextControl(self.header),
                     height=1,
+                    style="class:downloads.header",
                 ),
                 self.search,
                 DynamicContainer(
                     lambda: small_toolbar if view.terminal_width() < 76 else wide_toolbar
                 ),
                 Window(height=1, char="─", style="class:separator"),
-                self.window,
+                DynamicContainer(lambda: self.window if self.rows else self.empty_window),
                 Window(
-                    content=BoundedTextControl(lambda: [("class:help", self.message)]), height=1
+                    content=BoundedTextControl(lambda: [("class:downloads.status", self.message)]),
+                    height=1,
                 ),
                 DynamicContainer(
                     lambda: small_actions if view.terminal_width() < 76 else wide_actions
@@ -148,6 +175,26 @@ class DownloadsPanel:
             key_bindings=panel_keys,
         )
         self.labels()
+
+    def header(self):
+        tr = self.view.tr
+        return [
+            ("class:downloads.title", "  ↓ " + tr("İndirmeler")),
+            ("class:downloads.summary", f"   {len(self.records)} {tr('Kayıt')}"),
+            ("class:downloads.summary", f"  ·  {self.active_count} {tr('Devam eden')}"),
+        ]
+
+    def empty_state(self):
+        tr = self.view.tr
+        title = tr("İndirme kaydı yok")
+        detail = tr("İndirilen dosyalar burada görünür")
+        if self.records:
+            title = tr("Arama veya filtreyle eşleşen indirme yok")
+            detail = tr("Aramayı veya filtreyi değiştir")
+        return [
+            ("class:downloads.empty.title", "\n" + title + "\n"),
+            ("class:downloads.empty.detail", detail),
+        ]
 
     def footer_label(self):
         service = self.service()
@@ -249,6 +296,10 @@ class DownloadsPanel:
         for item in active_rows:
             record_index = self._records_by_id.get(item["id"])
             if record_index is not None:
+                previous = self.records[record_index]
+                self.active_count += int(item["state"] in ("preparing", "downloading")) - int(
+                    previous["state"] in ("preparing", "downloading")
+                )
                 self.records[record_index] = item
             for row_index in self._rows_by_id.get(item["id"], ()):
                 row_type = self.rows[row_index][0]
@@ -267,6 +318,9 @@ class DownloadsPanel:
 
     def rebuild(self):
         selected = self.rows[self.index] if self.rows and self.index < len(self.rows) else None
+        self.active_count = sum(
+            row["state"] in ("preparing", "downloading") for row in self.records
+        )
         query, mode = self.search.text.casefold(), self.filters[self.filter_index]
         records = [
             r
@@ -359,10 +413,12 @@ class DownloadsPanel:
             "interrupted": "Kesildi",
         }
         row = self.rows[index]
-        style = "class:message.selected" if index == self.index else ""
+        selected = " class:downloads.selected" if index == self.index else ""
+        click = on_click(lambda: self.pick(index))
         if row[0] == "day":
-            text = f" {'▸' if row[1] in self.collapsed else '▾'} {row[1]}  · {row[2]}"
-            style += " class:settings.title"
+            marker = "▸" if row[1] in self.collapsed else "▾"
+            text = fit_text(f"  {marker}  {row[1]}   ·   {row[2]} {tr('Kayıt')}", width)
+            return [("class:downloads.group" + selected, text, click)]
         else:
             item = row[1]
             if row[0] == "file":
@@ -376,22 +432,37 @@ class DownloadsPanel:
                         detail += " · " + tr("Kalan") + " " + size_label(max(0, total - size))
                 label = tr(states[item["state"]])
                 clock = datetime.fromtimestamp(item["created"]).strftime("%H:%M")
-                suffix = f"  · {label} · {detail}"
-                name = fit_text(
-                    item["name"] or tr("Hazırlanıyor"), max(8, width - get_cwidth(suffix) - 11)
-                )
-                text = f"   {clock}  {name}{suffix}"
-            else:
-                chat = (
-                    tr("Sohbet silindi")
-                    if item.get("chat_deleted")
-                    else (item.get("title") or tr("Sohbet"))
-                )
-                if not item.get("conversation_id"):
-                    chat = tr("Geçici sohbet / kaynak yok")
-                text = f"          ↳ {chat} · {item['account']}"
-                style += " class:help"
-        return [(style, fit_text(text, max(20, width)), on_click(lambda: self.pick(index)))]
+                prefix = f"  {clock}   "
+                suffix = f"{label}  ·  {detail}"
+                suffix_width = min(get_cwidth(suffix), max(8, width - get_cwidth(prefix) - 2))
+                suffix = fit_text(suffix, suffix_width)
+                name_width = max(1, width - get_cwidth(prefix) - get_cwidth(suffix) - 1)
+                name = fit_text(item["name"] or tr("Hazırlanıyor"), name_width)
+                gap = " " * max(1, width - get_cwidth(prefix + name + suffix))
+                status_style = {
+                    "preparing": "class:activity",
+                    "downloading": "class:sync",
+                    "completed": "class:settings.enabled",
+                    "deleted": "class:sidebar.muted",
+                    "failed": "class:sync.error",
+                    "interrupted": "class:sync.error",
+                }[item["state"]]
+                return [
+                    ("class:downloads.file" + selected, prefix, click),
+                    ("class:downloads.filename" + selected, name, click),
+                    ("class:downloads.file" + selected, gap, click),
+                    ("class:downloads.file " + status_style + selected, suffix, click),
+                ]
+
+            chat = (
+                tr("Sohbet silindi")
+                if item.get("chat_deleted")
+                else (item.get("title") or tr("Sohbet"))
+            )
+            if not item.get("conversation_id"):
+                chat = tr("Geçici sohbet / kaynak yok")
+            text = fit_text(f"      ↳  {chat}   ·   {item['account']}", width)
+            return [("class:downloads.source" + selected, text, click)]
 
     def activate(self):
         if not self.rows:

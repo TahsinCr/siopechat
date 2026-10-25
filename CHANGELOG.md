@@ -16,6 +16,7 @@ Python distributions use the corresponding PEP 440 version (`1.4b0` for `v1.4-be
 
 ### Changed
 
+- Restyle the downloads workspace with a centered empty state, a compact activity summary, and distinct dark rows for files, source chats, and date groups.
 - Distinguish roles with compact pictograms and no gutter labels; use separate dark-gray cards for user messages and shared cards for assistant replies and thinking summaries. Thinking summaries have no toolbar.
 - Merge consecutive thinking summaries into one card and stack their texts without blank rows; keep one blank row between transcript items, including long code blocks.
 
