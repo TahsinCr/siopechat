@@ -16,6 +16,7 @@ Python distributions use the corresponding PEP 440 version (`1.4b0` for `v1.4-be
 ### Changed
 
 - Distinguish roles with compact pictograms and no gutter labels; use separate dark-gray cards for user messages and shared cards for assistant replies and thinking summaries. Thinking summaries have no toolbar.
+- Merge consecutive thinking summaries into one vertical card and keep a single blank row between transcript items, including long code blocks.
 
 ### Fixed
 

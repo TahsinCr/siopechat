@@ -7,6 +7,7 @@ from threading import RLock
 
 from .markdown import (
     MessageRenderer,
+    group_reasoning_entries,
     index_transcript,
     index_transcript_window,
     message_order,
@@ -64,6 +65,10 @@ class VirtualTranscript:
             self.entries = [
                 index for index in self.entries if self.messages[index][0] != "reasoning"
             ]
+        self.groups = group_reasoning_entries(
+            self.entries, tuple(message[0] for message in self.messages)
+        )
+        self.entries = [indices[0] for _, indices in self.groups]
         self.starts = []
         self.ranges = []
         self.body_counts = []
@@ -79,21 +84,30 @@ class VirtualTranscript:
                 previous_messages = previous.messages
                 previous_blocks = dict(previous._large_code)
                 if previous_messages:
-                    for entry, (start, end, index) in enumerate(previous.ranges):
-                        reusable[previous_messages[index]] = (entry, index, end - start - 1)
+                    for entry in range(len(previous.ranges)):
+                        reusable[previous._entry_key(entry)] = (
+                            entry,
+                            previous.entries[entry],
+                            previous.body_counts[entry],
+                        )
         inherited = {}
         line = 0
-        for entry_index, index in enumerate(self.entries):
+        for entry_index, (role, indices) in enumerate(self.groups):
             if cancelled and cancelled():
                 raise InterruptedError("Superseded transcript")
-            role, text = self.messages[index]
-            old = reusable.get((role, text))
-            if old is not None and (index == active_index) == (old[1] == previous.active_index):
+            index = indices[0]
+            text = self._entry_text(entry_index)
+            active = active_index in indices
+            old = reusable.get(self._entry_key(entry_index))
+            previous_active = (
+                previous.active_index in previous.groups[old[0]][1] if old is not None else False
+            )
+            if old is not None and active == previous_active:
                 old_entry, _, count = old
                 inherited[old_entry] = (entry_index, index)
                 if old_entry in previous_blocks:
                     block, prefix = previous_blocks[old_entry]
-                    if block.source is not text:
+                    if block.source != text:
                         block = copy(block)
                         block.source = text
                     self._large_code[entry_index] = (block, prefix)
@@ -104,15 +118,15 @@ class VirtualTranscript:
                     role,
                     text or "",
                     self.width,
-                    index > 0,
-                    index == self.active_index,
+                    entry_index > 0,
+                    active,
                 )
             else:
                 prefix = self.renderer.code_prefix_rows(role, self.width)
                 self._large_code[entry_index] = (block, prefix)
-                count = prefix + block.line_count + 2
+                count = prefix + block.line_count + 1
             self.body_counts.append(count)
-            count += 1
+            count += int(role in ("user", "assistant"))
             self.starts.append(line)
             self.ranges.append((line, line + count, index))
             line += count
@@ -126,14 +140,23 @@ class VirtualTranscript:
                             new_entry, page, tuple((spans, owner) for spans, _ in rows), size
                         )
 
-    def _render(self, index):
-        role, text = self.messages[index]
+    def _entry_key(self, entry_index):
+        role, indices = self.groups[entry_index]
+        return role, tuple(self.messages[index][1] or "" for index in indices)
+
+    def _entry_text(self, entry_index):
+        _, texts = self._entry_key(entry_index)
+        return texts[0] if len(texts) == 1 else "\n\n".join(texts)
+
+    def _render(self, entry_index):
+        role, _ = self.groups[entry_index]
+        text = self._entry_text(entry_index)
         return self.renderer.render(
             role,
             render_chatgpt_annotations(text or ""),
             self.width,
-            index > 0,
-            index == self.active_index,
+            entry_index > 0,
+            self.active_index in self.groups[entry_index][1],
         )
 
     def _page_key(self, entry_index, page):
@@ -187,7 +210,7 @@ class VirtualTranscript:
                 include_label=start == 0,
             )
             suffix_start = prefix + block.line_count
-            suffix_rows = max(0, min(stop, suffix_start + 2) - max(start, suffix_start))
+            suffix_rows = max(0, min(stop, suffix_start + 1) - max(start, suffix_start))
             if suffix_rows:
                 rendered += "\n" * suffix_rows
             rows = index_transcript(
@@ -197,7 +220,7 @@ class VirtualTranscript:
             cached = self._pages.get(key)
             return cached[0] if cached is not None else rows
 
-        rendered = self._render(message_index)
+        rendered = self._render(entry_index)
         if self._disposed:
             self._release()
             return ()

@@ -357,6 +357,18 @@ def message_order(roles):
     return ordered
 
 
+def group_reasoning_entries(entries, roles):
+    """Merge adjacent reasoning records into one visual transcript block."""
+    groups = []
+    for index in entries:
+        role = roles[index]
+        if role == "reasoning" and groups and groups[-1][0] == "reasoning":
+            groups[-1][1].append(index)
+        else:
+            groups.append([role, [index]])
+    return tuple((role, tuple(indices)) for role, indices in groups)
+
+
 def _source_items(message: dict[str, Any]) -> tuple[dict[str, str], ...]:
     """Keep only explicit citation links needed by the message toolbar."""
     metadata = message.get("metadata")
@@ -769,25 +781,31 @@ class MessageRenderer:
         """Prepare immutable transcript text and line ranges off the UI thread."""
         pieces, ranges = [], []
         line = 0
-        ordered = message_order(message.get("role") for message in messages)
-        for index in ordered:
-            message = messages[index]
+        roles = tuple(message.get("role") for message in messages)
+        ordered = message_order(roles)
+        if not show_reasoning:
+            ordered = [index for index in ordered if roles[index] != "reasoning"]
+        groups = group_reasoning_entries(ordered, roles)
+        for entry, (role, indices) in enumerate(groups):
             if cancelled and cancelled():
                 raise InterruptedError("Sohbet yüklemesi daha yeni bir seçimle değiştirildi")
-            if message["role"] == "reasoning" and not show_reasoning:
-                continue
+            text = "\n\n".join(
+                render_chatgpt_annotations(messages[index]["text"]) for index in indices
+            )
             value = self.render(
-                message["role"],
-                render_chatgpt_annotations(message["text"]),
+                role,
+                text,
                 width,
-                index > 0,
-                index == active_index,
+                entry > 0,
+                active_index in indices,
             )
             count = value.count("\n")
-            ranges.append((line, line + count + 1, index))
-            line += count + 1
+            separator = int(role in ("user", "assistant"))
+            ranges.append((line, line + count + separator, indices[0]))
+            line += count + separator
             pieces.append(value)
-            pieces.append("\n")
+            if separator:
+                pieces.append("\n")
         return "".join(pieces), ranges
 
     def render(
