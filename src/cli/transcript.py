@@ -436,6 +436,7 @@ class TranscriptPrefetch:
 
         self.submit(read, finished, lambda _reason: finished())
 
+
 class VirtualTranscriptRows:
     """Sequence-compatible row view consumed by TranscriptControl."""
 

@@ -104,9 +104,6 @@ class TabSessionStore:
             ),
             "draft": value.get("draft") if isinstance(value.get("draft"), str) else "",
             "project": {
-                key: project[key]
-                for key in ("id", "name")
-                if isinstance(project.get(key), str)
+                key: project[key] for key in ("id", "name") if isinstance(project.get(key), str)
             },
         }
-

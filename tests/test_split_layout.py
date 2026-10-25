@@ -4,6 +4,7 @@ import asyncio
 import unittest
 from unittest.mock import patch
 
+from cli.styles import DEFAULT_TRANSCRIPT_GUTTER_WIDTH
 from extensions.layout.panes import SplitLayout, _Pane
 from tests import cli_support as interaction
 
@@ -29,7 +30,9 @@ class SplitTests(unittest.IsolatedAsyncioTestCase):
                 pane = next(iter(v.layout_controller._panes.values()))
                 pane.transcript_rows(1)
                 self.assertTrue(pane.message_ranges)
-                self.assertEqual(pane.body.left_margins[0].get_width(None), 3)
+                self.assertEqual(
+                    pane.body.left_margins[0].get_width(None), DEFAULT_TRANSCRIPT_GUTTER_WIDTH
+                )
                 self.assertLess(v.main_width(), v.workspace_width())
                 v.select_tab(1)
                 v.app.invalidate()
@@ -87,7 +90,15 @@ class SplitTests(unittest.IsolatedAsyncioTestCase):
             with patch.object(pane.renderer, "render", wraps=pane.renderer.render) as render:
                 pane.transcript_rows(1)
                 self.assertFalse(render.call_args_list[0].args[-1])
-                self.assertTrue(render.call_args_list[-1].args[-1])
+                self.assertTrue(
+                    any(
+                        call.args[0] == "assistant" and call.args[-1]
+                        for call in render.call_args_list
+                    )
+                )
+                self.assertFalse(
+                    any(call.args[0] == "user" and call.args[-1] for call in render.call_args_list)
+                )
                 calls = render.call_count
                 self.assertLessEqual(pane.layout.cache_bytes, 1024 * 1024)
                 pane.transcript_rows(1)

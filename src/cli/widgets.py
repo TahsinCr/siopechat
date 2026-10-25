@@ -68,7 +68,8 @@ class TranscriptControl(UIControl):
         self._toolbar_rows = {
             end - 2: index
             for start, end, index in getattr(self.view, "message_ranges", ())
-            if end - start > 1
+            if 0 <= index < len(self.view.messages)
+            and end - start > 1
             and self.view.messages[index].get("role") in ("user", "assistant")
         }
         self._toolbar_fragments = {}
@@ -184,9 +185,7 @@ class TranscriptControl(UIControl):
                 return None
             spans = self._toolbar_fragments.get(line)
             if spans is None and line in self._toolbar_rows:
-                spans = self._message_toolbar(
-                    self._toolbar_rows[line], self._content_width
-                )
+                spans = self._message_toolbar(self._toolbar_rows[line], self._content_width)
                 self._toolbar_fragments[line] = spans
             if spans is None:
                 spans = self.rows[line][0]

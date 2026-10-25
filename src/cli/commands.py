@@ -139,8 +139,8 @@ def run_fullscreen(
     from accounts import identity, origin
 
     from .chat import run_tui
-    from .tab_session import TabSessionStore
     from .settings import SettingsPanel
+    from .tab_session import TabSessionStore
 
     accounts = api.get("accounts")
     accounts.cdp_url = cdp_url
@@ -149,9 +149,7 @@ def run_fullscreen(
         cached_conversation, conversation_id = None, None
     session_store = TabSessionStore(Path(api.get("paths")) / "data" / "session.json")
     initial_session = (
-        session_store.load()
-        if conversation_id is None and cached_conversation is None
-        else None
+        session_store.load() if conversation_id is None and cached_conversation is None else None
     )
     cached = {
         name: value

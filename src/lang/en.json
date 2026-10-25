@@ -532,7 +532,6 @@
   "ui.Komut paleti": "Command palette",
   "ui.Metni kes": "Cut text",
   "ui.Boş mesajla çık": "Quit with empty input",
-  "ui.Model": "Model",
   "ui.Düzen": "Layout",
   "ui.Gezinme": "Navigation",
   "ui.Düzenleme": "Editing",
@@ -778,5 +777,6 @@
   "ui.{0} dosya eklendi": "{0} files added",
   "ui.{0} dosya hazır": "{0} files ready",
   "ui.{0} dosya sınır nedeniyle eklenmedi": "{0} files skipped by provider limits",
-  "ui.{0} dosya yüklenemedi": "{0} files could not be uploaded"
+  "ui.{0} dosya yüklenemedi": "{0} files could not be uploaded",
+  "ui.Oturum düzeni kaydedilemedi: {0}": "Could not save session layout: {0}"
 }

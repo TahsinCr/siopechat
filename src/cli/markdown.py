@@ -422,7 +422,7 @@ def _source_items(message: dict[str, Any]) -> tuple[dict[str, str], ...]:
         for key in ("citations", "sources"):
             values = root.get(key)
             if isinstance(values, (list, tuple)):
-                for value in values[:12 - len(sources)]:
+                for value in values[: 12 - len(sources)]:
                     append(value)
         for key in ("grounding_metadata", "groundingMetadata"):
             grounding = root.get(key)
@@ -430,7 +430,7 @@ def _source_items(message: dict[str, Any]) -> tuple[dict[str, str], ...]:
                 continue
             chunks = grounding.get("grounding_chunks") or grounding.get("groundingChunks")
             if isinstance(chunks, (list, tuple)):
-                for value in chunks[:12 - len(sources)]:
+                for value in chunks[: 12 - len(sources)]:
                     append(value)
         if len(sources) >= 12:
             break
@@ -794,9 +794,7 @@ class MessageRenderer:
         for entry, (role, indices) in enumerate(groups):
             if cancelled and cancelled():
                 raise InterruptedError("Sohbet yüklemesi daha yeni bir seçimle değiştirildi")
-            texts = tuple(
-                render_chatgpt_annotations(messages[index]["text"]) for index in indices
-            )
+            texts = tuple(render_chatgpt_annotations(messages[index]["text"]) for index in indices)
             text = join_reasoning_texts(texts) if len(texts) > 1 else texts[0]
             value = self.render(
                 role,

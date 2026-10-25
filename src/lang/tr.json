@@ -532,7 +532,6 @@
   "ui.Komut paleti": "Komut paleti",
   "ui.Metni kes": "Metni kes",
   "ui.Boş mesajla çık": "Boş mesajla çık",
-  "ui.Model": "Model",
   "ui.Düzen": "Düzen",
   "ui.Gezinme": "Gezinme",
   "ui.Düzenleme": "Düzenleme",
@@ -778,5 +777,6 @@
   "ui.{0} dosya eklendi": "{0} dosya eklendi",
   "ui.{0} dosya hazır": "{0} dosya hazır",
   "ui.{0} dosya sınır nedeniyle eklenmedi": "{0} dosya sağlayıcı sınırı nedeniyle eklenmedi",
-  "ui.{0} dosya yüklenemedi": "{0} dosya yüklenemedi"
+  "ui.{0} dosya yüklenemedi": "{0} dosya yüklenemedi",
+  "ui.Oturum düzeni kaydedilemedi: {0}": "Oturum düzeni kaydedilemedi: {0}"
 }

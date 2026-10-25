@@ -321,6 +321,8 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
     async def test_resize_recomputes_sidebar_transcript_and_tab_widths(self):
         from prompt_toolkit.utils import get_cwidth
 
+        from cli.styles import DEFAULT_TRANSCRIPT_GUTTER_WIDTH
+
         class Output(DummyOutput):
             size = Size(rows=24, columns=80)
 
@@ -341,15 +343,25 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
                     await self.settle(
                         lambda: (
                             view.transcript_window.render_info is not None
-                            and view.transcript_window.render_info.window_width == expected - 4
+                            and view.transcript_window.render_info.window_width
+                            == expected - DEFAULT_TRANSCRIPT_GUTTER_WIDTH - 1
                         )
                     )
-                    self.assertEqual(view.transcript_width(), min(100, expected - 5))
+                    self.assertEqual(
+                        view.transcript_width(),
+                        min(100, expected - DEFAULT_TRANSCRIPT_GUTTER_WIDTH - 2),
+                    )
                     self.assertLessEqual(
                         sum(get_cwidth(fragment[1]) for fragment in view.render_tabs()), columns
                     )
                 view.toggle_sidebar()
-                await self.settle(lambda: view.transcript_window.render_info.window_width == 116)
+                await self.settle(
+                    lambda: (
+                        view.transcript_window.render_info is not None
+                        and view.transcript_window.render_info.window_width
+                        == 120 - DEFAULT_TRANSCRIPT_GUTTER_WIDTH - 1
+                    )
+                )
                 self.assertEqual(view.transcript_width(), 100)
             finally:
                 if view.app.is_running:

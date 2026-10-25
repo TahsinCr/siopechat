@@ -213,9 +213,7 @@ class Forms:
                 body.append(
                     Window(
                         height=1,
-                        content=FormattedTextControl(
-                            [("class:dialog.body", f"  {label}")]
-                        ),
+                        content=FormattedTextControl([("class:dialog.body", f"  {label}")]),
                         wrap_lines=False,
                     )
                 )

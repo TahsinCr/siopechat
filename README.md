@@ -1,4 +1,4 @@
-[![Version: v1.4-beta][version-shield]](CHANGELOG.md)
+[![Version: v1.4.1-beta][version-shield]](CHANGELOG.md)
 [![Python 3.10+][python-shield]](https://www.python.org/downloads/)
 [![GPL-3.0-only][license-shield]](LICENSE)
 
@@ -24,7 +24,7 @@ It uses your own signed-in web sessions. There are no API keys to configure, and
 - A command palette, configurable shortcuts, mouse controls and local extensions.
 - English, Turkish and Russian interface catalogs.
 
-**v1.4-beta** makes cached chats and projects available at startup while provider synchronization continues in the background. Long conversation histories load in bounded SQLite pages, transcript memory use is limited, and the release adds an independent provider client package plus one-time installers for Linux, macOS and Windows. The Python distribution version is `1.4b0`.
+**v1.4.1-beta** refines the conversation and downloads views, adds Claude Incognito chats, and restores open conversations after restart. Cached project conversations now appear before background provider synchronization finishes. The Python distribution version is `1.4.1b0`.
 
 ## Install and sign in
 
@@ -214,6 +214,6 @@ The GitHub Actions workflow runs the locked Python 3.10/3.14 and Node 22/24 matr
 
 Copyright © TahsinCr. Licensed under [GPL-3.0-only](LICENSE). Vendored components retain their own notices in `src/utils/`.
 
-[version-shield]: https://img.shields.io/badge/version-v1.4--beta-b7a3e3.svg?style=for-the-badge
+[version-shield]: https://img.shields.io/badge/version-v1.4.1--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge

@@ -15,7 +15,7 @@ from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
 from prompt_toolkit.output import DummyOutput
 
 from backend import BackendService
-from cli.widgets import TranscriptGutter
+from cli.widgets import TranscriptControl, TranscriptGutter
 from providers import Capability
 from providers.chatgpt import BrowserSession, ChatGPTClient, ChatGPTProvider, SessionPaths
 from providers.chatgpt.errors import ChatGPTWebError
@@ -24,6 +24,21 @@ from tests.cli_support import click, immediate, terminal
 
 
 class PolishTests(unittest.TestCase):
+    def test_toolbar_skips_message_ranges_from_a_superseded_transcript(self):
+        view = SimpleNamespace(
+            transcript_rows=lambda viewport_height: (([("class:transcript", "Message")], 0),),
+            transcript_cursor_position=lambda: Point(0, 0),
+            message_ranges=[(0, 3, 4)],
+            messages=[{"role": "assistant", "text": "Current message"}],
+            message_selection=False,
+            selected_message=None,
+        )
+
+        content = TranscriptControl(view).create_content(40, 1)
+
+        self.assertEqual(content.line_count, 1)
+        self.assertEqual(content.get_line(0), [("class:transcript", "Message")])
+
     def test_gutter_uses_rendered_roles_and_ignores_stale_out_of_bounds_ranges(self):
         info = SimpleNamespace(visible_line_to_row_col={0: (0, 0), 1: (1, 0)})
         view = SimpleNamespace(
@@ -164,9 +179,9 @@ class PolishTests(unittest.TestCase):
                 }
             )
             rows = gutter.create_margin(info, 3, 5)
-            self.assertEqual([r[1].strip() for r in rows], [">", "", "🧠", "🤖", ""])
+            self.assertEqual([r[1].strip() for r in rows], ["👤", "", "🧠", "🤖", ""])
             self.assertIn(
-                "48;2;28;39;50", v.renderer.render("reasoning", "Summary", 60, True, False)
+                "48;2;48;48;48", v.renderer.render("reasoning", "Summary", 60, True, False)
             )
 
     def test_wheel_burst_accumulates_without_waiting_for_render(self):

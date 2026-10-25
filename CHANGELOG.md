@@ -4,28 +4,29 @@ All notable changes to SiopeChat are documented here.
 
 The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
-Python distributions use the corresponding PEP 440 version (`1.4b0` for `v1.4-beta`).
+Python distributions use the corresponding PEP 440 version (`1.4.1b0` for `v1.4.1-beta`).
 
 ## [Unreleased]
 
+## [1.4.1-beta] - 2026-10-25
+
 ### Added
 
-- Add compact per-message copy controls for user and assistant messages; assistant replies also expose source links and explicit model/effort details when the provider supplied them.
-- Support Claude Incognito chats through the temporary-chat control; verify the provider marks the conversation temporary before sending and reject project-scoped temporary chats.
-- Save the terminal's open tabs and selected tab in a private temporary session file, then restore conversations from the local archive and synchronize them in the background on startup.
+- Added compact copy controls to user and assistant messages. Assistant replies also show provider-supplied sources and model details.
+- Added Claude Incognito chats and restoration of open conversations and the selected tab after restart.
 
 ### Changed
 
-- Restyle the downloads workspace with a centered empty state, a compact activity summary, and distinct dark rows for files, source chats, and date groups.
-- Distinguish roles with compact pictograms and no gutter labels; use separate dark-gray cards for user messages and shared cards for assistant replies and thinking summaries. Thinking summaries have no toolbar.
-- Merge consecutive thinking summaries into one card and stack their texts without blank rows; keep one blank row between transcript items, including long code blocks.
+- Refined the downloads workspace and transcript cards, with distinct styling for user messages and assistant content.
+- Combined consecutive thinking summaries and removed blank rows between them.
 
 ### Fixed
 
-- Build the downloads empty state only with layout options supported by the pinned Prompt Toolkit version, avoiding an application startup crash.
-- Show cached project-chat pages from SQLite as soon as a project is expanded, then reconcile provider pages in the background and update the same sidebar entries.
-- Preserve inactive transcript caches when a conversation load or render completes after a tab switch; do not dispose a layout still owned by another tab.
-- Keep the active transcript viewport rendered after tab switches, cancel stale viewport-prefetch targets, and clamp each tab's scroll position to its current transcript.
+- Kept the downloads panel compatible with the supported Prompt Toolkit layout API so startup succeeds.
+- Displayed cached project conversations immediately, then reconciled them with provider history in the background.
+- Preserved inactive transcript state across tab switches and bounded scroll positions to the available history.
+- Kept split-pane message toolbars scoped to their chat and skipped stale transcript ranges during redraw.
+- Added translated errors for saving the tab layout.
 
 ## [1.4-beta] - 2026-10-24
 

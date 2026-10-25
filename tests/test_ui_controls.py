@@ -164,9 +164,9 @@ class UiControlsTests(unittest.TestCase):
         with terminal() as (view, _):
             user = view.renderer.render("user", "A question", 60, False, False)
             assistant = view.renderer.render("assistant", "An answer", 60, True, False)
-            self.assertIn("48;2;48;48;48", user)
+            self.assertIn("48;2;56;56;56", user)
             self.assertNotIn("ASİSTAN", user)
-            self.assertIn("48;2;24;24;24", assistant)
+            self.assertIn("48;2;48;48;48", assistant)
             self.assertNotIn("48;2;75;75;75", user)
             self.assertNotIn("─" * 10, user)
 

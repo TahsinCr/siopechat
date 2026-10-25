@@ -111,9 +111,11 @@ class ApplicationTests(unittest.TestCase):
             "load_conversation": Mock(return_value={"id": "example"}),
             "send_prompt": Mock(return_value={}),
         }
-        api.get.side_effect = lambda key: (
-            accounts if key == "accounts" else backend if key == "backend" else Mock()
-        )
+        api.get.side_effect = lambda key: {
+            "accounts": accounts,
+            "backend": backend,
+            "paths": Path("unused-root"),
+        }.get(key, Mock())
         with patch.object(chat, "run_tui") as run_tui:
             with patch.object(self.app, "cache_conversation") as cache:
                 commands.run_fullscreen(api, Path("unused.sock"))

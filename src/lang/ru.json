@@ -532,7 +532,6 @@
   "ui.Komut paleti": "Палитра команд",
   "ui.Metni kes": "Вырезать текст",
   "ui.Boş mesajla çık": "Выйти при пустом поле ввода",
-  "ui.Model": "Модель",
   "ui.Düzen": "Компоновка",
   "ui.Gezinme": "Навигация",
   "ui.Düzenleme": "Редактирование",
@@ -778,5 +777,6 @@
   "ui.{0} dosya eklendi": "Добавлено файлов: {0}",
   "ui.{0} dosya hazır": "Файлов в очереди: {0}",
   "ui.{0} dosya sınır nedeniyle eklenmedi": "Пропущено файлов из-за ограничений: {0}",
-  "ui.{0} dosya yüklenemedi": "Не удалось загрузить файлов: {0}"
+  "ui.{0} dosya yüklenemedi": "Не удалось загрузить файлов: {0}",
+  "ui.Oturum düzeni kaydedilemedi: {0}": "Не удалось сохранить расположение вкладок: {0}"
 }

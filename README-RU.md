@@ -1,4 +1,4 @@
-[![Версия: v1.4-beta][version-shield]](CHANGELOG.md)
+[![Версия: v1.4.1-beta][version-shield]](CHANGELOG.md)
 [![Python 3.10+][python-shield]](https://www.python.org/downloads/)
 [![GPL-3.0-only][license-shield]](LICENSE)
 
@@ -24,7 +24,7 @@ SiopeChat объединяет чаты ChatGPT, Gemini и Claude в одном 
 - Палитра команд, настраиваемые сочетания клавиш, управление мышью и локальные расширения.
 - Английский, турецкий и русский каталоги интерфейса.
 
-**v1.4-beta** делает сохранённые чаты и проекты доступными сразу после запуска, пока синхронизация с провайдерами продолжается в фоне. История длинных бесед загружается ограниченными порциями из SQLite, а использование памяти при отображении ограничено. В выпуск также входят отдельный пакет клиентов провайдеров и установщики для Linux, macOS и Windows. Версия дистрибутива Python — `1.4b0`.
+**v1.4.1-beta** обновляет интерфейсы чатов и загрузок, добавляет режим Incognito в Claude и восстановление открытых бесед после перезапуска. Сохранённые переписки проектов отображаются сразу, пока синхронизация с провайдером продолжается в фоне. Версия дистрибутива Python — `1.4.1b0`.
 
 ## Установка и вход
 
@@ -208,6 +208,6 @@ GitHub Actions запускает матрицу Python 3.10/3.14 и Node 22/24 
 
 Авторское право © TahsinCr. Лицензия — [GPL-3.0-only](LICENSE). Уведомления сторонних компонентов сохранены в `src/utils/`.
 
-[version-shield]: https://img.shields.io/badge/version-v1.4--beta-b7a3e3.svg?style=for-the-badge
+[version-shield]: https://img.shields.io/badge/version-v1.4.1--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge

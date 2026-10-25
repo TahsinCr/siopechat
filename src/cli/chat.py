@@ -1078,7 +1078,8 @@ class ChatView:
             tabs.append(
                 {
                     "account_key": key or self.account_key,
-                    "catalog": self._account_catalogs.get(key) or ModelCatalog(FeatureState.UNKNOWN),
+                    "catalog": self._account_catalogs.get(key)
+                    or ModelCatalog(FeatureState.UNKNOWN),
                     "conversation_id": conversation_id,
                     "kind": kind,
                     "title": saved.get("title") or self.tr("New conversation"),
@@ -1106,7 +1107,10 @@ class ChatView:
         active_source = session.get("active_tab", 0)
         self.active_tab = min(
             range(len(source_indexes)),
-            key=lambda index: (abs(source_indexes[index] - active_source), source_indexes[index] > active_source),
+            key=lambda index: (
+                abs(source_indexes[index] - active_source),
+                source_indexes[index] > active_source,
+            ),
         )
         self.tabs = tabs
         self.session_restored = True
@@ -1897,8 +1901,7 @@ class ChatView:
         if key in self.sidebar_collapsed:
             self.sidebar_collapsed.remove(key)
             if row["kind"] == "project" and (
-                row["id"] not in self.project_chats_loaded
-                or row["id"] in self.project_chat_errors
+                row["id"] not in self.project_chats_loaded or row["id"] in self.project_chat_errors
             ):
                 self.load_project_chats(row["id"])
         else:
@@ -2502,9 +2505,7 @@ class ChatView:
                 next_cursor = None
             items = {item["id"]: item for item in self.sidebar_items if item.get("id")}
             page_ids = {
-                item["id"]
-                for item in result["items"]
-                if isinstance(item, dict) and item.get("id")
+                item["id"] for item in result["items"] if isinstance(item, dict) and item.get("id")
             }
             for removed in self._project_chat_page_ids.get(page_key, set()) - page_ids:
                 existing = items.get(removed)
@@ -2569,7 +2570,9 @@ class ChatView:
         )
 
     def _start_project_chat_refresh(self, project_id: str) -> None:
-        self._project_chat_refreshes[project_id] = self._project_chat_refreshes.get(project_id, 0) + 1
+        self._project_chat_refreshes[project_id] = (
+            self._project_chat_refreshes.get(project_id, 0) + 1
+        )
         self._invalidate_sidebar_rows()
         self.app.invalidate()
 

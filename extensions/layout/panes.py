@@ -340,6 +340,26 @@ class _Pane:
     def tab(self):
         return next((tab for tab in self.view.tabs if tab.get("tab_id") == self.key), {})
 
+    def tr(self, source):
+        return self.view.tr(source)
+
+    @property
+    def tabs(self):
+        return self.view.tabs
+
+    @property
+    def active_tab(self):
+        return next(
+            (index for index, tab in enumerate(self.view.tabs) if tab.get("tab_id") == self.key),
+            self.view.active_tab,
+        )
+
+    def transcript_width(self):
+        return self.view.transcript_width()
+
+    def message_toolbar_action(self, tab_id, message, action):
+        return self.view.message_toolbar_action(tab_id, message, action)
+
     def activate(self):
         index = next(
             (i for i, tab in enumerate(self.view.tabs) if tab.get("tab_id") == self.key), None
@@ -377,11 +397,11 @@ class _Pane:
 
     @property
     def message_selection(self):
-        return self.view.message_selection
+        return self.view.message_selection and self.view.active_tab == self.active_tab
 
     @property
     def selected_message(self):
-        return self.view.selected_message
+        return self.view.selected_message if self.view.active_tab == self.active_tab else None
 
     def select_message(self, index):
         self.activate()
