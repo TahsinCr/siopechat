@@ -5163,9 +5163,9 @@ class ChatView:
             provider_id = key.split("/", 1)[0]
 
             def read():
-                return service.list_chats(
-                    selected={provider_id}, force=True, account_keys={key}
-                )["items"]
+                return service.list_chats(selected={provider_id}, force=True, account_keys={key})[
+                    "items"
+                ]
 
         def listed(result):
             items = result.get("items", []) if isinstance(result, dict) else result

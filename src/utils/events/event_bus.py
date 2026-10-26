@@ -5,13 +5,12 @@ from __future__ import annotations
 import math
 import threading
 import time
+from builtins import ExceptionGroup
 from collections import deque
 from collections.abc import Callable
 from concurrent.futures import Executor, Future
 from dataclasses import dataclass, field
 from typing import Generic, TypeVar
-
-from ..compatibility import ExceptionGroup
 
 from .actions import EventBusActions, EventErrorContext, EventTimeoutContext
 from .base import (

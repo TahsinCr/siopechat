@@ -25,7 +25,7 @@ function Get-PythonVersion {
 
 function Test-VenvPython {
     param([string]$Interpreter)
-    & $Interpreter -c 'import sys; raise SystemExit(0 if sys.prefix != sys.base_prefix and sys.version_info >= (3, 10) else 1)' 2>$null
+    & $Interpreter -c 'import sys; raise SystemExit(0 if sys.prefix != sys.base_prefix and sys.version_info >= (3, 11) else 1)' 2>$null
     return ($LASTEXITCODE -eq 0)
 }
 
@@ -53,12 +53,12 @@ foreach ($EnvironmentDirectory in $EnvironmentDirectories) {
     $Candidate = Join-Path $EnvironmentDirectory 'Scripts/python.exe'
     if (Test-Path -LiteralPath $Candidate -PathType Leaf) {
         $Version = Get-PythonVersion $Candidate
-        if ($null -ne $Version -and $Version -ge [Version]'3.10' -and (Test-VenvPython $Candidate)) {
+        if ($null -ne $Version -and $Version -ge [Version]'3.11' -and (Test-VenvPython $Candidate)) {
             $VenvPython = $Candidate
             break
         }
         if ($ExplicitEnvironment) {
-            throw "SIOPECHAT_VENV must point to a Python 3.10+ virtual environment (found $Version)."
+            throw "SIOPECHAT_VENV must point to a Python 3.11+ virtual environment (found $Version)."
         }
     }
     elseif ($ExplicitEnvironment) {

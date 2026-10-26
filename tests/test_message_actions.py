@@ -103,16 +103,17 @@ class MutationArchiveTests(unittest.TestCase):
             old[:1] + revised,
         )
 
-
     def test_repeated_local_retries_are_saved_in_sqlite_order(self):
         self.archive.put(
             "chatgpt/default",
             "conversation",
             "chat",
-            {"messages": [
-                {"id": "user", "role": "user", "text": "Prompt"},
-                {"id": "answer-1", "role": "assistant", "text": "First answer"},
-            ]},
+            {
+                "messages": [
+                    {"id": "user", "role": "user", "text": "Prompt"},
+                    {"id": "answer-1", "role": "assistant", "text": "First answer"},
+                ]
+            },
         )
         for previous, current, text in (
             ("answer-1", "answer-2", "Second answer"),
@@ -121,10 +122,12 @@ class MutationArchiveTests(unittest.TestCase):
             self.archive.replace_history(
                 "chatgpt/default",
                 "chat",
-                {"messages": [
-                    {"id": "user", "role": "user", "text": "Prompt"},
-                    {"id": current, "role": "assistant", "text": text},
-                ]},
+                {
+                    "messages": [
+                        {"id": "user", "role": "user", "text": "Prompt"},
+                        {"id": current, "role": "assistant", "text": text},
+                    ]
+                },
                 retry_message_id=previous,
                 new_message_id=current,
             )
@@ -144,18 +147,22 @@ class MutationArchiveTests(unittest.TestCase):
             "chatgpt/default",
             "conversation",
             "chat",
-            {"messages": [
-                {"id": "user", "role": "user"},
-                {"id": "answer-1", "role": "assistant", "text": "Local old"},
-            ]},
+            {
+                "messages": [
+                    {"id": "user", "role": "user"},
+                    {"id": "answer-1", "role": "assistant", "text": "Local old"},
+                ]
+            },
         )
         self.archive.replace_history(
             "chatgpt/default",
             "chat",
-            {"messages": [
-                {"id": "user", "role": "user"},
-                {"id": "answer-2", "role": "assistant", "text": "Current"},
-            ]},
+            {
+                "messages": [
+                    {"id": "user", "role": "user"},
+                    {"id": "answer-2", "role": "assistant", "text": "Current"},
+                ]
+            },
             retry_message_id="answer-1",
             new_message_id="answer-2",
         )
@@ -163,10 +170,12 @@ class MutationArchiveTests(unittest.TestCase):
             "chatgpt/default",
             "conversation",
             "chat",
-            {"messages": [
-                {"id": "user", "role": "user"},
-                {"id": "answer-2", "role": "assistant", "text": "Current"},
-            ]},
+            {
+                "messages": [
+                    {"id": "user", "role": "user"},
+                    {"id": "answer-2", "role": "assistant", "text": "Current"},
+                ]
+            },
         )
 
         versions = [

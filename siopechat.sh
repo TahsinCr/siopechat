@@ -56,9 +56,9 @@ resolve_venv() {
 }
 
 resolve_venv
-if ! "$VENV_PYTHON" -c 'import sys; raise SystemExit(0 if sys.prefix != sys.base_prefix and sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; then
+if ! "$VENV_PYTHON" -c 'import sys; raise SystemExit(0 if sys.prefix != sys.base_prefix and sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
     PYTHON_VERSION=$($VENV_PYTHON --version 2>&1 || true)
-    echo "Expected a Python 3.10+ virtual environment; found ${PYTHON_VERSION:-an unusable interpreter}." >&2
+    echo "Expected a Python 3.11+ virtual environment; found ${PYTHON_VERSION:-an unusable interpreter}." >&2
     echo "Run the installer or set SIOPECHAT_VENV to a virtual-environment directory." >&2
     exit 1
 fi

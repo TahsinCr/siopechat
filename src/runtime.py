@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+from builtins import ExceptionGroup
 from dataclasses import dataclass
 from typing import Any, Hashable
 
-from utils.compatibility import ExceptionGroup
 from utils.events import EventBus
 
 

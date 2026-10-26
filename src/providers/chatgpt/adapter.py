@@ -351,8 +351,7 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
             role,
             blocks,
             "analysis"
-            if content.get("content_type")
-            in ("thoughts", "reasoning_recap", "reasoning_summary")
+            if content.get("content_type") in ("thoughts", "reasoning_recap", "reasoning_summary")
             else item.get("channel"),
             dict(item),
             actions=actions_for(

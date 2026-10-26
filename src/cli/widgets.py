@@ -126,11 +126,7 @@ class TranscriptControl(UIControl):
         version_count = message.get("_response_version_count", 1)
         current_index = message.get("_response_version_current_index", version_count)
         viewing_previous = version_count > 1 and version_index != current_index
-        if (
-            not viewing_previous
-            and not tab.get("busy")
-            and not tab.get("message_action_pending")
-        ):
+        if not viewing_previous and not tab.get("busy") and not tab.get("message_action_pending"):
             available = message.get("actions", ())
             for action, icon, label in (
                 ("edit", "✎", "Edit message"),
@@ -169,9 +165,7 @@ class TranscriptControl(UIControl):
                 def change_version(
                     event, selected=action, target_tab=tab_id, target_message=message
                 ):
-                    return self.view.message_toolbar_action(
-                        target_tab, target_message, selected
-                    )
+                    return self.view.message_toolbar_action(target_tab, target_message, selected)
 
                 style = (
                     "class:message.toolbar.action"

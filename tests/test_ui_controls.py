@@ -39,9 +39,7 @@ class UiControlsTests(unittest.TestCase):
             control = TranscriptControl(view)
             for width in range(8, 101):
                 line = control._message_toolbar(0, width)
-                self.assertLessEqual(
-                    sum(get_cwidth(fragment[1]) for fragment in line), width
-                )
+                self.assertLessEqual(sum(get_cwidth(fragment[1]) for fragment in line), width)
             fragments = control._message_toolbar(0, 14)
             self.assertLessEqual(sum(get_cwidth(fragment[1]) for fragment in fragments), 14)
             disabled = next(
@@ -54,10 +52,7 @@ class UiControlsTests(unittest.TestCase):
             control._toolbar_fragments = {0: fragments}
             control._content_width = 14
             control.view.select_message = Mock()
-            x = sum(
-                get_cwidth(fragment[1])
-                for fragment in fragments[: fragments.index(disabled)]
-            )
+            x = sum(get_cwidth(fragment[1]) for fragment in fragments[: fragments.index(disabled)])
             control.mouse_handler(
                 MouseEvent(Point(x, 0), MouseEventType.MOUSE_UP, MouseButton.LEFT, frozenset())
             )
@@ -72,7 +67,9 @@ class UiControlsTests(unittest.TestCase):
                 and fragment[0] == "class:message.toolbar.action"
                 and fragment[1].strip() == "›"
             )
-            x = sum(get_cwidth(fragment[1]) for fragment in fragments[:fragments.index(version_next)])
+            x = sum(
+                get_cwidth(fragment[1]) for fragment in fragments[: fragments.index(version_next)]
+            )
             control.rows = ((fragments, 0),)
             control._toolbar_fragments = {0: fragments}
             control._content_width = 100

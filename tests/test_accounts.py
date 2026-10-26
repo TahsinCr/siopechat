@@ -528,30 +528,6 @@ class AccountTests(unittest.TestCase):
             cursor="50", limit=50
         )
 
-    def test_new_accounts_never_import_legacy_chatgpt_conversations(self):
-        legacy = Path(self.folder.name) / "legacy"
-        (legacy / "conversations").mkdir(parents=True)
-        (legacy / "active-conversation.json").write_text(json.dumps({"conversation_id": "gpt-id"}))
-        (legacy / "conversations" / "gpt-id.json").write_text(
-            json.dumps({"id": "gpt-id", "messages": []})
-        )
-        with patch("backend.legacy_data_dir", return_value=legacy):
-            cache = self.accounts.cache(self.gemini)
-            self.assertIsNone(cache.load_cached_conversation())
-            self.assertIsNone(cache.load_cached_conversation("gpt-id"))
-            # Even a pointer contaminated by the previous fallback cannot import GPT data.
-            cache.set_active_conversation("gpt-id")
-            self.assertIsNone(cache.load_cached_conversation())
-            additional = self.accounts.add("chatgpt", "Second GPT")
-            self.assertIsNone(self.accounts.cache(additional).load_cached_conversation())
-            self.assertEqual(
-                self.accounts.cache("chatgpt/default").load_cached_conversation()["id"], "gpt-id"
-            )
-            cache.cache_conversation(
-                {"id": "c_gemini", "messages": [{"role": "assistant", "text": "Answer"}]}
-            )
-            self.assertEqual(cache.load_cached_conversation()["id"], "c_gemini")
-
     def test_send_cache_and_temporary_mode_are_account_scoped(self):
         async def stream(request):
             yield ReplaceText("Answer")

@@ -32,9 +32,8 @@ IPC_PROTOCOL = 6
 
 
 class BackendService:
-    def __init__(self, root: Path | None = None, *, legacy_fallback: bool = True):
+    def __init__(self, root: Path | None = None):
         self.root = Path(root) if root is not None else project_root()
-        self.legacy_fallback = legacy_fallback
         self._daemon_start_lock = threading.Lock()
 
     def auth_store_path(self) -> Path:
@@ -124,41 +123,29 @@ class BackendService:
         return normalized
 
     def load_cached_conversation(self, conversation_id: str | None = None) -> dict[str, Any] | None:
-
-        def read(paths):
-            for path in paths:
-                try:
-                    value = json.loads(path.read_text(encoding="utf-8"))
-                except (OSError, json.JSONDecodeError):
-                    continue
-                if isinstance(value, dict):
-                    return value
-            return None
-
         if conversation_id is None:
             conversation_id = self.active_conversation_id()
             if conversation_id is None:
                 return None
         if self.conversation_cache_path(conversation_id).with_suffix(".deleted").is_file():
             return None
-        paths = [self.conversation_cache_path(conversation_id)]
-        if self.legacy_fallback:
-            paths.append(legacy_data_dir() / "conversations" / f"{conversation_id}.json")
-        return read(paths)
+        try:
+            value = json.loads(
+                self.conversation_cache_path(conversation_id).read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError):
+            return None
+        return value if isinstance(value, dict) else None
 
     def active_conversation_id(self):
         """Read only the small active pointer, never its conversation body."""
-        paths = [self.active_conversation_path()]
-        if self.legacy_fallback:
-            paths.append(legacy_data_dir() / "active-conversation.json")
-        for path in paths:
-            try:
-                value = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                continue
-            if isinstance(value, dict):
-                candidate = value.get("conversation_id")
-                return candidate if isinstance(candidate, str) and candidate else None
+        try:
+            value = json.loads(self.active_conversation_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        if isinstance(value, dict):
+            candidate = value.get("conversation_id")
+            return candidate if isinstance(candidate, str) and candidate else None
         return None
 
     def mark_conversation_deleted(self, conversation_id):

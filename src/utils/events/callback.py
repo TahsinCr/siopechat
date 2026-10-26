@@ -5,16 +5,16 @@ from __future__ import annotations
 import asyncio
 import inspect
 import math
+import sys
 import threading
 import time
-import sys
+from builtins import ExceptionGroup
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from .subscription import Subscription
-from ..compatibility import ExceptionGroup
 from .errors import CallbackTimeoutError
+from .subscription import Subscription
 
 
 @dataclass(slots=True)

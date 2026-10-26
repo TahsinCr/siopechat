@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import math
+from builtins import ExceptionGroup
 from collections import deque
 from collections.abc import Awaitable, Callable
 from concurrent.futures import Future
 from dataclasses import dataclass, field as dataclass_field
 from typing import Generic, TypeVar
-
-from ..compatibility import ExceptionGroup
 
 from .actions import AsyncEventBusActions, EventErrorContext, EventTimeoutContext
 from .base import BaseEventBus, normalize_replay_capacity, validate_positive_capacity

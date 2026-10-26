@@ -1,5 +1,5 @@
 [![Version: v1.4.1-beta][version-shield]](CHANGELOG.md)
-[![Python 3.10+][python-shield]](https://www.python.org/downloads/)
+[![Python 3.11+][python-shield]](https://www.python.org/downloads/)
 [![GPL-3.0-only][license-shield]](LICENSE)
 
 **English** | [Türkçe](README-TR.md) | [Русский](README-RU.md)
@@ -28,9 +28,9 @@ It uses your own signed-in web sessions. There are no API keys to configure, and
 
 ## Install and sign in
 
-You need Python **3.10+** for all three providers and Node.js **22+** for login helpers and the ChatGPT request signer. The included installers and launchers check both versions before continuing. Chrome/Chromium is needed only for the explicit sign-in step. Use a Unicode terminal. True color and mouse reporting are recommended.
+You need Python **3.11+** for SiopeChat and Node.js **22+** for login helpers and the ChatGPT request signer. The included installers and launchers check both versions before continuing. The standalone provider package keeps a separate Python 3.10+ contract. Chrome/Chromium is needed only for the explicit sign-in step. Use a Unicode terminal. True color and mouse reporting are recommended.
 
-Run the one-time installer from the checkout. It checks Python 3.10+ and Node.js 22+, reuses a supported virtual environment if it finds one, and installs SiopeChat plus its Python dependencies there. If no environment exists, it creates `python/` without replacing an existing directory.
+Run the one-time installer from the checkout. It checks Python 3.11+ and Node.js 22+, reuses a supported virtual environment if it finds one, and installs SiopeChat plus its Python dependencies there. If no environment exists, it creates `python/` without replacing an existing directory.
 
 | Platform | Installer |
 | --- | --- |
@@ -210,12 +210,12 @@ Before reporting an issue, note the provider, operation, terminal, operating sys
 
 `Accounts` sends use the shared `TaskService`, with an account resolver, response limits and persistence inside the account queue. Cancellation releases the account after transport cleanup and accepted-response writes finish. Provider registration accepts an `account_factory` for isolated adapter instances. Terminal reads, mutations and Markdown preparation use separate bounded worker pools; closing a tab does not cancel its response.
 
-The GitHub Actions workflow runs the locked Python 3.10/3.14 and Node 22/24 matrix on Linux, Windows and macOS, plus a Linux compatibility job with upgraded dependencies. Passing unit tests or CI does not establish live provider compatibility or native terminal interaction. Session files still use private file permissions rather than an operating-system credential vault; the signing helper is a separate process with restricted inputs and environment, and Node VM execution is not an OS security sandbox.
+The GitHub Actions workflow runs the locked application Python 3.11/3.14 and Node 22/24 matrix on Linux, Windows and macOS. The standalone provider package keeps its separate Python 3.10+ contract. Passing unit tests or CI does not establish live provider compatibility or native terminal interaction. Session files still use private file permissions rather than an operating-system credential vault; the signing helper is a separate process with restricted inputs and environment, and Node VM execution is not an OS security sandbox.
 
 ## License
 
 Copyright © TahsinCr. Licensed under [GPL-3.0-only](LICENSE). Vendored components retain their own notices in `src/utils/`.
 
 [version-shield]: https://img.shields.io/badge/version-v1.4.1--beta-b7a3e3.svg?style=for-the-badge
-[python-shield]: https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
+[python-shield]: https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge

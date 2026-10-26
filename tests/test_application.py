@@ -20,27 +20,6 @@ class ApplicationTests(unittest.TestCase):
         self.app = BackendService(Path(self.directory.name))
         self.module = module
 
-    def test_legacy_snapshots_remain_readable_and_new_writes_use_project_data(self):
-        cache = self.app
-
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            old = root / "old"
-            new = root / "data"
-            (old / "conversations").mkdir(parents=True)
-            original = {"id": "example", "title": "Old", "messages": []}
-            (old / "conversations/example.json").write_text(json.dumps(original))
-            (old / "active-conversation.json").write_text('{"conversation_id":"example"}')
-            with (
-                patch.object(cache, "root", new.parent),
-                patch.object(self.module, "legacy_data_dir", return_value=old),
-            ):
-                self.assertEqual(cache.load_cached_conversation(), original)
-                cache.rename_cached_conversation("example", "New")
-                self.assertEqual(cache.load_cached_conversation()["title"], "New")
-            self.assertEqual(json.loads((old / "conversations/example.json").read_text()), original)
-            self.assertTrue((new / "conversations/example.json").is_file())
-
     def test_source_entrypoint_works_outside_repository(self):
         with tempfile.TemporaryDirectory() as directory:
             result = subprocess.run(

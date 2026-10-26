@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock
 import httpx
 
 from providers import BranchContext, MessageAction, SendRequest
-from providers.chatgpt.adapter import ChatGPTProvider
 from providers.chatgpt.client import ChatGPTClient
 from providers.claude.transport import ClaudeTransport
 from providers.gemini.history import history
@@ -18,7 +17,6 @@ from providers.models import Origin
 
 
 class ChatGPTActionsTests(unittest.TestCase):
-
     def run_request(self, action, target, *, model="account-model", branch=None):
         sent = []
 

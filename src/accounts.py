@@ -12,6 +12,7 @@ import tempfile
 import threading
 import time
 import uuid
+from builtins import ExceptionGroup
 from concurrent.futures import CancelledError, Future
 from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import asdict, fields, replace
@@ -37,7 +38,6 @@ from providers.models import FeatureState, ModelCatalog, SessionState
 from providers.profiles import import_cookies
 from providers.registry import PROVIDERS
 from providers.session import read_session, save_session, session_exists
-from utils.compatibility import ExceptionGroup
 
 CATALOG_SCHEMA = 2
 MODEL_TIMEOUT = 30
@@ -1082,9 +1082,7 @@ class Accounts:
 
     def _pending_local_branches(self, key, listed, *, project_listing=False):
         remotes = {
-            item.get("remote_id") or item.get("id")
-            for item in listed
-            if isinstance(item, dict)
+            item.get("remote_id") or item.get("id") for item in listed if isinstance(item, dict)
         }
         remotes = {remote for remote in remotes if remote}
         archive = self.archive()
@@ -1221,7 +1219,7 @@ class Accounts:
             self.repository.cache_set_active(key, remote)
 
     def cache(self, key):
-        return BackendService(self.directory(key), legacy_fallback=key == "chatgpt/default")
+        return BackendService(self.directory(key))
 
     def cache_conversation(self, key, conversation, *, make_active=True):
         remote = conversation.get("remote_id") or conversation.get("id")
@@ -1256,9 +1254,7 @@ class Accounts:
             return dict(
                 _shallow_dataclass(content),
                 resource=(
-                    _shallow_dataclass(content.resource)
-                    if content.resource is not None
-                    else None
+                    _shallow_dataclass(content.resource) if content.resource is not None else None
                 ),
             )
 
@@ -2355,9 +2351,10 @@ class Accounts:
             record = self.chat_record(key, self.call(branch()))
             if record["remote_id"] == remote:
                 raise ProviderError("The provider did not create a separate conversation")
-            if record.get("metadata", {}).get("title_unavailable") or not str(
-                record.get("title") or ""
-            ).strip():
+            if (
+                record.get("metadata", {}).get("title_unavailable")
+                or not str(record.get("title") or "").strip()
+            ):
                 record["title"] = source.get("title") or record.get("title") or "Untitled"
             if not record.get("project_id"):
                 record["project_id"] = source.get("project_id")

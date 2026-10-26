@@ -1,5 +1,5 @@
 [![Sürüm: v1.4.1-beta][version-shield]](CHANGELOG.md)
-[![Python 3.10+][python-shield]](https://www.python.org/downloads/)
+[![Python 3.11+][python-shield]](https://www.python.org/downloads/)
 [![GPL-3.0-only][license-shield]](LICENSE)
 
 [English](README.md) | **Türkçe** | [Русский](README-RU.md)
@@ -28,9 +28,9 @@ Uygulama, giriş yaptığınız kendi web oturumlarınızı kullanır. API anaht
 
 ## Kurulum ve giriş
 
-Üç sağlayıcı için de Python **3.10+** gerekir. Giriş yardımcıları ve ChatGPT istek imzalayıcısı Node.js **22+** kullanır; kurulum ve başlatma araçları iki sürümü de önceden denetler. Chrome/Chromium yalnızca açıkça başlatılan giriş işlemi için gerekir. Unicode destekli bir terminal kullanın; gerçek renk ve fare raporlama desteği önerilir.
+SiopeChat için Python **3.11+** gerekir. Giriş yardımcıları ve ChatGPT istek imzalayıcısı Node.js **22+** kullanır; kurulum ve başlatma araçları iki sürümü de önceden denetler. Bağımsız sağlayıcı paketi ayrı olarak Python 3.10+ desteğini korur. Chrome/Chromium yalnızca açıkça başlatılan giriş işlemi için gerekir. Unicode destekli bir terminal kullanın; gerçek renk ve fare raporlama desteği önerilir.
 
-Depoyu indirdiğiniz dizinde tek seferlik kurulum aracını çalıştırın. Python 3.10+ ve Node.js 22+ sürümlerini denetler, bulduğu uyumlu sanal ortamı kullanır ve SiopeChat ile Python bağımlılıklarını o ortama kurar. Ortam bulamazsa `python/` oluşturur; mevcut bir dizini silmez veya üzerine yazmaz.
+Depoyu indirdiğiniz dizinde tek seferlik kurulum aracını çalıştırın. Python 3.11+ ve Node.js 22+ sürümlerini denetler, bulduğu uyumlu sanal ortamı kullanır ve SiopeChat ile Python bağımlılıklarını o ortama kurar. Ortam bulamazsa `python/` oluşturur; mevcut bir dizini silmez veya üzerine yazmaz.
 
 | Sistem | Kurulum aracı |
 | --- | --- |
@@ -204,12 +204,12 @@ Hata bildirirken sağlayıcıyı, işlemi, terminali, işletim sistemini ve hata
 
 `Accounts` gönderimleri hesap çözümleyicisi, yanıt sınırı ve hesap kuyruğu içindeki kayıt işlemiyle ortak `TaskService` üzerinden çalışır. İptal, taşıyıcı temizliği ve kabul edilmiş yanıtın yazımı bittikten sonra hesabı serbest bırakır. Sağlayıcı kaydındaki `account_factory`, hesaplara bağımsız adaptör örnekleri oluşturur. Terminal okumaları, değişiklik işlemleri ve Markdown hazırlığı ayrı, sınırlı iş havuzları kullanır; sekmeyi kapatmak yanıtı iptal etmez.
 
-GitHub Actions, Linux, Windows ve macOS üzerinde kilitli bağımlılıklarla Python 3.10/3.14 ve Node 22/24 matrisini; ayrıca güncel bağımlılıklarla Linux uyumluluk işini ve paket üretimini kapsar. Birim testleri veya CI başarısı, canlı sağlayıcı uyumluluğunu ve gerçek terminal etkileşimini tek başına doğrulamaz. Oturumlar işletim sistemi kasası yerine özel dosya izinleriyle saklanır. İmzalama yardımcısı sınırlı girdi ve ortamla ayrı süreçte çalışır; Node VM bir işletim sistemi güvenlik sandbox’ı değildir.
+GitHub Actions, Linux, Windows ve macOS üzerinde uygulama için Python 3.11/3.14 ve Node 22/24 matrisini çalıştırır. Bağımsız sağlayıcı paketi kendi Python 3.10+ desteğini korur. Birim testleri veya CI başarısı, canlı sağlayıcı uyumluluğunu ve gerçek terminal etkileşimini tek başına doğrulamaz. Oturumlar işletim sistemi kasası yerine özel dosya izinleriyle saklanır. İmzalama yardımcısı sınırlı girdi ve ortamla ayrı süreçte çalışır; Node VM bir işletim sistemi güvenlik sandbox’ı değildir.
 
 ## Lisans
 
 Telif hakkı © TahsinCr. [GPL-3.0-only](LICENSE) ile lisanslanmıştır. Dahil edilen üçüncü taraf bileşenlerin bildirimleri `src/utils/` altında korunur.
 
 [version-shield]: https://img.shields.io/badge/version-v1.4.1--beta-b7a3e3.svg?style=for-the-badge
-[python-shield]: https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
+[python-shield]: https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge

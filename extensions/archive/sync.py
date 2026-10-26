@@ -264,9 +264,7 @@ class Archive:
                     if not messages:
                         raise ValueError("A partial history cannot replace the conversation")
                     start = self.repository.message_ordinal(account, remote, messages[0].get("id"))
-                    retry_start = self.repository.message_ordinal(
-                        account, remote, retry_message_id
-                    )
+                    retry_start = self.repository.message_ordinal(account, remote, retry_message_id)
                     if retry_start is None:
                         raise ValueError("The provider history has no archived retry anchor")
                     start = retry_start if start is None else min(start, retry_start)

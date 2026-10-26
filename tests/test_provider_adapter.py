@@ -73,7 +73,6 @@ class ProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(chat.metadata, self.client.raw)
 
-
     async def test_discovery_creation_and_deletion_are_available(self):
         description = await self.provider.describe()
         self.assertEqual(description.feature(Capability.PROJECTS).state, FeatureState.AVAILABLE)

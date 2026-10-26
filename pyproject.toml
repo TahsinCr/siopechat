@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "siopechat"
 version = "1.4.1b0"
 description = "Provider-oriented terminal workspace for AI web sessions"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "GPL-3.0-only"
 license-files = ["LICENSE"]
 authors = [{name = "TahsinCr"}]
@@ -16,14 +16,16 @@ classifiers = [
     "Environment :: Console",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
     "httpx>=0.27,<1",
     "browser-cookie3>=0.20.1,<0.21",
     "lz4>=4.4.5,<5",
     "curl-cffi>=0.16,<1",
-    "backports.strenum>=1.3.1,<2; python_version < '3.11'",
-    "exceptiongroup>=1.3.1,<2; python_version < '3.11'",
     "prompt-toolkit>=3.0,<4",
     "rich>=13,<15",
 ]
@@ -36,9 +38,9 @@ dev = ["build>=1,<2", "ruff>=0.11,<1", "twine>=6,<7"]
 performance = ["psutil>=6,<8"]
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 100
-extend-exclude = [".serena", "src/utils/events", "src/utils/compatibility.py"]
+extend-exclude = [".serena", "src/utils/events"]
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I"]

@@ -936,10 +936,13 @@ class SQLiteRepository:
 
     def is_pending_branch(self, account, remote):
         with self._connect() as db:
-            return db.execute(
-                "SELECT 1 FROM pending_branches WHERE account=? AND remote=? AND answered=0",
-                (account, remote),
-            ).fetchone() is not None
+            return (
+                db.execute(
+                    "SELECT 1 FROM pending_branches WHERE account=? AND remote=? AND answered=0",
+                    (account, remote),
+                ).fetchone()
+                is not None
+            )
 
     def superseded_message_ids(self, account, remote):
         with self._connect() as db:
@@ -1081,8 +1084,7 @@ class SQLiteRepository:
                     (account, remote, group_id, previous_index, encode(previous)),
                 )
                 db.execute(
-                    "INSERT OR REPLACE INTO response_variant_groups "
-                    "VALUES(?,?,?,?,?)",
+                    "INSERT OR REPLACE INTO response_variant_groups VALUES(?,?,?,?,?)",
                     (account, remote, group_id, new_response["id"], new_index),
                 )
                 db.execute(
@@ -1092,8 +1094,7 @@ class SQLiteRepository:
             superseded = {
                 row[0]
                 for row in db.execute(
-                    "SELECT message_id FROM superseded_messages "
-                    "WHERE account=? AND conversation=?",
+                    "SELECT message_id FROM superseded_messages WHERE account=? AND conversation=?",
                     (account, remote),
                 )
             }

@@ -18,6 +18,12 @@ Python distributions use the corresponding PEP 440 version (`1.4.1b0` for `v1.4.
 ### Changed
 
 - Shortened transcript toolbar labels to one word in English, Turkish, and Russian.
+- Require Python 3.11+ for the application, replace local Python 3.10 backports with standard-library types, and keep the standalone provider package's separate support range.
+- Scope application CI test discovery to `tests/`; the independent provider package continues to run its own test suite in its wheel and source archive jobs.
+
+### Removed
+
+- Remove the global JSON conversation-cache read fallback. Those files are left untouched but are no longer imported; account-scoped cache-to-SQLite migrations remain to preserve local records.
 
 ### Fixed
 
