@@ -58,6 +58,10 @@ class ProviderClient:
         backend = self.account(request.provider_id, request.account_id)
         if Capability.CHAT not in backend.capabilities:
             raise FeatureUnavailable(Capability.CHAT)
+        if request.action and request.action.capability not in backend.capabilities:
+            raise FeatureUnavailable(request.action.capability)
+        if request.branch and Capability.CHAT_BRANCH not in backend.capabilities:
+            raise FeatureUnavailable(Capability.CHAT_BRANCH)
         task = asyncio.current_task()
         self._streams[task] = self._streams.get(task, 0) + 1
         iterator = backend.stream(request)

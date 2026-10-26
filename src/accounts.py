@@ -20,7 +20,15 @@ from urllib.parse import quote, unquote
 
 from account_repository import AccountRepository
 from backend import BackendService
-from providers import Capability, ReplaceText, SendRequest, TextDelta
+from providers import (
+    BranchContext,
+    Capability,
+    MessageAction,
+    MessageMetadata,
+    ReplaceText,
+    SendRequest,
+    TextDelta,
+)
 from providers.chatgpt import BrowserSession, ChatGPTClient, ChatGPTProvider, SessionPaths
 from providers.claude import ClaudeProvider
 from providers.errors import AccountPaused, ProviderError, RemoteNotFound
@@ -1183,6 +1191,11 @@ class Accounts:
             "title": chat.title,
             "project_id": identity(key, project),
             "metadata": chat.metadata,
+            **(
+                {"pending_branch": chat.metadata["pending_branch"]}
+                if chat.metadata.get("pending_branch")
+                else {}
+            ),
             "history_complete": not chat.metadata.get("history_partial", False),
             "messages": [
                 {
@@ -1202,6 +1215,7 @@ class Accounts:
                         for content in message.content
                     ],
                     "metadata": message.metadata,
+                    "actions": list(message.actions),
                 }
                 for message in chat.messages
             ],
@@ -1360,6 +1374,10 @@ class Accounts:
                     key, "conversation", remote, dict(legacy, id=identity(key, remote), context=key)
                 )
 
+        cached = self.cached_window(key, remote) if archive else self.cached(key, remote)
+        if cached and cached.get("pending_branch"):
+            return cached
+
         def fetch():
             try:
                 chat = self.call(self.provider(key).get_chat(remote))
@@ -1401,6 +1419,12 @@ class Accounts:
         project_context, project = origin(options.get("project_id"), key)
         if context != key or project_context != key:
             raise ValueError("Sohbet ve proje seçili hesaba ait olmalı")
+        if options.get("action"):
+            action = MessageAction(options["action"])
+            if action == MessageAction.BRANCH or not remote or not options.get("message_id"):
+                raise ValueError("Invalid message generation action")
+            if attachments or options.get("temporary"):
+                raise ValueError("Message actions preserve the original conversation attachments")
         self._start()
         with self._lock:
             if key in self._session_changes:
@@ -1470,7 +1494,10 @@ class Accounts:
         if remote and archive and archive.deleted(key, "conversation", remote):
             raise RemoteNotFound("Silinmiş bir sohbete mesaj gönderilemez")
         baseline = archive.conversation_window(key, remote, limit=1) if archive and remote else None
-        base_end = baseline["history_window"]["total"] if baseline else None
+        if not archive and remote:
+            baseline = self.cached(key, remote)
+        base_end = baseline.get("history_window", {}).get("total") if baseline else None
+        pending_branch = (baseline or {}).get("pending_branch")
         request = SendRequest(
             key.split("/")[0],
             key.split("/")[1],
@@ -1482,6 +1509,9 @@ class Accounts:
             project,
             options.get("temporary", False),
             provider_attachments,
+            action=MessageAction(options["action"]) if options.get("action") else None,
+            message_id=options.get("message_id"),
+            branch=BranchContext(**pending_branch) if pending_branch else None,
         )
         self.provider(key)
         stream_id = uuid.uuid4().hex
@@ -1500,6 +1530,9 @@ class Accounts:
                     raise RemoteNotFound("Sohbet veya proje bu sırada silindi")
 
             def deliver(event):
+                if isinstance(event, MessageMetadata):
+                    on_event(dict(asdict(event), type="metadata"))
+                    return
                 if isinstance(event, (TextDelta, ReplaceText)):
                     on_event(
                         {
@@ -1549,11 +1582,17 @@ class Accounts:
                         resources.append(resource)
                 messages = ([] if self.archive() else prior.get("messages", [])) + [
                     {
-                        "id": stream_id + ":user",
+                        "id": (snapshot.metadata.user_message_id if snapshot.metadata else None)
+                        or stream_id + ":user",
                         "local_pending": True,
                         "role": "user",
                         "text": prompt,
                         "resources": resources,
+                        "actions": ["edit"]
+                        if snapshot.metadata
+                        and snapshot.metadata.user_message_id
+                        and not request.temporary
+                        else [],
                     }
                 ]
                 reasoning_text = snapshot.reasoning
@@ -1568,10 +1607,17 @@ class Accounts:
                     )
                 messages.append(
                     {
-                        "id": stream_id + ":final",
+                        "id": (snapshot.metadata.message_id if snapshot.metadata else None)
+                        or stream_id + ":final",
                         "local_pending": True,
                         "role": "assistant",
                         "text": snapshot.text,
+                        "actions": list(snapshot.metadata.actions) if snapshot.metadata else [],
+                        "metadata": {
+                            "model": model,
+                            "effort": effort,
+                            "sources": list(snapshot.metadata.sources) if snapshot.metadata else [],
+                        },
                     }
                 )
                 title = prior.get("title") or prompt[:60]
@@ -1618,6 +1664,47 @@ class Accounts:
                 if not (snapshot.conversation_id or remote):
                     raise ProviderError("Sağlayıcı sohbet kimliği döndürmedi")
                 try:
+                    if request.action or request.branch:
+                        remote_id = snapshot.conversation_id or remote
+                        authoritative = self.chat_record(
+                            key, await self.provider(key).get_chat(remote_id)
+                        )
+
+                        def save_revision():
+                            archive = self.archive()
+                            if archive:
+                                first = next(iter(authoritative.get("messages", ())), {})
+                                replacement = (
+                                    request.message_id
+                                    if (
+                                        request.action == MessageAction.EDIT
+                                        and snapshot.metadata
+                                        and first.get("id") == snapshot.metadata.user_message_id
+                                    )
+                                    else None
+                                )
+                                archive.replace_history(
+                                    key, remote_id, authoritative, replaced_message_id=replacement
+                                )
+                                if request.branch and remote_id != remote:
+                                    archive.delete(key, "conversation", remote)
+                                self.set_active(key, remote_id)
+                            else:
+                                self.cache_conversation(key, authoritative)
+                                if request.branch and remote_id != remote:
+                                    self.repository.cache_mark_deleted(key, remote)
+                            return {
+                                "conversation_id": identity(key, remote_id),
+                                "replaced_conversation_id": identity(key, remote)
+                                if request.branch and remote != remote_id
+                                else None,
+                                "conversation": {"title": authoritative["title"], "messages": []},
+                                "history": self.cached_window(key, remote_id)
+                                if archive
+                                else authoritative,
+                            }
+
+                        return await asyncio.to_thread(save_revision)
                     return await asyncio.to_thread(persist, snapshot)
                 except Exception:
                     # The remote turn has already completed. Local failures must
@@ -2113,6 +2200,41 @@ class Accounts:
                 return await asyncio.to_thread(cleanup)
 
         return self.call(remove(), timeout=60)
+
+    def branch_chat(self, key, conversation_id, message_id):
+        context, remote = origin(conversation_id, key)
+        if context != key or not remote:
+            raise ValueError("The conversation belongs to a different account")
+        if not self.enabled(key.split("/")[0]):
+            raise ValueError("Provider is disabled")
+        if key not in {item["key"] for item in self.active_accounts()}:
+            raise ValueError("Select this account before creating a branch")
+        archive = self.archive()
+        if archive and archive.deleted(key, "conversation", remote):
+            raise RemoteNotFound("The conversation was deleted")
+        with self._lock:
+            if key in self._session_changes:
+                raise RuntimeError("Account verification is still running")
+            self._sending[key] = self._sending.get(key, 0) + 1
+
+        async def branch():
+            provider = self.provider(key)
+            async with self.api.tasks.account_gate(provider.id, provider.account_id):
+                if not self.enabled(provider.id):
+                    raise ValueError("Provider is disabled")
+                if archive and archive.deleted(key, "conversation", remote):
+                    raise RemoteNotFound("The conversation was deleted")
+                return await provider.branch_chat(remote, message_id)
+
+        try:
+            record = self.chat_record(key, self.call(branch()))
+            if record["remote_id"] == remote:
+                raise ProviderError("The provider did not create a separate conversation")
+            self.cache_conversation(key, record, make_active=False)
+            return record
+        finally:
+            with self._lock:
+                self._sending[key] -= 1
 
     def callbacks(self, key):
         if not key:

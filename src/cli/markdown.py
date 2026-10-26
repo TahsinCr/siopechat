@@ -375,66 +375,9 @@ def join_reasoning_texts(texts):
 
 
 def _source_items(message: dict[str, Any]) -> tuple[dict[str, str], ...]:
-    """Keep only explicit citation links needed by the message toolbar."""
-    metadata = message.get("metadata")
-    roots = [message]
-    if isinstance(metadata, dict):
-        roots.append(metadata)
-        roots.extend(
-            value
-            for key in ("metadata", "native_candidate", "candidate", "native")
-            if isinstance((value := metadata.get(key)), dict)
-        )
+    from providers.messages import sources_from
 
-    sources = []
-    seen = set()
-
-    def append(value):
-        if isinstance(value, str):
-            title, url = value, value
-        elif isinstance(value, dict):
-            web = value.get("web")
-            source = web if isinstance(web, dict) else value.get("source")
-            source = source if isinstance(source, dict) else value
-            url = source.get("url") or source.get("uri") or source.get("href")
-            title = source.get("title") or source.get("name") or value.get("title")
-        else:
-            return
-        if (
-            not isinstance(url, str)
-            or len(url) > 2048
-            or any(ord(char) < 32 or ord(char) == 127 for char in url)
-        ):
-            return
-        try:
-            parsed = urlsplit(url)
-            if parsed.scheme not in ("http", "https") or not parsed.hostname:
-                return
-        except ValueError:
-            return
-        if url in seen:
-            return
-        seen.add(url)
-        label = " ".join(str(title or url).split())[:200]
-        sources.append({"title": label, "url": url})
-
-    for root in roots:
-        for key in ("citations", "sources"):
-            values = root.get(key)
-            if isinstance(values, (list, tuple)):
-                for value in values[: 12 - len(sources)]:
-                    append(value)
-        for key in ("grounding_metadata", "groundingMetadata"):
-            grounding = root.get(key)
-            if not isinstance(grounding, dict):
-                continue
-            chunks = grounding.get("grounding_chunks") or grounding.get("groundingChunks")
-            if isinstance(chunks, (list, tuple)):
-                for value in chunks[: 12 - len(sources)]:
-                    append(value)
-        if len(sources) >= 12:
-            break
-    return tuple(sources)
+    return sources_from(message)
 
 
 def _message_details(message: dict[str, Any]) -> tuple[tuple[str, str], ...]:
@@ -505,7 +448,7 @@ def visible_chat_message(message: dict[str, Any]) -> dict[str, Any] | None:
         return None
     visible = {"role": "reasoning" if reasoning else role, "text": text} | {
         key: message[key]
-        for key in ("id", "local_pending", "_archive_ordinal")
+        for key in ("id", "local_pending", "_archive_ordinal", "actions")
         if key in message and message[key] is not None
     }
     if role == "assistant" and not reasoning:

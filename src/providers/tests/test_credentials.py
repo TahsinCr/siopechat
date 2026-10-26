@@ -28,6 +28,21 @@ class MemoryCredentials:
 
 
 class CredentialContractTests(unittest.IsolatedAsyncioTestCase):
+    async def test_chatgpt_refresh_saves_through_host_store_without_a_filesystem_path(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = MemoryCredentials()
+            provider = create_provider(
+                "chatgpt", credential_file=store, cache_directory=Path(folder)
+            )
+            try:
+                provider.session.save(
+                    "https://chatgpt.com/backend-api/conversations",
+                    {"authorization": "Bearer refreshed"},
+                )
+                self.assertEqual(provider.session.load()[1]["authorization"], "Bearer refreshed")
+            finally:
+                await provider.close()
+
     async def test_all_backends_accept_the_same_injected_store(self):
         with tempfile.TemporaryDirectory() as folder:
             for kind in ("chatgpt", "gemini", "claude"):

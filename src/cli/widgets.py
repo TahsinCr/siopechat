@@ -121,12 +121,21 @@ class TranscriptControl(UIControl):
         if role not in ("user", "assistant"):
             return []
         actions = [("copy", "⧉", self.view.tr("Copy"))]
+        tab = self.view.tabs[self.view.active_tab]
+        if not tab.get("busy") and not tab.get("message_action_pending"):
+            available = message.get("actions", ())
+            for action, icon, label in (
+                ("edit", "✎", "Edit message"),
+                ("retry", "↻", "Retry response"),
+                ("branch", "⑂", "Branch chat"),
+            ):
+                if action in available:
+                    actions.append((action, icon, self.view.tr(label)))
         if role == "assistant":
             if message.get("_toolbar_sources"):
                 actions.append(("sources", "↗", self.view.tr("Sources")))
             if message.get("_toolbar_details"):
                 actions.append(("details", "ⓘ", self.view.tr("Answer details")))
-        tab = self.view.tabs[self.view.active_tab]
         tab_id = tab.get("tab_id")
         labels = [f"{icon} {label}" for _, icon, label in actions]
         message_width = min(width, self.view.transcript_width())

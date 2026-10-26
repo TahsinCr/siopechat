@@ -45,6 +45,7 @@ class Archive:
         self._pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="archive-sync")
         self._pending, self._states, self._checked, self._versions = {}, OrderedDict(), {}, {}
         self._fetchers = OrderedDict()
+        self._rewritten = {}
         self.revision = 0
         self.closed = False
         self._repository_closed = False
@@ -213,6 +214,32 @@ class Archive:
             with self._lock:
                 self._written(key)
 
+    def replace_history(self, account, remote, value, *, replaced_message_id=None):
+        """Install a confirmed provider branch; older in-flight reads cannot restore its tail."""
+        key = (account, "conversation", remote)
+        with self._write_lock:
+            if value.get("history_complete", True):
+                self.put(*key, value)
+            else:
+                messages = value.get("messages", [])
+                if not messages:
+                    raise ValueError("A partial history cannot replace the conversation")
+                start = self.repository.message_ordinal(account, remote, messages[0]["id"])
+                if start is None and replaced_message_id:
+                    start = self.repository.message_ordinal(account, remote, replaced_message_id)
+                if start is None:
+                    raise ValueError("The provider history has no archived branch anchor")
+                self.repository.replace_conversation_tail(account, remote, start, value)
+                with self._lock:
+                    self._written(key)
+            with self._lock:
+                self._rewritten[key] = self._versions.get(key, 0)
+                if len(self._rewritten) > 2048:
+                    oldest = next(k for k in self._rewritten if k not in self._pending and k != key)
+                    self._rewritten.pop(oldest)
+                self._checked[key] = time.monotonic()
+                self._state(key, "ready")
+
     def _state(self, key, state, error=None):
         self._states[key] = {
             "account": key[0],
@@ -335,6 +362,8 @@ class Archive:
                         self.repository.state(*key, "syncing")
                         result = fetch()
                         with self._write_lock:
+                            if self._rewritten.get(key, 0) > generation:
+                                return saved()
                             with self._lock:
                                 accept = (
                                     not self.closed and self._versions.get(key, 0) == generation

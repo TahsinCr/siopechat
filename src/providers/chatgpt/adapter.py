@@ -11,13 +11,15 @@ from typing import Callable
 from ..api import (
     Capability,
     ConversationBound,
+    MessageMetadata,
     ReplaceText,
     SendRequest,
     TextDelta,
     validate_request,
 )
 from ..contracts import OptionalFeatures, confirm_deleted
-from ..errors import AccountPaused, CompatibilityError, RateLimited
+from ..errors import AccountPaused, CompatibilityError, FeatureUnavailable, RateLimited
+from ..messages import actions_for, sources_from
 from ..models import (
     Content,
     Conversation,
@@ -65,6 +67,9 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
             Capability.PROJECT_MEMBERSHIP,
             Capability.MODELS,
             Capability.EFFORT,
+            Capability.MESSAGE_EDIT,
+            Capability.MESSAGE_RETRY,
+            Capability.CHAT_BRANCH,
         }
     )
 
@@ -358,6 +363,19 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
                     in ("thoughts", "reasoning_recap", "reasoning_summary")
                     else item.get("channel"),
                     dict(item),
+                    actions=actions_for(
+                        author.get("role"),
+                        final=item.get("channel") != "analysis"
+                        and content.get("content_type")
+                        not in ("thoughts", "reasoning_recap", "reasoning_summary")
+                        and item.get("recipient") in (None, "all"),
+                        branch=True,
+                    )
+                    if item.get("id")
+                    and not raw.get("pending_branch")
+                    and not raw.get("is_read_only")
+                    and not raw.get("is_temporary_chat")
+                    else (),
                 )
             )
         return Conversation(
@@ -483,6 +501,52 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
 
         return await asyncio.to_thread(resolve)
 
+    async def branch_chat(self, conversation_id: str, message_id: str) -> Conversation:
+        from urllib.parse import quote
+
+        from ..messages import target_message
+
+        def branch():
+            with self._client_scope() as client:
+                current = self._conversation(client.get_conversation(conversation_id))
+                _, target = target_message(current.messages, message_id, "assistant")
+                if "branch" not in target.actions:
+                    raise FeatureUnavailable(Capability.CHAT_BRANCH)
+                result = client.request(
+                    "POST",
+                    "https://chatgpt.com/backend-api/conversation/new_branch",
+                    json={"conversation_id": conversation_id, "message_id": message_id},
+                ).json()
+                preview = result.get("conversation") if isinstance(result, dict) else None
+                remote = preview.get("conversation_id") if isinstance(preview, dict) else None
+                if not isinstance(remote, str) or not remote or remote == conversation_id:
+                    raise ValueError("ChatGPT did not confirm a new conversation")
+                if quote(remote, safe="") != remote:
+                    raise ValueError("Invalid branch conversation identity")
+                mapping, node = preview.get("mapping"), preview.get("current_node")
+                if not isinstance(mapping, dict) or node not in mapping:
+                    raise ValueError("ChatGPT branch preview has no selected message path")
+                selected, seen = [], set()
+                while node in mapping and node not in seen:
+                    seen.add(node)
+                    item = mapping[node]
+                    if item.get("message"):
+                        selected.append(item["message"])
+                    node = item.get("parent")
+                preview = dict(
+                    preview,
+                    messages=list(reversed(selected)),
+                    pending_branch={
+                        "conversation_id": conversation_id,
+                        "message_id": message_id,
+                    },
+                )
+                preview.pop("mapping", None)
+                return self._conversation(preview)
+
+        async with self._gate:
+            return await asyncio.to_thread(branch)
+
     async def rename_chat(self, conversation_id: str, title: str) -> None:
         if not title.strip():
             raise ValueError("title must be nonempty")
@@ -549,6 +613,12 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
                         **({"effort": request.effort} if request.effort is not None else {}),
                         **({"project_id": request.project_id} if request.project_id else {}),
                         **({"temporary": True} if request.temporary else {}),
+                        **(
+                            {"action": request.action, "message_id": request.message_id}
+                            if request.action
+                            else {}
+                        ),
+                        **({"branch": request.branch} if request.branch else {}),
                     )
                     # Native summaries can arrive only in the completion snapshot.
                     # The common API must not drop these provider-visible blocks.
@@ -574,6 +644,38 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
                                 summaries.append(text)
                     if summaries:
                         publish(("event", ReplaceText("\n\n".join(summaries), "analysis")))
+                    final = next(
+                        (
+                            item
+                            for item in reversed(completed.get("messages", []))
+                            if (item.get("author") or {}).get("role") == "assistant"
+                            and item.get("channel") != "analysis"
+                            and item.get("recipient") in (None, "all")
+                        ),
+                        None,
+                    )
+                    if final:
+                        user = next(
+                            (
+                                item
+                                for item in reversed(completed.get("messages", []))
+                                if (item.get("author") or {}).get("role") == "user"
+                            ),
+                            {},
+                        )
+                        publish(
+                            (
+                                "event",
+                                MessageMetadata(
+                                    final.get("id"),
+                                    user.get("id"),
+                                    request.model,
+                                    request.effort,
+                                    sources_from(final),
+                                    () if request.temporary else ("retry", "branch"),
+                                ),
+                            )
+                        )
                     publish(("event", ConversationBound(remote_id)))
             except _Stopped:
                 return

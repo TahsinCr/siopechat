@@ -397,6 +397,9 @@ class ChatGPTClient:
         effort: str | None = None,
         project_id: str | None = None,
         temporary: bool = False,
+        action=None,
+        message_id: str | None = None,
+        branch=None,
     ) -> tuple[str, dict[str, Any], set[str]]:
         if type(temporary) is not bool or (
             project_id is not None
@@ -407,7 +410,9 @@ class ChatGPTClient:
             raise ChatGPTWebError("temporary conversations cannot belong to a project")
         previous_ids: set[str] = set()
         previous: dict[str, Any] | None = None
-        if conversation_id:
+        if branch is not None:
+            previous = {"current_node": branch.message_id}
+        elif conversation_id:
             if temporary:
                 previous = self.temporary_conversations.get(conversation_id)
                 if previous is None:
@@ -448,6 +453,8 @@ class ChatGPTClient:
             model,
             effort,
             **({"temporary": True} if temporary else {}),
+            **({"action": action, "message_id": message_id} if action else {}),
+            **({"branch": branch} if branch else {}),
         )
         if temporary:
             conversation = {
@@ -494,6 +501,12 @@ class ChatGPTClient:
             raise ChatGPTWebError(
                 "ChatGPT did not attach the submitted message to the conversation"
             )
+        if branch is not None:
+            for item in messages:
+                if item.get("id") == submitted_message_id:
+                    break
+                if item.get("id"):
+                    previous_ids.add(item["id"])
         return resolved_id, conversation, previous_ids
 
     def send_prompt_direct(
@@ -505,18 +518,73 @@ class ChatGPTClient:
         model: str | None = None,
         effort: str | None = None,
         temporary: bool = False,
+        action=None,
+        message_id: str | None = None,
+        branch=None,
     ) -> tuple[str, str]:
         conversation_id = None
         if conversation:
             candidate = conversation.get("conversation_id") or conversation.get("id")
             if isinstance(candidate, str):
                 conversation_id = candidate
-        sentinel_headers = self.create_sentinel_headers()
         method = "POST"
         url = urljoin(CHATGPT_ORIGIN, "/backend-api/f/conversation")
         headers = self.headers.copy()
-        headers.update(sentinel_headers)
         body = self.create_conversation_body(conversation, prompt, attachments)
+        if branch is not None:
+            body.pop("conversation_id", None)
+            conversation_id = None
+            body.update(
+                branching_from_conversation_id=branch.conversation_id,
+                branching_from_message_id=branch.message_id,
+                parent_message_id=branch.message_id,
+            )
+        submitted_message_id = body["messages"][0]["id"]
+        if action:
+            from ..api import MessageAction
+
+            items = (conversation or {}).get("messages", [])
+            target_index = next(
+                (i for i, item in enumerate(items) if item.get("id") == message_id), None
+            )
+            if target_index is None or (conversation or {}).get("is_read_only"):
+                raise ChatGPTWebError("The selected message is no longer editable")
+            target = items[target_index]
+            expected_role = "user" if action == MessageAction.EDIT else "assistant"
+            if target.get("channel") == "analysis" or target.get("recipient") not in (None, "all"):
+                raise ChatGPTWebError("Only visible messages can be changed")
+            if (target.get("author") or {}).get("role") != expected_role:
+                raise ChatGPTWebError("The message role does not match the requested action")
+            if action == MessageAction.RETRY:
+                user = next(
+                    (
+                        item
+                        for item in reversed(items[:target_index])
+                        if (item.get("author") or {}).get("role") == "user"
+                    ),
+                    None,
+                )
+                if user is None:
+                    raise ChatGPTWebError("The original prompt is unavailable")
+                body.update(action="variant", messages=[], parent_message_id=user["id"])
+                submitted_message_id = user["id"]
+            elif action == MessageAction.EDIT:
+                if target_index == 0:
+                    raise ChatGPTWebError("The original message parent is unavailable")
+                body["parent_message_id"] = items[target_index - 1]["id"]
+                original = target.get("content") or {}
+                resource_parts = [
+                    part for part in original.get("parts", []) if not isinstance(part, str)
+                ]
+                body["messages"][0]["content"] = {
+                    "content_type": original.get("content_type") or "text",
+                    "parts": resource_parts + [prompt],
+                }
+                body["messages"][0]["metadata"]["attachments"] = (target.get("metadata") or {}).get(
+                    "attachments", []
+                )
+            else:
+                raise ChatGPTWebError("Unsupported message action")
         # Apply the provider-owned choices to this request; never retain an
         # effort preference captured from a different model.
         if model:
@@ -534,9 +602,9 @@ class ChatGPTClient:
         headers["x-openai-target-route"] = "/backend-api/f/conversation"
         body["supported_encodings"] = []
         body["supports_buffering"] = False
-        submitted_message_id = body.get("messages", [{}])[0].get("id")
         if not isinstance(submitted_message_id, str) or not submitted_message_id:
             raise ChatGPTWebError("conversation request has no user message ID")
+        headers.update(self.create_sentinel_headers())
         resolved_id: str | None = conversation_id
         rendered_by_channel = {}
         terminal_seen = False

@@ -6,6 +6,7 @@ import mimetypes
 import uuid
 from pathlib import Path
 
+from ..api import MessageAction
 from ..errors import ProviderError
 from ..session import WebSession
 from .media import candidate_images
@@ -100,6 +101,12 @@ def generation_request(session, request, metadata, files, notebook=None):
         80: 2 if extended else 1,
     }.items():
         body[index] = value
+    if request.action is not None:
+        body.extend([None] * 18)
+        retry = request.action == MessageAction.RETRY
+        body[6], body[17], body[18], body[32] = [0], None, 2 if retry else 0, 1
+        body[55], body[61], body[72] = [], [None, None, None, 0], 7 if retry else 2
+        body[91], body[96], body[98] = 1, 0, 1
     if request.temporary:
         body[45] = 1
     if notebook:
@@ -127,8 +134,11 @@ def generation_request(session, request, metadata, files, notebook=None):
     return headers, {"at": session.token, "f.req": json.dumps([None, json.dumps(body)])}
 
 
-async def generate(session, request, metadata, notebook=None):
-    files = await upload_files(session, [item["path"] for item in request.attachments])
+async def generate(session, request, metadata, notebook=None, *, files=None):
+    from .history import candidate_metadata
+
+    if files is None:
+        files = await upload_files(session, [item["path"] for item in request.attachments])
     headers, data = generation_request(session, request, metadata, files, notebook)
     frames = Frames()
     completed = False
@@ -192,6 +202,7 @@ async def generate(session, request, metadata, notebook=None):
                     "text": last_text,
                     "thoughts": last_thoughts,
                     "images": candidate_images(candidate),
+                    "sources": candidate_metadata(candidate)["sources"],
                 }
             if isinstance(context, str):
                 metadata = [None] * 9 + [context]

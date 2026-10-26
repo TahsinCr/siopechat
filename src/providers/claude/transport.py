@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 from urllib.parse import quote
 
+from ..api import MessageAction
 from ..contracts import confirm_deleted
 from ..errors import AccountPaused, ProviderError
 from ..projects import ProjectOptions, source_file
@@ -240,10 +241,36 @@ class ClaudeTransport:
         cid = remote_id(v["conversation_id"]) if v.get("conversation_id") else str(uuid.uuid4())
         path = base + "/chat_conversations/" + cid
         if v.get("conversation_id"):
-            history = await self.session.request("GET", path)
+            history = (
+                await self.request("history", conversation_id=cid)
+                if v.get("action")
+                else await self.session.request("GET", path)
+            )
             if v.get("temporary") and history.get("is_temporary") is not True:
                 raise ProviderError("Claude geçici sohbeti doğrulanamadı; mesaj gönderilmedi")
             parent = history.get("current_leaf_message_uuid")
+            if v.get("action"):
+                from ..messages import target_message
+                from .records import conversation
+
+                role = "user" if v["action"] == MessageAction.EDIT else "assistant"
+                _, target = target_message(
+                    conversation(history, "").messages, v["message_id"], role
+                )
+                if v["action"].value not in target.actions:
+                    raise ProviderError("This Claude message action is unavailable")
+                original = target.metadata["native_message"]
+                parent = original.get("parent_message_uuid")
+                v = dict(
+                    v,
+                    attachments=[
+                        dict(item, id=item.get("uuid") or item.get("id"))
+                        for item in original.get("files", [])
+                    ],
+                    original_attachments=original.get("attachments", []),
+                )
+                if v["action"] == MessageAction.RETRY:
+                    parent = original["uuid"]
         else:
             create_payload = {"uuid": cid, "name": ""}
             if v.get("temporary"):
@@ -275,7 +302,7 @@ class ClaudeTransport:
             "prompt": v["prompt"],
             "model": model,
             "timezone": "UTC",
-            "attachments": [],
+            "attachments": v.get("original_attachments", []),
             "files": [item["id"] for item in v.get("attachments", []) if item.get("id")],
             "rendering_mode": "messages",
         }
@@ -288,9 +315,11 @@ class ClaudeTransport:
             else:
                 body["thinking_mode"] = effort
         completed, blocks = False, {}
+        response_id, parent_id, final_index, sources = None, None, 0, ()
+        suffix = "/retry_completion" if v.get("action") == MessageAction.RETRY else "/completion"
         async with self.session.connect().stream(
             "POST",
-            self.session.url(path + "/completion"),
+            self.session.url(path + suffix),
             json=body,
             headers={"accept": "text/event-stream"},
             allow_redirects=False,
@@ -316,16 +345,31 @@ class ClaudeTransport:
                     continue
                 event = json.loads(raw)
                 kind, delta = event.get("type"), event.get("delta", {})
+                if kind == "message_start":
+                    native = event.get("message") or {}
+                    response_id = native.get("uuid") or native.get("id")
+                    parent_id = native.get("parent_uuid")
                 if kind == "error" or event.get("error"):
                     raise ProviderError("Claude akışı hata verdi; istek tekrarlanmadı")
                 if kind == "content_block_start":
                     block = event.get("content_block", {})
                     blocks[event.get("index", 0)] = block.get("type")
+                    if block.get("type") == "text":
+                        from ..messages import sources_from
+
+                        final_index = event.get("index", 0)
+                        sources = sources_from({"sources": list(sources)}, block)
                     if block.get("type") == "text" and block.get("text"):
                         yield {"type": "delta", "text": block["text"]}
                     elif block.get("type") == "thinking" and block.get("thinking"):
                         yield {"type": "delta", "channel": "analysis", "text": block["thinking"]}
                 if kind == "content_block_delta":
+                    if delta.get("type") == "citations_delta":
+                        from ..messages import sources_from
+
+                        sources = sources_from(
+                            {"sources": list(sources), "citations": [delta.get("citation")]}
+                        )
                     channel = blocks.get(event.get("index", 0))
                     if delta.get("type") == "thinking_delta" and channel == "thinking":
                         yield {
@@ -342,6 +386,16 @@ class ClaudeTransport:
                     completed = True
         if not completed:
             raise ProviderError("Claude yanıtı tamamlanmadı; istek yeniden gönderilmedi")
+        if response_id:
+            yield {
+                "type": "metadata",
+                "message_id": response_id + ":" + str(final_index),
+                "user_message_id": parent_id + ":0"
+                if isinstance(parent_id, str) and v.get("action") != MessageAction.RETRY
+                else None,
+                "sources": sources,
+                "actions": ["retry"],
+            }
         yield {"type": "done"}
 
 

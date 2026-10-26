@@ -24,6 +24,29 @@ class Capability(str, Enum):
     MODELS = "models"
     EFFORT = "effort"
     CONNECTORS = "connectors"
+    MESSAGE_EDIT = "message_edit"
+    MESSAGE_RETRY = "message_retry"
+    CHAT_BRANCH = "chat_branch"
+
+
+class MessageAction(str, Enum):
+    EDIT = "edit"
+    RETRY = "retry"
+    BRANCH = "branch"
+
+    @property
+    def capability(self):
+        return {
+            self.EDIT: Capability.MESSAGE_EDIT,
+            self.RETRY: Capability.MESSAGE_RETRY,
+            self.BRANCH: Capability.CHAT_BRANCH,
+        }[self]
+
+
+@dataclass(frozen=True)
+class BranchContext:
+    conversation_id: str
+    message_id: str
 
 
 @dataclass(frozen=True)
@@ -38,6 +61,9 @@ class SendRequest:
     project_id: str | None = None
     temporary: bool = False
     attachments: tuple[dict, ...] = ()
+    action: MessageAction | None = None
+    message_id: str | None = None
+    branch: BranchContext | None = None
 
 
 @dataclass(frozen=True)
@@ -57,7 +83,17 @@ class ConversationBound:
     conversation_id: str
 
 
-ProviderEvent = TextDelta | ReplaceText | ConversationBound
+@dataclass(frozen=True)
+class MessageMetadata:
+    message_id: str | None = None
+    user_message_id: str | None = None
+    model: str | None = None
+    effort: str | None = None
+    sources: tuple[dict, ...] = ()
+    actions: tuple[str, ...] = ()
+
+
+ProviderEvent = TextDelta | ReplaceText | ConversationBound | MessageMetadata
 
 
 class Provider(Protocol):
@@ -87,6 +123,20 @@ def validate_request(provider, request: SendRequest) -> None:
     """Reject cross-account requests before a transport is opened."""
     if request.provider_id != provider.id or request.account_id != provider.account_id:
         raise ValueError("send request belongs to a different provider/account")
+    if request.action is not None:
+        if request.action not in (MessageAction.EDIT, MessageAction.RETRY):
+            raise ValueError("unsupported generation action")
+        if not request.conversation_id or not request.message_id:
+            raise ValueError("message actions require a conversation and message identity")
+    if request.branch is not None:
+        if request.action is not None or request.temporary:
+            raise ValueError("a branch continuation requires a new persistent turn")
+        if not request.branch.conversation_id or not request.branch.message_id:
+            raise ValueError("a branch continuation requires its source identities")
+        if provider.id != "chatgpt":
+            raise ValueError(
+                "this provider creates branches immediately; no continuation context is needed"
+            )
 
 
 __all__ = [
@@ -94,6 +144,9 @@ __all__ = [
     "CompatibilityError",
     "RateLimited",
     "Capability",
+    "MessageAction",
+    "MessageMetadata",
+    "BranchContext",
     "SendRequest",
     "TextDelta",
     "ReplaceText",

@@ -148,6 +148,7 @@ class Message:
     content: tuple[Content, ...]
     channel: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict, repr=False)
+    actions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

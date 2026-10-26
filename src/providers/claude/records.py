@@ -1,6 +1,7 @@
 """Lossless Claude records mapped to the shared provider contract."""
 
 from ..errors import ProviderError
+from ..messages import actions_for, sources_from
 from ..models import Content, Conversation, Message, Origin, Project, Resource
 
 
@@ -54,6 +55,7 @@ def conversation(value, account_id):
         content = item.get("content") or (
             [{"type": "text", "text": item["text"]}] if item.get("text") else []
         )
+        text_indices = [i for i, block in enumerate(content) if block.get("type") == "text"]
         for index, block in enumerate(content):
             kind = block.get("type")
             if kind in ("text", "thinking"):
@@ -72,7 +74,11 @@ def conversation(value, account_id):
                             {
                                 "native": block,
                                 "native_message": {k: v for k, v in item.items() if k != "content"},
+                                "sources": sources_from(block),
                             },
+                            actions=actions_for(role)
+                            if text_indices and index == text_indices[-1] and kind == "text"
+                            else (),
                         )
                     )
             else:

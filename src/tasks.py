@@ -15,6 +15,8 @@ from providers.api import (
     Capability,
     CompatibilityError,
     ConversationBound,
+    MessageAction,
+    MessageMetadata,
     RateLimited,
     ReplaceText,
     SendRequest,
@@ -55,6 +57,7 @@ class JobSnapshot:
     error_code: str | None
     version: int
     reasoning: str = ""
+    metadata: MessageMetadata | None = None
 
 
 @dataclass(frozen=True)
@@ -82,6 +85,7 @@ class _Job:
     guard: Callable | None = None
     result: object = None
     error: BaseException | None = None
+    metadata: MessageMetadata | None = None
 
 
 class TaskService:
@@ -216,11 +220,15 @@ class TaskService:
             raise RuntimeError("runtime is closed")
         if not all((request.provider_id, request.account_id, request.chat_id)):
             raise ValueError("provider, account and local chat IDs are required")
-        if not request.prompt.strip():
+        if not request.prompt.strip() and request.action != MessageAction.RETRY:
             raise ValueError("prompt must not be empty")
         if len(self._jobs) >= self._max_jobs:
             raise ValueError("job capacity reached; persist and forget completed jobs")
         self.providers.require(request.provider_id, Capability.CHAT)
+        if request.action:
+            self.providers.require(request.provider_id, request.action.capability)
+        if request.branch:
+            self.providers.require(request.provider_id, Capability.CHAT_BRANCH)
         if request.model is not None:
             self.providers.require(request.provider_id, Capability.MODELS)
         if request.effort is not None:
@@ -284,6 +292,10 @@ class TaskService:
                     self.providers.require(request.provider_id, Capability.EFFORT)
                 if self.provider_resolver is not None:
                     provider = self.provider_resolver(request.provider_id, request.account_id)
+                if request.action:
+                    self.providers.require(request.provider_id, request.action.capability)
+                if request.branch:
+                    self.providers.require(request.provider_id, Capability.CHAT_BRANCH)
                 if job.guard is not None:
                     job.guard()
                 self._changed(job_id, JobState.RUNNING)
@@ -295,6 +307,9 @@ class TaskService:
                             if not event.conversation_id:
                                 raise ValueError("empty remote conversation ID")
                             job.conversation_id = event.conversation_id
+                        elif isinstance(event, MessageMetadata):
+                            job.metadata = event
+                            self._deliver_event(job, event)
                         elif isinstance(event, (TextDelta, ReplaceText)):
                             if isinstance(event, TextDelta) and not event.text:
                                 continue
@@ -395,6 +410,7 @@ class TaskService:
             conversation_id=job.conversation_id,
             error_code=job.error_code,
             version=job.version,
+            metadata=job.metadata,
         )
 
     def snapshots(self) -> tuple[JobSnapshot, ...]:

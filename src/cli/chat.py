@@ -142,6 +142,34 @@ class _SendStream:
         if connection is not None:
             self.target_tab["job_id"] = getattr(connection, "id", None)
         event_type = event.get("type")
+        if event_type == "metadata":
+            with self.view.lock:
+                final = self.messages[-1]
+                if event.get("message_id"):
+                    final["id"] = event["message_id"]
+                final["actions"] = list(event.get("actions", ()))
+                if event.get("sources"):
+                    final["_toolbar_sources"] = tuple(event["sources"])
+                final["_toolbar_details"] = tuple(
+                    (label, event[key])
+                    for label, key in (("Model", "model"), ("Effort", "effort"))
+                    if event.get(key)
+                )
+                if event.get("user_message_id"):
+                    user = next(
+                        (
+                            item
+                            for item in reversed(self.messages[:-1])
+                            if item.get("role") == "user"
+                        ),
+                        None,
+                    )
+                    if user is not None:
+                        user["id"] = event["user_message_id"]
+                        user["actions"] = [] if self.target_tab.get("temporary") else ["edit"]
+                self.target_tab["render_revision"] = self.target_tab.get("render_revision", 0) + 1
+            self._schedule_refresh()
+            return
         if event.get("channel") == "analysis" or event_type == "reasoning":
             text = event.get("text")
             if not isinstance(text, str):
@@ -4900,7 +4928,7 @@ class ChatView:
         self.open_message_link(url, index)
 
     def message_toolbar_action(self, tab_id, message_ref, action):
-        """Run a read-only toolbar action against the exact message and tab shown."""
+        """Resolve the clicked tab/message before any clipboard, read or write action."""
         index = self._toolbar_message_index(tab_id, message_ref)
         if index is None:
             self.status = self.tr("This message is no longer loaded")
@@ -4908,6 +4936,37 @@ class ChatView:
             return
         messages = self.tabs[self.active_tab].get("messages", ())
         message = messages[index]
+        if action in ("edit", "retry", "branch"):
+            tab = self.tabs[self.active_tab]
+            if (
+                action not in message.get("actions", ())
+                or not self.account_service
+                or not tab.get("conversation_id")
+                or tab.get("temporary")
+                or tab.get("message_action_pending")
+                or self.active_busy()
+            ):
+                return
+            if any(
+                other.get("busy") and other.get("conversation_id") == tab["conversation_id"]
+                for other in self.tabs + self.background_tabs
+            ):
+                self.status = self.tr("Wait for this conversation to finish")
+                self.app.invalidate()
+                return
+            if action == "branch":
+                self._branch_message(tab, message)
+            elif action == "edit":
+                self.forms.open(
+                    self.tr("Edit message"),
+                    [("text", self.tr("Message"), message["text"], None)],
+                    lambda values: (
+                        lambda: self._submit_message_action(tab, message, "edit", values["text"])
+                    ),
+                )
+            else:
+                self._submit_message_action(tab, message, "retry", "")
+            return
         if action == "copy":
             text = render_chatgpt_annotations(message.get("text") or "")
             if not text:
@@ -4934,6 +4993,112 @@ class ChatView:
             if details:
                 self.forms.show_message_info(self.tr("Answer details"), details=details)
             return
+
+    def _branch_message(self, tab, message):
+        key, conversation_id = tab["account_key"], tab["conversation_id"]
+        tab["message_action_pending"] = True
+        self.status = self.tr("Creating branch…")
+        self.app.invalidate()
+
+        def work():
+            try:
+                record = self.account_service.branch_chat(key, conversation_id, message["id"])
+            except Exception as error:
+                reason = str(error)
+
+                def failed():
+                    tab["message_action_pending"] = False
+                    self.status = self.tr("Message action failed: {0}").format(reason)
+                    self.app.invalidate()
+
+                self._dispatch_ui(failed)
+                return
+
+            def ready():
+                tab["message_action_pending"] = False
+                self.sidebar_items.insert(0, record)
+                self._invalidate_sidebar_rows()
+                count = len(self.tabs)
+                self.new_tab()
+                if len(self.tabs) > count:
+                    self.resume_conversation(record["id"])
+                self.status = self.tr("Branch created")
+                self.app.invalidate()
+
+            self._dispatch_ui(ready)
+
+        if not self._operations.submit(work):
+            tab["message_action_pending"] = False
+            self.status = self.tr("Arka plan iş kuyruğu dolu; yeniden deneyin")
+
+    def _submit_message_action(self, tab, message, action, prompt):
+        if (
+            tab is not self.tabs[self.active_tab]
+            or self.active_busy()
+            or sum(bool(item.get("busy")) for item in self.tabs + self.background_tabs) >= 4
+        ):
+            self.status = self.tr("The selected conversation changed; try again")
+            self.app.invalidate()
+            return
+        if action == "edit" and not prompt.strip():
+            self.status = self.tr("Message cannot be empty")
+            self.app.invalidate()
+            return
+        index = self._toolbar_message_index(tab["tab_id"], message)
+        if index is None:
+            return
+        self.normalize_model_selection()
+        rollback = (tab.get("messages", []), tab.get("history_window"))
+        start = index
+        if action == "retry":
+            while start and self.messages[start - 1].get("role") == "reasoning":
+                start -= 1
+        messages = list(self.messages[:start])
+        if action == "edit":
+            messages.append({"role": "user", "text": prompt.strip(), "local_pending": True})
+        messages.append({"role": "assistant", "text": "", "local_pending": True})
+        self.messages = tab["messages"] = messages
+        tab.pop("history_window", None)
+        tab["load_token"] = uuid.uuid4().hex
+        tab.update(
+            busy=True,
+            syncing=False,
+            started=time.monotonic(),
+            cancel_requested=False,
+            completed_pending=False,
+            connection=None,
+        )
+        self.active_started = tab["started"]
+        self._sync_activity()
+        self.status = (
+            self.tr("Retrying response…")
+            if action == "retry"
+            else self.tr("Sending edited message…")
+        )
+        self.scroll_bottom()
+        thread = threading.Thread(
+            target=self.run_send,
+            args=(
+                prompt.strip(),
+                [],
+                self.active_tab,
+                messages,
+                tab["conversation_id"],
+                self.model,
+                self.effort,
+                self.current_project.get("id"),
+                False,
+            ),
+            kwargs={
+                "send_callback": self.send_prompt,
+                "target_tab": tab,
+                "message_action": action,
+                "message_id": message["id"],
+                "rollback": rollback,
+            },
+            daemon=True,
+        )
+        thread.start()
 
     def open_resume(self) -> None:
         if self.palette_visible:
@@ -5280,6 +5445,9 @@ class ChatView:
         temporary: bool = False,
         send_callback=None,
         target_tab=None,
+        message_action=None,
+        message_id=None,
+        rollback=None,
     ) -> None:
         target_tab = self.tabs[tab_index] if target_tab is None else target_tab
 
@@ -5308,6 +5476,7 @@ class ChatView:
                 effort,
                 **({"project_id": project_id} if project_id else {}),
                 **({"temporary": True} if temporary else {}),
+                **({"action": message_action, "message_id": message_id} if message_action else {}),
             )
             send_succeeded = True
             omitted_count = int(result.get("attachment_omitted_count") or 0)
@@ -5328,11 +5497,36 @@ class ChatView:
                 with self.lock:
                     messages[-1]["text"] = "*" + self.tr("Request stopped: {0}").format(error) + "*"
             final_status = self.tr("Response stopped")
+            if message_action:
+                final_status = self.tr("Message action failed: {0}").format(error)
         finally:
             if started is not None:
                 elapsed = time.monotonic() - started
 
             def finish_turn() -> None:
+                nonlocal messages
+                if message_action and not send_succeeded and rollback is not None:
+                    messages = rollback[0]
+                    if rollback[1] is not None:
+                        target_tab["history_window"] = rollback[1]
+                elif send_succeeded and result.get("history"):
+                    history = result["history"]
+                    messages = [
+                        visible
+                        for item in history.get("messages", ())
+                        if (visible := visible_chat_message(item))
+                    ]
+                    if history.get("history_window"):
+                        target_tab["history_window"] = history["history_window"]
+                if send_succeeded and result.get("replaced_conversation_id"):
+                    previous_id = result["replaced_conversation_id"]
+                    self.sidebar_items = [
+                        item for item in self.sidebar_items if item.get("id") != previous_id
+                    ]
+                    for tab in self.tabs:
+                        if tab is not target_tab and tab.get("conversation_id") == previous_id:
+                            tab["conversation_id"] = resolved_id
+                            tab["loaded"] = False
                 if attachments:
                     submitted_ids = submitted_attachment_ids
                     self.pending_attachments = [
@@ -5359,6 +5553,7 @@ class ChatView:
                 tab["conversation_id"] = resolved_id
                 tab["title"] = resolved_title or tab.get("title") or self.tr("New conversation")
                 tab["messages"] = messages
+                tab["render_revision"] = tab.get("render_revision", 0) + 1
                 tab["model"] = model or resolved_model or ""
                 tab["response_model"] = resolved_model
                 tab["effort"] = effort
@@ -5430,7 +5625,11 @@ class ChatView:
                         tab.setdefault("history_window", {"start": 0, "end": 0, "total": 0})
                         self.history_pager.request("bottom", refresh=True)
                 else:
-                    self.status = self.tr("Yanıt tamamlandı: {0}").format(tab["title"])
+                    self.status = (
+                        self.tr("Yanıt tamamlandı: {0}").format(tab["title"])
+                        if send_succeeded
+                        else final_status
+                    )
                     self.app.invalidate()
                 if any(item is tab for item in self.tabs):
                     self._persist_session()

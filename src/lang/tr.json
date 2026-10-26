@@ -778,5 +778,17 @@
   "ui.{0} dosya hazır": "{0} dosya hazır",
   "ui.{0} dosya sınır nedeniyle eklenmedi": "{0} dosya sağlayıcı sınırı nedeniyle eklenmedi",
   "ui.{0} dosya yüklenemedi": "{0} dosya yüklenemedi",
-  "ui.Oturum düzeni kaydedilemedi: {0}": "Oturum düzeni kaydedilemedi: {0}"
+  "ui.Oturum düzeni kaydedilemedi: {0}": "Oturum düzeni kaydedilemedi: {0}",
+  "ui.Edit message": "Mesajı düzenle",
+  "ui.Retry response": "Yanıtı yeniden dene",
+  "ui.Branch chat": "Sohbeti dallandır",
+  "ui.Message": "Mesaj",
+  "ui.Wait for this conversation to finish": "Bu sohbetin yanıtının tamamlanmasını bekleyin",
+  "ui.Creating branch…": "Sohbet dallandırılıyor…",
+  "ui.Message action failed: {0}": "Mesaj işlemi tamamlanamadı: {0}",
+  "ui.Branch created": "Yeni sohbet dalı oluşturuldu",
+  "ui.The selected conversation changed; try again": "Seçili sohbet değişti; yeniden deneyin",
+  "ui.Message cannot be empty": "Mesaj boş olamaz",
+  "ui.Retrying response…": "Yanıt yeniden üretiliyor…",
+  "ui.Sending edited message…": "Düzenlenen mesaj gönderiliyor…"
 }

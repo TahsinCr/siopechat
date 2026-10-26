@@ -4,7 +4,15 @@ import asyncio
 import time
 from pathlib import Path
 
-from ..api import Capability, ConversationBound, ReplaceText, SendRequest, validate_request
+from ..api import (
+    Capability,
+    ConversationBound,
+    MessageAction,
+    MessageMetadata,
+    ReplaceText,
+    SendRequest,
+    validate_request,
+)
 from ..contracts import OptionalFeatures, confirm_deleted
 from ..errors import AccountPaused, FeatureUnavailable, ProviderError
 from ..models import (
@@ -33,6 +41,9 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
             Capability.EFFORT,
             Capability.ATTACHMENTS,
             Capability.TEMPORARY,
+            Capability.MESSAGE_EDIT,
+            Capability.MESSAGE_RETRY,
+            Capability.CHAT_BRANCH,
         }
     )
 
@@ -228,6 +239,33 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
             raise ProviderError("Gemini geçmiş yanıtı değişmiş")
         return await asyncio.to_thread(history, parts[0], self._origin, conversation_id)
 
+    async def branch_chat(self, conversation_id, message_id):
+        from ..messages import target_message
+        from .session import nested
+
+        current = await self.get_chat(conversation_id)
+        _, target = target_message(current.messages, message_id, "assistant")
+        async with self._gate:
+            result = await self.rpc.call(
+                "KDNZr", [conversation_id, target.metadata["turn_id"]], "/app"
+            )
+            remote = nested(result, 0, 0, 0)
+            if (
+                not isinstance(remote, str)
+                or not remote.startswith("c_")
+                or remote == conversation_id
+            ):
+                raise ProviderError("Gemini did not confirm a new conversation")
+        chat = await self.get_chat(remote)
+        title = nested(result, 0, 0, 1)
+        if isinstance(title, str) and title.strip():
+            from dataclasses import replace
+
+            chat = replace(
+                chat, title=title, metadata={**chat.metadata, "title_unavailable": False}
+            )
+        return chat
+
     async def delete_chat(self, conversation_id):
         async with self._gate:
             await self._connect()
@@ -331,6 +369,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
         async with self._gate:
             client = await self._connect()
             context = None
+            action_files = None
             if project:
                 notebook = await self.notebooks.get(project)
                 value = field(field(notebook.metadata.get("native"), 1), 12)
@@ -355,18 +394,56 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                 ]
                 if request.conversation_id:
                     parts = await self.rpc.call(
-                        "hNvQHb", [request.conversation_id, 1, None, 1, [1], [4], None, 1], "/app"
+                        "hNvQHb",
+                        [
+                            request.conversation_id,
+                            1000 if request.action else 1,
+                            None,
+                            1,
+                            [1],
+                            [4],
+                            None,
+                            1,
+                        ],
+                        "/app",
                     )
                     from .session import nested
 
-                    turn = nested(parts[0], 0, 0)
+                    turns = nested(parts[0], 0, default=[])
+                    turn = turns[0] if turns else None
+                    if request.action:
+                        from dataclasses import replace
+
+                        from ..messages import target_message
+                        from .history import history
+
+                        current = history(parts[0], self._origin, request.conversation_id)
+                        role = "user" if request.action == MessageAction.EDIT else "assistant"
+                        _, target = target_message(current.messages, request.message_id, role)
+                        if request.action.value not in target.actions:
+                            raise ProviderError("This Gemini message action is not available")
+                        selected_index = next(
+                            i
+                            for i, item in enumerate(turns)
+                            if nested(item, 0, 1) == target.metadata["turn_id"]
+                        )
+                        original = turns[selected_index]
+                        action_files = nested(original, 2, 0, 3) or []
+                        if not isinstance(action_files, list):
+                            raise ProviderError("Gemini message attachments cannot be preserved")
+                        if request.action == MessageAction.RETRY:
+                            request = replace(request, prompt=nested(original, 2, 0, 0) or "")
+                        turn = (
+                            turns[selected_index + 1] if selected_index + 1 < len(turns) else None
+                        )
                     rid = nested(turn, 0, 1)
                     rcid = nested(turn, 3, 0, 0, 0)
-                    if not rid or not rcid:
+                    if turn is not None and (not rid or not rcid):
                         raise ProviderError("Gemini sohbet devam kimlikleri alınamadı")
-                    metadata[1:3] = [rid, rcid]
+                    metadata[1:3] = [rid or "", rcid or ""]
             bound, visible, cid = False, False, request.conversation_id
-            async for chunk in generate(client, request, metadata, context):
+            final_metadata = None
+            async for chunk in generate(client, request, metadata, context, files=action_files):
                 cid = chunk.get("cid") or cid
                 metadata = chunk["metadata"]
                 if cid and not bound:
@@ -384,8 +461,20 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                 while len(self._media) > 256:
                     self._media.pop(next(iter(self._media)))
                 yield ReplaceText(render_images(chunk["text"], images), "final")
+                rid = metadata[1] if len(metadata) > 1 else None
+                if rid:
+                    final_metadata = MessageMetadata(
+                        message_id=rid + ":model",
+                        user_message_id=rid + ":user",
+                        model=request.model,
+                        effort=request.effort,
+                        sources=tuple(chunk.get("sources", ())),
+                        actions=() if request.temporary else ("retry", "branch"),
+                    )
             if not visible or not cid:
                 raise ProviderError("Gemini yanıtı tamamlanmadı; yeniden gönderilmedi")
+            if final_metadata:
+                yield final_metadata
             if request.temporary:
                 self._temporary[cid] = metadata
                 while len(self._temporary) > 32:

@@ -2,9 +2,12 @@
 
 from .api import (
     AccountPaused,
+    BranchContext,
     Capability,
     CompatibilityError,
     ConversationBound,
+    MessageAction,
+    MessageMetadata,
     Provider,
     ProviderEvent,
     RateLimited,
@@ -40,6 +43,7 @@ from .session import CredentialStore
 
 __all__ = [
     "AccountPaused",
+    "BranchContext",
     "CredentialStore",
     "AttachmentPolicy",
     "Choice",
@@ -49,6 +53,8 @@ __all__ = [
     "FeatureState",
     "FeatureUnavailable",
     "Message",
+    "MessageAction",
+    "MessageMetadata",
     "Model",
     "Origin",
     "Page",

@@ -8,6 +8,18 @@ Python distributions use the corresponding PEP 440 version (`1.4.1b0` for `v1.4.
 
 ## [Unreleased]
 
+### Added
+
+- Added provider-aware message editing, reply retries for ChatGPT and Claude, and separate conversation branches for ChatGPT and Gemini. Gemini also exposes its native retry action on the latest eligible reply.
+- Added native message identities and available actions to the standalone provider API, with streamed source metadata kept separate from published thinking summaries.
+
+### Fixed
+
+- Reconciled confirmed message edits and retries with the archive without allowing older background reads to restore replaced messages.
+- Preserved ChatGPT branch previews across local reloads and bound them to the server conversation after the first accepted turn.
+- Saved refreshed ChatGPT credentials through caller-owned storage without assuming a filesystem path.
+- Displayed published web and file citations without inventing download URLs or treating answer-text links as sources.
+
 ## [1.4.1-beta] - 2026-10-25
 
 ### Added

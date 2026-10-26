@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from ..errors import AccountPaused
-from ..session import read_session, save_session
+from ..session import CredentialStore, read_session, save_session
 from .constants import DEFAULT_CDP_URL, FORBIDDEN_REPLAY_HEADERS
 from .errors import ChatGPTWebError
 from .resources import Script, script_path
@@ -81,12 +81,14 @@ class BrowserSession:
 
     def save(self, url: str, headers: dict[str, str]) -> None:
         path = self.paths.session_file
-        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        _private(path.parent, 0o700)
+        if not isinstance(path, CredentialStore):
+            path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            _private(path.parent, 0o700)
         save_session(
             path, {"version": 1, "url": url, "headers": headers}, ensure_ascii=True, newline=True
         )
-        _private(path, 0o600)
+        if not isinstance(path, CredentialStore):
+            _private(path, 0o600)
 
     def import_cookies(self, cookies: dict[str, str]) -> None:
         """Bootstrap a profile's web session without CDP or a running browser."""

@@ -1,8 +1,9 @@
 """Native Gemini read contracts; parsing has no session or frontend dependency."""
 
 from ..errors import ProviderError
+from ..messages import actions_for, sources_from
 from ..models import Content, Conversation, Message, Resource
-from .media import candidate_images, render_images
+from .media import _field, candidate_images, render_images
 
 
 def nested(value, *path, default=None):
@@ -18,6 +19,17 @@ def timestamp(value):
     if isinstance(value, list) and len(value) == 2 and all(type(x) in (int, float) for x in value):
         return value[0] + value[1] / 1e9
     return None
+
+
+def candidate_metadata(candidate):
+    """Published sources are field 43 of rich content; thoughts are candidate[37]."""
+    sources = []
+    groups = _field(nested(candidate, 12), 43, [])
+    for group in groups if isinstance(groups, list) else ():
+        entries = nested(group, 1, default=[])
+        for entry in entries if isinstance(entries, list) else ():
+            sources.append({"url": nested(entry, 3, 0, 1), "title": nested(entry, 3, 0, 2)})
+    return {"sources": sources_from({"sources": sources})}
 
 
 def conversations(pages, origin):
@@ -54,13 +66,21 @@ def history(data, origin, cid):
     if not isinstance(turns, list):
         raise ProviderError("Gemini geçmişi henüz okunamıyor; kayıtlı geçmiş korunuyor")
     messages = []
-    for turn in reversed(turns):
+    for turn_index, turn in enumerate(reversed(turns)):
         rid = nested(turn, 0, 1)
         if not isinstance(rid, str):
             raise ProviderError("Gemini geçmişinde yanıt kimliği eksik")
         user = nested(turn, 2, 0, 0)
         if isinstance(user, str) and user:
-            messages.append(Message(rid + ":user", "user", (Content("text", user),)))
+            messages.append(
+                Message(
+                    rid + ":user",
+                    "user",
+                    (Content("text", user),),
+                    metadata={"turn_id": rid},
+                    actions=actions_for("user"),
+                )
+            )
         candidates = nested(turn, 3, 0, default=[])
         if not candidates:
             continue
@@ -94,7 +114,15 @@ def history(data, origin, cid):
                         )
                         for image in images
                     ),
-                    metadata={"native_candidate": candidate},
+                    metadata={
+                        "native_candidate": candidate,
+                        "turn_id": rid,
+                        "candidate_id": nested(candidate, 0),
+                        **candidate_metadata(candidate),
+                    },
+                    actions=actions_for(
+                        "assistant", latest=turn_index == len(turns) - 1, branch=True
+                    ),
                 )
             )
     return Conversation(

@@ -778,5 +778,17 @@
   "ui.{0} dosya hazır": "{0} files ready",
   "ui.{0} dosya sınır nedeniyle eklenmedi": "{0} files skipped by provider limits",
   "ui.{0} dosya yüklenemedi": "{0} files could not be uploaded",
-  "ui.Oturum düzeni kaydedilemedi: {0}": "Could not save session layout: {0}"
+  "ui.Oturum düzeni kaydedilemedi: {0}": "Could not save session layout: {0}",
+  "ui.Edit message": "Edit message",
+  "ui.Retry response": "Retry response",
+  "ui.Branch chat": "Branch chat",
+  "ui.Message": "Message",
+  "ui.Wait for this conversation to finish": "Wait for this conversation to finish",
+  "ui.Creating branch…": "Creating branch…",
+  "ui.Message action failed: {0}": "Message action failed: {0}",
+  "ui.Branch created": "Branch created",
+  "ui.The selected conversation changed; try again": "The selected conversation changed; try again",
+  "ui.Message cannot be empty": "Message cannot be empty",
+  "ui.Retrying response…": "Retrying response…",
+  "ui.Sending edited message…": "Sending edited message…"
 }

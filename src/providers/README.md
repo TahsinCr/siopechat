@@ -73,11 +73,37 @@ To continue a chat, set `SendRequest.conversation_id` to the chat's
 `chat_id` is a caller-owned stable identity. Keep the provider and account identity
 from `Origin` with all stored records; remote IDs alone are not globally unique.
 
-Streams yield `TextDelta`, `ReplaceText` and `ConversationBound`. Replacement events
+Streams yield `TextDelta`, `ReplaceText`, `ConversationBound` and `MessageMetadata`. Replacement events
 replace the corresponding channel's accumulated text. Published thinking summaries
 use the analysis channel. Cancellation closes the transport; requests are never
 automatically resent after an ambiguous send failure. Closing a client cancels its
 active streams and closes all accounts, while keeping credential files intact.
+
+Message tools use provider identities, not list positions. `Message.actions` contains
+supported operations for that message on the current conversation path. Use
+`SendRequest(action=MessageAction.EDIT, message_id=..., prompt=...)` to edit a user
+message, or `MessageAction.RETRY` to retry an assistant response without adding a
+user message. Preserve `conversation_id` and the owning provider/account. Model
+and effort choices are checked against that account's current catalog. An edit
+selects a revised path; retrieve the confirmed history before replacing local
+records. Failed or cancelled requests are never automatically resubmitted.
+
+`await account.branch_chat(conversation_id, message_id)` returns a separate
+conversation. ChatGPT and Gemini support this operation; Claude does not expose
+it in this package. ChatGPT returns a branch preview: if its metadata contains
+`pending_branch`, pass `BranchContext(**chat.metadata["pending_branch"])` as
+`SendRequest.branch` on the first turn. The resulting `ConversationBound` identifies
+the persisted conversation; do not try to fetch the preview from the server.
+Persist the small continuation context if the preview must survive a restart.
+
+Published sources are distinct from analysis-channel summaries. Source metadata
+comes from native citations, including file references without a public URL;
+answer-text links are not treated as verified sources. `MessageMetadata` supplies
+native message identities, current-response tools and sources at stream completion.
+No subscription-name allowlist is maintained: account model access is discovered
+from the provider, while message operations follow the native supported contracts
+and any message restrictions. A successful check on one subscription does not
+establish availability on every plan; remote authorization errors remain authoritative.
 
 Applications own persistence and synchronization. `get_chat()` returns the history
 available from the provider; the library does not invent remote message pagination

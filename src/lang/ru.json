@@ -778,5 +778,17 @@
   "ui.{0} dosya hazır": "Файлов в очереди: {0}",
   "ui.{0} dosya sınır nedeniyle eklenmedi": "Пропущено файлов из-за ограничений: {0}",
   "ui.{0} dosya yüklenemedi": "Не удалось загрузить файлов: {0}",
-  "ui.Oturum düzeni kaydedilemedi: {0}": "Не удалось сохранить расположение вкладок: {0}"
+  "ui.Oturum düzeni kaydedilemedi: {0}": "Не удалось сохранить расположение вкладок: {0}",
+  "ui.Edit message": "Изменить сообщение",
+  "ui.Retry response": "Повторить ответ",
+  "ui.Branch chat": "Создать ветку чата",
+  "ui.Message": "Сообщение",
+  "ui.Wait for this conversation to finish": "Дождитесь завершения ответа в этом чате",
+  "ui.Creating branch…": "Создание ветки…",
+  "ui.Message action failed: {0}": "Не удалось выполнить действие: {0}",
+  "ui.Branch created": "Новая ветка создана",
+  "ui.The selected conversation changed; try again": "Выбранный чат изменился; попробуйте снова",
+  "ui.Message cannot be empty": "Сообщение не может быть пустым",
+  "ui.Retrying response…": "Повторная генерация ответа…",
+  "ui.Sending edited message…": "Отправка изменённого сообщения…"
 }

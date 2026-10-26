@@ -2,7 +2,14 @@
 
 import asyncio
 
-from ..api import Capability, ConversationBound, ReplaceText, TextDelta, validate_request
+from ..api import (
+    Capability,
+    ConversationBound,
+    MessageMetadata,
+    ReplaceText,
+    TextDelta,
+    validate_request,
+)
 from ..contracts import OptionalFeatures
 from ..errors import AccountPaused, FeatureUnavailable, ProviderError
 from ..models import (
@@ -42,6 +49,8 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
             Capability.DELETE,
             Capability.RENAME,
             Capability.ATTACHMENTS,
+            Capability.MESSAGE_EDIT,
+            Capability.MESSAGE_RETRY,
         }
     )
 
@@ -302,6 +311,11 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
                 effort=request.effort,
                 temporary=request.temporary,
                 attachments=request.attachments,
+                **(
+                    {"action": request.action, "message_id": request.message_id}
+                    if request.action
+                    else {}
+                ),
             ):
                 if event["type"] == "bound":
                     yield ConversationBound(event["id"])
@@ -310,5 +324,14 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
                     yield event_type(event["text"], event.get("channel", "final"))
                 elif event["type"] == "done":
                     completed = True
+                elif event["type"] == "metadata":
+                    yield MessageMetadata(
+                        message_id=event.get("message_id"),
+                        user_message_id=event.get("user_message_id"),
+                        model=request.model,
+                        effort=request.effort,
+                        sources=tuple(event.get("sources", ())),
+                        actions=() if request.temporary else tuple(event.get("actions", ())),
+                    )
             if not completed:
                 raise ProviderError("Claude yanıtı tamamlanmadı; istek yeniden gönderilmedi")

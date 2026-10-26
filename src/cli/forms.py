@@ -208,8 +208,10 @@ class Forms:
             content_height += 2
             width = max(16, min(72, self.view.main_width() - 12))
             for source in sources:
-                label = fit_text(source.get("title") or source["url"], width)
-                url = source["url"]
+                label = fit_text(
+                    source.get("title") or source.get("url") or source["file_id"], width
+                )
+                url = source.get("url")
                 body.append(
                     Window(
                         height=1,
@@ -223,13 +225,17 @@ class Forms:
                         content=FormattedTextControl(
                             [
                                 (
-                                    "class:markdown.link",
-                                    "  ↗ " + fit_text(url, max(12, width - 2)),
+                                    "class:markdown.link" if url else "class:metadata",
+                                    "  ↗ " + fit_text(url, max(12, width - 2))
+                                    if url
+                                    else "  " + fit_text(source["file_id"], width),
                                     on_click(
                                         lambda url=url: self.view.open_message_toolbar_source(
                                             *source_context, url
                                         )
-                                    ),
+                                    )
+                                    if url
+                                    else None,
                                 )
                             ]
                         ),
