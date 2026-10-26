@@ -22,6 +22,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 ### Fixed
 
 - Preserve confirmed response settings and resource metadata when a provider refresh omits them, rebuild source sections without duplicates, and refresh saved Gemini image references when downloading.
+- Hide unknown provider model identifiers from reply toolbars; show only names resolved by the active account's model catalog.
 
 ## [1.4.2-beta] - 2026-10-26
 

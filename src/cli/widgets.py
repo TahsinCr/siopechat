@@ -145,7 +145,7 @@ class TranscriptControl(UIControl):
         model_id = settings.get("Model")
         catalog = tab.get("catalog") or getattr(self.view, "catalog", None)
         model = catalog.chat_model(model_id) if catalog and model_id else None
-        model_label = (model.chat_title or model.title) if model else model_id
+        model_label = (model.chat_title or model.title) if model else None
         effort = settings.get("Effort")
         if model and effort:
             effort = next((choice.title for choice in model.efforts if choice.id == effort), effort)
