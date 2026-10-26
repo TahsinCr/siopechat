@@ -214,7 +214,7 @@ class FormsRenderTests(unittest.IsolatedAsyncioTestCase):
 
             click = MouseEvent(Point(0, 0), MouseEventType.MOUSE_UP, MouseButton.LEFT, frozenset())
             controls = v.render_conversation_actions()
-            self.assertEqual(controls[1][1], " Sil ")
+            self.assertEqual(controls[1][1], " 🗑 Sil ")
             self.assertNotIn(" Sil ", [part[1] for part in v.render_composer_actions()])
             controls[1][2](click)
             v.delete_record.assert_called_once_with(value=v.conversation_id)

@@ -17,6 +17,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 - Display per-response model and effort at the right of the message toolbar, immediately before reply-version controls when present; remove the separate details popup.
 - Move conversation deletion and split-pane controls beside the upper synchronization button.
+- Add a trash icon to the conversation delete action in the upper toolbar.
 
 ### Fixed
 

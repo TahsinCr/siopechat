@@ -1520,7 +1520,7 @@ class ChatView:
             controls.append(
                 (
                     "class:button",
-                    self.tr(" Sil "),
+                    " 🗑" + self.tr(" Sil "),
                     on_click(lambda: self.delete_record(value=self.conversation_id)),
                 )
             )
