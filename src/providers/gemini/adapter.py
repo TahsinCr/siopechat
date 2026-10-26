@@ -15,6 +15,7 @@ from ..api import (
 )
 from ..contracts import OptionalFeatures, confirm_deleted
 from ..errors import AccountPaused, FeatureUnavailable, ProviderError
+from ..messages import files_from, sources_from
 from ..models import (
     Feature,
     FeatureState,
@@ -362,7 +363,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
         project = notebook_id(request.project_id) if request.project_id else None
         if request.effort not in (None, "", "standard", "extended"):
             raise ValueError("unsupported Gemini thinking option")
-        from .media import render_images
+        from .media import resolve_image_links
         from .notebooks import field
         from .transport import generate
 
@@ -443,6 +444,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                     metadata[1:3] = [rid or "", rcid or ""]
             bound, visible, cid = False, False, request.conversation_id
             final_metadata = None
+            output_files, published_sources = (), ()
             async for chunk in generate(client, request, metadata, context, files=action_files):
                 cid = chunk.get("cid") or cid
                 metadata = chunk["metadata"]
@@ -451,7 +453,24 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                     bound = True
                 if chunk.get("context_only"):
                     continue
-                images = chunk["images"]
+                images = chunk["files"]
+                output_files = files_from(
+                    {"files": output_files},
+                    {
+                        "files": [
+                            {
+                                "id": image["alias"],
+                                "name": image["name"],
+                                "remote_url": image["url"],
+                                "media_type": image.get("media_type"),
+                            }
+                            for image in images
+                        ]
+                    },
+                )
+                published_sources = sources_from(
+                    {"sources": published_sources}, {"sources": chunk.get("sources", ())}
+                )
                 visible = visible or bool(chunk["text"] or images)
                 if chunk["thoughts"]:
                     yield ReplaceText(chunk["thoughts"], "analysis")
@@ -460,7 +479,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                     self._media[cid, image["url"]] = image
                 while len(self._media) > 256:
                     self._media.pop(next(iter(self._media)))
-                yield ReplaceText(render_images(chunk["text"], images), "final")
+                yield ReplaceText(resolve_image_links(chunk["text"], images), "final")
                 rid = metadata[1] if len(metadata) > 1 else None
                 if rid:
                     final_metadata = MessageMetadata(
@@ -468,8 +487,9 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                         user_message_id=rid + ":user",
                         model=request.model,
                         effort=request.effort,
-                        sources=tuple(chunk.get("sources", ())),
+                        sources=published_sources,
                         actions=() if request.temporary else ("retry", "branch"),
+                        files=output_files,
                     )
             if not visible or not cid:
                 raise ProviderError("Gemini yanıtı tamamlanmadı; yeniden gönderilmedi")
@@ -484,10 +504,12 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
         from ..files import DownloadSource, NativeDownloadClient, cookie_header
         from .media import PLACEHOLDER, valid_media_url
 
-        if not PLACEHOLDER.fullmatch(url) and not valid_media_url(url):
+        stable_reference = bool(PLACEHOLDER.fullmatch(url) or url.startswith("gemini-media:"))
+        if not stable_reference and not valid_media_url(url):
             return None
         target = self._media.get((conversation_id, url))
-        if target is None and PLACEHOLDER.fullmatch(url) and conversation_id:
+        if stable_reference and conversation_id and conversation_id not in self._temporary:
+            target = None
             chat = await self.get_chat(conversation_id)
             for message in chat.messages:
                 for content in message.content:
@@ -497,9 +519,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
         if target is None and valid_media_url(url):
             target = {"url": url, "name": "image"}
         if not target or not valid_media_url(target["url"]):
-            raise ValueError(
-                "Görselin gerçek dosya adresi sağlayıcıdan alınamadı; sohbeti eşitleyin"
-            )
+            raise ValueError("Dosyanın gerçek adresi sağlayıcıdan alınamadı; sohbeti eşitleyin")
         from urllib.parse import urlsplit
 
         headers = {"Referer": "https://gemini.google.com/"}

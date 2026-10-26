@@ -328,10 +328,11 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
                     yield MessageMetadata(
                         message_id=event.get("message_id"),
                         user_message_id=event.get("user_message_id"),
-                        model=request.model,
+                        model=event.get("model") or request.model,
                         effort=request.effort,
                         sources=tuple(event.get("sources", ())),
                         actions=() if request.temporary else tuple(event.get("actions", ())),
+                        files=tuple(event.get("files", ())),
                     )
             if not completed:
                 raise ProviderError("Claude yanıtı tamamlanmadı; istek yeniden gönderilmedi")

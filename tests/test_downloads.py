@@ -33,6 +33,12 @@ class DownloadTests(unittest.TestCase):
             resolver=lambda host, port, **kw: [(2, 1, 6, "", ("93.184.216.34", port))],
         )
 
+    def test_explicit_file_card_downloads_a_resource_without_content_type(self):
+        service = self.service(lambda _: httpx.Response(200, content=b"artifact"))
+        result = service.fetch("account", "https://example.com/result", force_download=True)
+        self.assertEqual(result["kind"], "file")
+        self.assertEqual(Path(result["path"]).read_bytes(), b"artifact")
+
     def test_private_targets_and_https_downgrade_are_rejected(self):
         for address in ("127.0.0.1", "10.0.0.1", "169.254.169.254", "::1"):
             service = self.service(lambda _: self.fail("private target must not be requested"))

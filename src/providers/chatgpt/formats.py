@@ -1,7 +1,26 @@
 import json
+from itertools import chain, islice
 from typing import Any, Iterable
 
+from ..messages import files_from
 from .discovery import project_id
+
+
+def message_files(*messages):
+    attachments = []
+    for message in messages:
+        metadata = message.get("metadata") or {}
+        for item in islice(
+            chain(metadata.get("attachments") or (), message.get("attachments") or ()), 128
+        ):
+            if not isinstance(item, dict):
+                continue
+            identifier = item.get("id") or item.get("file_id")
+            if isinstance(identifier, str):
+                attachments.append(
+                    dict(item, url="file-service://" + identifier, message_id=message.get("id"))
+                )
+    return files_from({"files": attachments}, *messages)
 
 
 def message_parts(content: Any) -> list[Any]:

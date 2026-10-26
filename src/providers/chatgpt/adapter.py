@@ -40,7 +40,7 @@ from ..session import delete_session, session_exists
 from .client import ChatGPTClient
 from .discovery import project_id
 from .errors import SentinelCompatibilityError
-from .formats import message_parts
+from .formats import message_files, message_parts
 from .projects import ChatGPTProjectEditor
 from .session import BrowserSession
 
@@ -373,11 +373,23 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
         remote_id = raw.get("conversation_id") or raw.get("id")
         if not isinstance(remote_id, str) or not remote_id:
             raise ValueError("provider conversation has no remote ID")
-        messages = []
+        messages, turn = [], []
         for item in raw.get("messages") or ():
             if not isinstance(item, dict):
                 continue
-            messages.append(self._message(item, raw))
+            if (item.get("author") or {}).get("role") == "user":
+                turn.clear()
+            else:
+                turn.append(item)
+            message = self._message(item, raw)
+            if (
+                message.role == "assistant"
+                and message.channel != "analysis"
+                and item.get("recipient") in (None, "all")
+            ):
+                message.metadata["files"] = message_files(*turn)
+                turn.clear()
+            messages.append(message)
         return Conversation(
             Origin(self.id, self.account_id, remote_id),
             raw.get("title") or "Untitled",
@@ -434,19 +446,58 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
             return await asyncio.to_thread(read)
 
     async def resolve_download(self, url, conversation_id=None, message_id=None):
-        from urllib.parse import quote, unquote, urlsplit
+        from urllib.parse import parse_qs, quote, unquote, urlsplit
 
         from ..files import DownloadSource
 
         parsed = urlsplit(url)
+        if parsed.scheme == "file-service":
+            import re
+
+            file_id = parsed.netloc
+            if (
+                not re.fullmatch(r"file[-_][A-Za-z0-9_-]+", file_id)
+                or parsed.path
+                or not conversation_id
+            ):
+                raise ValueError("Dosya seçili sohbete ait olmalı")
+
+            def resolve_file():
+                with self._client_scope() as client:
+                    chat = client.get_conversation(conversation_id)
+                    if not any(
+                        file.get("url") == url
+                        for item in chat.get("messages", ())
+                        for file in message_files(item)
+                    ):
+                        raise ValueError("Dosya sohbet kaydında bulunamadı veya süresi doldu")
+                    result = client.request(
+                        "GET",
+                        "https://chatgpt.com/backend-api/files/download/" + quote(file_id, safe=""),
+                        params={"conversation_id": conversation_id, "inline": "false"},
+                    ).json()
+                    target = result.get("download_url") if isinstance(result, dict) else None
+                    if not target or urlsplit(target).scheme != "https":
+                        raise ValueError("Sağlayıcı dosya indirme adresi döndürmedi")
+                    headers = (
+                        dict(client.headers) if urlsplit(target).netloc == "chatgpt.com" else {}
+                    )
+                    return DownloadSource(target, result.get("file_name"), True, headers)
+
+            return await asyncio.to_thread(resolve_file)
         if (
             parsed.scheme == "https"
             and parsed.netloc == "chatgpt.com"
             and parsed.path == "/backend-api/estuary/content"
         ):
+            file_id = parse_qs(parsed.query).get("id", [None])[0]
+            if file_id and file_id.startswith(("file-", "file_")) and conversation_id:
+                return await self.resolve_download(
+                    "file-service://" + file_id, conversation_id, message_id
+                )
 
             def resolve_estuary():
-                with self._factory(self.session) as client:
+                with self._client_scope() as client:
                     return DownloadSource(url, force_download=True, headers=dict(client.headers))
 
             return await asyncio.to_thread(resolve_estuary)
@@ -459,7 +510,7 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
             raise ValueError("Desteklenmeyen sohbet dosyası yolu")
 
         def resolve():
-            with self._factory(self.session) as client:
+            with self._client_scope() as client:
                 chat = client.get_conversation(conversation_id)
                 candidates = chat.get("messages", [])
                 if not candidates and isinstance(chat.get("mapping"), dict):
@@ -478,7 +529,7 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
                 ]
                 selected = next(
                     (item for item in matched if item.get("id") == message_id),
-                    matched[-1] if matched else None,
+                    matched[0] if len(matched) == 1 else None,
                 )
                 if selected is None or not selected.get("id"):
                     raise ValueError("Dosya sohbet kaydında bulunamadı veya süresi doldu")
@@ -655,6 +706,16 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
                         None,
                     )
                     if final:
+                        response_messages = completed.get("messages", [])
+                        turn_start = next(
+                            (
+                                index + 1
+                                for index in range(len(response_messages) - 1, -1, -1)
+                                if (response_messages[index].get("author") or {}).get("role")
+                                == "user"
+                            ),
+                            0,
+                        )
                         user = next(
                             (
                                 item
@@ -669,10 +730,13 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
                                 MessageMetadata(
                                     final.get("id"),
                                     user.get("id"),
-                                    request.model,
-                                    request.effort,
+                                    (final.get("metadata") or {}).get("model_slug")
+                                    or request.model,
+                                    (final.get("metadata") or {}).get("reasoning_effort")
+                                    or request.effort,
                                     sources_from(final),
                                     () if request.temporary else ("retry", "branch"),
+                                    files=message_files(*response_messages[turn_start:]),
                                 ),
                             )
                         )

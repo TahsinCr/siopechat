@@ -9,7 +9,7 @@ from pathlib import Path
 from ..api import MessageAction
 from ..errors import ProviderError
 from ..session import WebSession
-from .media import candidate_images
+from .media import candidate_files
 from .session import BASE, HEADERS, nested
 
 
@@ -201,7 +201,7 @@ async def generate(session, request, metadata, notebook=None, *, files=None):
                     "metadata": current,
                     "text": last_text,
                     "thoughts": last_thoughts,
-                    "images": candidate_images(candidate),
+                    "files": candidate_files(candidate),
                     "sources": candidate_metadata(candidate)["sources"],
                 }
             if isinstance(context, str):

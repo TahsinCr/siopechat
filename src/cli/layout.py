@@ -15,13 +15,14 @@ from .widgets import TranscriptGutter, fit_text, on_click
 
 
 def workspace_layout(view):
-    def text_window(text, height=1, style="", width=None):
+    def text_window(text, height=1, style="", width=None, dont_extend_width=False):
         return Window(
             content=FormattedTextControl(text),
             height=height,
             style=style,
             wrap_lines=False,
             width=width,
+            dont_extend_width=dont_extend_width,
         )
 
     view.transcript_window.right_margins = [ScrollbarMargin(display_arrows=True)]
@@ -100,14 +101,8 @@ def workspace_layout(view):
             VSplit(
                 [
                     text_window(
-                        lambda: [
-                            (
-                                "class:button",
-                                view.tr(" ↻ Eşitle"),
-                                on_click(lambda: view.synchronize("conversation")),
-                            )
-                        ],
-                        width=10,
+                        view.render_conversation_actions,
+                        dont_extend_width=True,
                     ),
                     Window(height=1),
                 ],

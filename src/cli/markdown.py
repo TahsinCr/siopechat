@@ -380,12 +380,12 @@ def _source_items(message: dict[str, Any]) -> tuple[dict[str, str], ...]:
     return sources_from(message)
 
 
-def _message_details(message: dict[str, Any]) -> tuple[tuple[str, str], ...]:
+def _response_settings(message: dict[str, Any]) -> tuple[tuple[str, str], ...]:
     """Expose explicit per-message model settings, never inferred conversation state."""
     metadata = message.get("metadata")
     roots = [message]
     if isinstance(metadata, dict):
-        roots.extend((metadata, metadata.get("metadata", {})))
+        roots.extend((metadata, metadata.get("metadata", {}), metadata.get("native_message", {})))
     details = []
     for label, keys in (
         ("Model", ("model", "model_slug")),
@@ -444,7 +444,10 @@ def visible_chat_message(message: dict[str, Any]) -> dict[str, Any] | None:
         )
     else:
         visible = False
-    if not visible or not isinstance(text, str) or not text:
+    from providers.messages import files_from
+
+    files = files_from(message) if role == "assistant" and not reasoning else ()
+    if not visible or not isinstance(text, str) or not (text or files):
         return None
     visible = {"role": "reasoning" if reasoning else role, "text": text} | {
         key: message[key]
@@ -456,17 +459,89 @@ def visible_chat_message(message: dict[str, Any]) -> dict[str, Any] | None:
             "_response_version_index",
             "_response_version_count",
             "_response_version_current_index",
+            "_response_settings",
+            "_thinking_sources",
+            "_body_length",
+            "_files",
+            "_source_owner",
         )
         if key in message and message[key] is not None
     }
     if role == "assistant" and not reasoning:
+        if "_body_length" in message:
+            return visible
         sources = _source_items(message)
-        details = _message_details(message)
-        if sources:
-            visible["_toolbar_sources"] = sources
-        if details:
-            visible["_toolbar_details"] = details
+        details = _response_settings(message)
+        visible.update(
+            _thinking_sources=sources,
+            _response_settings=details,
+            _files=files,
+            _body_length=len(text),
+        )
+        if files:
+            from urllib.parse import quote
+
+            visible["_files"] = files
+            visible["_body_length"] = len(text)
+            cards = []
+            for file in files:
+                name = file["name"].replace("[", "\\[").replace("]", "\\]")
+                info = []
+                if file.get("media_type"):
+                    info.append(file["media_type"])
+                if "size_bytes" in file:
+                    size = file["size_bytes"]
+                    info.append(f"{size / 1024:.1f} KiB" if size >= 1024 else f"{size} B")
+                suffix = " · " + " · ".join(info) if info else ""
+                cards.append(f"[ ↓ {name} ](siope-file:{quote(file['url'], safe='')}){suffix}")
+            visible["text"] = text + "\n\n" + "  \n".join(cards)
     return visible
+
+
+def message_body_text(message):
+    text = message.get("text") or ""
+    return text[: message.get("_body_length", len(text))]
+
+
+def _source_message(message, sources):
+    owner = str(message.get("id") or id(message))
+    from urllib.parse import quote
+
+    lines = []
+    for source in sources:
+        title = source["title"].replace("[", "\\[").replace("]", "\\]")
+        url = source.get("url")
+        lines.append(f"↗ [{title}]({quote(url, safe=':/?=&%+#')})" if url else f"↗ {title}")
+    return {
+        "id": owner + ":sources",
+        "role": "reasoning",
+        "text": "  \n".join(lines),
+        "_source_owner": owner,
+        **{key: message[key] for key in ("_archive_ordinal", "local_pending") if key in message},
+    }
+
+
+def update_message_sources(messages, message, sources):
+    """Keep one published-source section immediately above its owning answer."""
+    owner = str(message.get("id") or id(message))
+    messages[:] = [item for item in messages if item.get("_source_owner") != owner]
+    index = next((i for i, item in enumerate(messages) if item is message), None)
+    if sources and index is not None:
+        messages.insert(index, _source_message(message, sources))
+
+
+def visible_chat_messages(messages):
+    """Prepare bounded presentation records, including published sources per answer."""
+    result = []
+    for message in messages:
+        if message.get("_source_owner"):
+            continue
+        visible = visible_chat_message(message)
+        if visible is not None:
+            if visible.get("_thinking_sources"):
+                result.append(_source_message(visible, visible["_thinking_sources"]))
+            result.append(visible)
+    return result
 
 
 OSC_LINK = re.compile(r"\x1b\]8;[^;]*;([^\x1b\x07]*)(?:\x1b\\|\x07)")
@@ -555,7 +630,13 @@ def transcript_fragments(text):
                 if url not in handlers:
                     handlers[url] = link_handler(url)
                 handler = handlers[url]
-                fragments.append((style, piece, handler))
+                fragments.append(
+                    (
+                        "class:message.file" if url.startswith("siope-file:") else style,
+                        piece,
+                        handler,
+                    )
+                )
             else:
                 fragments.append((style, piece))
             offset += size

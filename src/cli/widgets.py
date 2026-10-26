@@ -135,17 +135,21 @@ class TranscriptControl(UIControl):
             ):
                 if action in available:
                     actions.append((action, icon, self.view.tr(label)))
-        if role == "assistant":
-            if message.get("_toolbar_sources"):
-                actions.append(("sources", "↗", self.view.tr("Sources")))
-            if message.get("_toolbar_details"):
-                actions.append(("details", "ⓘ", self.view.tr("Answer details")))
         tab_id = tab.get("tab_id")
         has_versions = version_count > 1 and role == "assistant"
         version_label = f"{version_index}/{version_count}"
         message_width = min(width, self.view.transcript_width())
         prefix = " " if message_width >= 2 else ""
         toolbar_style = f"class:message.toolbar.{role}"
+        settings = dict(message.get("_response_settings", ())) if role == "assistant" else {}
+        model_id = settings.get("Model")
+        catalog = tab.get("catalog") or getattr(self.view, "catalog", None)
+        model = catalog.chat_model(model_id) if catalog and model_id else None
+        model_label = (model.chat_title or model.title) if model else model_id
+        effort = settings.get("Effort")
+        if model and effort:
+            effort = next((choice.title for choice in model.efforts if choice.id == effort), effort)
+        settings_label = " · ".join(value for value in (model_label, effort) if value)
 
         def version_fragments(compact):
             if not has_versions:
@@ -218,11 +222,20 @@ class TranscriptControl(UIControl):
 
         used_width = line_width(fragments)
         version_width = line_width(versions)
-        if has_versions and used_width + version_width <= message_width:
-            fragments.append((toolbar_style, " " * (message_width - used_width - version_width)))
+        available = max(0, message_width - used_width - version_width)
+        settings_text = (
+            fit_text(settings_label, max(0, available - 2))
+            if settings_label and available > 2
+            else ""
+        )
+        if settings_text:
+            settings_text = " " + settings_text + " "
+        padding = max(0, available - get_cwidth(settings_text))
+        fragments.append((toolbar_style, " " * padding))
+        if settings_text:
+            fragments.append(("class:message.toolbar.metadata", settings_text))
+        if used_width + version_width <= message_width:
             fragments.extend(versions)
-        elif used_width < message_width:
-            fragments.append((toolbar_style, " " * (message_width - used_width)))
         return fragments
 
     def mouse_handler(self, mouse_event):

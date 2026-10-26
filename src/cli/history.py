@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from accounts import origin
 
-from .markdown import MessageRenderer, index_transcript, transcript_fragments, visible_chat_message
+from .markdown import MessageRenderer, index_transcript, transcript_fragments, visible_chat_messages
 from .transcript import VirtualTranscript
 
 _render_gate = threading.Semaphore(1)
@@ -38,9 +38,7 @@ def read_history(
                 result = {k: v for k, v in page.items() if k != "messages"}
                 result["history_window"] = dict(window)
                 version = current_version
-            page_messages = [
-                m for item in page.get("messages", ()) if (m := visible_chat_message(item))
-            ]
+            page_messages = visible_chat_messages(page.get("messages", ()))
             if until is not None and boundary is None:
                 page_messages = [
                     message

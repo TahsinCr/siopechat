@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from cli.markdown import visible_chat_message
+from cli.markdown import transcript_fragments, visible_chat_message, visible_chat_messages
 from extensions.archive.repository import Files, SQLiteRepository
 from extensions.archive.sync import Archive
 from providers import ConversationBound, MessageAction, MessageMetadata, ReplaceText
@@ -23,6 +23,51 @@ class MutationArchiveTests(unittest.TestCase):
         root = Path(folder.name)
         self.archive = Archive(SQLiteRepository(root / "archive.sqlite3"), Files(root / "files"))
         self.addCleanup(self.archive.close)
+
+    def test_provider_refresh_keeps_reply_settings_and_files_through_sqlite_reload(self):
+        from providers.history import merge_conversation
+
+        local = {
+            "messages": [
+                {
+                    "id": "answer",
+                    "role": "assistant",
+                    "text": "Done",
+                    "metadata": {
+                        "model": "model-a",
+                        "effort": "high",
+                        "files": [
+                            {
+                                "url": "sandbox:/mnt/data/result.csv",
+                                "name": "result.csv",
+                                "size_bytes": 17,
+                            }
+                        ],
+                        "sources": [{"title": "Reference", "url": "https://example.com/source"}],
+                    },
+                }
+            ]
+        }
+        remote = {
+            "messages": [
+                {
+                    "id": "answer",
+                    "role": "assistant",
+                    "text": "Done",
+                    "metadata": {"native": {"id": "answer"}},
+                }
+            ]
+        }
+        value = merge_conversation(remote, local)
+        self.archive.put("chatgpt/default", "conversation", "chat", value)
+        stored = self.archive.get("chatgpt/default", "conversation", "chat")
+        visible = visible_chat_messages(stored["messages"])
+        self.assertEqual(visible[-1]["_files"][0]["size_bytes"], 17)
+        self.assertIn("result.csv", visible[-1]["text"])
+        self.assertEqual(
+            dict(visible[-1]["_response_settings"]), {"Model": "model-a", "Effort": "high"}
+        )
+        self.assertIn("https://example.com/source", visible[0]["text"])
 
     def test_read_started_before_edit_cannot_restore_old_tail_or_pending_messages(self):
         old = {
@@ -579,9 +624,90 @@ class MessageToolbarTests(unittest.TestCase):
             "metadata": {"sources": [{"title": "notes.pdf", "file_id": "file-ref"}]},
         }
         with terminal(initial_messages=[message]) as (view, _):
-            view.message_toolbar_action(
-                view.tabs[view.active_tab]["tab_id"], view.messages[0], "sources"
+            self.assertEqual(view.messages[0]["role"], "reasoning")
+            self.assertIn("notes.pdf", view.messages[0]["text"])
+            self.assertNotIn("](", view.messages[0]["text"])
+            self.assertEqual(view.messages[1]["text"], "From your file")
+
+    def test_published_sources_survive_repeated_presentation_without_duplicate_sections(self):
+        raw = [
+            {"id": "think", "role": "reasoning", "text": "Published summary"},
+            {
+                "id": "answer",
+                "role": "assistant",
+                "text": "Answer",
+                "metadata": {
+                    "model": "model-a",
+                    "effort": "high",
+                    "sources": [{"title": "Reference", "url": "https://example.com/source"}],
+                },
+            },
+        ]
+        first = visible_chat_messages(raw)
+        second = visible_chat_messages(first)
+        self.assertEqual(first, second)
+        self.assertEqual([x["role"] for x in second], ["reasoning", "reasoning", "assistant"])
+        self.assertEqual(
+            second[-1]["_response_settings"], (("Model", "model-a"), ("Effort", "high"))
+        )
+
+    def test_completion_metadata_adds_sources_and_file_to_the_owning_answer_once(self):
+        from cli.chat import _SendStream
+
+        with terminal(initial_messages=[{"id": "draft", "role": "assistant", "text": "Done"}]) as (
+            view,
+            _,
+        ):
+            stream = _SendStream(view, view.tabs[0], view.messages)
+            stream._schedule_refresh = Mock()
+            event = {
+                "type": "metadata",
+                "message_id": "answer",
+                "model": "model-a",
+                "sources": [{"title": "Source", "url": "https://example.com"}],
+                "files": [
+                    {"url": "sandbox:/mnt/data/result.csv", "name": "result.csv", "size_bytes": 42}
+                ],
+            }
+            stream.on_event(event)
+            stream.on_event(event)
+            self.assertEqual(len(view.messages), 2)
+            self.assertEqual(view.messages[0]["_source_owner"], "answer")
+            self.assertEqual(view.messages[-1]["text"].count("↓"), 1)
+            self.assertEqual(view.messages[-1]["_body_length"], len("Done"))
+
+    def test_file_card_retains_metadata_and_starts_the_download_manager(self):
+        message = {
+            "id": "answer",
+            "role": "assistant",
+            "text": "Your file",
+            "metadata": {
+                "files": [
+                    {
+                        "name": "result.html",
+                        "download_url": "https://example.com/result",
+                        "media_type": "text/html",
+                        "size_bytes": 1024,
+                    }
+                ]
+            },
+        }
+        with terminal(initial_messages=[message]) as (view, _):
+            view.conversation_id = "chat"
+            view.account_service = SimpleNamespace(
+                download=Mock(return_value={"kind": "file", "path": "/downloads/result.html"})
             )
-            self.assertTrue(view.forms.visible)
-            view.app._redraw()
-            view.forms.close()
+            view._read_in_background = lambda read, done, failed, **kw: done(read())
+            text, _ = view.renderer.transcript(view.messages, 80)
+            fragments = transcript_fragments(text)
+            target = next(
+                span[2].url
+                for span in fragments
+                if len(span) > 2 and getattr(span[2], "url", "").startswith("siope-file:")
+            )
+            self.assertTrue(any(span[0] == "class:message.file" for span in fragments))
+            view.open_message_link(target, 0)
+            call = view.account_service.download.call_args
+            self.assertEqual(call.args[1:4], ("https://example.com/result", "chat", "answer"))
+            self.assertTrue(call.kwargs["force_download"])
+            self.assertEqual(view.messages[0]["_body_length"], len("Your file"))

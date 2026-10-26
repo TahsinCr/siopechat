@@ -3,7 +3,7 @@
 from ..errors import ProviderError
 from ..messages import actions_for, sources_from
 from ..models import Content, Conversation, Message, Resource
-from .media import _field, candidate_images, render_images
+from .media import _field, candidate_files, resolve_image_links
 
 
 def nested(value, *path, default=None):
@@ -97,9 +97,9 @@ def history(data, origin, cid):
                     channel="analysis",
                 )
             )
-        images = candidate_images(candidate)
-        text = render_images(text if isinstance(text, str) else "", images)
-        if text:
+        images = candidate_files(candidate)
+        text = resolve_image_links(text if isinstance(text, str) else "", images)
+        if text or images:
             messages.append(
                 Message(
                     rid + ":model",
@@ -107,7 +107,7 @@ def history(data, origin, cid):
                     (Content("text", text),)
                     + tuple(
                         Content(
-                            "image",
+                            "resource",
                             resource=Resource(
                                 image["alias"], image["name"], image.get("media_type"), image["url"]
                             ),
@@ -119,6 +119,15 @@ def history(data, origin, cid):
                         "turn_id": rid,
                         "candidate_id": nested(candidate, 0),
                         **candidate_metadata(candidate),
+                        "files": tuple(
+                            {
+                                "id": image["alias"],
+                                "name": image["name"],
+                                "remote_url": image["url"],
+                                "media_type": image.get("media_type"),
+                            }
+                            for image in images
+                        ),
                     },
                     actions=actions_for(
                         "assistant", latest=turn_index == len(turns) - 1, branch=True

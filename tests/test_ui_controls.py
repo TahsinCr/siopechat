@@ -29,8 +29,7 @@ class UiControlsTests(unittest.TestCase):
             "role": "assistant",
             "text": "Answer",
             "actions": ["edit", "retry", "branch"],
-            "_toolbar_sources": [{"title": "Source"}],
-            "_toolbar_details": [("Model", "gpt")],
+            "metadata": {"model": "gpt", "effort": "high"},
             "_response_version_index": 1,
             "_response_version_count": 2,
             "_response_version_current_index": 2,
@@ -60,6 +59,13 @@ class UiControlsTests(unittest.TestCase):
 
             view.message_toolbar_action = Mock()
             fragments = control._message_toolbar(0, 100)
+            metadata = next(
+                i for i, span in enumerate(fragments) if span[0] == "class:message.toolbar.metadata"
+            )
+            self.assertIn("gpt · high", fragments[metadata][1])
+            self.assertLess(
+                metadata, next(i for i, span in enumerate(fragments) if span[1].strip() == "1/2")
+            )
             version_next = next(
                 fragment
                 for fragment in fragments

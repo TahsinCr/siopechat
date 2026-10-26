@@ -1,6 +1,7 @@
 """Shared message actions and published source metadata, independent of any UI."""
 
-from urllib.parse import urlsplit
+import re
+from urllib.parse import unquote, urlsplit
 
 from .api import MessageAction
 from .errors import ProviderError
@@ -100,3 +101,144 @@ def sources_from(*roots):
     for root in roots:
         visit(root)
     return tuple(sources)
+
+
+def files_from(*roots):
+    """Collect explicit downloadable resources without interpreting ordinary web links."""
+    files, seen = [], set()
+    remaining = 2048
+
+    def add(value, owner=None):
+        if not isinstance(value, dict) or len(files) >= 128:
+            return
+        native = (
+            value.get("metadata", {}).get("native", {})
+            if isinstance(value.get("metadata"), dict)
+            else {}
+        )
+        value = native | value if isinstance(native, dict) else value
+        target = next(
+            (
+                value.get(key)
+                for key in (
+                    "download_url",
+                    "remote_url",
+                    "file_path",
+                    "path",
+                    "url",
+                    "asset_pointer",
+                )
+                if isinstance(value.get(key), str) and value[key]
+            ),
+            None,
+        )
+        identity = value.get("id")
+        if isinstance(identity, str) and identity.startswith("gemini-media:"):
+            target = identity
+        if isinstance(identity, str) and identity.startswith(
+            (
+                "http://googleusercontent.com/image_generation_content/",
+                "https://googleusercontent.com/image_generation_content/",
+            )
+        ):
+            target = identity
+        if (
+            not target
+            and isinstance(identity, str)
+            and identity.startswith(("sandbox:/mnt/", "/mnt/user-data/"))
+        ):
+            target = identity
+        if (
+            not target
+            or len(target) > 8192
+            or target in seen
+            or any(ord(c) < 32 or ord(c) == 127 for c in target)
+        ):
+            return
+        try:
+            parsed = urlsplit(target)
+            if parsed.scheme in ("http", "https"):
+                if not parsed.hostname or parsed.username or parsed.password:
+                    return
+            elif parsed.scheme == "file-service":
+                if not re.fullmatch(r"file[-_][A-Za-z0-9_-]+", parsed.netloc) or parsed.path:
+                    return
+            elif parsed.scheme == "gemini-media":
+                if not parsed.path or parsed.netloc or len(target) > 512:
+                    return
+            elif (
+                parsed.scheme not in ("", "sandbox", "computer")
+                or not parsed.path.startswith(("/mnt/data/", "/mnt/user-data/"))
+                or parsed.netloc
+            ):
+                return
+        except ValueError:
+            return
+        seen.add(target)
+        name = (
+            value.get("name")
+            or value.get("file_name")
+            or value.get("filename")
+            or unquote(parsed.path).rsplit("/", 1)[-1]
+            or parsed.netloc
+            or "File"
+        )
+        item = {
+            "url": target,
+            "name": " ".join(
+                "".join(c for c in str(name) if ord(c) >= 32 and ord(c) != 127).split()
+            )[:200],
+        }
+        message_id = value.get("message_id") or owner
+        if isinstance(message_id, str) and 0 < len(message_id) <= 256:
+            item["message_id"] = message_id
+        media = value.get("media_type") or value.get("mime_type") or value.get("content_type")
+        if isinstance(media, str) and re.fullmatch(r"[\w!#$&^.+-]+/[\w!#$&^.+-]+", media):
+            item["media_type"] = media[:120]
+        size = value.get("size_bytes", value.get("size"))
+        if isinstance(size, int) and not isinstance(size, bool) and size >= 0:
+            item["size_bytes"] = size
+        files.append(item)
+
+    def visit(value, depth=0, resource=False, owner=None):
+        nonlocal remaining
+        if depth > 7 or remaining <= 0 or len(files) >= 128:
+            return
+        remaining -= 1
+        if isinstance(value, (list, tuple)):
+            for item in value[:128]:
+                visit(item, depth + 1, resource, owner)
+        elif isinstance(value, str):
+            for match in re.finditer(
+                r"\[([^\]\n]{1,200})\]\(((?:sandbox:|computer:)?/mnt/(?:data|user-data)/[^\s)]+)\)",
+                value,
+            ):
+                add({"name": match[1], "url": match[2]}, owner)
+        elif isinstance(value, dict):
+            if resource or any(
+                value.get(key) for key in ("file_path", "download_url", "asset_pointer")
+            ):
+                add(value, owner)
+            visit(value.get("text"), depth + 1, owner=owner)
+            for key in (
+                "files",
+                "resources",
+                "attachments",
+                "artifacts",
+                "resource",
+                "file",
+                "output_files",
+                "files_metadata",
+            ):
+                visit(value.get(key), depth + 1, True, owner)
+            for key in ("metadata", "native", "native_message", "content", "parts", "value"):
+                visit(value.get(key), depth + 1, owner=owner)
+
+    for root in roots:
+        owner = (
+            root.get("id")
+            if isinstance(root, dict) and (root.get("role") or root.get("author"))
+            else None
+        )
+        visit(root, owner=owner)
+    return tuple(files)

@@ -2,8 +2,9 @@
 
 import json
 import unittest
+from contextlib import nullcontext
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 
@@ -12,11 +13,61 @@ from providers.chatgpt.client import ChatGPTClient
 from providers.claude.transport import ClaudeTransport
 from providers.gemini.history import history
 from providers.gemini.transport import generation_request
-from providers.messages import sources_from
+from providers.messages import files_from, sources_from
 from providers.models import Origin
 
 
 class ChatGPTActionsTests(unittest.TestCase):
+    def test_download_metadata_supports_native_resources_and_ignores_web_page_links(self):
+        cases = (
+            (
+                {"content": {"parts": ["[Report](sandbox:/mnt/data/report.pdf)"]}},
+                "sandbox:/mnt/data/report.pdf",
+            ),
+            (
+                {
+                    "content": [
+                        {
+                            "resource": {
+                                "id": "http://googleusercontent.com/image_generation_content/0",
+                                "name": "image.png",
+                                "remote_url": "https://lh3.googleusercontent.com/signed",
+                            }
+                        }
+                    ]
+                },
+                "http://googleusercontent.com/image_generation_content/0",
+            ),
+            (
+                {
+                    "files": [
+                        {
+                            "file_name": "report.docx",
+                            "path": "/mnt/user-data/outputs/report.docx",
+                            "size_bytes": 123,
+                        }
+                    ]
+                },
+                "/mnt/user-data/outputs/report.docx",
+            ),
+        )
+        for value, target in cases:
+            with self.subTest(target=target):
+                files = files_from(value)
+                self.assertEqual(files[0]["url"], target)
+        self.assertEqual(files_from({"text": "[Search result](https://example.com/page)"}), ())
+        self.assertEqual(
+            files_from(
+                {
+                    "files": [
+                        {"url": "file:///etc/passwd"},
+                        {"url": "https://user:secret@example.com/file"},
+                    ]
+                }
+            ),
+            (),
+        )
+
     def run_request(self, action, target, *, model="account-model", branch=None):
         sent = []
 
@@ -108,6 +159,29 @@ class ChatGPTActionsTests(unittest.TestCase):
 
 
 class GeminiActionsTests(unittest.TestCase):
+    def test_ready_media_resources_survive_a_file_only_history_response(self):
+        body = [None] * 8
+        body[7] = [
+            "https://lh3.googleusercontent.com/thumbnail",
+            "https://media.googlevideo.com/video",
+        ]
+        audio = [None] * 8
+        audio[7] = [
+            "https://lh3.googleusercontent.com/thumbnail",
+            "https://media.googlevideo.com/audio",
+        ]
+        candidate = [None] * 38
+        candidate[0], candidate[1] = "rc_media", [""]
+        candidate[12] = [{"60": [[[[body]]]], "87": [[None, audio]]}]
+        turn = [[None, "r_media"], None, [["Make media"]], [[candidate]]]
+        value = history([[turn]], lambda cid: Origin("gemini", "account", cid), "c_chat")
+        answer = value.messages[-1]
+        self.assertEqual(answer.content[0].text, "")
+        self.assertEqual(
+            [part.resource.media_type for part in answer.content[1:]], ["video/mp4", "audio/mpeg"]
+        )
+        self.assertEqual(answer.content[1].resource.id, "gemini-media:rc_media:video")
+
     def test_native_edit_and_retry_use_distinct_operation_controls(self):
         session = SimpleNamespace(models=(), language="en", token="fixture", session_id="fixture")
         for action, mode, reason in ((MessageAction.EDIT, 0, 2), (MessageAction.RETRY, 2, 7)):
@@ -174,7 +248,84 @@ class GeminiActionsTests(unittest.TestCase):
         )
 
 
+class NativeDownloadTests(unittest.IsolatedAsyncioTestCase):
+    async def test_chatgpt_asset_reference_gets_a_fresh_url_and_checks_conversation_membership(
+        self,
+    ):
+        from providers.chatgpt.adapter import ChatGPTProvider
+
+        provider = ChatGPTProvider.__new__(ChatGPTProvider)
+        client = Mock()
+        client.get_conversation.return_value = {
+            "messages": [
+                {
+                    "content": {
+                        "parts": [
+                            {
+                                "content_type": "image_asset_pointer",
+                                "asset_pointer": "file-service://file-output",
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+        client.request.return_value.json.return_value = {
+            "download_url": "https://cdn.example.com/fresh",
+            "file_name": "output.png",
+        }
+        client.headers = {"Authorization": "private"}
+        provider._client_scope = lambda: nullcontext(client)
+        source = await provider.resolve_download("file-service://file-output", "chat", "answer")
+        self.assertEqual(source.url, "https://cdn.example.com/fresh")
+        self.assertEqual(source.filename, "output.png")
+        self.assertEqual(source.headers, {})
+        client.request.assert_called_once_with(
+            "GET",
+            "https://chatgpt.com/backend-api/files/download/file-output",
+            params={"conversation_id": "chat", "inline": "false"},
+        )
+        client.request.reset_mock()
+        with self.assertRaises(ValueError):
+            await provider.resolve_download("file-service://file-foreign", "chat", "answer")
+        client.request.assert_not_called()
+
+
 class ClaudeActionsTests(unittest.IsolatedAsyncioTestCase):
+    def test_presented_files_are_attached_to_the_following_answer_in_history(self):
+        from providers.claude.records import conversation
+
+        value = {
+            "uuid": "chat",
+            "chat_messages": [
+                {
+                    "uuid": "tool",
+                    "sender": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "present_files",
+                            "input": {"filepaths": ["/mnt/user-data/outputs/result.docx"]},
+                        }
+                    ],
+                },
+                {
+                    "uuid": "answer",
+                    "sender": "assistant",
+                    "content": [{"type": "text", "text": "Done"}],
+                },
+            ],
+        }
+        messages = conversation(value, "account").messages
+        self.assertEqual(
+            messages[-1].metadata["files"],
+            ({"url": "/mnt/user-data/outputs/result.docx", "name": "result.docx"},),
+        )
+        value["chat_messages"].pop()
+        file_only = conversation(value, "account").messages[-1]
+        self.assertEqual(file_only.channel, "final")
+        self.assertEqual(file_only.metadata["files"][0]["name"], "result.docx")
+
     async def test_edit_and_retry_keep_their_native_parents_and_reuse_the_account_model(self):
         chat_id = "00000000-0000-4000-8000-000000000001"
         user_id = "00000000-0000-4000-8000-000000000002"
@@ -212,6 +363,21 @@ class ClaudeActionsTests(unittest.IsolatedAsyncioTestCase):
                 yield ""
                 yield 'data: {"type":"content_block_delta","delta":{"type":"citations_delta","citation":{"url":"https://example.com/source","title":"Published source"}}}'
                 yield ""
+                yield 'data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","name":"present_files","input":{}}}'
+                yield ""
+                yield "data: " + json.dumps(
+                    {
+                        "type": "content_block_delta",
+                        "index": 1,
+                        "delta": {
+                            "type": "input_json_delta",
+                            "partial_json": '{"filepaths":["/mnt/user-data/outputs/result.pdf"]}',
+                        },
+                    }
+                )
+                yield ""
+                yield 'data: {"type":"content_block_stop","index":1}'
+                yield ""
                 yield 'data: {"type":"message_stop"}'
                 yield ""
 
@@ -247,6 +413,10 @@ class ClaudeActionsTests(unittest.IsolatedAsyncioTestCase):
             ]
             self.assertEqual(events[-1]["type"], "done")
             metadata = next(event for event in events if event["type"] == "metadata")
+            self.assertEqual(
+                metadata["files"],
+                ({"url": "/mnt/user-data/outputs/result.pdf", "name": "result.pdf"},),
+            )
             self.assertEqual(
                 metadata["sources"],
                 ({"title": "Published source", "url": "https://example.com/source"},),

@@ -1704,9 +1704,12 @@ class Accounts:
                         "text": snapshot.text,
                         "actions": list(snapshot.metadata.actions) if snapshot.metadata else [],
                         "metadata": {
-                            "model": model,
-                            "effort": effort,
+                            "model": (snapshot.metadata.model if snapshot.metadata else None)
+                            or model,
+                            "effort": (snapshot.metadata.effort if snapshot.metadata else None)
+                            or effort,
                             "sources": list(snapshot.metadata.sources) if snapshot.metadata else [],
+                            "files": list(snapshot.metadata.files) if snapshot.metadata else [],
                         },
                     }
                 )
@@ -2007,9 +2010,27 @@ class Accounts:
             raise ValueError("Bu dosya sağlayıcı tarafından çözümlenemedi")
         return DownloadSource(url)
 
-    def download(self, key, url, conversation_id=None, message_id=None, progress=None, *, title=""):
+    def download(
+        self,
+        key,
+        url,
+        conversation_id=None,
+        message_id=None,
+        progress=None,
+        *,
+        title="",
+        force_download=False,
+        filename=None,
+    ):
         return self.api.get("downloads").fetch(
-            key, url, conversation_id, message_id, progress, title=title
+            key,
+            url,
+            conversation_id,
+            message_id,
+            progress,
+            title=title,
+            force_download=force_download,
+            filename=filename,
         )
 
     def upload_image(self, key, data, name, mime, width, height):

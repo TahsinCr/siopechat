@@ -39,6 +39,11 @@ class ProviderFileTests(unittest.IsolatedAsyncioTestCase):
             "https://chatgpt.com/backend-api/conversation/chat/interpreter/download",
         )
         self.assertEqual(source.headers, {})
+        client.get_conversation.return_value["messages"].append(
+            {"id": "another", "content": {"parts": ["[download](sandbox:/mnt/data/game.py)"]}}
+        )
+        with self.assertRaises(ValueError):
+            await provider.resolve_download("sandbox:/mnt/data/game.py", "chat", "unconfirmed")
 
     async def test_gemini_generated_placeholder_maps_only_to_provider_url(self):
         from providers.gemini.history import history

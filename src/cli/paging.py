@@ -4,20 +4,22 @@ from accounts import origin
 from providers.history import merge_conversation
 
 from .history import read_history
-from .markdown import visible_chat_message
+from .markdown import visible_chat_messages
 
 MAX_LOADED_MESSAGES = 240
 
 
 def visible_window(value, local=()):
-    messages = [m for item in value.get("messages", ()) if (m := visible_chat_message(item))]
+    messages = visible_chat_messages(value.get("messages", ()))
     pending = [
         item
         for item in local
         if "_archive_ordinal" not in item
         and (item.get("local_pending") or item.get("role") == "system")
     ]
-    return merge_conversation({"messages": messages}, {"messages": pending})["messages"]
+    return visible_chat_messages(
+        merge_conversation({"messages": messages}, {"messages": pending})["messages"]
+    )
 
 
 class HistoryPager:

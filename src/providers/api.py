@@ -91,6 +91,7 @@ class MessageMetadata:
     effort: str | None = None
     sources: tuple[dict, ...] = ()
     actions: tuple[str, ...] = ()
+    files: tuple[dict, ...] = ()
 
 
 ProviderEvent = TextDelta | ReplaceText | ConversationBound | MessageMetadata

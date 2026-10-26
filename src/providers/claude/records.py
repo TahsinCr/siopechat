@@ -1,8 +1,21 @@
 """Lossless Claude records mapped to the shared provider contract."""
 
 from ..errors import ProviderError
-from ..messages import actions_for, sources_from
+from ..messages import actions_for, files_from, sources_from
 from ..models import Content, Conversation, Message, Origin, Project, Resource
+
+
+def presented_files(block):
+    """Only the provider's explicit presentation tool publishes generated output paths."""
+    if block.get("type") == "tool_use" and block.get("name") == "present_files":
+        inputs = block.get("input")
+        paths = inputs.get("filepaths") or () if isinstance(inputs, dict) else ()
+        return (
+            files_from({"files": [{"path": path} for path in paths[:128] if isinstance(path, str)]})
+            if isinstance(paths, (list, tuple))
+            else ()
+        )
+    return files_from(block)
 
 
 def _attachment_count(turns):
@@ -50,12 +63,38 @@ def conversation(value, account_id):
             branch.append(item)
             leaf = item.get("parent_message_uuid")
         turns = list(reversed(branch))
+    pending_files = ()
+    pending_id = ""
+
+    def flush_files():
+        if pending_files:
+            messages.append(
+                Message(
+                    pending_id + ":files",
+                    "assistant",
+                    (Content("text", ""),),
+                    "final",
+                    {"files": pending_files},
+                )
+            )
+
     for item in turns:
         role = "user" if item.get("sender") == "human" else "assistant"
+        if role == "user":
+            flush_files()
+            pending_files = ()
         content = item.get("content") or (
             [{"type": "text", "text": item["text"]}] if item.get("text") else []
         )
         text_indices = [i for i, block in enumerate(content) if block.get("type") == "text"]
+        if role == "assistant":
+            pending_files = files_from(
+                {"files": pending_files},
+                item,
+                *({"files": presented_files(block)} for block in content),
+            )
+            if pending_files:
+                pending_id = str(item["uuid"])
         for index, block in enumerate(content):
             kind = block.get("type")
             if kind in ("text", "thinking"):
@@ -75,6 +114,11 @@ def conversation(value, account_id):
                                 "native": block,
                                 "native_message": {k: v for k, v in item.items() if k != "content"},
                                 "sources": sources_from(block),
+                                "files": pending_files
+                                if role == "assistant"
+                                and text_indices
+                                and index == text_indices[-1]
+                                else (),
                             },
                             actions=actions_for(role)
                             if text_indices and index == text_indices[-1] and kind == "text"
@@ -110,6 +154,9 @@ def conversation(value, account_id):
                     ),
                 )
             )
+        if text_indices and role == "assistant":
+            pending_files = ()
+    flush_files()
     return Conversation(
         Origin("claude", account_id, value["uuid"]),
         value.get("name") or "Claude sohbeti",

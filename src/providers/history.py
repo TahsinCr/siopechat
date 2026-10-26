@@ -78,7 +78,17 @@ def merge_conversation(remote, local):
             or signature(m)[1] == "analysis"
         )
         for i in range(block.size):
-            message = dict(after[local_index + i]) | before[r + i]
+            local_message, remote_message = after[local_index + i], before[r + i]
+            message = dict(local_message) | remote_message
+            if signature(local_message) == signature(remote_message):
+                local_metadata = local_message.get("metadata") or {}
+                remote_metadata = remote_message.get("metadata") or {}
+                metadata = dict(remote_metadata)
+                for name in ("model", "effort", "sources", "files"):
+                    if name not in metadata and name in local_metadata:
+                        metadata[name] = local_metadata[name]
+                if metadata:
+                    message["metadata"] = metadata
             message.pop("local_pending", None)
             merged.append(message)
         ri, li = r + block.size, local_index + block.size

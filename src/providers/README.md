@@ -68,6 +68,15 @@ resolution. Use `describe()` and `project_options()` to discover supported actio
 Unsupported actions raise `FeatureUnavailable`; an empty list does not indicate
 unsupported functionality.
 
+History messages keep published sources and generated-file descriptors in their
+metadata. Streaming `MessageMetadata` events expose the same `sources` and `files`
+collections, plus the reply's available model and effort. File descriptors contain
+the native reference and available name, media type and size; file bytes are not
+included. Pass a descriptor's `url` to `resolve_download` with the owning chat and
+message IDs to obtain an authenticated, transient `DownloadSource`. ChatGPT file
+assets and sandbox outputs, Gemini image/video/audio references, and Claude's presented output
+paths are resolved by their own provider. A provider may expire or remove a file.
+
 To continue a chat, set `SendRequest.conversation_id` to the chat's
 `origin.remote_id`. For a project, also set `project_id` to its remote ID. Local
 `chat_id` is a caller-owned stable identity. Keep the provider and account identity

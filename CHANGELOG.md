@@ -8,6 +8,20 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ## [Unreleased]
 
+### Added
+
+- Show provider-published sources alongside their answer's thinking summaries and generated-file cards inside assistant replies, including available file type and size.
+- Carry generated-file descriptors through the common provider metadata event and SQLite history; file-card clicks use the shared background download manager and authenticated provider resolution.
+
+### Changed
+
+- Display per-response model and effort at the right of the message toolbar, immediately before reply-version controls when present; remove the separate details popup.
+- Move conversation deletion and split-pane controls beside the upper synchronization button.
+
+### Fixed
+
+- Preserve confirmed response settings and resource metadata when a provider refresh omits them, rebuild source sections without duplicates, and refresh saved Gemini image references when downloading.
+
 ## [1.4.2-beta] - 2026-10-26
 
 ### Added

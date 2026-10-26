@@ -11,7 +11,16 @@ def valid_media_url(url):
         parsed = urlsplit(url)
     except ValueError:
         return False
-    return parsed.scheme == "https" and (parsed.hostname or "").endswith(".googleusercontent.com")
+    host = parsed.hostname or ""
+    return (
+        parsed.scheme == "https"
+        and not parsed.username
+        and not parsed.password
+        and (
+            host.endswith((".googleusercontent.com", ".googlevideo.com"))
+            or host == "storage.googleapis.com"
+        )
+    )
 
 
 def _nested_value(data, path, default=None):
@@ -42,7 +51,7 @@ def _field(container, index, default=None):
     return default if value in (None, [], {}) else value
 
 
-def candidate_images(candidate):
+def candidate_files(candidate):
     values = _nested_value(_field(_nested_value(candidate, [12]), 7), [0], [])
     images = []
     web = _field(_nested_value(candidate, [12]), 1, [])
@@ -64,10 +73,22 @@ def candidate_images(candidate):
                     or f"http://googleusercontent.com/image_generation_content/{index}",
                 }
             )
+    rich = _nested_value(candidate, [12])
+    candidate_id = _nested_value(candidate, [0])
+    video = _nested_value(_field(rich, 59), [0, 0, 0, 0, 7, 1])
+    media = _field(rich, 86, [])
+    for kind, name, mime, url in (
+        ("video", "video.mp4", "video/mp4", video),
+        ("audio", "audio.mp3", "audio/mpeg", _nested_value(media, [0, 1, 7, 1])),
+        ("music-video", "music-video.mp4", "video/mp4", _nested_value(media, [1, 1, 7, 1])),
+    ):
+        if isinstance(url, str) and valid_media_url(url):
+            alias = f"gemini-media:{candidate_id}:{kind}" if isinstance(candidate_id, str) else url
+            images.append({"url": url, "name": name, "media_type": mime, "alias": alias})
     return images
 
 
-def render_images(text, images):
+def resolve_image_links(text, images):
     by_alias = {image["alias"]: image for image in images}
 
     def replace(match):
@@ -78,8 +99,4 @@ def render_images(text, images):
             return image["url"]
         return f"[Image]({image['url']})"
 
-    rendered = PLACEHOLDER.sub(replace, text or "")
-    for image in images:
-        if image["url"] not in rendered:
-            rendered += f"\n\n[Image]({image['url']})"
-    return rendered
+    return PLACEHOLDER.sub(replace, text or "")

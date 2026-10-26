@@ -49,9 +49,12 @@ from .markdown import (
     DEFAULT_MARKDOWN_THEME,
     MessageRenderer,
     index_transcript,
+    message_body_text,
     render_chatgpt_annotations,
     transcript_fragments,
+    update_message_sources,
     visible_chat_message,
+    visible_chat_messages,
 )
 from .projects import ProjectPanel
 from .session import SessionDialog
@@ -149,12 +152,22 @@ class _SendStream:
                     final["id"] = event["message_id"]
                 final["actions"] = list(event.get("actions", ()))
                 if event.get("sources"):
-                    final["_toolbar_sources"] = tuple(event["sources"])
-                final["_toolbar_details"] = tuple(
+                    final["_thinking_sources"] = tuple(event["sources"])
+                    update_message_sources(self.messages, final, final["_thinking_sources"])
+                final["_response_settings"] = tuple(
                     (label, event[key])
                     for label, key in (("Model", "model"), ("Effort", "effort"))
                     if event.get(key)
                 )
+                from providers.messages import files_from
+
+                source_text = message_body_text(final)
+                files = files_from({"text": source_text, "files": event.get("files", ())})
+                if files:
+                    prepared = visible_chat_message(
+                        {"role": "assistant", "text": source_text, "files": files}
+                    )
+                    final.update({key: prepared[key] for key in ("text", "_body_length", "_files")})
                 if event.get("user_message_id"):
                     user = next(
                         (
@@ -326,11 +339,7 @@ class ChatView:
         self.tab_kind = "chat"
         self.last_response_model: str | None = None
         self.current_project: dict[str, Any] = dict(initial_project or {})
-        self.messages: list[Message] = []
-        for message in initial_messages or []:
-            visible = visible_chat_message(message)
-            if visible is not None:
-                self.messages.append(visible)
+        self.messages: list[Message] = visible_chat_messages(initial_messages or [])
         self.background_tabs: list[dict[str, Any]] = []
         self.busy = False
         self.busy_tab_index: int | None = None
@@ -1499,21 +1508,29 @@ class ChatView:
         self.transcript_window.vertical_scroll = 0
         self.app.invalidate()
 
-    def render_composer_actions(self):
-        compact = self.main_width() < 42
+    def render_conversation_actions(self):
         controls = [
             (
-                "class:button" if self.conversation_id else "class:sidebar.muted",
-                " × " if compact else self.tr(" Sil "),
-                on_click(
-                    lambda: (
-                        self.delete_record(value=self.conversation_id)
-                        if self.conversation_id
-                        else None
-                    )
-                ),
+                "class:button",
+                self.tr(" ↻ Eşitle "),
+                on_click(lambda: self.synchronize("conversation")),
             )
         ]
+        if self.conversation_id:
+            controls.append(
+                (
+                    "class:button",
+                    self.tr(" Sil "),
+                    on_click(lambda: self.delete_record(value=self.conversation_id)),
+                )
+            )
+        if self.layout_enabled:
+            controls.append(("class:button", self.tr(" ◫ Böl "), on_click(self.begin_split)))
+        return controls
+
+    def render_composer_actions(self):
+        compact = self.main_width() < 42
+        controls = []
         if self.attach_file_callback or self.pending_attachments:
             controls.append(
                 (
@@ -1524,14 +1541,6 @@ class ChatView:
                     if compact
                     else self.tr(" ＋ Dosya "),
                     on_click(self.open_attachment),
-                )
-            )
-        if self.layout_enabled:
-            controls.append(
-                (
-                    "class:button",
-                    " ◫ " if compact else self.tr(" ◫ Böl "),
-                    on_click(self.begin_split),
                 )
             )
         if not self.follow_output:
@@ -4243,7 +4252,13 @@ class ChatView:
         self._read_in_background(read, ready, failed, session_bound=False, cpu=True)
 
     def open_message_link(self, url, index=None):
+        from urllib.parse import unquote
+
         from .markdown import open_link
+
+        is_file = url.startswith("siope-file:")
+        if is_file:
+            url = unquote(url.removeprefix("siope-file:"))
 
         if self.account_service is None:
             open_link(url)
@@ -4253,6 +4268,20 @@ class ChatView:
             self.messages[index] if index is not None and 0 <= index < len(self.messages) else {}
         )
         message_id = message.get("id")
+        if is_file:
+            message_id = next(
+                (
+                    item.get("message_id") or message_id
+                    for item in message.get("_files", ())
+                    if item["url"] == url
+                ),
+                message_id,
+            )
+        file_name = (
+            next((item["name"] for item in message.get("_files", ()) if item["url"] == url), None)
+            if is_file
+            else None
+        )
         self.status = self.tr("Bağlantı hazırlanıyor…")
 
         def progress(name, size, total):
@@ -4286,7 +4315,13 @@ class ChatView:
 
         self._read_in_background(
             lambda: self.account_service.download(
-                key, url, conversation, message_id, progress, title=title
+                key,
+                url,
+                conversation,
+                message_id,
+                progress,
+                title=title,
+                **({"force_download": True, "filename": file_name} if is_file else {}),
             ),
             completed,
             failed,
@@ -4944,14 +4979,6 @@ class ChatView:
             )
         return index
 
-    def open_message_toolbar_source(self, tab_id, message_ref, url):
-        index = self._toolbar_message_index(tab_id, message_ref)
-        if index is None:
-            self.status = self.tr("This message is no longer loaded")
-            self.app.invalidate()
-            return
-        self.open_message_link(url, index)
-
     def message_toolbar_action(self, tab_id, message_ref, action):
         """Resolve the clicked tab/message before any clipboard, read or write action."""
         index = self._toolbar_message_index(tab_id, message_ref)
@@ -4998,7 +5025,7 @@ class ChatView:
                 self._submit_message_action(tab, message, "retry", "")
             return
         if action == "copy":
-            text = render_chatgpt_annotations(message.get("text") or "")
+            text = render_chatgpt_annotations(message_body_text(message))
             if not text:
                 self.status = self.tr("This message has no text to copy")
             elif clipboard.copy_text(text):
@@ -5008,20 +5035,6 @@ class ChatView:
                 self.app.output.flush()
                 self.show_temporary_status(self.tr("Sent message to the terminal clipboard"))
             self.app.invalidate()
-            return
-        if action == "sources":
-            sources = message.get("_toolbar_sources", ())
-            if sources:
-                self.forms.show_message_info(
-                    self.tr("Sources"),
-                    sources=sources,
-                    source_context=(tab_id, message),
-                )
-            return
-        if action == "details":
-            details = message.get("_toolbar_details", ())
-            if details:
-                self.forms.show_message_info(self.tr("Answer details"), details=details)
             return
 
     def _navigate_response_version(self, tab_id, message_ref, direction):
@@ -5081,7 +5094,12 @@ class ChatView:
                     if alternate is not None:
                         displayed = dict(tab["messages"][target_index])
                         displayed["text"] = alternate["text"]
-                        for field in ("_toolbar_sources", "_toolbar_details"):
+                        for field in (
+                            "_thinking_sources",
+                            "_response_settings",
+                            "_body_length",
+                            "_files",
+                        ):
                             if field in alternate:
                                 displayed[field] = alternate[field]
                             else:
@@ -5092,6 +5110,9 @@ class ChatView:
                             "current_index", result["count"]
                         )
                         tab["messages"][target_index] = displayed
+                        update_message_sources(
+                            tab["messages"], displayed, displayed.get("_thinking_sources", ())
+                        )
                         if tab is self.tabs[self.active_tab]:
                             self.messages = tab["messages"]
                             tab["render_revision"] = tab.get("render_revision", 0) + 1
@@ -5445,11 +5466,7 @@ class ChatView:
                     tab is target_tab for tab in self.tabs
                 ):
                     return
-                messages = []
-                for message in conversation.get("messages", []):
-                    visible = visible_chat_message(message)
-                    if visible is not None:
-                        messages.append(visible)
+                messages = visible_chat_messages(conversation.get("messages", []))
 
                 def apply_conversation() -> None:
                     if (
@@ -5463,9 +5480,12 @@ class ChatView:
                     # History can finish after a local send has started. Merge
                     # against the current tab snapshot so pending turns and the
                     # active stream survive while missing history is inserted.
-                    visible_messages = merge_conversation(
-                        {"messages": visible_messages}, {"messages": target_tab.get("messages", [])}
-                    )["messages"]
+                    visible_messages = visible_chat_messages(
+                        merge_conversation(
+                            {"messages": visible_messages},
+                            {"messages": target_tab.get("messages", [])},
+                        )["messages"]
+                    )
                     project = conversation.get("project")
                     project = dict(project) if isinstance(project, dict) else {}
                     project_id = conversation.get("project_id") or project.get("id")
@@ -5680,11 +5700,7 @@ class ChatView:
                         target_tab["history_window"] = rollback[1]
                 elif send_succeeded and result.get("history"):
                     history = result["history"]
-                    messages = [
-                        visible
-                        for item in history.get("messages", ())
-                        if (visible := visible_chat_message(item))
-                    ]
+                    messages = visible_chat_messages(history.get("messages", ()))
                     if history.get("history_window"):
                         target_tab["history_window"] = history["history_window"]
                 if send_succeeded and result.get("replaced_conversation_id"):

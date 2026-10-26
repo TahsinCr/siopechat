@@ -238,7 +238,18 @@ class Downloads:
         path = Path(value).expanduser()
         return (path if path.is_absolute() else self.root / path).resolve()
 
-    def fetch(self, key, url, conversation_id=None, message_id=None, progress=None, *, title=""):
+    def fetch(
+        self,
+        key,
+        url,
+        conversation_id=None,
+        message_id=None,
+        progress=None,
+        *,
+        title="",
+        force_download=False,
+        filename=None,
+    ):
         identity = (key, conversation_id, url)
         with self._lock:
             if identity in self._active:
@@ -290,6 +301,10 @@ class Downloads:
                 self.model_revision += 1
             self._update(record_id, persist=True)
             source = self.accounts.resolve_download(key, url, conversation_id, message_id)
+            if force_download:
+                from dataclasses import replace
+
+                source = replace(source, force_download=True, filename=source.filename or filename)
             try:
                 result = self._fetch(source, report)
                 if result["kind"] == "file":

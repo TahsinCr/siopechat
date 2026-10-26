@@ -315,7 +315,9 @@ class ClaudeTransport:
             else:
                 body["thinking_mode"] = effort
         completed, blocks = False, {}
-        response_id, parent_id, final_index, sources = None, None, 0, ()
+        response_id, parent_id, final_index, sources, files = None, None, 0, (), ()
+        response_model = None
+        presented_inputs = {}
         suffix = "/retry_completion" if v.get("action") == MessageAction.RETRY else "/completion"
         async with self.session.connect().stream(
             "POST",
@@ -349,10 +351,19 @@ class ClaudeTransport:
                     native = event.get("message") or {}
                     response_id = native.get("uuid") or native.get("id")
                     parent_id = native.get("parent_uuid")
+                    response_model = native.get("model")
                 if kind == "error" or event.get("error"):
                     raise ProviderError("Claude akışı hata verdi; istek tekrarlanmadı")
                 if kind == "content_block_start":
                     block = event.get("content_block", {})
+                    from ..messages import files_from
+
+                    files = files_from({"files": files}, block)
+                    if block.get("type") == "tool_use" and block.get("name") == "present_files":
+                        from .records import presented_files
+
+                        files = files_from({"files": files + presented_files(block)})
+                        presented_inputs[event.get("index", 0)] = ""
                     blocks[event.get("index", 0)] = block.get("type")
                     if block.get("type") == "text":
                         from ..messages import sources_from
@@ -364,6 +375,13 @@ class ClaudeTransport:
                     elif block.get("type") == "thinking" and block.get("thinking"):
                         yield {"type": "delta", "channel": "analysis", "text": block["thinking"]}
                 if kind == "content_block_delta":
+                    index = event.get("index", 0)
+                    if delta.get("type") == "input_json_delta" and index in presented_inputs:
+                        value = presented_inputs[index] + (delta.get("partial_json") or "")
+                        if len(value) <= 65536:
+                            presented_inputs[index] = value
+                        else:
+                            presented_inputs.pop(index)
                     if delta.get("type") == "citations_delta":
                         from ..messages import sources_from
 
@@ -379,6 +397,28 @@ class ClaudeTransport:
                         }
                     elif delta.get("type") == "text_delta" and channel == "text":
                         yield {"type": "delta", "text": delta.get("text", "")}
+                if kind == "content_block_stop":
+                    value = presented_inputs.pop(event.get("index", 0), "")
+                    if value:
+                        from .records import presented_files
+
+                        try:
+                            inputs = json.loads(value)
+                        except ValueError:
+                            inputs = {}
+                        if isinstance(inputs, dict):
+                            files = files_from(
+                                {
+                                    "files": files
+                                    + presented_files(
+                                        {
+                                            "type": "tool_use",
+                                            "name": "present_files",
+                                            "input": inputs,
+                                        }
+                                    )
+                                }
+                            )
                 elif "completion" in event:
                     yield {"type": "delta", "text": event.get("completion") or ""}
                     completed = bool(event.get("stop_reason"))
@@ -394,6 +434,8 @@ class ClaudeTransport:
                 if isinstance(parent_id, str) and v.get("action") != MessageAction.RETRY
                 else None,
                 "sources": sources,
+                "files": files,
+                "model": response_model,
                 "actions": ["retry"],
             }
         yield {"type": "done"}
