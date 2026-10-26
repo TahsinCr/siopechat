@@ -915,7 +915,7 @@ wheels = [
 
 [[package]]
 name = "siopechat"
-version = "1.4.1b0"
+version = "1.4.2b0"
 source = { editable = "." }
 dependencies = [
     { name = "browser-cookie3" },

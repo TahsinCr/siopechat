@@ -1,4 +1,4 @@
-[![Version: v1.4.1-beta][version-shield]](CHANGELOG.md)
+[![Version: v1.4.2-beta][version-shield]](CHANGELOG.md)
 [![Python 3.11+][python-shield]](https://www.python.org/downloads/)
 [![GPL-3.0-only][license-shield]](LICENSE)
 
@@ -24,7 +24,7 @@ It uses your own signed-in web sessions. There are no API keys to configure, and
 - A command palette, configurable shortcuts, mouse controls and local extensions.
 - English, Turkish and Russian interface catalogs.
 
-**v1.4.1-beta** refines the conversation and downloads views, adds Claude Incognito chats, and restores open conversations after restart. Cached project conversations now appear before background provider synchronization finishes. The Python distribution version is `1.4.1b0`.
+**v1.4.2-beta** adds provider-aware message editing, retries and branching, with retry history saved in the local SQLite archive. It also improves branch synchronization and adds native message identities and source metadata to the standalone provider API. The Python distribution version is `1.4.2b0`.
 
 ## Install and sign in
 
@@ -216,6 +216,6 @@ The GitHub Actions workflow runs the locked application Python 3.11/3.14 and Nod
 
 Copyright © TahsinCr. Licensed under [GPL-3.0-only](LICENSE). Vendored components retain their own notices in `src/utils/`.
 
-[version-shield]: https://img.shields.io/badge/version-v1.4.1--beta-b7a3e3.svg?style=for-the-badge
+[version-shield]: https://img.shields.io/badge/version-v1.4.2--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge
