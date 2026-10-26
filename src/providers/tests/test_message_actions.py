@@ -49,6 +49,7 @@ class ChatGPTActionsTests(unittest.TestCase):
             "current_node": "answer-2",
             "messages": [prompt, second],
             "mapping": {
+                "root": {"id": "root", "parent": None, "children": ["user"], "message": None},
                 "user": {
                     "id": "user",
                     "parent": "root",

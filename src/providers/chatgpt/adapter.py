@@ -438,13 +438,46 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
                 )
         return variants_by_message
 
+    @staticmethod
+    def _active_messages(raw: dict):
+        mapping = raw.get("mapping")
+        if not isinstance(mapping, dict):
+            messages = raw.get("messages")
+            return messages if isinstance(messages, list) else ()
+        if not mapping:
+            return ()
+
+        node_id = raw.get("current_node")
+        if not isinstance(node_id, str) or node_id not in mapping:
+            raise ValueError("ChatGPT conversation has no active message path")
+
+        reversed_messages = []
+        visited = set()
+        while node_id is not None:
+            if node_id in visited:
+                raise ValueError("ChatGPT conversation message path contains a cycle")
+            visited.add(node_id)
+            node = mapping.get(node_id)
+            if not isinstance(node, dict):
+                raise ValueError("ChatGPT conversation message path is incomplete")
+            message = node.get("message")
+            if isinstance(message, dict):
+                reversed_messages.append(message)
+            parent_id = node.get("parent")
+            if parent_id is None:
+                break
+            if not isinstance(parent_id, str) or parent_id not in mapping:
+                raise ValueError("ChatGPT conversation message path is incomplete")
+            node_id = parent_id
+        return tuple(reversed(reversed_messages))
+
     def _conversation(self, raw: dict) -> Conversation:
         remote_id = raw.get("conversation_id") or raw.get("id")
         if not isinstance(remote_id, str) or not remote_id:
             raise ValueError("provider conversation has no remote ID")
         response_variant_index = self._response_variant_index(raw)
         messages = []
-        for item in raw.get("messages") or ():
+        for item in self._active_messages(raw):
             if not isinstance(item, dict):
                 continue
             message = self._message(item, raw)
@@ -457,12 +490,13 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
                         response_version_index=current_index,
                     )
             messages.append(message)
+        metadata = {key: value for key, value in raw.items() if key != "mapping"}
         return Conversation(
             Origin(self.id, self.account_id, remote_id),
             raw.get("title") or "Untitled",
             tuple(messages),
             project_id=project_id(raw),
-            metadata=dict(raw),
+            metadata=metadata,
         )
 
     async def list_chats(self, cursor: str | None = None, limit: int = 28) -> Page[Conversation]:

@@ -340,7 +340,7 @@ class ChatGPTClient:
     def get_conversation(self, conversation_id: str) -> dict[str, Any]:
         url = urljoin(
             CHATGPT_ORIGIN,
-            f"/backend-api/conversations/{conversation_id}",
+            f"/backend-api/conversation/{conversation_id}",
         )
         result = self.request("GET", url).json()
         if not isinstance(result, dict):

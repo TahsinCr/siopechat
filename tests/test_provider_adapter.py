@@ -73,6 +73,53 @@ class ProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(chat.metadata, self.client.raw)
 
+    async def test_history_reads_active_path_and_remote_reply_versions_from_provider_tree(self):
+        def message(message_id, role, text):
+            return {
+                "id": message_id,
+                "author": {"role": role},
+                "channel": "final" if role == "assistant" else None,
+                "recipient": "all",
+                "content": {"content_type": "text", "parts": [text]},
+            }
+
+        self.client.raw = {
+            "conversation_id": "remote",
+            "title": "Example",
+            "current_node": "answer-current",
+            "mapping": {
+                "root": {"id": "root", "parent": None, "children": ["user"], "message": None},
+                "user": {
+                    "id": "user-node",
+                    "parent": "root",
+                    "children": ["answer-old", "answer-current"],
+                    "message": message("user", "user", "Prompt"),
+                },
+                "answer-old": {
+                    "id": "answer-old",
+                    "parent": "user",
+                    "children": [],
+                    "message": message("answer-old", "assistant", "Earlier answer"),
+                },
+                "answer-current": {
+                    "id": "answer-current",
+                    "parent": "user",
+                    "children": [],
+                    "message": message("answer-current", "assistant", "Current answer"),
+                },
+            },
+        }
+
+        chat = await self.provider.get_chat("remote")
+
+        self.assertEqual([item.id for item in chat.messages], ["user", "answer-current"])
+        current = chat.messages[-1]
+        self.assertEqual(current.response_version_index, 2)
+        self.assertEqual(len(current.response_variants), 1)
+        self.assertEqual(current.response_variants[0].id, "answer-old")
+        self.assertEqual(current.response_variants[0].content[0].text, "Earlier answer")
+        self.assertNotIn("mapping", chat.metadata)
+
     async def test_discovery_creation_and_deletion_are_available(self):
         description = await self.provider.describe()
         self.assertEqual(description.feature(Capability.PROJECTS).state, FeatureState.AVAILABLE)

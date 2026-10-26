@@ -33,6 +33,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.1b0` for `v1.4.
 - Showed copy confirmation in the status line for two seconds, restoring its prior message unless a newer status replaced it.
 - Kept message toolbar actions within the rendered row, used terminal-cell widths for mouse hit testing, and made disabled version arrows non-clickable.
 - Indexed ChatGPT's response tree once per conversation instead of rescanning the full tree for each assistant message.
+- Retrieved ChatGPT's full conversation tree from its branch-history endpoint and kept that raw tree out of archived metadata while preserving the active transcript and provider reply versions.
 
 ## [1.4.1-beta] - 2026-10-25
 
