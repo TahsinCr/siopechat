@@ -13,6 +13,10 @@ Python distributions use the corresponding PEP 440 version (`1.4.1b0` for `v1.4.
 - Added provider-aware message editing, reply retries for ChatGPT and Claude, and separate conversation branches for ChatGPT and Gemini. Gemini also exposes its native retry action on the latest eligible reply.
 - Added native message identities and available actions to the standalone provider API, with streamed source metadata kept separate from published thinking summaries.
 
+### Changed
+
+- Shortened transcript toolbar labels to one word in English, Turkish, and Russian.
+
 ### Fixed
 
 - Reconciled confirmed message edits and retries with the archive without allowing older background reads to restore replaced messages.
