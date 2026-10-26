@@ -1272,21 +1272,6 @@ class Accounts:
                 "metadata": message.metadata,
                 "actions": list(message.actions),
             }
-            if message.response_variants:
-                value["response_version_index"] = message.response_version_index
-                value["response_variants"] = [
-                    {
-                        "id": variant.id,
-                        "index": variant.index,
-                        "role": "assistant",
-                        "channel": variant.channel,
-                        "text": "\n".join(content.text or "" for content in variant.content),
-                        "content": [content_record(content) for content in variant.content],
-                        "metadata": variant.metadata,
-                        "actions": [],
-                    }
-                    for variant in message.response_variants
-                ]
             return value
 
         return {

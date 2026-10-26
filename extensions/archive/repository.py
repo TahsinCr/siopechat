@@ -451,7 +451,6 @@ class SQLiteRepository:
                         "INSERT INTO conversation_metadata VALUES(?,?,?)",
                         (account, remote, encode(value["metadata"])),
                     )
-                self._write_response_variants(db, account, remote, value.get("messages", []))
                 self._write_messages(db, account, remote, value.get("messages", []))
                 db.execute(
                     "DELETE FROM memberships WHERE account=? AND conversation=?", (account, remote)
@@ -478,78 +477,6 @@ class SQLiteRepository:
         return True
 
     @staticmethod
-    def _write_response_variants(db, account, remote, messages):
-        for message in messages:
-            variants = message.get("response_variants")
-            current_id = message.get("id")
-            current_index = message.get("response_version_index")
-            if not variants or not current_id or type(current_index) is not int:
-                continue
-            indexed = [
-                (variant.get("index"), variant)
-                for variant in variants
-                if isinstance(variant, dict)
-                and variant.get("role") == "assistant"
-                and variant.get("id")
-                and type(variant.get("index")) is int
-            ]
-            indexes = [index for index, _ in indexed]
-            total = max([current_index, *indexes], default=0)
-            if (
-                total < 2
-                or current_index < 1
-                or len(indexes) != len(variants)
-                or len(set(indexes)) != len(indexes)
-                or current_index in indexes
-                or set(indexes) | {current_index} != set(range(1, total + 1))
-            ):
-                continue
-            row = db.execute(
-                "SELECT group_id FROM response_variant_groups "
-                "WHERE account=? AND conversation=? AND current_message=?",
-                (account, remote, current_id),
-            ).fetchone()
-            group_id = row[0] if row else current_id
-            previous = [
-                (index, json.loads(payload))
-                for index, payload in db.execute(
-                    "SELECT version_index,payload FROM response_variants "
-                    "WHERE account=? AND conversation=? AND group_id=? ORDER BY version_index",
-                    (account, remote, group_id),
-                )
-            ]
-            provider_ids = {variant.get("id") for _, variant in indexed}
-            provider_ids.add(current_id)
-            local_variants = [
-                variant
-                for _, variant in previous
-                if variant.get("_variant_source") != "provider"
-                and variant.get("id") not in provider_ids
-            ]
-            for variant in local_variants:
-                variant["_variant_source"] = "local"
-                total += 1
-                indexed.append((total, variant))
-            indexes = [index for index, _ in indexed]
-            if set(indexes) | {current_index} != set(range(1, total + 1)):
-                return
-            db.execute(
-                "DELETE FROM response_variants WHERE account=? AND conversation=? AND group_id=?",
-                (account, remote, group_id),
-            )
-            for index, variant in sorted(indexed):
-                payload = {key: value for key, value in variant.items() if key != "index"}
-                payload["_variant_source"] = variant.get("_variant_source", "provider")
-                db.execute(
-                    "INSERT INTO response_variants VALUES(?,?,?,?,?)",
-                    (account, remote, group_id, index, encode(payload)),
-                )
-            db.execute(
-                "INSERT OR REPLACE INTO response_variant_groups VALUES(?,?,?,?,?)",
-                (account, remote, group_id, current_id, current_index),
-            )
-
-    @staticmethod
     def _write_messages(db, account, remote, messages, *, start=0):
         db.execute(
             "DELETE FROM messages WHERE account=? AND conversation=? AND ordinal>=?",
@@ -566,13 +493,7 @@ class SQLiteRepository:
                     message.get("role"),
                     message.get("channel"),
                     message.get("text", ""),
-                    encode(
-                        {
-                            key: value
-                            for key, value in message.items()
-                            if key not in ("response_variants", "response_version_index")
-                        }
-                    ),
+                    encode(message),
                 )
                 for index, message in enumerate(messages)
             ),
@@ -1180,7 +1101,6 @@ class SQLiteRepository:
                 message for message in replacement_messages if message.get("id") not in superseded
             ]
             value["messages"] = replacement_messages
-            self._write_response_variants(db, account, remote, replacement_messages)
             old_header = json.loads(row[0])
             metadata_row = db.execute(
                 "SELECT payload FROM conversation_metadata WHERE account=? AND remote=?",

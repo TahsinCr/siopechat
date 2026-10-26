@@ -6,7 +6,6 @@ import math
 import threading
 from collections import OrderedDict
 from contextlib import contextmanager
-from dataclasses import replace
 from typing import Callable
 
 from ..api import (
@@ -32,7 +31,6 @@ from ..models import (
     Page,
     Project,
     ProviderDescription,
-    ResponseVariant,
     Resource,
     SessionState,
     SessionStatus,
@@ -372,131 +370,21 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
             else (),
         )
 
-    def _response_variant_index(self, raw: dict):
-        mapping = raw.get("mapping")
-        if not isinstance(mapping, dict):
-            return {}
-
-        by_parent = {}
-        for key, node in mapping.items():
-            if not isinstance(key, str) or not isinstance(node, dict):
-                continue
-            message = node.get("message")
-            parent_id = node.get("parent")
-            if isinstance(message, dict) and message.get("id") and parent_id:
-                by_parent.setdefault(parent_id, []).append((key, node, message))
-
-        variants_by_message = {}
-        for parent_id, siblings in by_parent.items():
-            parent = mapping.get(parent_id)
-            children = parent.get("children") if isinstance(parent, dict) else None
-            child_order = {
-                child: index
-                for index, child in enumerate(children or ())
-                if isinstance(child, str)
-            }
-            ordered = sorted(
-                enumerate(siblings),
-                key=lambda pair: (
-                    child_order.get(pair[1][0], len(child_order) + pair[0]),
-                    pair[0],
-                ),
-            )
-            eligible = []
-            for _, (_, _, alternate) in ordered:
-                author = alternate.get("author")
-                author = author if isinstance(author, dict) else {}
-                content = alternate.get("content")
-                content = content if isinstance(content, dict) else {}
-                metadata = alternate.get("metadata")
-                metadata = metadata if isinstance(metadata, dict) else {}
-                if (
-                    author.get("role") != "assistant"
-                    or alternate.get("recipient") not in (None, "all")
-                    or alternate.get("channel") == "analysis"
-                    or content.get("content_type")
-                    in ("thoughts", "reasoning_recap", "reasoning_summary")
-                    or metadata.get("is_visually_hidden_from_conversation")
-                ):
-                    continue
-                message = self._message(alternate, raw)
-                eligible.append(
-                    ResponseVariant(
-                        message.id,
-                        len(eligible) + 1,
-                        message.content,
-                        message.channel,
-                        message.metadata,
-                    )
-                )
-            if len(eligible) < 2:
-                continue
-            for index, current in enumerate(eligible, 1):
-                variants_by_message[current.id] = (
-                    tuple(variant for variant in eligible if variant.id != current.id),
-                    index,
-                )
-        return variants_by_message
-
-    @staticmethod
-    def _active_messages(raw: dict):
-        mapping = raw.get("mapping")
-        if not isinstance(mapping, dict):
-            messages = raw.get("messages")
-            return messages if isinstance(messages, list) else ()
-        if not mapping:
-            return ()
-
-        node_id = raw.get("current_node")
-        if not isinstance(node_id, str) or node_id not in mapping:
-            raise ValueError("ChatGPT conversation has no active message path")
-
-        reversed_messages = []
-        visited = set()
-        while node_id is not None:
-            if node_id in visited:
-                raise ValueError("ChatGPT conversation message path contains a cycle")
-            visited.add(node_id)
-            node = mapping.get(node_id)
-            if not isinstance(node, dict):
-                raise ValueError("ChatGPT conversation message path is incomplete")
-            message = node.get("message")
-            if isinstance(message, dict):
-                reversed_messages.append(message)
-            parent_id = node.get("parent")
-            if parent_id is None:
-                break
-            if not isinstance(parent_id, str) or parent_id not in mapping:
-                raise ValueError("ChatGPT conversation message path is incomplete")
-            node_id = parent_id
-        return tuple(reversed(reversed_messages))
-
     def _conversation(self, raw: dict) -> Conversation:
         remote_id = raw.get("conversation_id") or raw.get("id")
         if not isinstance(remote_id, str) or not remote_id:
             raise ValueError("provider conversation has no remote ID")
-        response_variant_index = self._response_variant_index(raw)
         messages = []
-        for item in self._active_messages(raw):
+        for item in raw.get("messages") or ():
             if not isinstance(item, dict):
                 continue
-            message = self._message(item, raw)
-            if message.role == "assistant" and message.channel != "analysis":
-                variants, current_index = response_variant_index.get(message.id, ((), 1))
-                if variants:
-                    message = replace(
-                        message,
-                        response_variants=variants,
-                        response_version_index=current_index,
-                    )
-            messages.append(message)
-        metadata = {key: value for key, value in raw.items() if key != "mapping"}
+            messages.append(self._message(item, raw))
         return Conversation(
             Origin(self.id, self.account_id, remote_id),
             raw.get("title") or "Untitled",
             tuple(messages),
             project_id=project_id(raw),
-            metadata=metadata,
+            metadata=dict(raw),
         )
 
     async def list_chats(self, cursor: str | None = None, limit: int = 28) -> Page[Conversation]:

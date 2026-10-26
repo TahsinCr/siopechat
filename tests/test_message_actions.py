@@ -103,114 +103,59 @@ class MutationArchiveTests(unittest.TestCase):
             old[:1] + revised,
         )
 
-    def test_provider_variants_are_archived_once_and_returned_with_the_active_index(self):
+
+    def test_repeated_local_retries_are_saved_in_sqlite_order(self):
         self.archive.put(
             "chatgpt/default",
             "conversation",
             "chat",
-            {
-                "title": "Chat",
-                "messages": [
+            {"messages": [
+                {"id": "user", "role": "user", "text": "Prompt"},
+                {"id": "answer-1", "role": "assistant", "text": "First answer"},
+            ]},
+        )
+        for previous, current, text in (
+            ("answer-1", "answer-2", "Second answer"),
+            ("answer-2", "answer-3", "Third answer"),
+        ):
+            self.archive.replace_history(
+                "chatgpt/default",
+                "chat",
+                {"messages": [
                     {"id": "user", "role": "user", "text": "Prompt"},
-                    {
-                        "id": "answer-2",
-                        "role": "assistant",
-                        "text": "Current answer",
-                        "response_version_index": 2,
-                        "response_variants": [
-                            {
-                                "id": "answer-1",
-                                "index": 1,
-                                "role": "assistant",
-                                "text": "Earlier answer",
-                                "channel": "final",
-                                "metadata": {"model": "gpt"},
-                            }
-                        ],
-                    },
-                ],
-            },
-        )
-
-        window = self.archive.conversation_window("chatgpt/default", "chat")
-        active = next(message for message in window["messages"] if message["id"] == "answer-2")
-        earlier = self.archive.response_version("chatgpt/default", "chat", "answer-2", 1)
-        current = self.archive.response_version("chatgpt/default", "chat", "answer-2", 2)
-
-        self.assertEqual(
-            (
-                active["_response_version_index"],
-                active["_response_version_count"],
-                active["_response_version_current_index"],
-            ),
-            (2, 2, 2),
-        )
-        self.assertEqual(earlier["message"]["text"], "Earlier answer")
-        self.assertEqual((earlier["index"], earlier["current_index"]), (1, 2))
-        self.assertEqual(current["message"]["text"], "Current answer")
-
-    def test_local_retry_appends_after_provider_variants_without_overwriting_their_order(self):
-        self.archive.put(
-            "chatgpt/default",
-            "conversation",
-            "chat",
-            {
-                "messages": [
-                    {"id": "user", "role": "user", "text": "Prompt"},
-                    {
-                        "id": "answer-1",
-                        "role": "assistant",
-                        "text": "Selected provider answer",
-                        "response_version_index": 1,
-                        "response_variants": [
-                            {
-                                "id": "answer-2",
-                                "index": 2,
-                                "role": "assistant",
-                                "text": "Other provider answer",
-                            }
-                        ],
-                    },
-                ]
-            },
-        )
-        self.archive.replace_history(
-            "chatgpt/default",
-            "chat",
-            {
-                "messages": [
-                    {"id": "user", "role": "user", "text": "Prompt"},
-                    {"id": "answer-3", "role": "assistant", "text": "New retry"},
-                ]
-            },
-            retry_message_id="answer-1",
-            new_message_id="answer-3",
-        )
+                    {"id": current, "role": "assistant", "text": text},
+                ]},
+                retry_message_id=previous,
+                new_message_id=current,
+            )
 
         versions = [
             self.archive.response_version("chatgpt/default", "chat", "answer-3", index)
             for index in (1, 2, 3)
         ]
-
         self.assertEqual(
             [item["message"]["text"] for item in versions],
-            ["Selected provider answer", "Other provider answer", "New retry"],
+            ["First answer", "Second answer", "Third answer"],
         )
         self.assertEqual([item["current_index"] for item in versions], [3, 3, 3])
 
-    def test_provider_refresh_keeps_local_retry_versions_missing_from_remote_history(self):
+    def test_provider_refresh_keeps_locally_captured_retry_versions(self):
         self.archive.put(
             "chatgpt/default",
             "conversation",
             "chat",
-            {"messages": [{"id": "user", "role": "user"},
-                          {"id": "answer-1", "role": "assistant", "text": "Local old"}]},
+            {"messages": [
+                {"id": "user", "role": "user"},
+                {"id": "answer-1", "role": "assistant", "text": "Local old"},
+            ]},
         )
         self.archive.replace_history(
             "chatgpt/default",
             "chat",
-            {"messages": [{"id": "user", "role": "user"},
-                          {"id": "answer-2", "role": "assistant", "text": "Current"}]},
+            {"messages": [
+                {"id": "user", "role": "user"},
+                {"id": "answer-2", "role": "assistant", "text": "Current"},
+            ]},
             retry_message_id="answer-1",
             new_message_id="answer-2",
         )
@@ -218,36 +163,21 @@ class MutationArchiveTests(unittest.TestCase):
             "chatgpt/default",
             "conversation",
             "chat",
-            {
-                "messages": [
-                    {"id": "user", "role": "user"},
-                    {
-                        "id": "answer-2",
-                        "role": "assistant",
-                        "text": "Current",
-                        "response_version_index": 2,
-                        "response_variants": [
-                            {
-                                "id": "remote-answer",
-                                "index": 1,
-                                "role": "assistant",
-                                "text": "Remote version",
-                            }
-                        ],
-                    },
-                ]
-            },
+            {"messages": [
+                {"id": "user", "role": "user"},
+                {"id": "answer-2", "role": "assistant", "text": "Current"},
+            ]},
         )
 
         versions = [
             self.archive.response_version("chatgpt/default", "chat", "answer-2", index)
-            for index in (1, 2, 3)
+            for index in (1, 2)
         ]
-
         self.assertEqual(
             [item["message"]["text"] for item in versions],
-            ["Remote version", "Current", "Local old"],
+            ["Local old", "Current"],
         )
+        self.assertEqual([item["current_index"] for item in versions], [2, 2])
 
 
 class MutationAccountsTests(unittest.TestCase):

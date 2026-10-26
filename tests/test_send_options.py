@@ -76,15 +76,15 @@ class SendOptionsTests(unittest.TestCase):
         self.assertEqual(len(self.client.temporary_conversations["remote"]["messages"]), 6)
         self.client.get_conversation.assert_not_called()
 
-    def test_conversation_history_uses_full_provider_tree_endpoint(self):
+    def test_conversation_history_uses_flat_message_endpoint(self):
         response = Mock()
-        response.json.return_value = {"mapping": {}}
+        response.json.return_value = {"messages": []}
         with patch.object(self.client, "request", return_value=response) as request:
             result = self.client.get_conversation("remote")
 
-        self.assertEqual(result, {"mapping": {}})
+        self.assertEqual(result, {"messages": []})
         request.assert_called_once_with(
-            "GET", "https://chatgpt.com/backend-api/conversation/remote"
+            "GET", "https://chatgpt.com/backend-api/conversations/remote"
         )
 
     def test_project_reaches_request_body(self):

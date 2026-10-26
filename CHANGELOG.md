@@ -13,8 +13,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.1b0` for `v1.4.
 - Added provider-aware message editing, reply retries for ChatGPT and Claude, and separate conversation branches for ChatGPT and Gemini. Gemini also exposes its native retry action on the latest eligible reply.
 - Added native message identities and available actions to the standalone provider API, with streamed source metadata kept separate from published thinking summaries.
 - Kept ChatGPT's native branch preview available locally until its first accepted reply; Gemini branches remain out of the sidebar until Gemini lists them.
-- Saved prior successful assistant replies in the SQLite archive and added compact previous/current/next controls to the reply toolbar.
-- Loaded ChatGPT's server-retained alternate replies from its normal conversation history and kept locally captured retries when later provider syncs omit them.
+- Saved successful retries only in the SQLite archive and added compact previous/current/next controls shared by all providers.
 
 ### Changed
 
@@ -32,8 +31,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.1b0` for `v1.4.
 - After the first successful reply in a provider-created branch, checked its provider conversation or project list once in the background; unconfirmed branches remain usable in their open tab and are not polled.
 - Showed copy confirmation in the status line for two seconds, restoring its prior message unless a newer status replaced it.
 - Kept message toolbar actions within the rendered row, used terminal-cell widths for mouse hit testing, and made disabled version arrows non-clickable.
-- Indexed ChatGPT's response tree once per conversation instead of rescanning the full tree for each assistant message.
-- Retrieved ChatGPT's full conversation tree from its branch-history endpoint and kept that raw tree out of archived metadata while preserving the active transcript and provider reply versions.
+- Restored ChatGPT transcript reads to its active message-path endpoint; reply versions now come only from locally captured SQLite retries.
 
 ## [1.4.1-beta] - 2026-10-25
 
