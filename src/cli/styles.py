@@ -79,7 +79,7 @@ DEFAULT_TERMINAL_STYLE = {
     "message.toolbar.version": "bg:#383838 #d3d3d3",
     "message.toolbar.version.disabled": "bg:#383838 #777777",
     "message.toolbar.metadata": "bg:#303030 #a6a6a6",
-    "message.file": "bg:#414141 #e5e5e5",
+    "message.file": "underline #b5c9d1",
     "chat.context": "#a4b5c7",
     "brand": "bg:#252525 bold #c3a6ff",
     "transcript": "bg:#202020 #dedede",

@@ -493,8 +493,9 @@ def visible_chat_message(message: dict[str, Any]) -> dict[str, Any] | None:
                     size = file["size_bytes"]
                     info.append(f"{size / 1024:.1f} KiB" if size >= 1024 else f"{size} B")
                 suffix = " · " + " · ".join(info) if info else ""
-                cards.append(f"[ ↓ {name} ](siope-file:{quote(file['url'], safe='')}){suffix}")
-            visible["text"] = text + "\n\n" + "  \n".join(cards)
+                cards.append(f"[↓ {name}](siope-file:{quote(file['url'], safe='')}){suffix}")
+            file_list = "  ·  ".join(cards)
+            visible["text"] = f"{text}\n\n{file_list}" if text else file_list
     return visible
 
 
