@@ -5,7 +5,7 @@ import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from cli.markdown import visible_chat_message
 from extensions.archive.repository import Files, SQLiteRepository
@@ -250,11 +250,79 @@ class MutationAccountsTests(unittest.TestCase):
             )
             self.assertEqual(len(result["history"]["messages"]), 3)
 
+    def test_gemini_branch_is_not_a_local_sidebar_preview(self):
+        with tempfile.TemporaryDirectory() as folder:
+            api = configured_application(Path(folder))
+            self.addCleanup(api.runtime.close)
+            accounts = api.get("accounts")
+            key = accounts.add("gemini", "Gemini test")
+            archive = accounts.archive()
+            archive.put(
+                key,
+                "conversation",
+                "c_source",
+                {
+                    "title": "Source",
+                    "messages": [{"id": "answer", "role": "assistant", "text": "Original"}],
+                },
+            )
+            reads = []
+
+            class Provider:
+                id, account_id = "gemini", key.split("/", 1)[1]
+
+                async def branch_chat(self, conversation_id, message_id):
+                    return Conversation(
+                        Origin(self.id, self.account_id, "c_branch"),
+                        "Branch",
+                        (Message("answer", "assistant", (Content("text", "Original"),)),),
+                    )
+
+                async def get_chat(self, conversation_id):
+                    reads.append(conversation_id)
+                    return Conversation(
+                        Origin(self.id, self.account_id, conversation_id),
+                        "Branch",
+                        (Message("answer", "assistant", (Content("text", "Original"),)),),
+                    )
+
+                async def close(self):
+                    pass
+
+            accounts._providers[key] = Provider()
+            branch = accounts.branch_chat(key, "c_source", "answer")
+            self.assertFalse(branch.get("pending_local_branch"))
+            self.assertEqual(archive.pending_branches(key), [])
+
+            # Ignore a marker left by older behavior and still consult Gemini on reopen.
+            archive.mark_pending_branch(key, "c_branch")
+            self.assertEqual(accounts._pending_local_branches(key, []), [])
+
+            def fetch_now(account, kind, remote, fetch, force=False, **options):
+                return fetch()
+
+            with patch.object(accounts, "read_record", side_effect=fetch_now):
+                reopened = accounts.load(branch["id"], key, force=True, window=True)
+            self.assertEqual(reads, ["c_branch"])
+            self.assertEqual(reopened["remote_id"], "c_branch")
+
     def test_retry_without_a_new_prompt_reaches_the_native_action(self):
         with tempfile.TemporaryDirectory() as folder:
             api = configured_application(Path(folder))
             self.addCleanup(api.runtime.close)
             accounts = api.get("accounts")
+            accounts.archive().put(
+                "chatgpt/default",
+                "conversation",
+                "chat",
+                {
+                    "title": "Chat",
+                    "messages": [
+                        {"id": "u", "role": "user", "text": "Original"},
+                        {"id": "a", "role": "assistant", "text": "Old answer"},
+                    ],
+                },
+            )
             requests = []
 
             class Provider:
@@ -264,6 +332,7 @@ class MutationAccountsTests(unittest.TestCase):
                     requests.append(request)
                     yield ConversationBound("chat")
                     yield ReplaceText("Retried", "final")
+                    yield MessageMetadata("new-a")
 
                 async def get_chat(self, cid):
                     return Conversation(
@@ -271,7 +340,7 @@ class MutationAccountsTests(unittest.TestCase):
                         "Chat",
                         (
                             Message("u", "user", (Content("text", "Original"),)),
-                            Message("a", "assistant", (Content("text", "Retried"),)),
+                            Message("new-a", "assistant", (Content("text", "Retried"),)),
                         ),
                     )
 
@@ -305,6 +374,72 @@ class MessageToolbarTests(unittest.TestCase):
             view.new_tab()
             view.message_toolbar_action(old_tab, old_message, "retry")
             view._submit_message_action.assert_not_called()
+
+    def test_branch_is_added_to_sidebar_only_after_the_provider_lists_it(self):
+        with terminal() as (view, _):
+            key = "gemini/default"
+            conversation_id = "@gemini/default/c_branch"
+            page = {"items": []}
+            service = SimpleNamespace(
+                list_chats=Mock(return_value=page),
+                callbacks=Mock(return_value={}),
+            )
+            view.account_service = service
+            view.account_key = key
+            view.sidebar_items = []
+
+            def immediate_read(read, success, failure, **kwargs):
+                success(read())
+
+            view._read_in_background = immediate_read
+
+            view._confirm_branch_listing({"account_key": key, "project": {}}, conversation_id)
+            self.assertEqual(view.sidebar_items, [])
+
+            page["items"].append(
+                {"id": conversation_id, "remote_id": "c_branch", "title": "Listed by Gemini"}
+            )
+            view._confirm_branch_listing({"account_key": key, "project": {}}, conversation_id)
+            self.assertEqual([item["id"] for item in view.sidebar_items], [conversation_id])
+            service.list_chats.assert_called_with(
+                selected={"gemini"}, force=True, account_keys={key}
+            )
+
+    def test_project_branch_confirmation_uses_the_provider_project_list(self):
+        with terminal() as (view, _):
+            key = "gemini/default"
+            project_id = "@gemini/default/g-p-notebook"
+            conversation_id = "@gemini/default/c_branch"
+            project_list = Mock(
+                return_value={
+                    "items": [
+                        {
+                            "id": conversation_id,
+                            "remote_id": "c_branch",
+                            "title": "Listed in Gemini notebook",
+                        }
+                    ]
+                }
+            )
+            service = SimpleNamespace(
+                list_chats=Mock(),
+                callbacks=Mock(return_value={"list_project_chats_callback": project_list}),
+            )
+            view.account_service = service
+            view.account_key = key
+            view.sidebar_items = []
+
+            def immediate_read(read, success, failure, **kwargs):
+                success(read())
+
+            view._read_in_background = immediate_read
+            view._confirm_branch_listing(
+                {"account_key": key, "project": {"id": project_id}}, conversation_id
+            )
+
+            project_list.assert_called_once_with(project_id)
+            service.list_chats.assert_not_called()
+            self.assertEqual([item["id"] for item in view.sidebar_items], [conversation_id])
 
     def test_retry_failure_restores_original_history_and_leaves_other_tab_untouched(self):
         with terminal(

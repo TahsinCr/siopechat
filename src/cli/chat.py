@@ -5123,12 +5123,16 @@ class ChatView:
 
             def ready():
                 tab["message_action_pending"] = False
-                self.sidebar_items.insert(0, record)
-                self._invalidate_sidebar_rows()
+                provider_preview = isinstance(record.get("pending_branch"), dict)
+                if provider_preview:
+                    self.sidebar_items.insert(0, record)
+                    self._invalidate_sidebar_rows()
                 count = len(self.tabs)
                 self.new_tab()
                 if len(self.tabs) > count:
                     self.resume_conversation(record["id"])
+                    if not provider_preview:
+                        self.tabs[self.active_tab]["_confirm_branch_listing"] = True
                 self.status = self.tr("Branch created")
                 self.app.invalidate()
 
@@ -5137,6 +5141,61 @@ class ChatView:
         if not self._operations.submit(work):
             tab["message_action_pending"] = False
             self.status = self.tr("Arka plan iş kuyruğu dolu; yeniden deneyin")
+
+    def _confirm_branch_listing(self, tab, conversation_id):
+        """Expose a branch only after one provider-list read confirms it."""
+        service = self.account_service
+        key = tab.get("account_key", self.account_key)
+        if service is None or not key or not conversation_id:
+            return
+        project_id = (tab.get("project") or {}).get("id")
+        if project_id:
+            callback = service.callbacks(key).get("list_project_chats_callback")
+            if callback is None:
+                return
+
+            def read():
+                return callback(project_id)
+        else:
+            provider_id = key.split("/", 1)[0]
+
+            def read():
+                return service.list_chats(
+                    selected={provider_id}, force=True, account_keys={key}
+                )["items"]
+
+        def listed(result):
+            items = result.get("items", []) if isinstance(result, dict) else result
+            if not isinstance(items, list):
+                return
+            _, remote = origin(conversation_id, key)
+            confirmed = None
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                value = item.get("remote_id") or item.get("id")
+                if not isinstance(value, str):
+                    continue
+                try:
+                    item_key, item_remote = origin(value, key)
+                except (TypeError, ValueError):
+                    continue
+                if item_key == key and item_remote == remote:
+                    confirmed = item
+                    break
+            if confirmed is None:
+                return
+            current = next(
+                (item for item in self.sidebar_items if item.get("id") == confirmed.get("id")),
+                None,
+            )
+            if current is None:
+                self.sidebar_items.insert(0, confirmed)
+            else:
+                current.update(confirmed)
+            self.filter_sidebar()
+
+        self._read_in_background(read, listed, lambda _: None, session_bound=False)
 
     def _submit_message_action(self, tab, message, action, prompt):
         if (
@@ -5669,19 +5728,26 @@ class ChatView:
                 tab["started"] = None
                 tab["connection"] = None
                 tab["cancel_requested"] = False
+                confirm_branch_listing = bool(
+                    send_succeeded and tab.pop("_confirm_branch_listing", False)
+                )
                 if resolved_id and not temporary:
-                    record = next(
-                        (item for item in self.sidebar_items if item.get("id") == resolved_id), None
-                    )
-                    if record is None:
-                        record = {"id": resolved_id}
-                        self.sidebar_items.insert(0, record)
-                    record.update(
-                        title=tab["title"],
-                        provider_id=tab.get("account_key", self.account_key).split("/")[0],
-                        project_id=(tab.get("project") or {}).get("id"),
-                    )
+                    if not confirm_branch_listing:
+                        record = next(
+                            (item for item in self.sidebar_items if item.get("id") == resolved_id),
+                            None,
+                        )
+                        if record is None:
+                            record = {"id": resolved_id}
+                            self.sidebar_items.insert(0, record)
+                        record.update(
+                            title=tab["title"],
+                            provider_id=tab.get("account_key", self.account_key).split("/")[0],
+                            project_id=(tab.get("project") or {}).get("id"),
+                        )
                 self._invalidate_sidebar_rows()
+                if confirm_branch_listing:
+                    self._confirm_branch_listing(tab, resolved_id)
                 if (
                     any(item is tab for item in self.background_tabs)
                     and send_succeeded

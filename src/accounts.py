@@ -1090,11 +1090,17 @@ class Accounts:
         archive = self.archive()
         if archive:
             archive.confirm_pending_branches(key, remotes, project=project_listing)
-            return archive.pending_branches(key, project=project_listing)
+            return [
+                item
+                for item in archive.pending_branches(key, project=project_listing)
+                if isinstance(item.get("pending_branch"), dict)
+            ]
 
         pending = []
         for remote, record in self.repository.cache_pending_branches(key):
-            if not record.get("pending_local_branch"):
+            if not record.get("pending_local_branch") or not isinstance(
+                record.get("pending_branch"), dict
+            ):
                 continue
             if remote in remotes:
                 field = "branch_listed_project" if project_listing else "branch_listed_general"
@@ -1451,16 +1457,14 @@ class Accounts:
                 )
 
         cached = self.cached_window(key, remote) if archive else self.cached(key, remote)
-        pending_branch = (
-            archive.is_pending_branch(key, remote)
-            if archive and remote
-            else bool(
-                cached
-                and (
-                    cached.get("pending_local_branch")
-                    or isinstance(cached.get("pending_branch"), dict)
-                )
-                and cached.get("branch_unanswered", True)
+        pending_branch = bool(
+            cached
+            and isinstance(cached.get("pending_branch"), dict)
+            and cached.get("branch_unanswered", True)
+            and (
+                archive.is_pending_branch(key, remote)
+                if archive and remote
+                else cached.get("pending_local_branch")
             )
         )
         if cached and pending_branch:
@@ -2356,11 +2360,13 @@ class Accounts:
             if not record.get("project_id"):
                 record["project_id"] = source.get("project_id")
             archive = self.archive()
-            if not archive:
-                record["pending_local_branch"] = True
+            native_preview = isinstance(record.get("pending_branch"), dict)
+            if native_preview:
                 record["branch_unanswered"] = True
+                if not archive:
+                    record["pending_local_branch"] = True
             self.cache_conversation(key, record, make_active=False)
-            if archive:
+            if archive and native_preview:
                 archive.mark_pending_branch(key, record["remote_id"])
             return record
         finally:
