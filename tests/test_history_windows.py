@@ -170,6 +170,13 @@ class HistoryWindowTests(unittest.TestCase):
             db.execute("UPDATE records SET payload=? WHERE kind='conversation'", (encode(value),))
             db.execute("UPDATE conversations SET metadata=?", (encode(value),))
             db.execute("DELETE FROM messages")
+            for table in (
+                "pending_branches",
+                "response_variant_groups",
+                "response_variants",
+                "superseded_messages",
+            ):
+                db.execute(f"DROP TABLE {table}")
             db.execute("UPDATE schema_version SET version=3")
             db.commit()
         upgraded = SQLiteRepository(self.repo.path)

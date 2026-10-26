@@ -27,6 +27,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.1b0` for `v1.4.
 
 ### Fixed
 
+- Built realistic older SQLite states in archive migration tests by removing schema-v6 tables before replaying migrations; isolated clipboard-selection assertions from the UI event-loop timer.
 - Reconciled confirmed message edits and retries with the archive without allowing older background reads to restore replaced messages.
 - Preserved ChatGPT branch previews across local reloads and bound them to the server conversation after the first accepted turn.
 - Saved refreshed ChatGPT credentials through caller-owned storage without assuming a filesystem path.

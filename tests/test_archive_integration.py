@@ -406,6 +406,13 @@ class ArchiveIntegrationTests(unittest.TestCase):
                     for index in range(300)
                 ),
             )
+            for table in (
+                "pending_branches",
+                "response_variant_groups",
+                "response_variants",
+                "superseded_messages",
+            ):
+                db.execute(f"DROP TABLE {table}")
             db.execute("UPDATE schema_version SET version=4")
             db.commit()
 

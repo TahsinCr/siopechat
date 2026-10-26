@@ -80,9 +80,13 @@ class PartialSelectionTests(unittest.TestCase):
             control.mouse_handler(event(MouseEventType.MOUSE_MOVE, x + len("selected text")))
             control.mouse_handler(event(MouseEventType.MOUSE_UP, x + len("selected text")))
             self.assertEqual(control.selected_text, "selected text")
-            with patch("utils.clipboard.copy_text", return_value=True) as copied:
+            with (
+                patch("utils.clipboard.copy_text", return_value=True) as copied,
+                patch.object(view, "show_temporary_status") as status,
+            ):
                 self.assertTrue(copy_selection(view))
                 copied.assert_called_with("selected text")
+                status.assert_called_once()
             self.assertFalse(view.message_selection)
             view.new_tab()
             self.assertEqual(control.selected_text, "")

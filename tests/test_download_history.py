@@ -162,13 +162,20 @@ class DownloadHistoryTests(unittest.TestCase):
             ]
         )
         with closing(sqlite3.connect(self.repo.path)) as db:
+            for table in (
+                "pending_branches",
+                "response_variant_groups",
+                "response_variants",
+                "superseded_messages",
+            ):
+                db.execute(f"DROP TABLE {table}")
             db.execute("UPDATE schema_version SET version=1")
             db.commit()
         reopened = SQLiteRepository(self.repo.path)
         self.assertEqual(reopened.get("gemini/a", "conversation", "chat")["title"], "Saved")
         self.assertEqual(self.make_service().refresh()[0]["state"], "interrupted")
         with closing(sqlite3.connect(self.repo.path)) as db:
-            self.assertEqual(db.execute("SELECT version FROM schema_version").fetchall(), [(5,)])
+            self.assertEqual(db.execute("SELECT version FROM schema_version").fetchall(), [(6,)])
             self.assertIn(
                 "revision", {row[1] for row in db.execute("PRAGMA table_info(downloads)")}
             )
