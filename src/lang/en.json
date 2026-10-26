@@ -127,6 +127,7 @@
   "ui.Model": "Model",
   "ui.Effort": "Effort",
   "ui.Message copied": "Message copied",
+  "ui.Response version could not be loaded: {0}": "Response version could not be loaded: {0}",
   "ui.Sent message to the terminal clipboard": "Sent message to the terminal clipboard",
   "ui.This message is no longer loaded": "This message is no longer loaded",
   "ui.This message has no text to copy": "This message has no text to copy",

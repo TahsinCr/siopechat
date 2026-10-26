@@ -96,7 +96,14 @@ class Repository(Protocol):
     def message_ordinal(self, account, remote, message_id): ...
     def message_ordinals(self, account, remote, message_ids): ...
     def partial_history_window(self, account, remote, start, *, prefix, tail): ...
-    def replace_conversation_tail(self, account, remote, start, value): ...
+    def replace_conversation_tail(
+        self, account, remote, start, value, *, retry_message_id=None, new_message_id=None
+    ): ...
+    def pending_branches(self, account, *, project=False): ...
+    def mark_pending_branch(self, account, remote): ...
+    def mark_branch_answered(self, account, remote): ...
+    def confirm_pending_branches(self, account, remotes, *, project=False): ...
+    def response_version(self, account, remote, message_id, version): ...
     def conversation_window(
         self,
         account,
@@ -126,7 +133,7 @@ class SQLiteRepository:
             ).fetchone()
             if exists:
                 versions = db.execute("SELECT version FROM schema_version").fetchall()
-                if versions not in ([(1,)], [(2,)], [(3,)], [(4,)], [(5,)]):
+                if versions not in ([(1,)], [(2,)], [(3,)], [(4,)], [(5,)], [(6,)]):
                     raise OSError("Unsupported archive schema version")
             db.executescript("""
                 PRAGMA journal_mode=WAL;
@@ -274,6 +281,46 @@ class SQLiteRepository:
                     "VALUES('uploaded_file_cleanup_pending','1')"
                 )
                 db.execute("UPDATE schema_version SET version=5 WHERE version=4")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            version = db.execute("SELECT version FROM schema_version").fetchone()[0]
+            if version == 5:
+                db.execute(
+                    "CREATE TABLE pending_branches(account TEXT NOT NULL, remote TEXT NOT NULL, "
+                    "created REAL NOT NULL, answered INTEGER NOT NULL DEFAULT 0, "
+                    "listed_general INTEGER NOT NULL DEFAULT 0, "
+                    "listed_project INTEGER NOT NULL DEFAULT 0, "
+                    "PRIMARY KEY(account,remote))"
+                )
+                db.execute(
+                    "CREATE TABLE response_variant_groups(account TEXT NOT NULL, "
+                    "conversation TEXT NOT NULL, group_id TEXT NOT NULL, current_message TEXT NOT NULL, "
+                    "current_index INTEGER NOT NULL, PRIMARY KEY(account,conversation,group_id), "
+                    "UNIQUE(account,conversation,current_message))"
+                )
+                db.execute(
+                    "CREATE TABLE response_variants(account TEXT NOT NULL, conversation TEXT NOT NULL, "
+                    "group_id TEXT NOT NULL, version_index INTEGER NOT NULL, payload TEXT NOT NULL, "
+                    "PRIMARY KEY(account,conversation,group_id,version_index))"
+                )
+                db.execute(
+                    "CREATE TABLE superseded_messages(account TEXT NOT NULL, "
+                    "conversation TEXT NOT NULL, message_id TEXT NOT NULL, group_id TEXT NOT NULL, "
+                    "PRIMARY KEY(account,conversation,message_id))"
+                )
+                db.execute(
+                    "CREATE INDEX response_variant_current ON response_variant_groups"
+                    "(account,conversation,current_message)"
+                )
+                for account, remote, payload in db.execute(
+                    "SELECT account,remote,payload FROM records WHERE kind='conversation'"
+                ):
+                    if json.loads(payload).get("pending_branch"):
+                        db.execute(
+                            "INSERT OR IGNORE INTO pending_branches VALUES(?,?,?,0,0,0)",
+                            (account, remote, time.time()),
+                        )
+                db.execute("UPDATE schema_version SET version=6 WHERE version=5")
         if os.name != "nt":
             self.path.chmod(0o600)
 
@@ -622,6 +669,22 @@ class SQLiteRepository:
                         "DELETE FROM memberships WHERE account=? AND conversation=?",
                         (account, target),
                     )
+                    db.execute(
+                        "DELETE FROM response_variants WHERE account=? AND conversation=?",
+                        (account, target),
+                    )
+                    db.execute(
+                        "DELETE FROM response_variant_groups WHERE account=? AND conversation=?",
+                        (account, target),
+                    )
+                    db.execute(
+                        "DELETE FROM superseded_messages WHERE account=? AND conversation=?",
+                        (account, target),
+                    )
+                    db.execute(
+                        "DELETE FROM pending_branches WHERE account=? AND remote=?",
+                        (account, target),
+                    )
                 db.execute(
                     "DELETE FROM synchronization WHERE account=? AND kind=? AND remote=?",
                     (account, target_kind, target),
@@ -808,6 +871,114 @@ class SQLiteRepository:
                 )
         return tuple(positions.get(message_id) for message_id in ids)
 
+    def mark_pending_branch(self, account, remote):
+        with self._connect() as db:
+            db.execute(
+                "INSERT OR REPLACE INTO pending_branches VALUES(?,?,?,0,0,0)",
+                (account, remote, time.time()),
+            )
+
+    def mark_branch_answered(self, account, remote):
+        with self._connect() as db:
+            db.execute(
+                "UPDATE pending_branches SET answered=1 WHERE account=? AND remote=?",
+                (account, remote),
+            )
+
+    def pending_branches(self, account, *, project=False):
+        listed_column = "listed_project" if project else "listed_general"
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT b.remote,c.title,c.container,c.model,c.metadata,r.payload "
+                "FROM pending_branches b JOIN conversations c "
+                "ON c.account=b.account AND c.remote=b.remote "
+                "JOIN records r ON r.account=b.account AND r.kind='conversation' AND r.remote=b.remote "
+                f"WHERE b.account=? AND b.{listed_column}=0 ORDER BY b.created DESC",
+                (account,),
+            ).fetchall()
+        result = []
+        for remote, title, project, model, metadata, payload in rows:
+            value = json.loads(payload)
+            header = json.loads(metadata)
+            value.update(
+                id="@" + account + "/" + remote,
+                remote_id=remote,
+                context=account,
+                provider_id=account.split("/")[0],
+                project_id=project,
+                title=title or value.get("title"),
+                model=model or value.get("model"),
+            )
+            if header:
+                value["metadata"] = header
+            result.append(value)
+        return result
+
+    def confirm_pending_branches(self, account, remotes, *, project=False):
+        values = tuple(dict.fromkeys(remote for remote in remotes if remote))
+        if not values:
+            return
+        column = "listed_project" if project else "listed_general"
+        placeholders = ",".join("?" for _ in values)
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute(
+                f"UPDATE pending_branches SET {column}=1 WHERE account=? "
+                f"AND remote IN ({placeholders})",
+                (account, *values),
+            )
+            db.execute(
+                "DELETE FROM pending_branches WHERE account=? AND listed_general=1 "
+                "AND (listed_project=1 OR remote IN (SELECT remote FROM conversations "
+                "WHERE account=? AND container IS NULL))",
+                (account, account),
+            )
+
+    def is_pending_branch(self, account, remote):
+        with self._connect() as db:
+            return db.execute(
+                "SELECT 1 FROM pending_branches WHERE account=? AND remote=? AND answered=0",
+                (account, remote),
+            ).fetchone() is not None
+
+    def superseded_message_ids(self, account, remote):
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT message_id FROM superseded_messages WHERE account=? AND conversation=?",
+                (account, remote),
+            ).fetchall()
+        return {row[0] for row in rows}
+
+    def response_version(self, account, remote, message_id, version):
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT group_id,current_index FROM response_variant_groups "
+                "WHERE account=? AND conversation=? AND current_message=?",
+                (account, remote, message_id),
+            ).fetchone()
+            if row is None:
+                return None
+            group_id, count = row
+            if type(version) is not int or not 1 <= version <= count:
+                return None
+            if version == count:
+                message = db.execute(
+                    "SELECT metadata FROM messages WHERE account=? AND conversation=? "
+                    "AND remote=? ORDER BY ordinal DESC LIMIT 1",
+                    (account, remote, message_id),
+                ).fetchone()
+                payload = message[0] if message else None
+            else:
+                message = db.execute(
+                    "SELECT payload FROM response_variants WHERE account=? AND conversation=? "
+                    "AND group_id=? AND version_index=?",
+                    (account, remote, group_id, version),
+                ).fetchone()
+                payload = message[0] if message else None
+        if not payload:
+            return None
+        return {"message": json.loads(payload), "index": version, "count": count}
+
     def partial_history_window(self, account, remote, start, *, prefix, tail):
         """Load only merge_conversation's leading overlap and bounded alignment tail."""
         if start < 0 or not 1 <= prefix <= 512 or not 1 <= tail <= 512:
@@ -832,10 +1003,14 @@ class SQLiteRepository:
             rows = head + end
         return [json.loads(metadata) for _, metadata in rows]
 
-    def replace_conversation_tail(self, account, remote, start, value):
+    def replace_conversation_tail(
+        self, account, remote, start, value, *, retry_message_id=None, new_message_id=None
+    ):
         """Replace a provider-aligned suffix while retaining the older SQL prefix."""
         if start < 0 or not isinstance(value.get("messages"), list):
             raise ValueError("invalid conversation tail")
+        value = dict(value)
+        replacement_messages = list(value["messages"])
         now = time.time()
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -845,6 +1020,71 @@ class SQLiteRepository:
             ).fetchone()
             if row is None:
                 return False
+            if retry_message_id:
+                target_row = db.execute(
+                    "SELECT metadata FROM messages WHERE account=? AND conversation=? AND remote=? "
+                    "ORDER BY ordinal DESC LIMIT 1",
+                    (account, remote, retry_message_id),
+                ).fetchone()
+                if target_row is None:
+                    raise ValueError("The retried response is missing from the archive")
+                previous = json.loads(target_row[0])
+                if previous.get("role") != "assistant":
+                    raise ValueError("Only an assistant response can have alternate versions")
+                current = db.execute(
+                    "SELECT group_id,current_index FROM response_variant_groups "
+                    "WHERE account=? AND conversation=? AND current_message=?",
+                    (account, remote, retry_message_id),
+                ).fetchone()
+                group_id, previous_index = current or (retry_message_id, 1)
+                new_response = next(
+                    (
+                        message
+                        for message in reversed(replacement_messages)
+                        if message.get("id") == new_message_id
+                        and message.get("role") == "assistant"
+                    ),
+                    None,
+                )
+                if new_response is None:
+                    new_response = next(
+                        (
+                            message
+                            for message in reversed(replacement_messages)
+                            if message.get("id")
+                            and message.get("id") != retry_message_id
+                            and message.get("role") == "assistant"
+                            and message.get("channel") not in ("analysis", "commentary")
+                        ),
+                        None,
+                    )
+                if new_response is None:
+                    raise ValueError("The provider did not return an identifiable new response")
+                db.execute(
+                    "INSERT OR REPLACE INTO response_variants VALUES(?,?,?,?,?)",
+                    (account, remote, group_id, previous_index, encode(previous)),
+                )
+                db.execute(
+                    "INSERT OR REPLACE INTO response_variant_groups "
+                    "VALUES(?,?,?,?,?)",
+                    (account, remote, group_id, new_response["id"], previous_index + 1),
+                )
+                db.execute(
+                    "INSERT OR REPLACE INTO superseded_messages VALUES(?,?,?,?)",
+                    (account, remote, retry_message_id, group_id),
+                )
+            superseded = {
+                row[0]
+                for row in db.execute(
+                    "SELECT message_id FROM superseded_messages "
+                    "WHERE account=? AND conversation=?",
+                    (account, remote),
+                )
+            }
+            replacement_messages = [
+                message for message in replacement_messages if message.get("id") not in superseded
+            ]
+            value["messages"] = replacement_messages
             old_header = json.loads(row[0])
             metadata_row = db.execute(
                 "SELECT payload FROM conversation_metadata WHERE account=? AND remote=?",
@@ -1031,6 +1271,26 @@ class SQLiteRepository:
                 size += len(metadata)
             if tail:
                 messages.reverse()
+            response_ids = tuple(
+                dict.fromkeys(message.get("id") for message in messages if message.get("id"))
+            )
+            variants = {}
+            for offset in range(0, len(response_ids), 400):
+                batch = response_ids[offset : offset + 400]
+                placeholders = ",".join("?" for _ in batch)
+                variants.update(
+                    (message_id, (group_id, index))
+                    for message_id, group_id, index in db.execute(
+                        "SELECT current_message,group_id,current_index FROM response_variant_groups "
+                        f"WHERE account=? AND conversation=? AND current_message IN ({placeholders})",
+                        (account, remote, *batch),
+                    )
+                )
+            for message in messages:
+                variant = variants.get(message.get("id"))
+                if variant:
+                    message["_response_version_index"] = variant[1]
+                    message["_response_version_count"] = variant[1]
             first = messages[0]["_archive_ordinal"] if messages else 0
             end = messages[-1]["_archive_ordinal"] + 1 if messages else 0
             if visible_only:

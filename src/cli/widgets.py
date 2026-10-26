@@ -122,7 +122,14 @@ class TranscriptControl(UIControl):
             return []
         actions = [("copy", "⧉", self.view.tr("Copy"))]
         tab = self.view.tabs[self.view.active_tab]
-        if not tab.get("busy") and not tab.get("message_action_pending"):
+        version_index = message.get("_response_version_index", 1)
+        version_count = message.get("_response_version_count", 1)
+        viewing_previous = version_count > 1 and version_index < version_count
+        if (
+            not viewing_previous
+            and not tab.get("busy")
+            and not tab.get("message_action_pending")
+        ):
             available = message.get("actions", ())
             for action, icon, label in (
                 ("edit", "✎", "Edit message"),
@@ -138,12 +145,17 @@ class TranscriptControl(UIControl):
                 actions.append(("details", "ⓘ", self.view.tr("Answer details")))
         tab_id = tab.get("tab_id")
         labels = [f"{icon} {label}" for _, icon, label in actions]
+        has_versions = version_count > 1 and role == "assistant"
+        version_label = f"{version_index}/{version_count}"
+        version_width = 0
+        if has_versions:
+            version_width = get_cwidth(f"‹ {version_label} ›") + 2
         message_width = min(width, self.view.transcript_width())
         prefix = " " if message_width >= 2 else ""
         separator = " "
         full_width = get_cwidth(prefix) + sum(get_cwidth(label) + 2 for label in labels)
         full_width += get_cwidth(separator) * (len(labels) - 1)
-        compact = full_width > message_width
+        compact = full_width + version_width > message_width
         if compact and message_width < 14:
             separator = ""
         padded = not compact or message_width >= 16
@@ -165,6 +177,37 @@ class TranscriptControl(UIControl):
             if position + 1 < len(actions):
                 fragments.append((toolbar_style, separator))
         used_width = sum(get_cwidth(fragment[1]) for fragment in fragments)
+        if has_versions:
+            if used_width + version_width < message_width:
+                fragments.append(
+                    (toolbar_style, " " * (message_width - used_width - version_width))
+                )
+            for action, label, enabled in (
+                ("version_prev", "‹", version_index > 1),
+                (None, version_label, False),
+                ("version_next", "›", version_index < version_count),
+            ):
+                if action is None:
+                    fragments.append(("class:message.toolbar.version", f" {label} "))
+                    continue
+
+                def change_version(
+                    selected=action, target_tab=tab_id, target_message=message
+                ):
+                    return self.view.message_toolbar_action(
+                        target_tab, target_message, selected
+                    )
+
+                fragments.append(
+                    (
+                        "class:message.toolbar.action"
+                        if enabled
+                        else "class:message.toolbar.version.disabled",
+                        f" {label} ",
+                        change_version if enabled else None,
+                    )
+                )
+            return fragments
         if used_width < message_width:
             fragments.append((toolbar_style, " " * (message_width - used_width)))
         return fragments

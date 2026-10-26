@@ -54,6 +54,33 @@ class Archive:
     def conversations(self, account, **page):
         return self.repository.conversations(account, **page)
 
+    def mark_pending_branch(self, account, remote):
+        self.repository.mark_pending_branch(account, remote)
+
+    def mark_branch_answered(self, account, remote):
+        self.repository.mark_branch_answered(account, remote)
+
+    def pending_branches(self, account, *, project=False):
+        return self.repository.pending_branches(account, project=project)
+
+    def confirm_pending_branches(self, account, remotes, *, project=False):
+        self.repository.confirm_pending_branches(account, remotes, project=project)
+
+    def is_pending_branch(self, account, remote):
+        return self.repository.is_pending_branch(account, remote)
+
+    def response_version(self, account, remote, message_id, version):
+        return self.repository.response_version(account, remote, message_id, version)
+
+    def _without_superseded(self, account, remote, value):
+        messages = value.get("messages")
+        if not isinstance(messages, list):
+            return value
+        superseded = self.repository.superseded_message_ids(account, remote)
+        if not superseded:
+            return value
+        return dict(value, messages=[item for item in messages if item.get("id") not in superseded])
+
     def containers(self, account, **page):
         return self.repository.containers(account, **page)
 
@@ -131,6 +158,8 @@ class Archive:
         mapping = self.mappings.get(account.split("/")[0], Mapping())
         value = mapping.normalize(kind, value)
         with self._write_lock:
+            if kind == "conversation":
+                value = self._without_superseded(account, remote, value)
             if kind == "container":
                 value = mapping.merge_container(value, self.get(*key))
             with self._lock:
@@ -214,22 +243,61 @@ class Archive:
             with self._lock:
                 self._written(key)
 
-    def replace_history(self, account, remote, value, *, replaced_message_id=None):
+    def replace_history(
+        self,
+        account,
+        remote,
+        value,
+        *,
+        replaced_message_id=None,
+        retry_message_id=None,
+        new_message_id=None,
+    ):
         """Install a confirmed provider branch; older in-flight reads cannot restore its tail."""
         key = (account, "conversation", remote)
         with self._write_lock:
-            if value.get("history_complete", True):
+            if retry_message_id:
+                messages = value.get("messages", [])
+                if value.get("history_complete", True):
+                    start = 0
+                else:
+                    if not messages:
+                        raise ValueError("A partial history cannot replace the conversation")
+                    start = self.repository.message_ordinal(account, remote, messages[0].get("id"))
+                    retry_start = self.repository.message_ordinal(
+                        account, remote, retry_message_id
+                    )
+                    if retry_start is None:
+                        raise ValueError("The provider history has no archived retry anchor")
+                    start = retry_start if start is None else min(start, retry_start)
+                if not self.repository.replace_conversation_tail(
+                    account,
+                    remote,
+                    start,
+                    value,
+                    retry_message_id=retry_message_id,
+                    new_message_id=new_message_id,
+                ):
+                    raise ValueError("The retried conversation is missing from the archive")
+                with self._lock:
+                    self._written(key)
+            elif value.get("history_complete", True):
                 self.put(*key, value)
             else:
                 messages = value.get("messages", [])
                 if not messages:
                     raise ValueError("A partial history cannot replace the conversation")
-                start = self.repository.message_ordinal(account, remote, messages[0]["id"])
+                value = self._without_superseded(account, remote, value)
+                messages = value.get("messages", [])
+                if not messages:
+                    raise ValueError("The provider history contains no current messages")
+                start = self.repository.message_ordinal(account, remote, messages[0].get("id"))
                 if start is None and replaced_message_id:
                     start = self.repository.message_ordinal(account, remote, replaced_message_id)
                 if start is None:
                     raise ValueError("The provider history has no archived branch anchor")
-                self.repository.replace_conversation_tail(account, remote, start, value)
+                if not self.repository.replace_conversation_tail(account, remote, start, value):
+                    raise ValueError("The conversation is missing from the archive")
                 with self._lock:
                     self._written(key)
             with self._lock:

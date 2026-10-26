@@ -448,7 +448,14 @@ def visible_chat_message(message: dict[str, Any]) -> dict[str, Any] | None:
         return None
     visible = {"role": "reasoning" if reasoning else role, "text": text} | {
         key: message[key]
-        for key in ("id", "local_pending", "_archive_ordinal", "actions")
+        for key in (
+            "id",
+            "local_pending",
+            "_archive_ordinal",
+            "actions",
+            "_response_version_index",
+            "_response_version_count",
+        )
         if key in message and message[key] is not None
     }
     if role == "assistant" and not reasoning:

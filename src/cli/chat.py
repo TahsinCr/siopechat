@@ -346,6 +346,9 @@ class ChatView:
         self._attachments_in_flight = False
         self._inflight_attachments: list[dict[str, Any]] = []
         self.status = "Ready"
+        self._temporary_status_handle = None
+        self._temporary_status_text = None
+        self._temporary_status_restore = None
         self.cancel_connection: Any = None
         self.stop_confirmation_until = 0.0
         self.stop_confirmation_tab_id: str | None = None
@@ -4891,12 +4894,34 @@ class ChatView:
 
         response = render_chatgpt_annotations(response)
         if clipboard.copy_text(response):
-            self.status = self.tr("Copied latest response")
-            self.app.invalidate()
+            self.show_temporary_status(self.tr("Copied latest response"))
             return
         self.app.output.write_raw(clipboard.terminal_sequence(response))
         self.app.output.flush()
-        self.status = self.tr("Sent latest response to the terminal clipboard")
+        self.show_temporary_status(self.tr("Sent latest response to the terminal clipboard"))
+
+    def show_temporary_status(self, value, duration=2.0):
+        """Show brief feedback without overwriting a newer status message."""
+        previous_is_temporary = self.status == self._temporary_status_text
+        restore = self._temporary_status_restore if previous_is_temporary else self.status
+        if self._temporary_status_handle is not None:
+            self._temporary_status_handle.cancel()
+        self._temporary_status_restore = restore
+        self._temporary_status_text = value
+        self.status = value
+
+        def restore_status():
+            if self.status == self._temporary_status_text:
+                restored = self._temporary_status_restore
+                self.status = restored if restored is not None else "Ready"
+            self._temporary_status_handle = None
+            self._temporary_status_text = None
+            self._temporary_status_restore = None
+            self.app.invalidate()
+
+        self._temporary_status_handle = asyncio.get_running_loop().call_later(
+            duration, restore_status
+        )
         self.app.invalidate()
 
     def _toolbar_message_index(self, tab_id, message_ref):
@@ -4936,6 +4961,11 @@ class ChatView:
             return
         messages = self.tabs[self.active_tab].get("messages", ())
         message = messages[index]
+        if action in ("version_prev", "version_next"):
+            self._navigate_response_version(
+                tab_id, message_ref, -1 if action == "version_prev" else 1
+            )
+            return
         if action in ("edit", "retry", "branch"):
             tab = self.tabs[self.active_tab]
             if (
@@ -4972,11 +5002,11 @@ class ChatView:
             if not text:
                 self.status = self.tr("This message has no text to copy")
             elif clipboard.copy_text(text):
-                self.status = self.tr("Message copied")
+                self.show_temporary_status(self.tr("Message copied"))
             else:
                 self.app.output.write_raw(clipboard.terminal_sequence(text))
                 self.app.output.flush()
-                self.status = self.tr("Sent message to the terminal clipboard")
+                self.show_temporary_status(self.tr("Sent message to the terminal clipboard"))
             self.app.invalidate()
             return
         if action == "sources":
@@ -4993,6 +5023,83 @@ class ChatView:
             if details:
                 self.forms.show_message_info(self.tr("Answer details"), details=details)
             return
+
+    def _navigate_response_version(self, tab_id, message_ref, direction):
+        index = self._toolbar_message_index(tab_id, message_ref)
+        if index is None:
+            return
+        tab = self.tabs[self.active_tab]
+        message = tab["messages"][index]
+        message_id = message.get("id")
+        current = message.get("_response_version_index", 1)
+        count = message.get("_response_version_count", 1)
+        target = current + direction
+        if (
+            not message_id
+            or not tab.get("conversation_id")
+            or not tab.get("account_key")
+            or not self.account_service
+            or not 1 <= target <= count
+            or tab.get("response_version_loading") == message_id
+        ):
+            return
+        tab["response_version_loading"] = message_id
+        conversation_id = tab["conversation_id"]
+        account_key = tab["account_key"]
+
+        def work():
+            try:
+                result = self.account_service.response_version(
+                    account_key, conversation_id, message_id, target
+                )
+                reason = None
+            except Exception as error:
+                result, reason = None, str(error)
+
+            def ready():
+                if tab.get("response_version_loading") != message_id:
+                    return
+                tab.pop("response_version_loading", None)
+                target_index = next(
+                    (
+                        position
+                        for position, item in enumerate(tab.get("messages", ()))
+                        if item.get("id") == message_id
+                    ),
+                    None,
+                )
+                if target_index is None:
+                    return
+                if reason:
+                    self.status = self.tr("Response version could not be loaded: {0}").format(
+                        reason
+                    )
+                elif result:
+                    from .markdown import visible_chat_message
+
+                    alternate = visible_chat_message(result["message"])
+                    if alternate is not None:
+                        displayed = dict(tab["messages"][target_index])
+                        displayed["text"] = alternate["text"]
+                        for field in ("_toolbar_sources", "_toolbar_details"):
+                            if field in alternate:
+                                displayed[field] = alternate[field]
+                            else:
+                                displayed.pop(field, None)
+                        displayed["_response_version_index"] = result["index"]
+                        displayed["_response_version_count"] = result["count"]
+                        tab["messages"][target_index] = displayed
+                        if tab is self.tabs[self.active_tab]:
+                            self.messages = tab["messages"]
+                            tab["render_revision"] = tab.get("render_revision", 0) + 1
+                self.app.invalidate()
+
+            self._dispatch_ui(ready)
+
+        if not self._operations.submit(work):
+            tab.pop("response_version_loading", None)
+            self.status = self.tr("Arka plan iş kuyruğu dolu; yeniden deneyin")
+            self.app.invalidate()
 
     def _branch_message(self, tab, message):
         key, conversation_id = tab["account_key"], tab["conversation_id"]

@@ -115,6 +115,20 @@ class AccountRepository:
             ).fetchall()
         return [(remote, json.loads(payload)) for remote, payload in rows]
 
+    def cache_pending_branches(self, key):
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT remote,payload FROM account_cache "
+                "WHERE account_key=? AND kind='conversation' "
+                "AND payload LIKE '%\"pending_local_branch\":true%'",
+                (key,),
+            ).fetchall()
+        return [
+            (remote, value)
+            for remote, payload in rows
+            if (value := json.loads(payload)).get("pending_local_branch")
+        ]
+
     def cache_records_page(self, key, kind, *, after="", limit=16):
         if kind not in {"conversation", "pointer", "tombstone"}:
             raise ValueError("Unsupported account cache record")

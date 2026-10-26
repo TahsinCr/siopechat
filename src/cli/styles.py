@@ -76,6 +76,8 @@ DEFAULT_TERMINAL_STYLE = {
     "message.toolbar.user": f"bg:{DEFAULT_ROLE_BACKGROUNDS['user']} #c4c4c4",
     "message.toolbar.assistant": f"bg:{DEFAULT_ROLE_BACKGROUNDS['assistant']} #bcbcbc",
     "message.toolbar.action": "bg:#454545 #ededed",
+    "message.toolbar.version": "bg:#383838 #d3d3d3",
+    "message.toolbar.version.disabled": "bg:#383838 #777777",
     "chat.context": "#a4b5c7",
     "brand": "bg:#252525 bold #c3a6ff",
     "transcript": "bg:#202020 #dedede",

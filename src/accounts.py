@@ -1073,6 +1073,67 @@ class Accounts:
                 return value
         return self.cached(key, remote)
 
+    def response_version(self, key, conversation_id, message_id, version):
+        context, remote = origin(conversation_id, key)
+        if context != key or not remote:
+            return None
+        archive = self.archive()
+        return archive.response_version(key, remote, message_id, version) if archive else None
+
+    def _pending_local_branches(self, key, listed, *, project_listing=False):
+        remotes = {
+            item.get("remote_id") or item.get("id")
+            for item in listed
+            if isinstance(item, dict)
+        }
+        remotes = {remote for remote in remotes if remote}
+        archive = self.archive()
+        if archive:
+            archive.confirm_pending_branches(key, remotes, project=project_listing)
+            return archive.pending_branches(key, project=project_listing)
+
+        pending = []
+        for remote, record in self.repository.cache_pending_branches(key):
+            if not record.get("pending_local_branch"):
+                continue
+            if remote in remotes:
+                field = "branch_listed_project" if project_listing else "branch_listed_general"
+                record[field] = True
+                project_id = record.get("project_id")
+                listed_general = record.get("branch_listed_general", False)
+                listed_project = record.get("branch_listed_project", False)
+                if listed_general and (not project_id or listed_project):
+                    record.pop("pending_local_branch", None)
+                    record.pop("pending_branch", None)
+                    record.pop("branch_unanswered", None)
+                    record.pop("branch_listed_general", None)
+                    record.pop("branch_listed_project", None)
+                self.repository.cache_put(key, "conversation", remote, record)
+            else:
+                listed_field = (
+                    "branch_listed_project" if project_listing else "branch_listed_general"
+                )
+                if not record.get(listed_field):
+                    pending.append(record)
+        return pending
+
+    def _include_pending_project_branches(self, key, project_remote, page, cursor=None):
+        listed = page.get("items", ())
+        pending = self._pending_local_branches(key, listed, project_listing=True)
+        if cursor:
+            return page
+        known = {item.get("remote_id") or item.get("id") for item in listed}
+        additions = []
+        for item in pending:
+            project = item.get("project_id")
+            remote = item.get("remote_id") or item.get("id")
+            if not project or remote in known:
+                continue
+            context, project_id = origin(project, key)
+            if context == key and project_id == project_remote:
+                additions.append(item)
+        return dict(page, items=[*listed, *additions]) if additions else page
+
     def cached_project_chats(self, value, fallback, cursor=None):
         """Return one cached provider project-chat page without starting a refresh."""
         key, remote = origin(value, fallback)
@@ -1081,7 +1142,9 @@ class Accounts:
             return None
         page_key = remote + ":" + (cursor or "")
         page = archive.get(key, "container_chats", page_key)
-        return page if isinstance(page, dict) else None
+        if not isinstance(page, dict):
+            return None
+        return self._include_pending_project_branches(key, remote, page, cursor)
 
     def queue_active(self, key, value):
         """Coalesce UI pointer writes; never perform SQLite/fsync in navigation."""
@@ -1269,8 +1332,21 @@ class Accounts:
             if isinstance(page, BaseException):
                 errors.append(account["label"])
                 failed.append(account["key"])
+                items.extend(self._pending_local_branches(account["key"], ()))
                 continue
             items.extend(page["items"])
+            pending = self._pending_local_branches(account["key"], page["items"])
+            if not cursors or not cursors.get(account["key"]):
+                known = {
+                    item.get("remote_id") or item.get("id")
+                    for item in page["items"]
+                    if isinstance(item, dict)
+                }
+                items.extend(
+                    item
+                    for item in pending
+                    if (item.get("remote_id") or item.get("id")) not in known
+                )
             if page["cursor"] is not None:
                 next_cursors[account["key"]] = page["cursor"]
         return {
@@ -1375,7 +1451,19 @@ class Accounts:
                 )
 
         cached = self.cached_window(key, remote) if archive else self.cached(key, remote)
-        if cached and cached.get("pending_branch"):
+        pending_branch = (
+            archive.is_pending_branch(key, remote)
+            if archive and remote
+            else bool(
+                cached
+                and (
+                    cached.get("pending_local_branch")
+                    or isinstance(cached.get("pending_branch"), dict)
+                )
+                and cached.get("branch_unanswered", True)
+            )
+        )
+        if cached and pending_branch:
             return cached
 
         def fetch():
@@ -1634,6 +1722,16 @@ class Accounts:
                     "model": model,
                     "temporary": request.temporary,
                 }
+                if not archive:
+                    for field in (
+                        "pending_local_branch",
+                        "branch_listed_general",
+                        "branch_listed_project",
+                    ):
+                        if prior.get(field):
+                            record[field] = prior[field]
+                    if prior.get("pending_local_branch"):
+                        record["branch_unanswered"] = False
                 if not request.temporary:
                     try:
                         archive = self.archive()
@@ -1645,6 +1743,7 @@ class Accounts:
                                     record, id=identity(key, remote_id), _archive_base_end=base_end
                                 ),
                             )
+                            archive.mark_branch_answered(key, remote_id)
                             self.set_active(key, remote_id)
                         else:
                             self.cache_conversation(key, record)
@@ -1684,12 +1783,31 @@ class Accounts:
                                     else None
                                 )
                                 archive.replace_history(
-                                    key, remote_id, authoritative, replaced_message_id=replacement
+                                    key,
+                                    remote_id,
+                                    authoritative,
+                                    replaced_message_id=replacement,
+                                    retry_message_id=(
+                                        request.message_id
+                                        if request.action == MessageAction.RETRY
+                                        else None
+                                    ),
+                                    new_message_id=(
+                                        snapshot.metadata.message_id
+                                        if request.action == MessageAction.RETRY
+                                        and snapshot.metadata
+                                        else None
+                                    ),
                                 )
                                 if request.branch and remote_id != remote:
                                     archive.delete(key, "conversation", remote)
+                                    archive.mark_pending_branch(key, remote_id)
+                                    archive.mark_branch_answered(key, remote_id)
                                 self.set_active(key, remote_id)
                             else:
+                                if request.branch:
+                                    authoritative["pending_local_branch"] = True
+                                    authoritative["branch_unanswered"] = False
                                 self.cache_conversation(key, authoritative)
                                 if request.branch and remote_id != remote:
                                     self.repository.cache_mark_deleted(key, remote)
@@ -2212,6 +2330,7 @@ class Accounts:
         archive = self.archive()
         if archive and archive.deleted(key, "conversation", remote):
             raise RemoteNotFound("The conversation was deleted")
+        source = self.cached_window(key, remote) or {}
         with self._lock:
             if key in self._session_changes:
                 raise RuntimeError("Account verification is still running")
@@ -2230,7 +2349,19 @@ class Accounts:
             record = self.chat_record(key, self.call(branch()))
             if record["remote_id"] == remote:
                 raise ProviderError("The provider did not create a separate conversation")
+            if record.get("metadata", {}).get("title_unavailable") or not str(
+                record.get("title") or ""
+            ).strip():
+                record["title"] = source.get("title") or record.get("title") or "Untitled"
+            if not record.get("project_id"):
+                record["project_id"] = source.get("project_id")
+            archive = self.archive()
+            if not archive:
+                record["pending_local_branch"] = True
+                record["branch_unanswered"] = True
             self.cache_conversation(key, record, make_active=False)
+            if archive:
+                archive.mark_pending_branch(key, record["remote_id"])
             return record
         finally:
             with self._lock:
@@ -2282,13 +2413,14 @@ class Accounts:
                     "cursor": page.next_cursor,
                 }
 
-            return self.read_record(
+            page = self.read_record(
                 context,
                 "container_chats",
                 remote + ":" + (cursor or ""),
                 fetch,
                 fresh=True,
             )
+            return self._include_pending_project_branches(context, remote, page, cursor)
 
         def move(chat, project):
             chat_context, remote = origin(chat, key)
