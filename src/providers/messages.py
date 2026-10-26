@@ -33,11 +33,12 @@ def actions_for(role, *, final=True, latest=True, branch=False):
 def sources_from(*roots):
     """Read explicit published citations; never guess sources from answer text."""
     sources, seen = [], set()
+    remaining_nodes = 512
 
     def add(value):
         if not isinstance(value, dict) or len(sources) >= 128:
             return
-        source = value.get("web") or value.get("source") or value
+        source = value.get("web") or value.get("source") or value.get("url_citation") or value
         if not isinstance(source, dict):
             return
         url = source.get("url") or source.get("uri") or source.get("href")
@@ -82,15 +83,37 @@ def sources_from(*roots):
         )
 
     def visit(value, depth=0):
-        if not isinstance(value, dict) or depth > 4:
+        nonlocal remaining_nodes
+        if depth > 4 or remaining_nodes <= 0:
             return
-        for key in ("citations", "sources", "content_references", "items", "grouped_webpages"):
+        remaining_nodes -= 1
+        if isinstance(value, (list, tuple)):
+            for item in value[:128]:
+                visit(item, depth + 1)
+            return
+        if not isinstance(value, dict):
+            return
+        for key in (
+            "citations",
+            "sources",
+            "content_references",
+            "annotations",
+            "items",
+            "grouped_webpages",
+        ):
             entries = value.get(key)
             if isinstance(entries, (list, tuple)):
                 for item in entries[:128]:
                     add(item)
                     visit(item, depth + 1)
-        for key in ("metadata", "native", "grounding_metadata", "groundingMetadata"):
+        for key in (
+            "metadata",
+            "native",
+            "content",
+            "candidate",
+            "grounding_metadata",
+            "groundingMetadata",
+        ):
             visit(value.get(key), depth + 1)
         for key in ("grounding_chunks", "groundingChunks"):
             entries = value.get(key)

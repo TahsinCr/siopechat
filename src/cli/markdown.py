@@ -504,7 +504,7 @@ def message_body_text(message):
     return text[: message.get("_body_length", len(text))]
 
 
-def _source_message(message, sources):
+def _source_message(message, sources, source_label="Sources"):
     owner = str(message.get("id") or id(message))
     from urllib.parse import quote
 
@@ -516,22 +516,22 @@ def _source_message(message, sources):
     return {
         "id": owner + ":sources",
         "role": "reasoning",
-        "text": "  \n".join(lines),
+        "text": f"**{source_label}**\n" + "  \n".join(lines),
         "_source_owner": owner,
         **{key: message[key] for key in ("_archive_ordinal", "local_pending") if key in message},
     }
 
 
-def update_message_sources(messages, message, sources):
+def update_message_sources(messages, message, sources, source_label="Sources"):
     """Keep one published-source section immediately above its owning answer."""
     owner = str(message.get("id") or id(message))
     messages[:] = [item for item in messages if item.get("_source_owner") != owner]
     index = next((i for i, item in enumerate(messages) if item is message), None)
     if sources and index is not None:
-        messages.insert(index, _source_message(message, sources))
+        messages.insert(index, _source_message(message, sources, source_label))
 
 
-def visible_chat_messages(messages):
+def visible_chat_messages(messages, source_label="Sources"):
     """Prepare bounded presentation records, including published sources per answer."""
     result = []
     for message in messages:
@@ -540,7 +540,9 @@ def visible_chat_messages(messages):
         visible = visible_chat_message(message)
         if visible is not None:
             if visible.get("_thinking_sources"):
-                result.append(_source_message(visible, visible["_thinking_sources"]))
+                result.append(
+                    _source_message(visible, visible["_thinking_sources"], source_label)
+                )
             result.append(visible)
     return result
 

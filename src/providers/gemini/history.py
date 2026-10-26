@@ -1,9 +1,14 @@
 """Native Gemini read contracts; parsing has no session or frontend dependency."""
 
+import re
+
 from ..errors import ProviderError
 from ..messages import actions_for, sources_from
 from ..models import Content, Conversation, Message, Resource
 from .media import _field, candidate_files, resolve_image_links
+
+_CITATION_MARKER = re.compile(r"\[cite:\s*([\d,\s]+)\]")
+_CITATION_NUMBER = re.compile(r"\d+")
 
 
 def nested(value, *path, default=None):
@@ -22,14 +27,29 @@ def timestamp(value):
 
 
 def candidate_metadata(candidate):
-    """Published sources are field 43 of rich content; thoughts are candidate[37]."""
-    sources = []
+    """Extract published citations separately from the candidate's thought summary."""
     groups = _field(nested(candidate, 12), 43, [])
+    citations = {}
     for group in groups if isinstance(groups, list) else ():
-        entries = nested(group, 1, default=[])
-        for entry in entries if isinstance(entries, list) else ():
-            sources.append({"url": nested(entry, 3, 0, 1), "title": nested(entry, 3, 0, 2)})
-    return {"sources": sources_from({"sources": sources})}
+        marker = nested(group, 0, 0)
+        entries = nested(group, 1)
+        if not isinstance(marker, str) or not isinstance(entries, list):
+            continue
+        match = _CITATION_MARKER.search(marker)
+        if match is None:
+            continue
+        for number, entry in zip(_CITATION_NUMBER.findall(match.group(1)), entries):
+            citation_id = int(number)
+            if citation_id in citations:
+                continue
+            url = nested(entry, 3, 0, 1)
+            if isinstance(url, str):
+                citations[citation_id] = {
+                    "url": url,
+                    "title": nested(entry, 3, 0, 2),
+                }
+    ordered = [citations[key] for key in sorted(citations)]
+    return {"sources": sources_from({"sources": ordered})}
 
 
 def conversations(pages, origin):

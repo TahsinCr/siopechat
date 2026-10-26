@@ -153,7 +153,12 @@ class _SendStream:
                 final["actions"] = list(event.get("actions", ()))
                 if event.get("sources"):
                     final["_thinking_sources"] = tuple(event["sources"])
-                    update_message_sources(self.messages, final, final["_thinking_sources"])
+                    update_message_sources(
+                        self.messages,
+                        final,
+                        final["_thinking_sources"],
+                        self.view.tr("Sources"),
+                    )
                 final["_response_settings"] = tuple(
                     (label, event[key])
                     for label, key in (("Model", "model"), ("Effort", "effort"))
@@ -339,7 +344,9 @@ class ChatView:
         self.tab_kind = "chat"
         self.last_response_model: str | None = None
         self.current_project: dict[str, Any] = dict(initial_project or {})
-        self.messages: list[Message] = visible_chat_messages(initial_messages or [])
+        self.messages: list[Message] = visible_chat_messages(
+            initial_messages or [], self.tr("Sources")
+        )
         self.background_tabs: list[dict[str, Any]] = []
         self.busy = False
         self.busy_tab_index: int | None = None
@@ -5111,7 +5118,10 @@ class ChatView:
                         )
                         tab["messages"][target_index] = displayed
                         update_message_sources(
-                            tab["messages"], displayed, displayed.get("_thinking_sources", ())
+                            tab["messages"],
+                            displayed,
+                            displayed.get("_thinking_sources", ()),
+                            self.tr("Sources"),
                         )
                         if tab is self.tabs[self.active_tab]:
                             self.messages = tab["messages"]
@@ -5466,7 +5476,9 @@ class ChatView:
                     tab is target_tab for tab in self.tabs
                 ):
                     return
-                messages = visible_chat_messages(conversation.get("messages", []))
+                messages = visible_chat_messages(
+                    conversation.get("messages", []), self.tr("Sources")
+                )
 
                 def apply_conversation() -> None:
                     if (
@@ -5484,7 +5496,8 @@ class ChatView:
                         merge_conversation(
                             {"messages": visible_messages},
                             {"messages": target_tab.get("messages", [])},
-                        )["messages"]
+                        )["messages"],
+                        self.tr("Sources"),
                     )
                     project = conversation.get("project")
                     project = dict(project) if isinstance(project, dict) else {}
@@ -5700,7 +5713,9 @@ class ChatView:
                         target_tab["history_window"] = rollback[1]
                 elif send_succeeded and result.get("history"):
                     history = result["history"]
-                    messages = visible_chat_messages(history.get("messages", ()))
+                    messages = visible_chat_messages(
+                        history.get("messages", ()), self.tr("Sources")
+                    )
                     if history.get("history_window"):
                         target_tab["history_window"] = history["history_window"]
                 if send_succeeded and result.get("replaced_conversation_id"):
