@@ -6,6 +6,7 @@ import math
 import threading
 from collections import OrderedDict
 from contextlib import contextmanager
+from dataclasses import replace
 from typing import Callable
 
 from ..api import (
@@ -31,6 +32,7 @@ from ..models import (
     Page,
     Project,
     ProviderDescription,
+    ResponseVariant,
     Resource,
     SessionState,
     SessionStatus,
@@ -40,6 +42,7 @@ from ..session import delete_session, session_exists
 from .client import ChatGPTClient
 from .discovery import project_id
 from .errors import SentinelCompatibilityError
+from .formats import message_parts
 from .projects import ChatGPTProjectEditor
 from .session import BrowserSession
 
@@ -330,54 +333,130 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
             raw = await asyncio.to_thread(read)
         return Page(tuple(self._conversation(item) for item in raw["items"]), raw.get("cursor"))
 
+    def _message(self, item: dict, raw: dict) -> Message:
+        content = item.get("content") or {}
+        parts = message_parts(content)
+        parts = parts if isinstance(parts, list) else []
+        author = item.get("author")
+        author = author if isinstance(author, dict) else {}
+        role = author.get("role", "unknown")
+        blocks = tuple(
+            Content("text", text=part)
+            if isinstance(part, str)
+            else Content("text", text=part["text"], metadata={"native": part})
+            if isinstance(part, dict) and isinstance(part.get("text"), str)
+            else Content("provider", metadata={"value": part})
+            for part in parts
+        )
+        return Message(
+            str(item.get("id", "")),
+            role,
+            blocks,
+            "analysis"
+            if content.get("content_type")
+            in ("thoughts", "reasoning_recap", "reasoning_summary")
+            else item.get("channel"),
+            dict(item),
+            actions=actions_for(
+                role,
+                final=item.get("channel") != "analysis"
+                and content.get("content_type")
+                not in ("thoughts", "reasoning_recap", "reasoning_summary")
+                and item.get("recipient") in (None, "all"),
+                branch=True,
+            )
+            if item.get("id")
+            and not raw.get("pending_branch")
+            and not raw.get("is_read_only")
+            and not raw.get("is_temporary_chat")
+            else (),
+        )
+
+    def _response_variant_index(self, raw: dict):
+        mapping = raw.get("mapping")
+        if not isinstance(mapping, dict):
+            return {}
+
+        by_parent = {}
+        for key, node in mapping.items():
+            if not isinstance(key, str) or not isinstance(node, dict):
+                continue
+            message = node.get("message")
+            parent_id = node.get("parent")
+            if isinstance(message, dict) and message.get("id") and parent_id:
+                by_parent.setdefault(parent_id, []).append((key, node, message))
+
+        variants_by_message = {}
+        for parent_id, siblings in by_parent.items():
+            parent = mapping.get(parent_id)
+            children = parent.get("children") if isinstance(parent, dict) else None
+            child_order = {
+                child: index
+                for index, child in enumerate(children or ())
+                if isinstance(child, str)
+            }
+            ordered = sorted(
+                enumerate(siblings),
+                key=lambda pair: (
+                    child_order.get(pair[1][0], len(child_order) + pair[0]),
+                    pair[0],
+                ),
+            )
+            eligible = []
+            for _, (_, _, alternate) in ordered:
+                author = alternate.get("author")
+                author = author if isinstance(author, dict) else {}
+                content = alternate.get("content")
+                content = content if isinstance(content, dict) else {}
+                metadata = alternate.get("metadata")
+                metadata = metadata if isinstance(metadata, dict) else {}
+                if (
+                    author.get("role") != "assistant"
+                    or alternate.get("recipient") not in (None, "all")
+                    or alternate.get("channel") == "analysis"
+                    or content.get("content_type")
+                    in ("thoughts", "reasoning_recap", "reasoning_summary")
+                    or metadata.get("is_visually_hidden_from_conversation")
+                ):
+                    continue
+                message = self._message(alternate, raw)
+                eligible.append(
+                    ResponseVariant(
+                        message.id,
+                        len(eligible) + 1,
+                        message.content,
+                        message.channel,
+                        message.metadata,
+                    )
+                )
+            if len(eligible) < 2:
+                continue
+            for index, current in enumerate(eligible, 1):
+                variants_by_message[current.id] = (
+                    tuple(variant for variant in eligible if variant.id != current.id),
+                    index,
+                )
+        return variants_by_message
+
     def _conversation(self, raw: dict) -> Conversation:
         remote_id = raw.get("conversation_id") or raw.get("id")
         if not isinstance(remote_id, str) or not remote_id:
             raise ValueError("provider conversation has no remote ID")
+        response_variant_index = self._response_variant_index(raw)
         messages = []
         for item in raw.get("messages") or ():
             if not isinstance(item, dict):
                 continue
-            content = item.get("content") or {}
-            from .formats import message_parts
-
-            parts = message_parts(content)
-            parts = parts if isinstance(parts, list) else []
-            author = item.get("author")
-            author = author if isinstance(author, dict) else {}
-            blocks = tuple(
-                Content("text", text=part)
-                if isinstance(part, str)
-                else Content("text", text=part["text"], metadata={"native": part})
-                if isinstance(part, dict) and isinstance(part.get("text"), str)
-                else Content("provider", metadata={"value": part})
-                for part in parts
-            )
-            messages.append(
-                Message(
-                    str(item.get("id", "")),
-                    author.get("role", "unknown"),
-                    blocks,
-                    "analysis"
-                    if content.get("content_type")
-                    in ("thoughts", "reasoning_recap", "reasoning_summary")
-                    else item.get("channel"),
-                    dict(item),
-                    actions=actions_for(
-                        author.get("role"),
-                        final=item.get("channel") != "analysis"
-                        and content.get("content_type")
-                        not in ("thoughts", "reasoning_recap", "reasoning_summary")
-                        and item.get("recipient") in (None, "all"),
-                        branch=True,
+            message = self._message(item, raw)
+            if message.role == "assistant" and message.channel != "analysis":
+                variants, current_index = response_variant_index.get(message.id, ((), 1))
+                if variants:
+                    message = replace(
+                        message,
+                        response_variants=variants,
+                        response_version_index=current_index,
                     )
-                    if item.get("id")
-                    and not raw.get("pending_branch")
-                    and not raw.get("is_read_only")
-                    and not raw.get("is_temporary_chat")
-                    else (),
-                )
-            )
+            messages.append(message)
         return Conversation(
             Origin(self.id, self.account_id, remote_id),
             raw.get("title") or "Untitled",

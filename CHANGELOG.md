@@ -14,6 +14,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.1b0` for `v1.4.
 - Added native message identities and available actions to the standalone provider API, with streamed source metadata kept separate from published thinking summaries.
 - Kept ChatGPT's native branch preview available locally until its first accepted reply; Gemini branches remain out of the sidebar until Gemini lists them.
 - Saved prior successful assistant replies in the SQLite archive and added compact previous/current/next controls to the reply toolbar.
+- Loaded ChatGPT's server-retained alternate replies from its normal conversation history and kept locally captured retries when later provider syncs omit them.
 
 ### Changed
 
@@ -30,6 +31,8 @@ Python distributions use the corresponding PEP 440 version (`1.4.1b0` for `v1.4.
 - Kept Gemini's returned branch title and source project on the open tab without presenting an unlisted branch as a provider conversation.
 - After the first successful reply in a provider-created branch, checked its provider conversation or project list once in the background; unconfirmed branches remain usable in their open tab and are not polled.
 - Showed copy confirmation in the status line for two seconds, restoring its prior message unless a newer status replaced it.
+- Kept message toolbar actions within the rendered row, used terminal-cell widths for mouse hit testing, and made disabled version arrows non-clickable.
+- Indexed ChatGPT's response tree once per conversation instead of rescanning the full tree for each assistant message.
 
 ## [1.4.1-beta] - 2026-10-25
 

@@ -1251,6 +1251,44 @@ class Accounts:
             if len(self._chat_projects) > 2048:
                 self._chat_projects.pop(next(iter(self._chat_projects)))
         project = chat.project_id or self._chat_projects.get((key, chat.origin.remote_id))
+
+        def content_record(content):
+            return dict(
+                _shallow_dataclass(content),
+                resource=(
+                    _shallow_dataclass(content.resource)
+                    if content.resource is not None
+                    else None
+                ),
+            )
+
+        def message_record(message):
+            value = {
+                "id": message.id,
+                "role": message.role,
+                "channel": message.channel,
+                "text": "\n".join(content.text or "" for content in message.content),
+                "content": [content_record(content) for content in message.content],
+                "metadata": message.metadata,
+                "actions": list(message.actions),
+            }
+            if message.response_variants:
+                value["response_version_index"] = message.response_version_index
+                value["response_variants"] = [
+                    {
+                        "id": variant.id,
+                        "index": variant.index,
+                        "role": "assistant",
+                        "channel": variant.channel,
+                        "text": "\n".join(content.text or "" for content in variant.content),
+                        "content": [content_record(content) for content in variant.content],
+                        "metadata": variant.metadata,
+                        "actions": [],
+                    }
+                    for variant in message.response_variants
+                ]
+            return value
+
         return {
             "id": identity(key, chat.origin.remote_id),
             "remote_id": chat.origin.remote_id,
@@ -1266,28 +1304,7 @@ class Accounts:
                 else {}
             ),
             "history_complete": not chat.metadata.get("history_partial", False),
-            "messages": [
-                {
-                    "id": message.id,
-                    "role": message.role,
-                    "channel": message.channel,
-                    "text": "\n".join(content.text or "" for content in message.content),
-                    "content": [
-                        dict(
-                            _shallow_dataclass(content),
-                            resource=(
-                                _shallow_dataclass(content.resource)
-                                if content.resource is not None
-                                else None
-                            ),
-                        )
-                        for content in message.content
-                    ],
-                    "metadata": message.metadata,
-                    "actions": list(message.actions),
-                }
-                for message in chat.messages
-            ],
+            "messages": [message_record(message) for message in chat.messages],
         }
 
     def list_chats(self, selected=None, cursor=None, force=False, account_keys=None):

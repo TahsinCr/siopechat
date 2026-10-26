@@ -455,6 +455,7 @@ def visible_chat_message(message: dict[str, Any]) -> dict[str, Any] | None:
             "actions",
             "_response_version_index",
             "_response_version_count",
+            "_response_version_current_index",
         )
         if key in message and message[key] is not None
     }

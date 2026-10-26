@@ -68,6 +68,7 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
     def test_markdown_link_click_opens_original_url_after_row_indexing(self):
         from prompt_toolkit.data_structures import Point
         from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
+        from prompt_toolkit.utils import get_cwidth
 
         url = "https://example.com/docs?a=1&b=2"
         with terminal(
@@ -92,7 +93,7 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
                             control.mouse_handler(event)
                             self.assertEqual(launch.call_args.args[0], url)
                             clicked += 1
-                        x += len(span[1])
+                        x += get_cwidth(span[1])
                 self.assertGreater(clicked, 0)
                 self.assertFalse(view.message_selection)
 

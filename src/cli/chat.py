@@ -5088,6 +5088,9 @@ class ChatView:
                                 displayed.pop(field, None)
                         displayed["_response_version_index"] = result["index"]
                         displayed["_response_version_count"] = result["count"]
+                        displayed["_response_version_current_index"] = result.get(
+                            "current_index", result["count"]
+                        )
                         tab["messages"][target_index] = displayed
                         if tab is self.tabs[self.active_tab]:
                             self.messages = tab["messages"]

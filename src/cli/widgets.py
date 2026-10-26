@@ -124,7 +124,8 @@ class TranscriptControl(UIControl):
         tab = self.view.tabs[self.view.active_tab]
         version_index = message.get("_response_version_index", 1)
         version_count = message.get("_response_version_count", 1)
-        viewing_previous = version_count > 1 and version_index < version_count
+        current_index = message.get("_response_version_current_index", version_count)
+        viewing_previous = version_count > 1 and version_index != current_index
         if (
             not viewing_previous
             and not tab.get("busy")
@@ -144,71 +145,89 @@ class TranscriptControl(UIControl):
             if message.get("_toolbar_details"):
                 actions.append(("details", "ⓘ", self.view.tr("Answer details")))
         tab_id = tab.get("tab_id")
-        labels = [f"{icon} {label}" for _, icon, label in actions]
         has_versions = version_count > 1 and role == "assistant"
         version_label = f"{version_index}/{version_count}"
-        version_width = 0
-        if has_versions:
-            version_width = get_cwidth(f"‹ {version_label} ›") + 2
         message_width = min(width, self.view.transcript_width())
         prefix = " " if message_width >= 2 else ""
-        separator = " "
-        full_width = get_cwidth(prefix) + sum(get_cwidth(label) + 2 for label in labels)
-        full_width += get_cwidth(separator) * (len(labels) - 1)
-        compact = full_width + version_width > message_width
-        if compact and message_width < 14:
-            separator = ""
-        padded = not compact or message_width >= 16
         toolbar_style = f"class:message.toolbar.{role}"
-        fragments = [(toolbar_style, prefix)]
-        for position, (action, icon, label) in enumerate(actions):
-            value = icon if compact else f"{icon} {label}"
 
-            def run_action(selected=action, target_tab=tab_id, target_message=message):
-                return self.view.message_toolbar_action(target_tab, target_message, selected)
-
-            fragments.append(
-                (
-                    "class:message.toolbar.action",
-                    f" {value} " if padded else value,
-                    on_click(run_action),
-                )
-            )
-            if position + 1 < len(actions):
-                fragments.append((toolbar_style, separator))
-        used_width = sum(get_cwidth(fragment[1]) for fragment in fragments)
-        if has_versions:
-            if used_width + version_width < message_width:
-                fragments.append(
-                    (toolbar_style, " " * (message_width - used_width - version_width))
-                )
-            for action, label, enabled in (
+        def version_fragments(compact):
+            if not has_versions:
+                return []
+            values = (
                 ("version_prev", "‹", version_index > 1),
                 (None, version_label, False),
                 ("version_next", "›", version_index < version_count),
-            ):
+            )
+            result = []
+            for action, label, enabled in values:
+                text = label if compact else f" {label} "
                 if action is None:
-                    fragments.append(("class:message.toolbar.version", f" {label} "))
+                    result.append(("class:message.toolbar.version", text))
                     continue
 
                 def change_version(
-                    selected=action, target_tab=tab_id, target_message=message
+                    event, selected=action, target_tab=tab_id, target_message=message
                 ):
                     return self.view.message_toolbar_action(
                         target_tab, target_message, selected
                     )
 
-                fragments.append(
-                    (
-                        "class:message.toolbar.action"
-                        if enabled
-                        else "class:message.toolbar.version.disabled",
-                        f" {label} ",
-                        change_version if enabled else None,
-                    )
+                style = (
+                    "class:message.toolbar.action"
+                    if enabled
+                    else "class:message.toolbar.version.disabled"
                 )
-            return fragments
-        if used_width < message_width:
+                fragment = (style, text, change_version) if enabled else (style, text)
+                result.append(fragment)
+            return result
+
+        def action_fragments(selected_actions, compact):
+            result = [(toolbar_style, "" if compact else prefix)]
+            for position, (action, icon, label) in enumerate(selected_actions):
+                text = icon if compact else f"{icon} {label}"
+                if not compact:
+                    text = f" {text} "
+
+                def run_action(selected=action, target_tab=tab_id, target_message=message):
+                    return self.view.message_toolbar_action(target_tab, target_message, selected)
+
+                result.append(("class:message.toolbar.action", text, on_click(run_action)))
+                if not compact and position + 1 < len(selected_actions):
+                    result.append((toolbar_style, " "))
+            return result
+
+        def line_width(fragments):
+            return sum(get_cwidth(fragment[1]) for fragment in fragments)
+
+        compact = False
+        visible_actions = list(actions)
+        fragments = action_fragments(visible_actions, compact)
+        versions = version_fragments(compact)
+        if line_width(fragments + versions) > message_width:
+            compact = True
+            fragments = action_fragments(visible_actions, compact)
+            versions = version_fragments(compact)
+        while line_width(fragments + versions) > message_width and len(visible_actions) > 1:
+            removable = next(
+                (
+                    index
+                    for index in range(len(visible_actions) - 1, 0, -1)
+                    if visible_actions[index][0] != "copy"
+                ),
+                None,
+            )
+            if removable is None:
+                break
+            visible_actions.pop(removable)
+            fragments = action_fragments(visible_actions, compact)
+
+        used_width = line_width(fragments)
+        version_width = line_width(versions)
+        if has_versions and used_width + version_width <= message_width:
+            fragments.append((toolbar_style, " " * (message_width - used_width - version_width)))
+            fragments.extend(versions)
+        elif used_width < message_width:
             fragments.append((toolbar_style, " " * (message_width - used_width)))
         return fragments
 
@@ -243,14 +262,16 @@ class TranscriptControl(UIControl):
                 spans = self.rows[line][0]
             position = 0
             for span in spans:
-                end = position + len(span[1])
+                end = position + get_cwidth(span[1])
                 if position <= mouse_event.position.x < end and len(span) > 2:
                     # The view resolves files with the originating account/chat context.
-                    url = getattr(span[2], "url", None)
+                    handler = span[2]
+                    url = getattr(handler, "url", None)
                     if url and hasattr(self.view, "open_message_link"):
                         self.view.open_message_link(url, self.rows[line][1])
                         return None
-                    return span[2](mouse_event)
+                    if callable(handler):
+                        return handler(mouse_event)
                 position = end
             self.view.select_message(self.rows[line][1])
             return None

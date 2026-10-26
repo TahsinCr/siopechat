@@ -142,6 +142,17 @@ class Content:
 
 
 @dataclass(frozen=True)
+class ResponseVariant:
+    """A provider-retained alternate for one assistant response."""
+
+    id: str
+    index: int
+    content: tuple[Content, ...]
+    channel: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict, repr=False)
+
+
+@dataclass(frozen=True)
 class Message:
     id: str
     role: str
@@ -149,6 +160,8 @@ class Message:
     channel: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict, repr=False)
     actions: tuple[str, ...] = ()
+    response_variants: tuple[ResponseVariant, ...] = ()
+    response_version_index: int = 1
 
 
 @dataclass(frozen=True)

@@ -11,9 +11,11 @@ from unittest.mock import Mock, patch
 from prompt_toolkit.data_structures import Point, Size
 from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
 from prompt_toolkit.output import DummyOutput
+from prompt_toolkit.utils import get_cwidth
 
 from backend import BackendService
 from bootstrap import create_application
+from cli.widgets import TranscriptControl
 from providers.chatgpt import BrowserSession, ChatGPTClient, SessionPaths
 from providers.chatgpt.errors import ChatGPTWebError
 from providers.models import Choice, FeatureState, Model, ModelCatalog
@@ -21,6 +23,66 @@ from tests.cli_support import click, immediate, terminal, wait_until
 
 
 class UiControlsTests(unittest.TestCase):
+    def test_message_toolbar_fits_its_row_and_ignores_disabled_version_callbacks(self):
+        message = {
+            "id": "answer",
+            "role": "assistant",
+            "text": "Answer",
+            "actions": ["edit", "retry", "branch"],
+            "_toolbar_sources": [{"title": "Source"}],
+            "_toolbar_details": [("Model", "gpt")],
+            "_response_version_index": 1,
+            "_response_version_count": 2,
+            "_response_version_current_index": 2,
+        }
+        with terminal(initial_messages=[message]) as (view, _):
+            control = TranscriptControl(view)
+            for width in range(8, 101):
+                line = control._message_toolbar(0, width)
+                self.assertLessEqual(
+                    sum(get_cwidth(fragment[1]) for fragment in line), width
+                )
+            fragments = control._message_toolbar(0, 14)
+            self.assertLessEqual(sum(get_cwidth(fragment[1]) for fragment in fragments), 14)
+            disabled = next(
+                fragment
+                for fragment in fragments
+                if fragment[0] == "class:message.toolbar.version.disabled"
+            )
+            self.assertEqual(len(disabled), 2)
+            control.rows = ((fragments, 0),)
+            control._toolbar_fragments = {0: fragments}
+            control._content_width = 14
+            control.view.select_message = Mock()
+            x = sum(
+                get_cwidth(fragment[1])
+                for fragment in fragments[: fragments.index(disabled)]
+            )
+            control.mouse_handler(
+                MouseEvent(Point(x, 0), MouseEventType.MOUSE_UP, MouseButton.LEFT, frozenset())
+            )
+            control.view.select_message.assert_called_once_with(0)
+
+            view.message_toolbar_action = Mock()
+            fragments = control._message_toolbar(0, 100)
+            version_next = next(
+                fragment
+                for fragment in fragments
+                if len(fragment) > 2
+                and fragment[0] == "class:message.toolbar.action"
+                and fragment[1].strip() == "›"
+            )
+            x = sum(get_cwidth(fragment[1]) for fragment in fragments[:fragments.index(version_next)])
+            control.rows = ((fragments, 0),)
+            control._toolbar_fragments = {0: fragments}
+            control._content_width = 100
+            control.mouse_handler(
+                MouseEvent(Point(x, 0), MouseEventType.MOUSE_UP, MouseButton.LEFT, frozenset())
+            )
+            view.message_toolbar_action.assert_called_once_with(
+                view.tabs[view.active_tab]["tab_id"], view.messages[0], "version_next"
+            )
+
     def test_clickable_tabs_sidebar_palette_and_scroll_controls(self):
         with terminal() as (view, _):
             view.new_tab()

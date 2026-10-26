@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 import httpx
 
 from providers import BranchContext, MessageAction, SendRequest
+from providers.chatgpt.adapter import ChatGPTProvider
 from providers.chatgpt.client import ChatGPTClient
 from providers.claude.transport import ClaudeTransport
 from providers.gemini.history import history
@@ -17,6 +18,59 @@ from providers.models import Origin
 
 
 class ChatGPTActionsTests(unittest.TestCase):
+    def test_history_exposes_server_retained_retry_variants_in_provider_order(self):
+        prompt = {
+            "id": "user",
+            "author": {"role": "user"},
+            "content": {"content_type": "text", "parts": ["Prompt"]},
+        }
+        first = {
+            "id": "answer-1",
+            "author": {"role": "assistant"},
+            "channel": "final",
+            "content": {"content_type": "text", "parts": ["First answer"]},
+        }
+        second = {
+            "id": "answer-2",
+            "author": {"role": "assistant"},
+            "channel": "final",
+            "content": {"content_type": "text", "parts": ["Second answer"]},
+        }
+        hidden = {
+            "id": "thought",
+            "author": {"role": "assistant"},
+            "channel": "analysis",
+            "content": {"content_type": "thoughts", "parts": ["Hidden thought"]},
+        }
+        provider = object.__new__(ChatGPTProvider)
+        provider.account_id = "test-account"
+        raw = {
+            "conversation_id": "chat",
+            "current_node": "answer-2",
+            "messages": [prompt, second],
+            "mapping": {
+                "user": {
+                    "id": "user",
+                    "parent": "root",
+                    "children": ["answer-1", "thought", "answer-2"],
+                    "message": prompt,
+                },
+                "answer-1": {"id": "answer-1", "parent": "user", "message": first},
+                "thought": {"id": "thought", "parent": "user", "message": hidden},
+                "answer-2": {"id": "answer-2", "parent": "user", "message": second},
+            },
+        }
+
+        chat = provider._conversation(raw)
+        answer = next(message for message in chat.messages if message.id == "answer-2")
+
+        self.assertEqual(answer.response_version_index, 2)
+        self.assertEqual(
+            [(variant.id, variant.index, variant.content[0].text)
+             for variant in answer.response_variants],
+            [("answer-1", 1, "First answer")],
+        )
+
     def run_request(self, action, target, *, model="account-model", branch=None):
         sent = []
 
