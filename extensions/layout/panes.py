@@ -1,25 +1,26 @@
 """Optional terminal split layouts; no provider operations or background app loops."""
 
-from tui.api import (
-    BoundedTextControl,
-    DynamicContainer,
-    HSplit,
-    MessageRenderer,
-    MouseButton,
-    MouseEventType,
-    Point,
-    ScrollbarMargin,
-    TranscriptControl,
-    TranscriptGutter,
-    TranscriptPrefetch,
-    TranscriptWindow,
-    VirtualTranscriptRows,
-    VSplit,
-    Window,
-    fit_text,
-    on_click,
-    prepare_virtual_transcript,
-)
+from extension import load_tui_api
+
+_tui = load_tui_api()
+BoundedTextControl = _tui.BoundedTextControl
+DynamicContainer = _tui.DynamicContainer
+HSplit = _tui.HSplit
+MessageRenderer = _tui.MessageRenderer
+MouseButton = _tui.MouseButton
+MouseEventType = _tui.MouseEventType
+Point = _tui.Point
+ScrollbarMargin = _tui.ScrollbarMargin
+TranscriptControl = _tui.TranscriptControl
+TranscriptGutter = _tui.TranscriptGutter
+TranscriptPrefetch = _tui.TranscriptPrefetch
+TranscriptWindow = _tui.TranscriptWindow
+VirtualTranscriptRows = _tui.VirtualTranscriptRows
+VSplit = _tui.VSplit
+Window = _tui.Window
+fit_text = _tui.fit_text
+on_click = _tui.on_click
+prepare_virtual_transcript = _tui.prepare_virtual_transcript
 
 
 class SplitLayout:

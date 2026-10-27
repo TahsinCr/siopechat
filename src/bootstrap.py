@@ -32,13 +32,12 @@ def create_application(root: Path | None = None):
     from accounts import Accounts
     from actions import Action
     from backend import BackendService
-    from extension import ExtensionAPI, ExtensionManager
+    from extension import ExtensionAPI, ExtensionManager, View
     from extensions import __file__ as extensions_file
     from lang import __file__ as language_file
     from providers import create_provider
     from settings import Settings, SettingsCatalog
     from utils.paths import project_root
-    from views import View
 
     root = Path(root) if root is not None else project_root()
     settings = Settings(root / "config.json")

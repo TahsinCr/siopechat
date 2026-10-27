@@ -1,7 +1,7 @@
-"""Terminal UI primitives supported for use by bundled extensions.
+"""Public terminal UI surface for bundled extensions.
 
-Extensions may import UI components from this module. Other modules in
-``tui`` are implementation details and are not extension contracts.
+Extensions access this module through ``extension.load_tui_api``. Other
+modules in ``tui`` are implementation details, not extension contracts.
 """
 
 from prompt_toolkit.data_structures import Point
