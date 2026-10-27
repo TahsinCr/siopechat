@@ -36,6 +36,8 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Fixed
 
+- Extract ChatGPT's published `search_result_groups.entries` citations so they appear in the owning answer's thinking-summary block after history is reloaded from SQLite.
+- Verify Gemini's published thought summaries remain visible through provider history, SQLite persistence, and transcript rendering; answers without a published summary remain unchanged.
 - Exit the one-shot Sentinel signer after its JSON result is flushed instead of waiting for the SDK's residual five-second fallback timer.
 - Enable Claude's native web-search tool in web-session completion requests so it can search when a prompt needs current information.
 - Keep the sidebar divider aligned with its search/filter row at supported terminal widths.

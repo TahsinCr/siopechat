@@ -58,12 +58,38 @@ class NativeHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(c.metadata["project_membership_known"] for c in chats))
 
     def test_history_preserves_ids_published_thoughts_and_raw_media_metadata(self):
-        candidate = ["candidate", ["Answer"]] + [None] * 35 + [[["Thought"]]]
+        candidate = ["candidate", ["Answer"]] + [None] * 35 + [[["Published thought"]]]
         turn = [[None, "r_id"], None, [["Question"]], [[candidate]]]
         chat = history([[turn]], lambda cid: Origin("gemini", "a", cid), "c_abc")
         self.assertEqual([m.channel for m in chat.messages], [None, "analysis", None])
+        self.assertEqual(chat.messages[1].content[0].text, "Published thought")
         self.assertEqual(chat.messages[-1].metadata["native_candidate"], candidate)
         self.assertEqual(chat.messages[0].id, "r_id:user")
+
+    def test_published_thought_survives_sqlite_reload_and_transcript_render(self):
+        import tempfile
+
+        from tui.markdown import MessageRenderer, visible_chat_messages
+
+        candidate = ["candidate", ["Answer"]] + [None] * 35 + [[["Published thought"]]]
+        turn = [[None, "r_id"], None, [["Question"]], [[candidate]]]
+        chat = history([[turn]], lambda cid: Origin("gemini", "a", cid), "c_abc")
+        with tempfile.TemporaryDirectory() as folder:
+            api = create_application(Path(folder))
+            try:
+                accounts = api.get("accounts")
+                key = accounts.add("gemini", "Gemini")
+                archive = api.get("archive")
+                archive.put(key, "conversation", "c_abc", accounts.chat_record(key, chat))
+                stored = archive.get(key, "conversation", "c_abc")
+                visible = visible_chat_messages(stored["messages"])
+                rendered, _ = MessageRenderer().transcript(visible, 80, show_reasoning=True)
+            finally:
+                api.runtime.close()
+
+        self.assertIn("Düşünme özeti", rendered)
+        self.assertIn("Published thought", rendered)
+        self.assertIn("Answer", rendered)
 
 
 class PassiveStartupTests(unittest.TestCase):

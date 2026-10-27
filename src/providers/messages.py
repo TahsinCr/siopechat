@@ -106,6 +106,22 @@ def sources_from(*roots):
                 for item in entries[:128]:
                     add(item)
                     visit(item, depth + 1)
+        groups = value.get("search_result_groups")
+        if isinstance(groups, (list, tuple)):
+            for group in groups[:128]:
+                if remaining_nodes <= 0 or len(sources) >= 128:
+                    break
+                remaining_nodes -= 1
+                if not isinstance(group, dict):
+                    continue
+                entries = group.get("entries")
+                if not isinstance(entries, (list, tuple)):
+                    continue
+                for item in entries[:128]:
+                    if remaining_nodes <= 0 or len(sources) >= 128:
+                        break
+                    remaining_nodes -= 1
+                    add(item)
         for key in (
             "metadata",
             "native",

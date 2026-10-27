@@ -69,6 +69,47 @@ class MutationArchiveTests(unittest.TestCase):
         )
         self.assertIn("https://example.com/source", visible[0]["text"])
 
+    def test_chatgpt_search_groups_render_as_sources_after_sqlite_reload(self):
+        from tui.markdown import MessageRenderer
+
+        message = {
+            "id": "answer",
+            "role": "assistant",
+            "text": "Published answer",
+            "metadata": {
+                "metadata": {
+                    "search_result_groups": [
+                        {
+                            "domain": "docs.example",
+                            "entries": [
+                                {
+                                    "title": "Official documentation",
+                                    "url": "https://docs.example/guide",
+                                    "snippet": "Published citation excerpt",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            },
+        }
+        self.archive.put(
+            "chatgpt/default", "conversation", "chat", {"title": "Chat", "messages": [message]}
+        )
+
+        visible = visible_chat_messages(
+            self.archive.get("chatgpt/default", "conversation", "chat")["messages"]
+        )
+
+        self.assertEqual([item["role"] for item in visible], ["reasoning", "assistant"])
+        self.assertEqual(visible[0]["_source_owner"], "answer")
+        self.assertIn("Official documentation", visible[0]["text"])
+        self.assertIn("https://docs.example/guide", visible[0]["text"])
+        self.assertEqual(visible[1]["text"], "Published answer")
+        rendered, _ = MessageRenderer().transcript(visible, 80, show_reasoning=True)
+        self.assertIn("Düşünme özeti", rendered)
+        self.assertLess(rendered.index("Official documentation"), rendered.index("Published answer"))
+
     def test_read_started_before_edit_cannot_restore_old_tail_or_pending_messages(self):
         old = {
             "title": "Chat",
