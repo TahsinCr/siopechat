@@ -1244,11 +1244,14 @@ class ChatView:
         return True
 
     def _hydrate_restored_tab(self, tab: dict[str, Any]) -> None:
-        if not tab.pop("needs_hydration", False):
+        if not tab.get("needs_hydration"):
+            return
+        if self.loading_conversation and not self.account_service:
             return
         if tab.get("kind") == "project":
             project_id = (tab.get("project") or {}).get("id")
             if project_id:
+                tab["needs_hydration"] = False
                 model, effort = tab.get("model", ""), tab.get("effort")
                 self.show_project_details(project_id)
                 tab.update(model=model, effort=effort)
@@ -1258,6 +1261,7 @@ class ChatView:
             return
         conversation_id = tab.get("conversation_id")
         if conversation_id:
+            tab["needs_hydration"] = False
             tab["restore_selection"] = True
             self.resume_conversation(conversation_id)
 
@@ -5347,6 +5351,11 @@ class ChatView:
         ):
             return
         tab["response_version_loading"] = message_id
+        tab["follow_output"] = True
+        self.follow_output = True
+        self.transcript_window.scroll_direction = 0
+        self.transcript_window.vertical_scroll = 10**9
+        self.app.invalidate()
         conversation_id = tab["conversation_id"]
         account_key = tab["account_key"]
 
@@ -5402,6 +5411,10 @@ class ChatView:
                         tab["messages"][target_index] = displayed
                         if tab is self.tabs[self.active_tab]:
                             self.messages = tab["messages"]
+                            tab["follow_output"] = True
+                            self.follow_output = True
+                            self.transcript_window.scroll_direction = 0
+                            self.transcript_window.vertical_scroll = 10**9
                             tab["render_revision"] = tab.get("render_revision", 0) + 1
                 self.app.invalidate()
 
@@ -5671,7 +5684,7 @@ class ChatView:
             self.new_tab()
             if len(self.tabs) == count:
                 return
-        if self.loading_conversation:
+        if self.loading_conversation and not self.account_service:
             self.status = self.tr("Yükleme tamamlanınca başka bir sohbet açabilirsiniz")
             self.app.invalidate()
             return
@@ -5892,12 +5905,42 @@ class ChatView:
 
                 self._dispatch_ui(show_error)
 
-        if not self._reads.submit(load_selected):
-            target_tab.update(loading=False, syncing=False, loading_started=None)
-            target_tab.pop("history_load_pending", None)
-            target_tab.pop("history_load_complete", None)
-            self.loading_conversation, self.loading_started = False, None
-            self.status = self.tr("Arka plan iş kuyruğu dolu; yeniden deneyin")
+        def enqueue_load(delay=0.1):
+            if (
+                target_tab.get("load_token") != token
+                or not any(tab is target_tab for tab in self.tabs)
+            ):
+                return
+            if self._reads.submit(load_selected):
+                target_tab.pop("_load_retry_scheduled", None)
+                return
+
+            target_tab.update(loading=False, loading_started=None, syncing=True)
+            target_tab["history_load_pending"] = True
+            if target_tab is self.tabs[self.active_tab]:
+                self.loading_conversation, self.loading_started = False, None
+                self.status = self.tr("Sohbet geçmişi arka plan kuyruğunda bekliyor")
+            if target_tab.get("_load_retry_scheduled"):
+                self.app.invalidate()
+                return
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                target_tab["needs_hydration"] = True
+                self.app.invalidate()
+                return
+
+            target_tab["_load_retry_scheduled"] = True
+
+            def retry():
+                target_tab.pop("_load_retry_scheduled", None)
+                if self.app.is_running:
+                    enqueue_load(min(delay * 2, 1.0))
+
+            loop.call_later(delay, retry)
+            self.app.invalidate()
+
+        enqueue_load()
 
     def _apply_send_snapshot(
         self, result: dict[str, Any], messages: list[Message], rendered: str

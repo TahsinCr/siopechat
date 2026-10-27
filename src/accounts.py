@@ -2458,13 +2458,7 @@ class Accounts:
         def rename(chat, title):
             context, remote = origin(chat, key)
             target = self.provider(context)
-
-            async def rename_remote():
-                gate = self.api.tasks.account_gate(*context.split("/", 1))
-                async with gate:
-                    await target.rename_chat(remote, title)
-
-            self.call(rename_remote())
+            self.call(target.rename_chat(remote, title))
             archive = self.archive()
             if archive:
                 archive.rename_conversation(context, remote, title)

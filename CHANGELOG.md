@@ -21,6 +21,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 - Resolve per-user data, state, cache, and runtime directories from the normalized project name in package metadata; pass the caller-owned cache path to the Sentinel process instead of maintaining a second hardcoded cache root.
 - Batch title-override reads while saving provider conversation pages, avoiding one SQLite metadata query per conversation.
 - Show cited sources as wrapped, real-URL links with their provider-supplied title and description in a mouse- and keyboard-scrollable popup.
+- Run conversation rename through the provider's own concurrency controls, so Gemini title changes do not wait behind a long-running answer stream.
 - Reuse ChatGPT's prepared HTTP client for sends; discard the pool after canceled or failed streams while preserving interruption behavior.
 - Make the sidebar divider width explicit, add a magnifier action for the existing chat-search popup, and allow mouse focus in the inline sidebar filter.
 - Center the empty-chat prompt and show one localized instruction instead of repeating the SiopeChat brand in the transcript.
@@ -52,6 +53,9 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 - Kept renamed conversation titles canonical in SQLite and cached listing pages; stale provider responses retain the confirmed title until the provider reports it, after which later provider renames are accepted.
 - Passed declared provider capabilities through the lazy sidebar row renderer, so supported rename/delete actions render at the far right instead of disappearing; unsupported provider actions remain hidden.
 - Kept empty cached conversations in a loading state until the background provider read and its current archive snapshot finish; stale snapshots that race a provider write are discarded instead of briefly hiding messages.
+- Kept restored conversations eligible for independent archive hydration, retried temporary background-read queue saturation, and preserved the loading state so a saved tab cannot become a permanent empty conversation.
+- Scoped Sources popup navigation keys to that visible popup, restoring transcript PageUp/PageDown behavior immediately after it closes.
+- Kept the transcript pinned to its bottom edge while switching archived answer versions.
 - Preserved bounded source snippets/descriptions in the shared citation metadata so the Sources popup can display them below each URL.
 - Keep validated ChatGPT, Gemini, and Claude citations on their assistant answer so the Sources action remains with that answer, including when thinking is absent or loaded from another SQLite page.
 - Read Gemini's published web-search activity labels and result links from both history and streaming, combining those labels with its published thought summary without inferring private reasoning.

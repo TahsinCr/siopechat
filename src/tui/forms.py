@@ -177,6 +177,8 @@ class Forms:
         dialog_width = max(20, min(64, terminal.columns - 8))
         line_width = max(8, dialog_width - 5)
         pane = None
+        popup_frame = None
+        popup_active = Condition(lambda: self.visible and self.container is popup_frame)
 
         def scroll_by(amount):
             pane.vertical_scroll = max(0, pane.vertical_scroll + amount)
@@ -202,7 +204,9 @@ class Forms:
                     width = get_cwidth(line)
                     fragments.append((style, line, handler or scroll))
                     if width < line_width:
-                        fragments.append((style, " " * (line_width - width), scroll))
+                        fragments.append(
+                            ("class:dialog.body", " " * (line_width - width), scroll)
+                        )
                     line_count += 1
 
             url = str(item.get("url") or "").strip()
@@ -264,13 +268,21 @@ class Forms:
             first_focus = empty_row
         pane_height = min(content_height, max(1, terminal.rows - 8))
         keys = KeyBindings()
-        keys.add("escape", is_global=True)(lambda _: self.close())
-        keys.add("up", is_global=True)(lambda _: scroll_by(-1))
-        keys.add("down", is_global=True)(lambda _: scroll_by(1))
-        keys.add("pageup", is_global=True)(lambda _: scroll_by(-max(1, pane_height - 1)))
-        keys.add("pagedown", is_global=True)(lambda _: scroll_by(max(1, pane_height - 1)))
-        keys.add("home", is_global=True)(lambda _: scroll_by(-content_height))
-        keys.add("end", is_global=True)(lambda _: scroll_by(content_height))
+        keys.add("escape", is_global=True, filter=popup_active)(lambda _: self.close())
+        keys.add("up", is_global=True, filter=popup_active)(lambda _: scroll_by(-1))
+        keys.add("down", is_global=True, filter=popup_active)(lambda _: scroll_by(1))
+        keys.add("pageup", is_global=True, filter=popup_active)(
+            lambda _: scroll_by(-max(1, pane_height - 1))
+        )
+        keys.add("pagedown", is_global=True, filter=popup_active)(
+            lambda _: scroll_by(max(1, pane_height - 1))
+        )
+        keys.add("home", is_global=True, filter=popup_active)(
+            lambda _: scroll_by(-content_height)
+        )
+        keys.add("end", is_global=True, filter=popup_active)(
+            lambda _: scroll_by(content_height)
+        )
         pane = ScrollablePane(
             HSplit(rows, padding=0, key_bindings=keys),
             keep_cursor_visible=False,
@@ -297,6 +309,7 @@ class Forms:
             height=pane_height + 4,
             modal=True,
         )
+        popup_frame = self.container
         self.visible = True
         self.view.app.layout.update_parents_relations()
         self.view.app.layout.focus(first_focus or close_button)
