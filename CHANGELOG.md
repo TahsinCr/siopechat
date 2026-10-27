@@ -18,6 +18,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Changed
 
+- Capture all browser cookies scoped to `gemini.google.com` during Gemini verification instead of restricting the provider session to a fixed name allowlist.
 - Read Gemini thinking choices, disabled states, and defaults from the account's native web model policy; display each available effort's provider identifier unchanged in the shared picker.
 - Resolve per-user data, state, cache, and runtime directories from the normalized project name in package metadata; pass the caller-owned cache path to the Sentinel process instead of maintaining a second hardcoded cache root.
 - Batch title-override reads while saving provider conversation pages, avoiding one SQLite metadata query per conversation.
