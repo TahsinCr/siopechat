@@ -14,7 +14,7 @@ from providers.claude.transport import ClaudeTransport
 from providers.gemini.history import history
 from providers.gemini.transport import generation_request
 from providers.messages import files_from, sources_from
-from providers.models import Origin
+from providers.models import Model, Origin
 
 
 class ChatGPTActionsTests(unittest.TestCase):
@@ -183,7 +183,24 @@ class GeminiActionsTests(unittest.TestCase):
         self.assertEqual(answer.content[1].resource.id, "gemini-media:rc_media:video")
 
     def test_native_edit_and_retry_use_distinct_operation_controls(self):
-        session = SimpleNamespace(models=(), language="en", token="fixture", session_id="fixture")
+        session = SimpleNamespace(
+            models=(
+                Model(
+                    "flash",
+                    "Flash",
+                    metadata={
+                        "model_id": "remote",
+                        "capacity": 2,
+                        "capacity_slot": 12,
+                        "number": 1,
+                        "effort_values": {},
+                    },
+                ),
+            ),
+            language="en",
+            token="fixture",
+            session_id="fixture",
+        )
         for action, mode, reason in ((MessageAction.EDIT, 0, 2), (MessageAction.RETRY, 2, 7)):
             request = SendRequest(
                 "gemini",
@@ -460,15 +477,11 @@ class ClaudeActionsTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("parent_message_uuid", edit[1])
         self.assertEqual(edit[1]["files"], ["uploaded-file"])
         self.assertEqual(edit[1]["attachments"][0]["extracted_content"], "data")
-        self.assertEqual(
-            edit[1]["tools"], [{"type": "web_search_v0", "name": "web_search"}]
-        )
+        self.assertEqual(edit[1]["tools"], [{"type": "web_search_v0", "name": "web_search"}])
         self.assertTrue(retry[0].endswith("/retry_completion"))
         self.assertEqual(retry[1]["parent_message_uuid"], answer_id)
         self.assertEqual(retry[1]["model"], "available-model")
-        self.assertEqual(
-            retry[1]["tools"], [{"type": "web_search_v0", "name": "web_search"}]
-        )
+        self.assertEqual(retry[1]["tools"], [{"type": "web_search_v0", "name": "web_search"}])
         with self.assertRaisesRegex(ValueError, "from this account"):
             _ = [
                 event

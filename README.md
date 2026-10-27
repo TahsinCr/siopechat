@@ -118,7 +118,7 @@ Use **Delete** beside the composer to delete a conversation. `/project-delete` o
 | Provider | Project support | Current limits |
 | --- | --- | --- |
 | ChatGPT | Projects, instructions, sources and supported chat moves | Models, effort, temporary mode and project options depend on the account. |
-| Gemini | Gemini notebooks shown as a distinct project type; notebook-context chats, instructions and text sources | Existing chats cannot be moved into notebooks. File/URL source import is not exposed. Native effort choices depend on the transport. |
+| Gemini | Gemini notebooks shown as a distinct project type; notebook-context chats, instructions and text sources | Existing chats cannot be moved into notebooks. File/URL source import is not exposed. Thinking choices and defaults follow the account's native web model policy. |
 | Claude | Projects, instructions, text/file sources and supported membership changes | Incognito chats are supported outside projects; privacy/memory overrides beyond private/default are not exposed. |
 
 Gemini notebooks use the Gemini account session; a separate NotebookLM login is not required. Container types and native metadata remain distinct internally. SiopeChat does not pretend that every provider has the same capabilities.

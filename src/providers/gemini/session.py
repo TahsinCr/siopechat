@@ -15,6 +15,14 @@ HEADERS = {"Origin": ORIGIN, "Referer": ORIGIN + "/", "X-Same-Domain": "1"}
 GRAPHQL_PATH = "/_/BardChatUi/"
 GRAPHQL_SCHEMA = "GEMINI_WEB_GRAPHQL"
 RENAME_CONVERSATION_SIGNATURE = "2/AK6lUKXaLqlYDDOn9zA0qKcCFN+eXBsWI9SXBtcRr1o="
+MODEL_CATALOG_SIGNATURE = "2/3fx8hkya5YwhXIcIHgqPDyS+UZ/xU43IKaBmI1FKsqo="
+# Gemini's protocol enum values, not a list of options advertised to the user.
+THINKING_VALUES = {
+    "THINKING_LEVEL_STANDARD": 1,
+    "THINKING_LEVEL_EXTENDED": 2,
+    "THINKING_LEVEL_DEEP_THINK": 3,
+    "THINKING_LEVEL_MEDIUM": 4,
+}
 
 
 def nested(value, *path, default=None):
@@ -136,7 +144,7 @@ class GeminiSession:
         prefix = self.rpc_path_prefix
         marker = GRAPHQL_PATH
         if not prefix.startswith("/") or marker not in prefix:
-            raise ProviderError("Gemini sohbet adı değiştirme uç noktası kullanılamıyor")
+            raise ProviderError("Gemini web sorgu uç noktası kullanılamıyor")
         base = ORIGIN + prefix[: prefix.index(marker)] + marker + "graphql"
         return (
             f"{base}/schemas/{GRAPHQL_SCHEMA}/executeQuery",
@@ -235,19 +243,56 @@ class GeminiSession:
         try:
             results = json.loads(payload)
         except (ValueError, TypeError) as error:
-            raise ProviderError("Gemini sohbet adı yanıtı çözümlenemedi") from error
+            raise ProviderError("Gemini web sorgusu yanıtı çözümlenemedi") from error
         if not isinstance(results, list):
-            raise ProviderError("Gemini sohbet adı yanıt biçimi değişti")
+            raise ProviderError("Gemini web sorgusu yanıt biçimi değişti")
         for result in results:
             if isinstance(result, dict) and isinstance(result.get("data"), dict):
                 return result
             if isinstance(result, dict) and result.get("errors"):
                 return result
-        raise ProviderError("Gemini sohbet adı yanıtı eksik")
+        raise ProviderError("Gemini web sorgusu yanıtı eksik")
 
     async def discover_models(self):
         from ..models import Choice, Model
         from .rpc import RPCPayload
+
+        endpoint, _ = self.graphql_endpoints()
+        response = await self.http.get(
+            endpoint,
+            params={"query_signature": MODEL_CATALOG_SIGNATURE},
+            headers={**HEADERS, "Accept": "application/json"},
+            allow_redirects=False,
+        )
+        WebSession.check(response)
+        result = self._decode_graphql(response.text)
+        data = result.get("data") or {}
+        viewer = data.get("viewer") or {}
+        status = (viewer.get("rpcs") or {}).get("getUserStatus")
+        if not isinstance(status, dict):
+            raise ProviderError("Gemini model politikası alınamadı")
+        native = {item["modeCategory"]: item["id"] for item in status.get("bardModeConfigs") or []}
+        policy = status.get("geminiModePolicy")
+        if not isinstance(policy, dict) or not isinstance(policy.get("configs"), list):
+            raise ProviderError("Gemini düşünme seçenekleri sözleşmesi değişti")
+        policies = {}
+        for item in policy["configs"]:
+            config = item.get("modeConfig") or {}
+            hosts = item.get("hosts") or []
+            if (
+                hosts
+                and "MODE_PICKER_HOST_CHAT" not in hosts
+                or config.get("isDisabled")
+                or config.get("upsellConfig")
+            ):
+                continue
+            remote = (
+                config.get("modeVariantId")
+                or config.get("id")
+                or native.get(config.get("modeCategory"))
+            )
+            if remote:
+                policies[remote] = item
 
         response = await self.batch([RPCPayload("otAQ7b", "[]")])
         parts = list(rpc_parts(response.text, "otAQ7b"))
@@ -274,10 +319,30 @@ class GeminiSession:
         models = []
         for row in rows:
             remote = nested(row, 0)
-            if not isinstance(remote, str):
+            if not isinstance(remote, str) or remote not in policies:
                 continue
+            policy = policies[remote]
+            config = policy["modeConfig"]
+            efforts, values = [], {}
+            for option in policy.get("thinkingLevelConfigs") or []:
+                if option.get("isDisabled"):
+                    continue
+                level = option.get("thinkingLevel")
+                title = (option.get("title") or option.get("pickerButtonPrimaryText") or "").strip()
+                if not title or level == "THINKING_LEVEL_UNSPECIFIED":
+                    continue
+                if level not in THINKING_VALUES:
+                    raise ProviderError("Gemini bilinmeyen bir düşünme protokolü döndürdü")
+                identifier = level.removeprefix("THINKING_LEVEL_").lower()
+                if identifier not in values:
+                    efforts.append(Choice(identifier, title))
+                    values[identifier] = THINKING_VALUES[level]
+            implicit = policy.get("implicitThinkingLevel") or ""
+            default = implicit.removeprefix("THINKING_LEVEL_").lower()
+            if default not in values:
+                default = efforts[0].id if efforts else None
             category = nested(row, 1) or nested(row, 10) or remote
-            title = nested(row, 11) or nested(row, 19) or category
+            title = config.get("titleForPicker") or config.get("title") or category
             number = nested(row, 17)
             if not isinstance(number, int):
                 number = nested(row, 9, default=1)
@@ -285,12 +350,14 @@ class GeminiSession:
                 Model(
                     "gemini-" + str(category).lower().replace(" ", "-"),
                     str(title),
-                    (Choice("standard", "Standart"), Choice("extended", "Genişletilmiş")),
+                    tuple(efforts),
+                    default_effort=default,
                     metadata={
                         "model_id": remote,
                         "capacity": capacity,
                         "capacity_slot": slot,
                         "number": number,
+                        "effort_values": values,
                         "description": nested(row, 12) or nested(row, 2),
                     },
                 )

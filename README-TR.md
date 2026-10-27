@@ -118,7 +118,7 @@ Sohbet silmek için yazma alanının yanındaki **Sil** düğmesini kullanın. `
 | Sağlayıcı | Proje desteği | Mevcut sınırlar |
 | --- | --- | --- |
 | ChatGPT | Projeler, talimatlar, kaynaklar ve desteklenen sohbet taşıma işlemleri | Model, efor, geçici mod ve proje seçenekleri hesaba bağlıdır. |
-| Gemini | Ayrı bir proje türü olarak Gemini defterleri; defter bağlamında sohbet, talimat ve metin kaynakları | Mevcut sohbet deftere taşınamaz. Dosya/URL kaynağı içe aktarma sunulmuyor. Efor seçenekleri taşıyıcıya bağlıdır. |
+| Gemini | Ayrı bir proje türü olarak Gemini defterleri; defter bağlamında sohbet, talimat ve metin kaynakları | Mevcut sohbet deftere taşınamaz. Dosya/URL kaynağı içe aktarma sunulmuyor. Düşünme seçenekleri ve varsayılanlar hesabın Gemini web model politikasından alınır. |
 | Claude | Projeler, talimatlar, metin/dosya kaynakları ve desteklenen üyelik değişiklikleri | Projeler dışında geçici sohbet desteklenir; özel/varsayılan dışındaki gizlilik/bellek seçenekleri sunulmuyor. |
 
 Gemini defterleri Gemini hesabının oturumunu kullanır; ayrı NotebookLM girişi gerekmez. İçeride kapsayıcı türleri ve sağlayıcı metaverileri korunur. Bütün sağlayıcılar aynı özelliklere sahipmiş gibi ele alınmaz.

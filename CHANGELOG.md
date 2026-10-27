@@ -18,6 +18,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Changed
 
+- Read Gemini thinking choices, provider labels, disabled states, and defaults from the account's native web model policy; keep the shared model/effort picker and five-minute catalog cache.
 - Resolve per-user data, state, cache, and runtime directories from the normalized project name in package metadata; pass the caller-owned cache path to the Sentinel process instead of maintaining a second hardcoded cache root.
 - Batch title-override reads while saving provider conversation pages, avoiding one SQLite metadata query per conversation.
 - Show cited sources as wrapped, real-URL links with their provider-supplied title and description in a mouse- and keyboard-scrollable popup.
@@ -44,6 +45,9 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Fixed
 
+- Cancel and join Gemini's streaming HTTP transfer on interruption so a stalled connection cannot keep the provider's generation gate occupied after cancellation.
+- Send Gemini's selected thinking level consistently in the request body and model header, including native Medium; match the temporary-chat flag in both locations.
+- Bind Gemini conversations at the server's initial acknowledgement instead of waiting for answer text, preserving the remote identity during slow or interrupted generation.
 - Build the Sources popup from the transcript's already validated citations before scanning raw provider metadata, so large web-search payloads cannot exhaust the bounded source traversal and leave the popup empty.
 - Render the Sources popup in an opaque, explicitly sized frame whose width matches the overlay; keep long citation lists scrollable without exposing transcript text through the popup.
 - Route sidebar renames through the conversation's owning provider account, and retain confirmed names when an older in-flight history read completes.

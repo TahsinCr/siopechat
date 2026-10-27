@@ -4,6 +4,7 @@ import asyncio
 import json
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,7 +15,7 @@ from providers.errors import AccountPaused, ProviderError
 from providers.gemini import GeminiProvider
 from providers.gemini.session import GeminiSession
 from providers.gemini.transport import Frames, generation_request, upload_files
-from providers.models import Model
+from providers.models import Choice, Model
 
 
 class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
@@ -29,7 +30,12 @@ class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
                 await release.wait()
                 credential.write_text('{"__Secure-1PSID":"rotated"}', encoding="utf-8")
 
-            client = SimpleNamespace(open=open_session, close=AsyncMock(), models=())
+            client = SimpleNamespace(
+                open=open_session,
+                close=AsyncMock(),
+                models=(),
+                discover_models=AsyncMock(return_value=(Model("one", "One"),)),
+            )
             provider = GeminiProvider(credential, client_factory=lambda _path: client)
             opening = asyncio.create_task(provider.prepare())
             await started.wait()
@@ -67,13 +73,13 @@ class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
         client = SimpleNamespace(
             open=AsyncMock(side_effect=open_session),
             close=AsyncMock(),
-            models=(first,),
-            discover_models=AsyncMock(return_value=(Model("second", "Second"),)),
+            models=(),
+            discover_models=AsyncMock(return_value=(first,)),
         )
         with patch("providers.gemini.adapter.session_exists", return_value=True):
             await asyncio.gather(provider.prepare(), provider.models())
         client.open.assert_awaited_once_with()
-        client.discover_models.assert_not_awaited()
+        client.discover_models.assert_awaited_once_with()
         await provider.close()
 
     async def test_catalog_is_cached_but_expiry_and_force_refresh_entitlements(self):
@@ -83,6 +89,7 @@ class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
             models=(first,), discover_models=AsyncMock(return_value=(second,))
         )
         provider._connect = AsyncMock(return_value=session)
+        provider._catalog_at = time.monotonic()
         self.assertEqual((await provider.models()).models, (first,))
         await asyncio.gather(provider.models(), provider.models())
         session.discover_models.assert_not_awaited()
@@ -145,7 +152,15 @@ class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
         model = Model(
             "dynamic",
             "Dynamic",
-            metadata={"model_id": "remote", "capacity": 2, "capacity_slot": 12, "number": 3},
+            (Choice("extended", "Remote title"),),
+            default_effort="extended",
+            metadata={
+                "model_id": "remote",
+                "capacity": 2,
+                "capacity_slot": 12,
+                "number": 3,
+                "effort_values": {"extended": 2},
+            },
         )
         session = SimpleNamespace(
             models=(model,), language="en", token="test", session_id="session"
@@ -160,6 +175,7 @@ class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
         )
         selector = json.loads(headers["x-goog-ext-525001261-jspb"])
         self.assertEqual(selector[11], 2)
+        self.assertEqual(selector[7], 1)
         with self.assertRaises(ValueError):
             generation_request(
                 session,
@@ -167,6 +183,79 @@ class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
                 [],
                 [],
             )
+
+    async def test_model_policy_controls_available_efforts_defaults_and_wire_values(self):
+        row = [None] * 18
+        row[0], row[1], row[11], row[17] = "remote", "flash", "Flash", 1
+        legacy = [None] * 18
+        legacy[15], legacy[16], legacy[17] = [row], [], []
+        options = [
+            {"thinkingLevel": "THINKING_LEVEL_STANDARD", "title": "Fast"},
+            {"thinkingLevel": "THINKING_LEVEL_MEDIUM", "title": "Balanced"},
+            {"thinkingLevel": "THINKING_LEVEL_EXTENDED", "title": "Thorough", "isDisabled": True},
+        ]
+        policy = {
+            "modeConfig": {"id": "", "modeCategory": "FAST", "title": "Provider model"},
+            "hosts": ["MODE_PICKER_HOST_CHAT"],
+            "implicitThinkingLevel": "THINKING_LEVEL_MEDIUM",
+            "thinkingLevelConfigs": options,
+        }
+        status = {
+            "bardModeConfigs": [{"id": "remote", "modeCategory": "FAST"}],
+            "geminiModePolicy": {"configs": [policy]},
+        }
+        session = GeminiSession(Path("unused"))
+        session.rpc_path_prefix = "/_/BardChatUi/"
+        session.http = SimpleNamespace(
+            get=AsyncMock(
+                return_value=SimpleNamespace(
+                    status_code=200,
+                    text=json.dumps([{"data": {"viewer": {"rpcs": {"getUserStatus": status}}}}]),
+                )
+            )
+        )
+        session.batch = AsyncMock(
+            return_value=SimpleNamespace(
+                text=json.dumps([["wrb.fr", "otAQ7b", json.dumps(legacy)]]) + "\n",
+            )
+        )
+        session.models = await session.discover_models()
+        (model,) = session.models
+        self.assertEqual(
+            [(e.id, e.title) for e in model.efforts], [("standard", "Fast"), ("medium", "Balanced")]
+        )
+        self.assertEqual(model.default_effort, "medium")
+        self.assertEqual(model.title, "Provider model")
+        session.token, session.session_id = "token", "session"
+        request = SendRequest("gemini", "default", "local", "hello", model=model.id)
+        headers, data = generation_request(session, request, [], [])
+        self.assertEqual(json.loads(json.loads(data["f.req"])[1])[80], 4)
+        self.assertEqual(json.loads(headers["x-goog-ext-525001261-jspb"])[-2], 4)
+        self.assertEqual(json.loads(headers["x-goog-ext-525001261-jspb"])[7], 0)
+        from dataclasses import replace
+
+        with self.assertRaisesRegex(ValueError, "Efor"):
+            generation_request(session, replace(request, effort="extended"), [], [])
+
+        # A refreshed server policy changes the choices without local model-name tables.
+        options[1]["isDisabled"] = True
+        policy["implicitThinkingLevel"] = "THINKING_LEVEL_STANDARD"
+        session.http.get.return_value.text = json.dumps(
+            [
+                {"data": {"viewer": {"rpcs": {"getUserStatus": status}}}},
+            ]
+        )
+        (refreshed,) = await session.discover_models()
+        self.assertEqual(refreshed.efforts, (Choice("standard", "Fast"),))
+        self.assertEqual(refreshed.default_effort, "standard")
+        policy["modeConfig"]["isDisabled"] = True
+        session.http.get.return_value.text = json.dumps(
+            [
+                {"data": {"viewer": {"rpcs": {"getUserStatus": status}}}},
+            ]
+        )
+        with self.assertRaisesRegex(ProviderError, "kullanılabilir model"):
+            await session.discover_models()
 
     async def test_uploads_use_local_paths_serially_and_close_mime(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -283,18 +372,27 @@ class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
 
 class StreamTests(unittest.IsolatedAsyncioTestCase):
     def session(self, response):
-        from contextlib import asynccontextmanager
-
-        @asynccontextmanager
-        async def stream(*args, **kwargs):
-            try:
-                yield response
-            finally:
-                response.closed = True
+        if response is not None:
+            response.astream_task = asyncio.create_task(asyncio.Event().wait())
+            response.astream_task.add_done_callback(lambda _: setattr(response, "closed", True))
 
         return SimpleNamespace(
-            http=SimpleNamespace(stream=stream),
-            models=(),
+            http=SimpleNamespace(request=AsyncMock(return_value=response)),
+            models=(
+                Model(
+                    "flash",
+                    "Flash",
+                    (Choice("standard", "Low"),),
+                    "standard",
+                    {
+                        "model_id": "remote",
+                        "capacity": 2,
+                        "capacity_slot": 12,
+                        "number": 1,
+                        "effort_values": {"standard": 1},
+                    },
+                ),
+            ),
             language="en",
             token="test",
             session_id="test",
@@ -319,7 +417,13 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
         activity[7] = [["favicon", "https://example.com", "Example"]]
         candidate[37] = [["thought"], [activity]]
         body = [None, ["c_new", "rid"], None, None, [candidate]]
-        wire = (json.dumps([["wrb.fr", None, json.dumps(body)]]) + "\n").encode()
+        acknowledged = [None, ["c_new", "rid"]]
+        wire = (
+            json.dumps([["wrb.fr", None, json.dumps(acknowledged)]])
+            + "\n"
+            + json.dumps([["wrb.fr", None, json.dumps(body)]])
+            + "\n"
+        ).encode()
         response = self.response([wire[:20], wire[20:]])
         session = self.session(response)
         result = [
@@ -327,12 +431,71 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
             async for c in generate(session, SendRequest("gemini", "test", "local", "question"), [])
         ]
         self.assertEqual(
-            (result[0]["cid"], result[0]["text"], result[0]["thoughts"]),
+            (result[1]["cid"], result[1]["text"], result[1]["thoughts"]),
             ("c_new", "answer", "thought\nSearching the web"),
         )
-        self.assertEqual(result[0]["sources"], ({"title": "Example", "url": "https://example.com"},))
+        self.assertEqual(
+            result[1]["sources"], ({"title": "Example", "url": "https://example.com"},)
+        )
+        self.assertTrue(result[0]["context_only"])
+        self.assertEqual(result[0]["cid"], "c_new")
         self.assertTrue(response.closed)
         session.persist.assert_awaited_once()
+
+    async def test_cancellation_aborts_an_actual_stalled_http_transfer(self):
+        from curl_cffi.requests import AsyncSession
+
+        from providers.gemini.transport import generate
+
+        accepted = asyncio.Event()
+        requests = []
+
+        async def serve(reader, writer):
+            try:
+                requests.append(await reader.readuntil(b"\r\n\r\n"))
+                if requests[-1].startswith(b"GET "):
+                    writer.write(
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK"
+                    )
+                    await writer.drain()
+                    return
+                length = next(
+                    int(line.split(b":", 1)[1])
+                    for line in requests[-1].splitlines()
+                    if line.lower().startswith(b"content-length:")
+                )
+                await reader.readexactly(length)
+                writer.write(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n3\r\n[]\n\r\n")
+                await writer.drain()
+                accepted.set()
+                await reader.read()
+            finally:
+                writer.close()
+                await writer.wait_closed()
+
+        server = await asyncio.start_server(serve, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        session = self.session(None)
+        session.http = AsyncSession(trust_env=False)
+        try:
+            with patch("providers.gemini.transport.BASE", f"http://127.0.0.1:{port}/"):
+                stream = generate(session, SendRequest("gemini", "test", "local", "question"), [])
+                pending = asyncio.create_task(anext(stream))
+                await asyncio.wait_for(accepted.wait(), 2)
+                pending.cancel()
+                done, _ = await asyncio.wait({pending}, timeout=2)
+                self.assertIn(pending, done, "Cancellation must release a stalled transfer")
+                with self.assertRaises(asyncio.CancelledError):
+                    await pending
+                # The pool may retain idle sockets, but cancellation must free
+                # the transfer and allow a separate request to finish normally.
+                result = await session.http.get(f"http://127.0.0.1:{port}/health", timeout=2)
+                self.assertEqual(result.text, "OK")
+                self.assertEqual(sum(r.startswith(b"POST ") for r in requests), 1)
+        finally:
+            await session.http.close()
+            server.close()
+            await server.wait_closed()
 
     async def test_incomplete_stream_is_not_success_or_retried(self):
         from providers.gemini.transport import generate

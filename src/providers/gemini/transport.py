@@ -1,5 +1,6 @@
 """Bounded Gemini generation protocol and streaming disk uploads."""
 
+import asyncio
 import codecs
 import json
 import mimetypes
@@ -72,12 +73,17 @@ async def upload_files(session, paths):
 
 
 def generation_request(session, request, metadata, files, notebook=None):
-    selected = next(
-        (m for m in session.models if request.model in (m.id, m.metadata["model_id"])), None
+    selected = (
+        next((m for m in session.models if request.model in (m.id, m.metadata["model_id"])), None)
+        if request.model
+        else next(iter(session.models), None)
     )
-    if request.model and selected is None:
+    if selected is None:
         raise ValueError("Model bu Gemini hesabında kullanılamıyor")
-    extended = request.effort == "extended"
+    effort = request.effort or selected.default_effort
+    if effort is not None and effort not in {choice.id for choice in selected.efforts}:
+        raise ValueError("Efor bu Gemini modelinde kullanılamıyor")
+    thinking = selected.metadata["effort_values"].get(effort)
     body = [None] * 81
     body[0], body[1], body[2] = (
         [request.prompt, 0, None, files or None, None, None, 0],
@@ -98,7 +104,7 @@ def generation_request(session, request, metadata, files, notebook=None):
         61: [],
         68: 1,
         79: 1,
-        80: 2 if extended else 1,
+        80: thinking,
     }.items():
         body[index] = value
     if request.action is not None:
@@ -116,21 +122,30 @@ def generation_request(session, request, metadata, files, notebook=None):
     identifier = str(uuid.uuid4()).upper()
     body[59] = identifier
     headers = {**HEADERS, "x-goog-ext-525005358-jspb": json.dumps([identifier, 1])}
-    if selected:
-        info = selected.metadata
-        selector = [1, None, None, None, info["model_id"], None, None, 0, [4, 5, 6, 8], None, None]
-        selector.extend([None] * (info["capacity_slot"] - 1 - len(selector)))
-        selector.extend(
-            [info["capacity"], None, None, info["number"], 2 if extended else 1, session.session_id]
-        )
-        headers.update(
-            {
-                "x-goog-ext-525001261-jspb": json.dumps(selector),
-                "x-goog-ext-73010989-jspb": "[0]",
-                "x-goog-ext-73010990-jspb": "[0,0,0]",
-            }
-        )
-        body[79] = info["number"]
+    info = selected.metadata
+    selector = [
+        1,
+        None,
+        None,
+        None,
+        info["model_id"],
+        None,
+        None,
+        int(request.temporary),
+        [4, 5, 6, 8],
+        None,
+        None,
+    ]
+    selector.extend([None] * (info["capacity_slot"] - 1 - len(selector)))
+    selector.extend([info["capacity"], None, None, info["number"], thinking, session.session_id])
+    headers.update(
+        {
+            "x-goog-ext-525001261-jspb": json.dumps(selector),
+            "x-goog-ext-73010989-jspb": "[0]",
+            "x-goog-ext-73010990-jspb": "[0,0,0]",
+        }
+    )
+    body[79] = info["number"]
     return headers, {"at": session.token, "f.req": json.dumps([None, json.dumps(body)])}
 
 
@@ -149,7 +164,7 @@ async def generate(
     completed = False
     last_text = last_thoughts = ""
     try:
-        async with session.http.stream(
+        response = await session.http.request(
             "POST",
             BASE + "assistant.lamda.BardFrontendService/StreamGenerate",
             params=session.params(),
@@ -157,7 +172,9 @@ async def generate(
             data=data,
             allow_redirects=False,
             timeout=request_timeout,
-        ) as response:
+            stream=True,
+        )
+        try:
             WebSession.check(response)
 
             async def parts():
@@ -182,6 +199,12 @@ async def generate(
                 returned = nested(body, 1)
                 if isinstance(returned, list) and returned:
                     metadata = returned
+                    if nested(metadata, 0) and not nested(body, 4):
+                        yield {
+                            "cid": metadata[0],
+                            "metadata": metadata,
+                            "context_only": True,
+                        }
                 context = nested(body, 25)
                 if isinstance(context, str):
                     completed = True
@@ -219,6 +242,11 @@ async def generate(
                         "metadata": metadata,
                         "context_only": True,
                     }
+        finally:
+            # curl_cffi's aclose waits for the transfer; cancel it first so a
+            # stalled connection cannot hold the provider gate after cancellation.
+            response.astream_task.cancel()
+            await asyncio.gather(response.astream_task, return_exceptions=True)
     except RequestException as error:
         if error.code != CurlECode.OPERATION_TIMEDOUT:
             raise

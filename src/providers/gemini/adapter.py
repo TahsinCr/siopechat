@@ -198,8 +198,11 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
     async def models(self, *, force: bool = False):
         async with self._model_gate:
             client = await self._connect()
-            if force or not client.models or self._catalog_at is None or (
-                time.monotonic() - self._catalog_at >= 300
+            if (
+                force
+                or not client.models
+                or self._catalog_at is None
+                or (time.monotonic() - self._catalog_at >= 300)
             ):
                 client.models = await client.discover_models()
                 self._catalog_at = time.monotonic()
@@ -365,8 +368,6 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
         from .notebooks import notebook_id
 
         project = notebook_id(request.project_id) if request.project_id else None
-        if request.effort not in (None, "", "standard", "extended"):
-            raise ValueError("unsupported Gemini thinking option")
         from .media import resolve_image_links
         from .notebooks import field
         from .transport import generate
