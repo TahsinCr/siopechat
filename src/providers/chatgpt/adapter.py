@@ -652,7 +652,7 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
 
         def work():
             try:
-                with self._factory(self.session) as client:
+                with self._client_scope() as client:
                     client.temporary_conversations = self._temporary_conversations
                     holder.append(client)
                     if stopped.is_set():
@@ -768,18 +768,22 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
 
         async with self._gate:
             worker = asyncio.create_task(asyncio.to_thread(work))
+            stream_finished = False
             try:
                 while True:
                     kind, value = await queue.get()
                     if kind == "done":
+                        stream_finished = True
                         break
                     if kind == "error":
                         raise value
                     yield value
             finally:
                 stopped.set()
-                if holder:
+                if holder and (not self._persistent_client or not stream_finished):
                     # Closing local transport cannot guarantee remote generation stops.
                     await asyncio.to_thread(holder[0].close)
                 # Keep the account gate until the worker exits; do not overlap an ambiguous send.
                 await asyncio.shield(worker)
+                if self._persistent_client and not stream_finished:
+                    await self._discard_http_client()

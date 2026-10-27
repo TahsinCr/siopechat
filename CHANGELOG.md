@@ -15,6 +15,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Changed
 
+- Reuse ChatGPT's prepared HTTP client for sends; discard the pool after canceled or failed streams while preserving interruption behavior.
 - Make the sidebar divider width explicit, add a magnifier action for the existing chat-search popup, and allow mouse focus in the inline sidebar filter.
 - Center the empty-chat prompt and show one localized instruction instead of repeating the SiopeChat brand in the transcript.
 - Translate the remaining English Turkish UI strings, including conversation loading, command-palette descriptions, and workspace actions.
