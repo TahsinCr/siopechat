@@ -26,6 +26,8 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 - Traverse bounded nested citation and annotation lists in shared provider metadata, including wrapped URL citations, without inspecting answer text or retaining arbitrary provider payloads.
 - Preserve confirmed response settings and resource metadata when a provider refresh omits them, rebuild source sections without duplicates, and refresh saved Gemini image references when downloading.
 - Hide unknown provider model identifiers from reply toolbars; show only names resolved by the active account's model catalog.
+- Keep a per-tab archive refresh pending when provider history finishes during an active response, then apply the refreshed SQL window after the response instead of losing the update behind the global archive revision.
+- Reset conversation-specific history cursors, versions, pending reads, and scroll anchors when reusing a tab for another chat.
 
 ## [1.4.2-beta] - 2026-10-26
 

@@ -129,7 +129,7 @@ def prepare_transcript(
 def prepare_archive_snapshot(
     archive, accounts, tabs, known_chats, known_projects, default_account, revision
 ):
-    values, deleted = {}, set()
+    values, deleted, deferred_tabs = {}, set(), set()
     states = archive.states()
     state_map = {(x["account"], x["kind"], x["remote"]): x for x in states}
     for account in accounts:
@@ -152,11 +152,20 @@ def prepare_archive_snapshot(
         key, remote = origin(cid, record.get("account_key", default_account))
         identities.append((cid, "conversation"))
         state = state_map.get((key, "conversation", remote))
+        refresh_pending = record.get("archive_refresh_pending") is not None
+        if record.get("busy"):
+            if state and state["state"] == "ready" and (
+                state.get("version") != record.get("archive_version") or refresh_pending
+            ):
+                deferred_tabs.add(id(tab))
+            continue
         if (
-            record.get("busy")
-            or not state
+            not state
             or state["state"] != "ready"
-            or state.get("version") == record.get("archive_version")
+            or (
+                state.get("version") == record.get("archive_version")
+                and not refresh_pending
+            )
         ):
             continue
         window = record.get("history_window") or {}
@@ -178,6 +187,7 @@ def prepare_archive_snapshot(
     return SimpleNamespace(
         revision=revision,
         tab_windows={id(tab): record.get("history_window") for tab, record in tabs},
+        deferred_tabs=deferred_tabs,
         get=lambda *key: values.get(key),
         deleted=lambda *key: key in deleted,
         states=lambda: states,

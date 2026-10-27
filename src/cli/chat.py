@@ -626,12 +626,47 @@ class ChatView:
         source = self.archive_service()
         archive = snapshot or source
         revision = (id(source), archive.revision) if archive is not None else None
-        if archive is None or revision == self._archive_revision:
+        if archive is None:
+            return
+        pending_tabs = [
+            tab
+            for tab in self.tabs
+            if tab.get("archive_refresh_pending") is not None
+            and not tab.get("busy")
+            and tab.get("conversation_id")
+        ]
+        if revision == self._archive_revision and not pending_tabs:
+            return
+        state_rows = self.sync_states(archive)
+        states = {(x["account"], x["kind"], x["remote"]): x for x in state_rows}
+        pending_refresh = False
+        for tab in pending_tabs:
+            key, remote = origin(
+                tab["conversation_id"], tab.get("account_key", self.account_key)
+            )
+            state = states.get((key, "conversation", remote))
+            if state and state["state"] == "ready":
+                pending_refresh = True
+                break
+        if revision == self._archive_revision and not pending_refresh:
             return
         if snapshot is None and self.app.is_running:
             if getattr(self, "_archive_read_pending", False):
                 return
             self._archive_read_pending = True
+            for tab in self.tabs:
+                if not tab.get("conversation_id") or not tab.get("busy"):
+                    continue
+                key, remote = origin(
+                    tab["conversation_id"], tab.get("account_key", self.account_key)
+                )
+                state = states.get((key, "conversation", remote))
+                if (
+                    state
+                    and state["state"] == "ready"
+                    and tab.get("archive_version") != state.get("version")
+                ):
+                    tab["archive_refresh_pending"] = state["version"]
             accounts = self.account_service.active_accounts()
             tabs = [
                 (
@@ -643,6 +678,7 @@ class ChatView:
                             "account_key",
                             "busy",
                             "archive_version",
+                            "archive_refresh_pending",
                             "history_window",
                         )
                     },
@@ -716,7 +752,6 @@ class ChatView:
             if archive.deleted(key, "container", remote):
                 self.project_items.pop(pid, None)
         self.sidebar_items = list(chats.values())
-        states = {(x["account"], x["kind"], x["remote"]): x for x in self.sync_states(archive)}
         for i, tab in enumerate(self.tabs):
             if not tab.get("conversation_id"):
                 continue
@@ -724,23 +759,40 @@ class ChatView:
             if archive.deleted(key, "conversation", remote):
                 tab["syncing"] = False
                 tab["load_error"] = self.tr("Sağlayıcıdan silinmiş sohbet")
+                tab.pop("archive_refresh_pending", None)
                 if i == self.active_tab:
                     self.status = self.tr("Bu sohbet sağlayıcıdan silinmiş · yeni sohbet açın")
                 continue
             state = states.get((key, "conversation", remote))
             tab["syncing"] = bool(state and state["state"] == "syncing")
             if tab.get("busy"):
+                if (
+                    state
+                    and state["state"] == "ready"
+                    and tab.get("archive_version") != state.get("version")
+                ):
+                    # The archive revision is global. Remember this tab's update
+                    # so a concurrent response cannot consume it permanently.
+                    tab["archive_refresh_pending"] = state["version"]
                 continue
             if (
                 not state
                 or state["state"] != "ready"
-                or tab.get("archive_version") == state.get("version")
+                or (
+                    tab.get("archive_version") == state.get("version")
+                    and tab.get("archive_refresh_pending") is None
+                )
             ):
+                if state and state.get("state") == "error":
+                    tab.pop("archive_refresh_pending", None)
                 continue
             if snapshot is not None and snapshot.tab_windows.get(id(tab)) is not tab.get(
                 "history_window"
             ):
                 self._archive_revision = -1
+                continue
+            if snapshot is not None and id(tab) in snapshot.deferred_tabs:
+                tab["archive_refresh_pending"] = state["version"]
                 continue
             window = tab.get("history_window") or {}
             has_window = window.get("end", 0) > window.get("start", 0)
@@ -757,8 +809,11 @@ class ChatView:
                 )
             )
             if not value:
+                tab["archive_version"] = state["version"]
+                tab.pop("archive_refresh_pending", None)
                 continue
             tab["archive_version"] = state["version"]
+            tab.pop("archive_refresh_pending", None)
             from .paging import visible_window
 
             messages = visible_window(value, tab.get("messages", ()))
@@ -5404,6 +5459,16 @@ class ChatView:
             if self.active_busy():
                 return
         target_tab = self.tabs[self.active_tab]
+        for key in (
+            "archive_version",
+            "archive_refresh_pending",
+            "history_window",
+            "history_version",
+            "history_read",
+            "history_pending_edge",
+            "history_anchor",
+        ):
+            target_tab.pop(key, None)
         if self.account_service:
             key, remote = origin(conversation_id, self.account_key)
             if key != self.account_key:
@@ -5435,8 +5500,6 @@ class ChatView:
             self._virtual_signature = None
             self._virtual_pending_signature = None
             self._transcript_prefetch.clear()
-        target_tab.pop("history_window", None)
-        target_tab.pop("history_read", None)
         token = uuid.uuid4().hex
         self.loading_conversation = True
         self.loading_started = time.monotonic()
