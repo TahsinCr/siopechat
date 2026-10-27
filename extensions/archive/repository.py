@@ -88,6 +88,7 @@ def _strip_archive_blob_refs(value):
 class Repository(Protocol):
     def get(self, account, kind, remote): ...
     def put(self, account, kind, remote, value): ...
+    def rename_conversation(self, account, remote, title): ...
     def state(self, account, kind, remote, state, error=None): ...
     def conversations(self, account, limit=50, offset=0): ...
     def containers(self, account, limit=50, offset=0): ...
@@ -346,6 +347,13 @@ class SQLiteRepository:
                 (account, kind, remote),
             ).fetchone()
             value = json.loads(row[0]) if row else None
+            if value and kind == "conversation":
+                title = db.execute(
+                    "SELECT title FROM conversations WHERE account=? AND remote=?",
+                    (account, remote),
+                ).fetchone()
+                if title and title[0] is not None:
+                    value["title"] = title[0]
             if value and value.pop("_archive_sql_metadata", False):
                 metadata = db.execute(
                     "SELECT payload FROM conversation_metadata WHERE account=? AND remote=?",
@@ -368,23 +376,49 @@ class SQLiteRepository:
             value = {
                 k: v for k, v in value.items() if k not in ("history_window", "history_version")
             }
-            digest = _digest_json(value)
-            header = {k: v for k, v in value.items() if k not in ("messages", "metadata")}
-            if "messages" in value:
-                header["_archive_sql_messages"] = True
-            if "metadata" in value:
-                header["_archive_sql_metadata"] = True
-            payload = encode(header)
-        else:
-            payload = encode(value)
-            digest = hashlib.sha256(payload.encode()).hexdigest()
         now = time.time()
         with self._connect() as db:
+            conversations = (
+                [value]
+                if kind == "conversation"
+                else value.get("items", [])
+                if kind in ("chats", "container_chats")
+                else []
+            )
+            title_overrides = {}
+            cleared_title_overrides = False
+            for item in conversations:
+                item_id = self._remote(account, item.get("remote_id") or item.get("id") or remote)
+                row = db.execute(
+                    "SELECT metadata FROM conversations WHERE account=? AND remote=?",
+                    (account, item_id),
+                ).fetchone()
+                metadata = json.loads(row[0]) if row else {}
+                override = metadata.get("_local_title_override")
+                if not override:
+                    continue
+                if item.get("title") != override:
+                    item["title"] = override
+                    title_overrides[item_id] = override
+                else:
+                    cleared_title_overrides = True
+
+            if kind == "conversation":
+                digest = _digest_json(value)
+                header = {k: v for k, v in value.items() if k not in ("messages", "metadata")}
+                if "messages" in value:
+                    header["_archive_sql_messages"] = True
+                if "metadata" in value:
+                    header["_archive_sql_metadata"] = True
+                payload = encode(header)
+            else:
+                payload = encode(value)
+                digest = hashlib.sha256(payload.encode()).hexdigest()
             prior = db.execute(
                 "SELECT digest FROM records WHERE account=? AND kind=? AND remote=?",
                 (account, kind, remote),
             ).fetchone()
-            if prior and prior[0] == digest:
+            if prior and prior[0] == digest and not cleared_title_overrides:
                 db.execute(
                     "UPDATE records SET checked=? WHERE account=? AND kind=? AND remote=?",
                     (now, account, kind, remote),
@@ -397,18 +431,14 @@ class SQLiteRepository:
                 checked=excluded.checked""",
                 (account, kind, remote, account.split("/")[0], payload, digest, now, now),
             )
-            conversations = (
-                [value]
-                if kind == "conversation"
-                else value.get("items", [])
-                if kind in ("chats", "container_chats")
-                else []
-            )
             for item in conversations:
-                item_id = item.get("remote_id") or item.get("id") or remote
-                prefix = "@" + account + "/"
-                if item_id.startswith(prefix):
-                    item_id = unquote(item_id[len(prefix) :])
+                item_id = self._remote(account, item.get("remote_id") or item.get("id") or remote)
+                metadata = conversation_header(item) if kind == "conversation" else item
+                metadata = dict(metadata)
+                if override := title_overrides.get(item_id):
+                    metadata["_local_title_override"] = override
+                else:
+                    metadata.pop("_local_title_override", None)
                 db.execute(
                     "INSERT OR REPLACE INTO conversations VALUES(?,?,?,?,?,?)",
                     (
@@ -417,7 +447,7 @@ class SQLiteRepository:
                         item.get("title"),
                         item.get("project_id"),
                         item.get("model"),
-                        encode(conversation_header(item) if kind == "conversation" else item),
+                        encode(metadata),
                     ),
                 )
             if kind == "containers":
@@ -475,6 +505,50 @@ class SQLiteRepository:
             if kind in ("conversation", "container"):
                 self._write_resources(db, account, kind, remote, value)
         return True
+
+    def rename_conversation(self, account, remote, title):
+        """Persist a provider-confirmed title across cached conversation listings."""
+        title = title.strip()
+        now = time.time()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            rows = db.execute(
+                "SELECT kind,remote,payload FROM records "
+                "WHERE account=? AND kind IN ('chats','container_chats')",
+                (account,),
+            ).fetchall()
+            for kind, record_remote, payload in rows:
+                value = json.loads(payload)
+                changed = False
+                if kind in ("chats", "container_chats"):
+                    for item in value.get("items", ()):
+                        item_remote = item.get("remote_id") or item.get("id")
+                        if item_remote and self._remote(account, item_remote) == remote:
+                            if item.get("title") != title:
+                                item["title"] = title
+                                changed = True
+                if changed:
+                    encoded = encode(value)
+                    digest = hashlib.sha256(encoded.encode()).hexdigest()
+                    db.execute(
+                        "UPDATE records SET payload=?,digest=?,changed=?,checked=? "
+                        "WHERE account=? AND kind=? AND remote=?",
+                        (encoded, digest, now, now, account, kind, record_remote),
+                    )
+
+            row = db.execute(
+                "SELECT metadata FROM conversations WHERE account=? AND remote=?",
+                (account, remote),
+            ).fetchone()
+            metadata = json.loads(row[0]) if row else {"id": remote}
+            metadata["title"] = title
+            metadata["_local_title_override"] = title
+            db.execute(
+                "INSERT INTO conversations(account,remote,title,container,model,metadata) "
+                "VALUES(?,?,?,NULL,NULL,?) ON CONFLICT(account,remote) DO UPDATE SET "
+                "title=excluded.title,metadata=excluded.metadata",
+                (account, remote, title, encode(metadata)),
+            )
 
     @staticmethod
     def _write_messages(db, account, remote, messages, *, start=0):

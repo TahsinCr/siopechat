@@ -54,6 +54,41 @@ class Archive:
     def conversations(self, account, **page):
         return self.repository.conversations(account, **page)
 
+    def rename_conversation(self, account, remote, title):
+        """Keep provider-confirmed names coherent across SQL and hot listing pages."""
+        with self._write_lock:
+            self.repository.rename_conversation(account, remote, title)
+            with self._lock:
+                prefix = "@" + account + "/"
+                for key, (snapshot, old_size) in tuple(self._hot.items()):
+                    if key[0] != account or key[1] not in ("chats", "container_chats"):
+                        continue
+                    value = json.loads(snapshot)
+                    changed = False
+                    for item in value.get("items", ()):
+                        item_remote = item.get("remote_id") or item.get("id")
+                        if (
+                            isinstance(item_remote, str)
+                            and unquote(item_remote.removeprefix(prefix)) == remote
+                        ):
+                            item["title"] = title
+                            changed = True
+                    if changed:
+                        encoded = encode(value).encode()
+                        self._size += len(encoded) - old_size
+                        if len(encoded) <= self.memory_bytes:
+                            self._hot[key] = (encoded, len(encoded))
+                        else:
+                            self._hot.pop(key)
+                            self._size -= len(encoded)
+                        while self._size > self.memory_bytes and self._hot:
+                            _, (_, removed_size) = self._hot.popitem(last=False)
+                            self._size -= removed_size
+                for key in tuple(self._pending):
+                    if key[0] == account and key[1] in ("chats", "container_chats"):
+                        self._versions[key] = self._versions.get(key, 0) + 1
+                self.revision += 1
+
     def mark_pending_branch(self, account, remote):
         self.repository.mark_pending_branch(account, remote)
 

@@ -225,7 +225,7 @@ class Forms:
             if url:
                 add_lines(url, "class:source.list.url", activate)
             if title_text:
-                add_lines(title_text, "class:source.list.title")
+                add_lines(title_text, "class:source.list.title", activate if url else None)
             if description:
                 add_lines(description, "class:source.list.description")
             if not line_count:

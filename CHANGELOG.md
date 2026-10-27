@@ -40,6 +40,9 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Fixed
 
+- Read source citations from both archived provider metadata and prepared transcript rows; source titles and URLs open the validated citation URL directly instead of entering the file-download flow.
+- Removed deleted conversations from open tabs, selected the preceding tab when the active chat was deleted, and released its transcript/render state without replacing it with a visible new-chat tab.
+- Kept renamed conversation titles canonical in SQLite and cached listing pages; stale provider responses retain the confirmed title until the provider reports it, after which later provider renames are accepted.
 - Passed declared provider capabilities through the lazy sidebar row renderer, so supported rename/delete actions render at the far right instead of disappearing; unsupported provider actions remain hidden.
 - Kept empty cached conversations in a loading state until the background provider read and its current archive snapshot finish; stale snapshots that race a provider write are discarded instead of briefly hiding messages.
 - Preserved bounded source snippets/descriptions in the shared citation metadata so the Sources popup can display them below each URL.

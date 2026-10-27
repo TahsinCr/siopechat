@@ -1093,21 +1093,13 @@ class ChatView:
                     self._project_chat_refreshes.pop(item, None)
                     for projects in self._account_projects.values():
                         projects.pop(item, None)
-                # Keep tabs and drafts, but never allow a deleted remote ID to be reused.
+                self.remove_deleted_conversation_tabs(removed)
+                # Project deletion can leave surviving chats open but unassigned.
                 for tab in self.tabs:
-                    if (
-                        tab.get("conversation_id") in removed
-                        or tab.get("project", {}).get("id") in removed
-                    ):
-                        tab.update(
-                            kind="chat",
-                            conversation_id=None,
-                            messages=[],
-                            project={},
-                            title=self.tr("Yeni sohbet"),
-                            syncing=False,
-                        )
+                    if tab.get("project", {}).get("id") in removed:
+                        tab.update(project={}, syncing=False)
                 self._restore_active_tab(focus=False)
+                self._persist_session()
                 self.filter_sidebar()
                 self.status = self.tr("Sağlayıcıdan silindi")
                 self.app.invalidate()
@@ -3420,6 +3412,26 @@ class ChatView:
             self.status = self.tr("Wait for the current load before creating a tab")
             self.app.invalidate()
             return
+        if self.tabs[self.active_tab].get("empty_workspace"):
+            self.tabs[self.active_tab].update(
+                conversation_id=None,
+                title=self.tr("New conversation"),
+                messages=[],
+                project={},
+                temporary=False,
+                busy=False,
+                completed_pending=False,
+                loading=False,
+                syncing=False,
+                draft="",
+                scroll=0,
+                empty_workspace=False,
+            )
+            self._restore_active_tab()
+            self.restore_account_preference()
+            self._save_active_tab()
+            self._persist_session()
+            return
         self._save_active_tab()
         self.tabs.append(
             {
@@ -3553,8 +3565,17 @@ class ChatView:
             self.status = self.tr("Ekler gönderilirken kaynak sekme kapatılamaz")
             self.app.invalidate()
             return
-        self._save_active_tab()
-        closing = self.tabs[self.active_tab]
+        self._remove_tab_at(self.active_tab)
+
+    def _remove_tab_at(
+        self, index, *, empty_workspace=False, save_active=True, restore=True, persist=True
+    ):
+        if not 0 <= index < len(self.tabs):
+            return False
+        if save_active:
+            self._save_active_tab()
+        old_active = self.active_tab
+        closing = self.tabs[index]
         closing_id = closing.get("tab_id")
         discarded = [
             item for item in self.pending_attachments if item.get("source_tab_id") == closing_id
@@ -3565,7 +3586,7 @@ class ChatView:
             ]
             self._release_staged_attachments(discarded)
         self._discard_tab_render_cache(closing)
-        if closing.get("busy"):
+        if closing.get("busy") and not empty_workspace:
             self.background_tabs.append(closing)
         if (
             not closing.get("busy")
@@ -3580,24 +3601,76 @@ class ChatView:
                 lambda _: None,
                 session_bound=False,
             )
-        if len(self.tabs) == 1:
-            self.tabs[0] = {
+        self.tabs.pop(index)
+        if not self.tabs:
+            self.tabs.append({
+                "tab_id": uuid.uuid4().hex,
+                "account_key": self.account_key,
+                "catalog": self.catalog,
+                "effort_preference": self.effort_preference,
                 "conversation_id": None,
-                "title": self.tr("New conversation"),
+                "title": "" if empty_workspace else self.tr("New conversation"),
                 "messages": [],
                 "model": self.model,
                 "effort": self.effort,
                 "project": {},
                 "busy": False,
                 "completed_pending": False,
-            }
+                "empty_workspace": empty_workspace,
+            })
             self.active_tab = 0
+        elif index < old_active:
+            self.active_tab = old_active - 1
+        elif index == old_active:
+            self.active_tab = max(0, index - 1)
         else:
-            self.tabs.pop(self.active_tab)
-            self.active_tab = min(self.active_tab, len(self.tabs) - 1)
+            self.active_tab = old_active
         if self.layout_controller:
             self.layout_controller.reconcile_groups()
-        self._restore_active_tab()
+        if restore:
+            self._restore_active_tab(focus=False)
+        if persist:
+            self._persist_session()
+        return True
+
+    def remove_deleted_conversation_tabs(self, conversation_ids):
+        removed = set(conversation_ids)
+        indexes = [
+            index
+            for index, tab in enumerate(self.tabs)
+            if tab.get("conversation_id") in removed
+        ]
+        if not indexes:
+            return
+
+        self._save_active_tab()
+        active = self.tabs[self.active_tab]
+        active_id = active.get("tab_id")
+        active_deleted = active.get("conversation_id") in removed
+        previous_id = (
+            self.tabs[self.active_tab - 1].get("tab_id")
+            if self.active_tab > 0
+            else self.tabs[1].get("tab_id")
+            if len(self.tabs) > 1
+            else None
+        )
+        for index in reversed(indexes):
+            self._remove_tab_at(
+                index,
+                empty_workspace=True,
+                save_active=False,
+                restore=False,
+                persist=False,
+            )
+
+        target_id = previous_id if active_deleted else active_id
+        target_index = next(
+            (i for i, tab in enumerate(self.tabs) if tab.get("tab_id") == target_id), None
+        )
+        if target_index is None:
+            target_index = min(max(0, self.active_tab), len(self.tabs) - 1)
+        self.active_tab = target_index
+        self._restore_active_tab(focus=False)
         self._persist_session()
 
     def close_all_tabs(self) -> None:
@@ -4645,6 +4718,7 @@ class ChatView:
             return
         if not prompt and not attachments:
             return
+        self.tabs[self.active_tab]["empty_workspace"] = False
         if self.tab_kind == "project":
             source_tab = self.tabs[self.active_tab]
             project, key = dict(self.current_project), self.account_key
@@ -5011,6 +5085,7 @@ class ChatView:
                     if self.conversation_id == conversation_id:
                         self.title = title
                         self._save_active_tab()
+                    self._persist_session()
                     self._invalidate_sidebar_rows()
                     self.status = self.tr("Conversation renamed")
                 else:
@@ -5215,8 +5290,12 @@ class ChatView:
     def _show_message_sources(self, message):
         from providers.messages import sources_from
 
-        sources = sources_from(*(message.get("_thinking_sources") or ()))
+        sources = sources_from(
+            message, {"sources": message.get("_thinking_sources") or ()}
+        )
         if not sources:
+            self.status = self.tr("No sources available")
+            self.app.invalidate()
             return
         items = []
         for source in sources:
@@ -5225,11 +5304,15 @@ class ChatView:
             description = source.get("description") or source.get("snippet") or ""
 
             def open_source(source_url=url):
-                if isinstance(source_url, str):
-                    self.open_message_link(source_url)
-                else:
+                if not isinstance(source_url, str) or not source_url:
                     self.status = self.tr("Source link is unavailable")
                     self.app.invalidate()
+                    return
+                from .markdown import open_link
+
+                open_link(source_url)
+                self.status = self.tr("Bağlantı tarayıcıda açıldı")
+                self.app.invalidate()
 
             items.append(
                 {

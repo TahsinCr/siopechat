@@ -379,6 +379,7 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
             service = Mock()
             service.items.return_value = []
             service.active_accounts.return_value = []
+            service.api.providers.get.return_value.capabilities = frozenset()
             view.account_service = service
             view.archive_service = lambda: None
             view.sync_states = lambda _archive: ()

@@ -79,6 +79,61 @@ class ArchiveTests(unittest.TestCase):
         fresh = SQLiteRepository(self.repository.path)
         self.assertEqual(fresh.get("chatgpt/a", "conversation", "one"), value)
 
+    def test_provider_refresh_cannot_revert_a_confirmed_rename(self):
+        account = "chatgpt/a"
+        self.archive.put(
+            account,
+            "chats",
+            "",
+            {"items": [{"id": "@chatgpt/a/chat", "title": "Old title"}]},
+        )
+        self.archive.put(
+            account,
+            "conversation",
+            "chat",
+            {"id": "chat", "title": "Old title", "messages": []},
+        )
+
+        self.archive.rename_conversation(account, "chat", "New title")
+
+        page = self.archive.get(account, "chats", "")
+        self.assertEqual(page["items"][0]["title"], "New title")
+        self.assertEqual(self.archive.get(account, "conversation", "chat")["title"], "New title")
+        self.assertEqual(self.archive.conversations(account)[0]["title"], "New title")
+        reloaded = SQLiteRepository(self.repository.path)
+        self.assertEqual(reloaded.get(account, "chats", "")["items"][0]["title"], "New title")
+
+        self.archive.put(
+            account,
+            "chats",
+            "",
+            {"items": [{"id": "@chatgpt/a/chat", "title": "Old title"}]},
+        )
+        self.archive.put(
+            account,
+            "conversation",
+            "chat",
+            {"id": "chat", "title": "Old title", "messages": []},
+        )
+        self.assertEqual(self.archive.get(account, "chats", "")["items"][0]["title"], "New title")
+        self.assertEqual(self.archive.get(account, "conversation", "chat")["title"], "New title")
+
+        self.archive.put(
+            account,
+            "chats",
+            "",
+            {"items": [{"id": "@chatgpt/a/chat", "title": "New title"}]},
+        )
+        self.archive.put(
+            account,
+            "chats",
+            "",
+            {"items": [{"id": "@chatgpt/a/chat", "title": "External title"}]},
+        )
+        self.assertEqual(
+            self.archive.get(account, "chats", "")["items"][0]["title"], "External title"
+        )
+
     def test_conversation_digest_does_not_materialize_a_second_full_json_record(self):
         value = {
             "title": "Long history",

@@ -733,19 +733,84 @@ class MessageToolbarTests(unittest.TestCase):
                 if style == "class:message.toolbar.action"
             ]
             self.assertEqual(len(labels), 4)
-            self.assertIn("Sources", labels[-1])
+            self.assertIn("↗", labels[-1])
 
+            raw_answer = dict(message)
+            view.tabs[0]["messages"][0] = raw_answer
+            view.messages = view.tabs[0]["messages"]
             view.forms.open = Mock()
-            view.forms.open_link_list = Mock()
-            view.open_message_link = Mock()
-            view.message_toolbar_action(view.tabs[0]["tab_id"], answer, "sources")
+            open_link_list = view.forms.open_link_list
+            captured = {}
 
-            title, items = view.forms.open_link_list.call_args.args
-            self.assertEqual(title, view.tr("Used sources"))
-            self.assertIn("example.com", items[0]["url"])
+            def show_sources(title, items):
+                captured.update(title=title, items=items)
+                open_link_list(title, items)
+
+            view.forms.open_link_list = show_sources
+            view.open_message_link = Mock()
+            view.message_toolbar_action(view.tabs[0]["tab_id"], raw_answer, "sources")
+
+            self.assertTrue(view.forms.visible)
+            self.assertEqual(captured["title"], view.tr("Used sources"))
+            self.assertIn("example.com", captured["items"][0]["url"])
             view.forms.open.assert_not_called()
-            items[0]["callback"]()
-            view.open_message_link.assert_called_once_with("https://example.com/source")
+            with patch("tui.markdown.open_link") as open_link:
+                captured["items"][0]["callback"]()
+            open_link.assert_called_once_with("https://example.com/source")
+            view.open_message_link.assert_not_called()
+
+    def test_deleted_chat_tabs_are_removed_without_creating_a_new_chat(self):
+        with terminal() as (view, _):
+            template = view.tabs[0]
+
+            def tab(chat_id):
+                value = dict(template)
+                value.update(
+                    tab_id=chat_id,
+                    conversation_id=chat_id,
+                    title=chat_id,
+                    messages=[{"id": chat_id, "role": "assistant", "text": chat_id}],
+                    project={},
+                    busy=False,
+                    loading=False,
+                )
+                return value
+
+            view.tabs = [tab("previous"), tab("deleted"), tab("next")]
+            view.active_tab = 1
+            view._restore_active_tab(focus=False)
+            view.remove_deleted_conversation_tabs({"deleted"})
+
+            self.assertEqual(
+                [item["conversation_id"] for item in view.tabs], ["previous", "next"]
+            )
+            self.assertEqual(view.tabs[view.active_tab]["conversation_id"], "previous")
+
+            view.tabs = [tab("left"), tab("inactive-delete"), tab("active")]
+            view.active_tab = 2
+            view._restore_active_tab(focus=False)
+            view.remove_deleted_conversation_tabs({"inactive-delete"})
+            self.assertEqual(view.tabs[view.active_tab]["conversation_id"], "active")
+            self.assertEqual(
+                [item["conversation_id"] for item in view.tabs], ["left", "active"]
+            )
+
+            view.tabs = [tab("last")]
+            view.active_tab = 0
+            view.tabs[0]["busy"] = True
+            view._restore_active_tab(focus=False)
+            view.remove_deleted_conversation_tabs({"last"})
+            self.assertTrue(view.tabs[0]["empty_workspace"])
+            self.assertFalse(view.background_tabs)
+            self.assertIsNone(view.tabs[0]["conversation_id"])
+            self.assertEqual(view.tabs[0]["title"], "")
+            self.assertNotIn(
+                "New conversation", "".join(fragment[1] for fragment in view.render_tabs())
+            )
+
+            view.new_tab()
+            self.assertFalse(view.tabs[0]["empty_workspace"])
+            self.assertEqual(view.tabs[0]["title"], view.tr("New conversation"))
 
     def test_sources_without_a_thinking_message_stay_on_the_answer_toolbar(self):
         from tui.widgets import TranscriptControl

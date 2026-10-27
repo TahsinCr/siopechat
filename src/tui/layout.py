@@ -256,7 +256,7 @@ def render_tab_bar(view):
     prefix = fit_text(" ☰ SiopeChat ", max(0, width - 12))
     fragments = [("class:brand", prefix, on_click(view.toggle_sidebar))]
     available = max(0, width - get_cwidth(prefix) - 12)
-    entries = list(range(len(view.tabs)))
+    entries = [i for i, tab in enumerate(view.tabs) if not tab.get("empty_workspace")]
     group_titles = {}
     if view.layout_controller and view.layout_enabled:
         tab_indices = {tab.get("tab_id"): index for index, tab in enumerate(view.tabs)}
