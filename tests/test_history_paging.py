@@ -3,14 +3,54 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 from tests.history_support import message
-from tui.history import prepare_virtual_transcript
+from tui.history import prepare_virtual_transcript, read_history
 from tui.paging import visible_window
 
 
 class PagingUITests(unittest.TestCase):
+    def test_source_row_is_joined_to_thinking_across_sql_page_boundary(self):
+        source = {"title": "Reference", "url": "https://example.com/reference"}
+        pages = [
+            {
+                "messages": [
+                    {
+                        "id": "thought",
+                        "role": "assistant",
+                        "channel": "analysis",
+                        "text": "Searching the web",
+                        "_archive_ordinal": 1,
+                    }
+                ],
+                "history_window": {"start": 0, "end": 2, "total": 4},
+                "history_version": 1,
+            },
+            {
+                "messages": [
+                    {
+                        "id": "answer",
+                        "role": "assistant",
+                        "text": "Answer",
+                        "metadata": {"sources": [source]},
+                        "_archive_ordinal": 2,
+                    }
+                ],
+                "history_window": {"start": 2, "end": 4, "total": 4},
+                "history_version": 1,
+            },
+        ]
+        archive = SimpleNamespace(conversation_window=Mock(side_effect=pages))
+
+        result = read_history(archive, "gemini/a", "chat", start=0, complete=True)
+
+        self.assertEqual([item["role"] for item in result["messages"]], ["reasoning", "assistant"])
+        self.assertEqual(result["messages"][0]["_thinking_sources"], (source,))
+        self.assertEqual(result["messages"][0]["_source_owner"], "answer")
+        self.assertEqual(archive.conversation_window.call_count, 2)
+
     def test_wheel_uses_published_geometry_before_the_next_terminal_paint(self):
         from types import SimpleNamespace
 

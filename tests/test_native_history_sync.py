@@ -59,11 +59,20 @@ class NativeHistoryTests(unittest.IsolatedAsyncioTestCase):
 
     def test_history_preserves_ids_published_thoughts_and_raw_media_metadata(self):
         candidate = ["candidate", ["Answer"]] + [None] * 35 + [[["Published thought"]]]
+        activity = [None] * 8
+        activity[1] = "Searching the web"
+        activity[7] = [["favicon", "https://example.com/result", "Published result"]]
+        candidate[37] = [["Published thought"], [activity]]
         turn = [[None, "r_id"], None, [["Question"]], [[candidate]]]
         chat = history([[turn]], lambda cid: Origin("gemini", "a", cid), "c_abc")
         self.assertEqual([m.channel for m in chat.messages], [None, "analysis", None])
-        self.assertEqual(chat.messages[1].content[0].text, "Published thought")
+        self.assertIn("Published thought", chat.messages[1].content[0].text)
+        self.assertIn("Searching the web", chat.messages[1].content[0].text)
         self.assertEqual(chat.messages[-1].metadata["native_candidate"], candidate)
+        self.assertEqual(
+            chat.messages[-1].metadata["sources"],
+            ({"title": "Published result", "url": "https://example.com/result"},),
+        )
         self.assertEqual(chat.messages[0].id, "r_id:user")
 
     def test_published_thought_survives_sqlite_reload_and_transcript_render(self):
@@ -72,6 +81,10 @@ class NativeHistoryTests(unittest.IsolatedAsyncioTestCase):
         from tui.markdown import MessageRenderer, visible_chat_messages
 
         candidate = ["candidate", ["Answer"]] + [None] * 35 + [[["Published thought"]]]
+        activity = [None] * 8
+        activity[1] = "Searching the web"
+        activity[7] = [["favicon", "https://example.com/result", "Published result"]]
+        candidate[37] = [["Published thought"], [activity]]
         turn = [[None, "r_id"], None, [["Question"]], [[candidate]]]
         chat = history([[turn]], lambda cid: Origin("gemini", "a", cid), "c_abc")
         with tempfile.TemporaryDirectory() as folder:
@@ -89,6 +102,7 @@ class NativeHistoryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("Düşünme özeti", rendered)
         self.assertIn("Published thought", rendered)
+        self.assertIn("Searching the web", rendered)
         self.assertIn("Answer", rendered)
 
 

@@ -26,7 +26,7 @@ def timestamp(value):
     return None
 
 
-def candidate_metadata(candidate):
+def candidate_metadata(candidate, activity=None):
     """Extract published citations separately from the candidate's thought summary."""
     groups = _field(nested(candidate, 12), 43, [])
     citations = {}
@@ -49,7 +49,45 @@ def candidate_metadata(candidate):
                     "title": nested(entry, 3, 0, 2),
                 }
     ordered = [citations[key] for key in sorted(citations)]
-    return {"sources": sources_from({"sources": ordered})}
+    _, activity_sources = activity if activity is not None else published_activity(candidate)
+    return {"sources": sources_from({"sources": ordered + list(activity_sources)})}
+
+
+def published_activity(candidate):
+    """Return provider-published search steps and sources from Gemini history."""
+    activities = nested(candidate, 37, 1, default=[])
+    if not isinstance(activities, list):
+        return (), ()
+    steps, seen_steps, sources = [], set(), []
+    for activity in activities[:64]:
+        if not isinstance(activity, list):
+            continue
+        for index in (1, 5):
+            label = nested(activity, index)
+            if isinstance(label, str):
+                label = " ".join(label.split())
+                if label and label not in seen_steps:
+                    seen_steps.add(label)
+                    steps.append(label[:500])
+        results = nested(activity, 7, default=[])
+        if not isinstance(results, list):
+            continue
+        for result in results[:128]:
+            url = nested(result, 1)
+            title = nested(result, 2)
+            if isinstance(url, str):
+                sources.append({"url": url, "title": title})
+    return tuple(steps), sources_from({"sources": sources})
+
+
+def published_thoughts(candidate, steps=None, previous=""):
+    """Combine Gemini's public thought summary with visible search activity."""
+    if steps is None:
+        steps, _ = published_activity(candidate)
+    summary = nested(candidate, 37, 0, 0)
+    parts = [summary.strip()] if isinstance(summary, str) and summary.strip() else []
+    parts.extend(step for step in steps if step not in parts)
+    return "\n".join(parts) or previous
 
 
 def conversations(pages, origin):
@@ -107,14 +145,17 @@ def history(data, origin, cid):
         candidate = candidates[0]
         text = nested(candidate, 1, 0, default="")
         # Published thinking summaries only; never infer hidden reasoning.
-        thoughts = nested(candidate, 37, 0, 0)
-        if isinstance(thoughts, str) and thoughts:
+        activity = published_activity(candidate)
+        steps = activity[0]
+        thoughts = published_thoughts(candidate, steps)
+        if thoughts:
             messages.append(
                 Message(
                     rid + ":model:thoughts",
                     "assistant",
                     (Content("text", thoughts),),
                     channel="analysis",
+                    metadata={"turn_id": rid, "published_activity": bool(steps)},
                 )
             )
         images = candidate_files(candidate)
@@ -138,7 +179,7 @@ def history(data, origin, cid):
                         "native_candidate": candidate,
                         "turn_id": rid,
                         "candidate_id": nested(candidate, 0),
-                        **candidate_metadata(candidate),
+                        **candidate_metadata(candidate, activity),
                         "files": tuple(
                             {
                                 "id": image["alias"],

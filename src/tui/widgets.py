@@ -65,13 +65,16 @@ class TranscriptControl(UIControl):
         self.rows = self.view.transcript_rows(viewport_height=height)
         rows = self.rows
         self._content_width = width
-        self._toolbar_rows = {
-            end - 2: index
-            for start, end, index in getattr(self.view, "message_ranges", ())
-            if 0 <= index < len(self.view.messages)
-            and end - start > 1
-            and self.view.messages[index].get("role") in ("user", "assistant")
-        }
+        self._toolbar_rows = {}
+        for start, end, index in getattr(self.view, "message_ranges", ()):
+            if not 0 <= index < len(self.view.messages):
+                continue
+            message = self.view.messages[index]
+            role = message.get("role")
+            if role in ("user", "assistant") and end - start > 1:
+                self._toolbar_rows[end - 2] = index
+            elif role == "reasoning" and message.get("_thinking_sources") and end > start:
+                self._toolbar_rows[end - 1] = index
         self._toolbar_fragments = {}
         cursor = self.view.transcript_cursor_position()
         cursor = Point(0, min(max(0, cursor.y), max(0, len(rows) - 1)))
@@ -118,9 +121,14 @@ class TranscriptControl(UIControl):
             return []
         message = self.view.messages[index]
         role = message.get("role")
-        if role not in ("user", "assistant"):
+        if role == "reasoning":
+            if not message.get("_thinking_sources"):
+                return []
+            actions = [("sources", "↗", self.view.tr("Sources"))]
+        elif role in ("user", "assistant"):
+            actions = [("copy", "⧉", self.view.tr("Copy"))]
+        else:
             return []
-        actions = [("copy", "⧉", self.view.tr("Copy"))]
         tab = self.view.tabs[self.view.active_tab]
         version_index = message.get("_response_version_index", 1)
         version_count = message.get("_response_version_count", 1)

@@ -19,7 +19,9 @@ class Forms:
         self.fields = {}
         self.error = ""
 
-    def open(self, title, fields, submit, *, inline_project=None, actions=None):
+    def open(
+        self, title, fields, submit, *, inline_project=None, actions=None, submit_label=None
+    ):
         self.inline_project = inline_project
         self.fields, body, self.error = {}, [], ""
         single_line_controls = []
@@ -97,11 +99,15 @@ class Forms:
                 max=max(1, self.view.app.output.get_size().rows - 10),
             ),
         )
+        if submit_label:
+            submit_text = self.view.tr(submit_label)
+        elif inline_project:
+            submit_text = self.view.tr("Kaydet")
+        else:
+            submit_text = self.view.tr("Uygula")
         buttons = [
             *[Button(label, handler=handler) for label, handler in (actions or ())],
-            Button(
-                self.view.tr("Kaydet") if inline_project else self.view.tr("Uygula"), handler=save
-            ),
+            Button(submit_text, handler=save),
             Button(
                 self.view.tr("Vazgeç") if inline_project else self.view.tr("İptal"),
                 handler=self.close,

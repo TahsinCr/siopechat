@@ -10,7 +10,8 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Added
 
-- Show provider-published sources alongside their answer's thinking summaries and generated-file cards inside assistant replies, including available file type and size.
+- Add a per-answer Sources action to the thinking row; create a source-only row when citations exist without a provider-published thought summary.
+- Show generated-file cards inside assistant replies with available file type and size.
 - Carry generated-file descriptors through the common provider metadata event and SQLite history; file-card clicks use the shared background download manager and authenticated provider resolution.
 
 ### Changed
@@ -36,17 +37,19 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Fixed
 
-- Extract ChatGPT's published `search_result_groups.entries` citations so they appear in the owning answer's thinking-summary block after history is reloaded from SQLite.
-- Verify Gemini's published thought summaries remain visible through provider history, SQLite persistence, and transcript rendering; answers without a published summary remain unchanged.
+- Attach validated published citations from ChatGPT, Gemini, and Claude to the matching thinking row; sources that arrive on a separate SQLite page are joined before rendering.
+- Read Gemini's published web-search activity labels and result links from both history and streaming, combining those labels with its published thought summary without inferring private reasoning.
+- Refresh cached conversations from their provider in the background on open, then apply the archive update without blocking the composer or replacing an in-progress local turn.
+- Keep the Sources toolbar action visible for one-line synthetic thinking rows and preserve the source association when adjacent thought records are grouped.
 - Exit the one-shot Sentinel signer after its JSON result is flushed instead of waiting for the SDK's residual five-second fallback timer.
 - Enable Claude's native web-search tool in web-session completion requests so it can search when a prompt needs current information.
 - Keep the sidebar divider aligned with its search/filter row at supported terminal widths.
 - Use ChatGPT's current public Sentinel SDK methods for request signing instead of matching private minified names; surface signer failures as request errors instead of falsely disabling chat.
 - Align Gemini's stream read timeout with its 120-second idle limit and translate curl timeouts into a clear provider error without retrying an ambiguous send.
 - Stop tab-bar redraws from triggering split-layout cleanup; index tabs once when building grouped titles and release stale pane state after close, restore, split, or unsplit actions.
-- Resolve Gemini's published `[cite: N]` groups into their explicit source links, deduplicate them by citation order, and render them under a localized “Sources” heading in the same thinking block as the provider-published thought summary. Responses without citations remain source-free.
+- Resolve Gemini's published `[cite: N]` groups into validated source links, deduplicate them by citation order, and associate them with the matching thinking row. Responses without citations remain source-free.
 - Traverse bounded nested citation and annotation lists in shared provider metadata, including wrapped URL citations, without inspecting answer text or retaining arbitrary provider payloads.
-- Preserve confirmed response settings and resource metadata when a provider refresh omits them, rebuild source sections without duplicates, and refresh saved Gemini image references when downloading.
+- Preserve confirmed response settings, source metadata, and resource metadata when a provider refresh omits them; refresh saved Gemini image references when downloading.
 - Hide unknown provider model identifiers from reply toolbars; show only names resolved by the active account's model catalog.
 - Keep a per-tab archive refresh pending when provider history finishes during an active response, then apply the refreshed SQL window after the response instead of losing the update behind the global archive revision.
 - Reset conversation-specific history cursors, versions, pending reads, and scroll anchors when reusing a tab for another chat.

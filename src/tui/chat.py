@@ -154,12 +154,7 @@ class _SendStream:
                 final["actions"] = list(event.get("actions", ()))
                 if event.get("sources"):
                     final["_thinking_sources"] = tuple(event["sources"])
-                    update_message_sources(
-                        self.messages,
-                        final,
-                        final["_thinking_sources"],
-                        self.view.tr("Sources"),
-                    )
+                    update_message_sources(self.messages, final, final["_thinking_sources"])
                 final["_response_settings"] = tuple(
                     (label, event[key])
                     for label, key in (("Model", "model"), ("Effort", "effort"))
@@ -345,9 +340,7 @@ class ChatView:
         self.tab_kind = "chat"
         self.last_response_model: str | None = None
         self.current_project: dict[str, Any] = dict(initial_project or {})
-        self.messages: list[Message] = visible_chat_messages(
-            initial_messages or [], self.tr("Sources")
-        )
+        self.messages: list[Message] = visible_chat_messages(initial_messages or [])
         self.background_tabs: list[dict[str, Any]] = []
         self.busy = False
         self.busy_tab_index: int | None = None
@@ -600,6 +593,7 @@ class ChatView:
                 self.tr("Eşitleme başlatıldı") if error is None else self.tr("Eşitleme: ") + error
             )
             self.refresh_sidebar()
+            self.apply_archive_updates()
             if scope == "all":
                 self.refresh_provider_catalog()
             self.app.invalidate()
@@ -617,14 +611,20 @@ class ChatView:
         if not self.account_service or not self.conversation_id or not self.archive_service():
             return
         conversation_id, key = self.conversation_id, self.account_key
+
+        def refreshed(_):
+            self.apply_archive_updates()
+
         self._read_in_background(
-            lambda: self.account_service.load(conversation_id, key),
-            lambda _: None,
-            lambda reason: setattr(
-                self, "status", self.tr("Sohbet senkronize edilemedi: ") + reason
-            ),
+            lambda: self.account_service.load(conversation_id, key, force=True),
+            refreshed,
+            lambda reason: self._show_refresh_error(reason),
             session_bound=False,
         )
+
+    def _show_refresh_error(self, reason):
+        self.status = self.tr("Sohbet senkronize edilemedi: ") + str(reason)
+        self.app.invalidate()
 
     def apply_archive_updates(self, snapshot=None):
         source = self.archive_service()
@@ -5050,6 +5050,9 @@ class ChatView:
             return
         messages = self.tabs[self.active_tab].get("messages", ())
         message = messages[index]
+        if action == "sources":
+            self._show_message_sources(message)
+            return
         if action in ("version_prev", "version_next"):
             self._navigate_response_version(
                 tab_id, message_ref, -1 if action == "version_prev" else 1
@@ -5098,6 +5101,46 @@ class ChatView:
                 self.show_temporary_status(self.tr("Sent message to the terminal clipboard"))
             self.app.invalidate()
             return
+
+    def _show_message_sources(self, message):
+        sources = tuple(message.get("_thinking_sources", ()))
+        if not sources:
+            return
+        from urllib.parse import urlsplit
+
+        choices = []
+        by_id = {}
+        for index, source in enumerate(sources):
+            title = " ".join(str(source.get("title") or "Source").split())[:200]
+            url = source.get("url")
+            host = ""
+            if isinstance(url, str):
+                try:
+                    host = urlsplit(url).hostname or ""
+                except ValueError:
+                    host = ""
+            label = f"{host} · {title}" if host else title
+            value = str(index)
+            choices.append((value, label[:240]))
+            by_id[value] = source
+
+        def submit(values):
+            selected = by_id.get(values.get("source"), {})
+            url = selected.get("url")
+            if not isinstance(url, str):
+                def unavailable():
+                    self.status = self.tr("Source link is unavailable")
+                    self.app.invalidate()
+
+                return unavailable
+            return lambda: self.open_message_link(url)
+
+        self.forms.open(
+            self.tr("Sources"),
+            [("source", self.tr("Sources"), choices[0][0], choices)],
+            submit,
+            submit_label="Open",
+        )
 
     def _navigate_response_version(self, tab_id, message_ref, direction):
         index = self._toolbar_message_index(tab_id, message_ref)
@@ -5176,7 +5219,6 @@ class ChatView:
                             tab["messages"],
                             displayed,
                             displayed.get("_thinking_sources", ()),
-                            self.tr("Sources"),
                         )
                         if tab is self.tabs[self.active_tab]:
                             self.messages = tab["messages"]
@@ -5539,9 +5581,7 @@ class ChatView:
                     tab is target_tab for tab in self.tabs
                 ):
                     return
-                messages = visible_chat_messages(
-                    conversation.get("messages", []), self.tr("Sources")
-                )
+                messages = visible_chat_messages(conversation.get("messages", []))
 
                 def apply_conversation() -> None:
                     if (
@@ -5559,8 +5599,7 @@ class ChatView:
                         merge_conversation(
                             {"messages": visible_messages},
                             {"messages": target_tab.get("messages", [])},
-                        )["messages"],
-                        self.tr("Sources"),
+                        )["messages"]
                     )
                     project = conversation.get("project")
                     project = dict(project) if isinstance(project, dict) else {}
@@ -5621,7 +5660,9 @@ class ChatView:
                         self.app.invalidate()
 
                     self._read_in_background(
-                        lambda: load_callback(conversation_id),
+                        lambda: self.account_service.load(
+                            conversation_id, key, force=True, window=True
+                        ),
                         lambda _: self.apply_archive_updates(),
                         sync_failed,
                         session_bound=False,
@@ -5776,9 +5817,7 @@ class ChatView:
                         target_tab["history_window"] = rollback[1]
                 elif send_succeeded and result.get("history"):
                     history = result["history"]
-                    messages = visible_chat_messages(
-                        history.get("messages", ()), self.tr("Sources")
-                    )
+                    messages = visible_chat_messages(history.get("messages", ()))
                     if history.get("history_window"):
                         target_tab["history_window"] = history["history_window"]
                 if send_succeeded and result.get("replaced_conversation_id"):

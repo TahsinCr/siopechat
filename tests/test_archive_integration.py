@@ -450,12 +450,37 @@ class ArchiveIntegrationTests(unittest.TestCase):
         self.accounts.load = Mock(return_value={"id": "one", "messages": []})
         with terminal(account_service=self.accounts) as (view, _):
             view._read_in_background = immediate
+            view.apply_archive_updates = Mock()
             view.conversation_id = "@chatgpt/default/one"
             view.input.text = "Continue drafting"
             view.refresh_open_conversation()
-            self.accounts.load.assert_called_once_with("@chatgpt/default/one", "chatgpt/default")
+            self.accounts.load.assert_called_once_with(
+                "@chatgpt/default/one", "chatgpt/default", force=True
+            )
+            view.apply_archive_updates.assert_called_once_with()
             self.assertEqual(view.input.text, "Continue drafting")
             self.assertFalse(view.loading_conversation)
+
+    def test_opening_cached_chat_starts_a_forced_provider_refresh_in_background(self):
+        conversation_id = f"@{self.gemini}/c_cached"
+        self.accounts.cached_window = Mock(
+            return_value={
+                "id": conversation_id,
+                "title": "Cached chat",
+                "messages": [],
+                "history_window": {"start": 0, "end": 0, "total": 0},
+            }
+        )
+        self.accounts.load = Mock(return_value={"id": conversation_id, "messages": []})
+        with terminal(account_service=self.accounts) as (view, _):
+            view._read_in_background = immediate
+            view._dispatch_ui = lambda callback: callback()
+            with patch.object(view._reads, "submit", side_effect=lambda work: (work(), True)[1]):
+                view.resume_conversation(conversation_id)
+
+        self.accounts.load.assert_called_once_with(
+            conversation_id, self.gemini, force=True, window=True
+        )
 
     def test_active_archive_pointer_survives_restart_and_can_be_cleared(self):
         archive = self.api.get("archive")

@@ -46,6 +46,54 @@ class ClaudeRecordsTests(unittest.TestCase):
         self.assertEqual(value.messages[-1].content[0].text, "Answer")
         self.assertEqual(value.messages[1].content[0].resource.name, "reference.pdf")
 
+    def test_published_claude_citations_join_the_thinking_row_in_transcript(self):
+        from tui.markdown import visible_chat_messages
+
+        value = conversation(
+            {
+                "uuid": CHAT,
+                "chat_messages": [
+                    {
+                        "uuid": "answer",
+                        "sender": "assistant",
+                        "content": [
+                            {"type": "thinking", "thinking": "Searching the web"},
+                            {
+                                "type": "text",
+                                "text": "Published answer",
+                                "citations": [
+                                    {
+                                        "url": "https://example.com/reference",
+                                        "title": "Reference",
+                                    }
+                                ],
+                            },
+                        ],
+                    }
+                ],
+            },
+            "account",
+        )
+        messages = [
+            {
+                "id": item.id,
+                "role": item.role,
+                "channel": item.channel,
+                "text": item.content[0].text,
+                "metadata": item.metadata,
+            }
+            for item in value.messages
+        ]
+
+        visible = visible_chat_messages(messages)
+
+        self.assertEqual([item["role"] for item in visible], ["reasoning", "assistant"])
+        self.assertEqual(visible[0]["text"], "Searching the web")
+        self.assertEqual(
+            visible[0]["_thinking_sources"],
+            ({"title": "Reference", "url": "https://example.com/reference"},),
+        )
+
     def test_unknown_content_blocks_survive_for_other_extensions(self):
         block = {"type": "future_tool", "payload": {"source": "document"}}
         chat = conversation(

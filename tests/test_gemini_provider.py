@@ -313,12 +313,11 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
         from providers.gemini.transport import generate
 
         candidate = [None] * 38
-        candidate[0], candidate[1], candidate[8], candidate[37] = (
-            "rcid",
-            ["answer"],
-            [2],
-            [["thought"]],
-        )
+        candidate[0], candidate[1], candidate[8] = "rcid", ["answer"], [2]
+        activity = [None] * 8
+        activity[1] = activity[5] = "Searching the web"
+        activity[7] = [["favicon", "https://example.com", "Example"]]
+        candidate[37] = [["thought"], [activity]]
         body = [None, ["c_new", "rid"], None, None, [candidate]]
         wire = (json.dumps([["wrb.fr", None, json.dumps(body)]]) + "\n").encode()
         response = self.response([wire[:20], wire[20:]])
@@ -329,8 +328,9 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertEqual(
             (result[0]["cid"], result[0]["text"], result[0]["thoughts"]),
-            ("c_new", "answer", "thought"),
+            ("c_new", "answer", "thought\nSearching the web"),
         )
+        self.assertEqual(result[0]["sources"], ({"title": "Example", "url": "https://example.com"},))
         self.assertTrue(response.closed)
         session.persist.assert_awaited_once()
 

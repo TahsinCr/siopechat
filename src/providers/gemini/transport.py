@@ -140,7 +140,7 @@ async def generate(
     from curl_cffi.const import CurlECode
     from curl_cffi.requests.exceptions import RequestException
 
-    from .history import candidate_metadata
+    from .history import candidate_metadata, published_activity, published_thoughts
 
     if files is None:
         files = await upload_files(session, [item["path"] for item in request.attachments])
@@ -202,14 +202,15 @@ async def generate(
                     ):
                         text = nested(candidate, 22, 0) or text
                     last_text = text or last_text
-                    last_thoughts = nested(candidate, 37, 0, 0) or last_thoughts
+                    activity = published_activity(candidate)
+                    last_thoughts = published_thoughts(candidate, activity[0], last_thoughts)
                     yield {
                         "cid": cid,
                         "metadata": current,
                         "text": last_text,
                         "thoughts": last_thoughts,
                         "files": candidate_files(candidate),
-                        "sources": candidate_metadata(candidate)["sources"],
+                        "sources": candidate_metadata(candidate, activity)["sources"],
                     }
                 if isinstance(context, str):
                     metadata = [None] * 9 + [context]

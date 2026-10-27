@@ -231,6 +231,37 @@ class GeminiActionsTests(unittest.TestCase):
         self.assertTrue(all(not message.actions for message in thoughts))
         self.assertTrue(all(message.content[0].text == "Published thought" for message in thoughts))
 
+    def test_history_reads_gemini_published_search_steps_and_result_sources(self):
+        candidate = [None] * 38
+        candidate[0], candidate[1] = "rc_activity", ["Answer"]
+        activity = [None] * 8
+        activity[1] = activity[5] = "Web'de arama yapıldı"
+        activity[7] = [
+            ["favicon", "https://example.com/one", "First result"],
+            ["favicon", "https://example.com/two", "Second result"],
+            ["favicon", "https://example.com/one", "Duplicate result"],
+        ]
+        candidate[37] = [[""], [activity]]
+        turn = [[None, "r_activity"], None, [["Question"]], [[candidate]]]
+
+        result = history([[turn]], lambda cid: Origin("gemini", "account", cid), "c_fixture")
+
+        thought = next(message for message in result.messages if message.channel == "analysis")
+        answer = next(
+            message
+            for message in result.messages
+            if message.role == "assistant" and message.channel != "analysis"
+        )
+        self.assertEqual(thought.content[0].text, "Web'de arama yapıldı")
+        self.assertTrue(thought.metadata["published_activity"])
+        self.assertEqual(
+            answer.metadata["sources"],
+            (
+                {"title": "First result", "url": "https://example.com/one"},
+                {"title": "Second result", "url": "https://example.com/two"},
+            ),
+        )
+
     def test_published_sources_are_bounded_deduplicated_and_cannot_embed_credentials(self):
         values = [
             {"url": "https://example.com", "title": "Valid"},

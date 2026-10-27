@@ -60,7 +60,7 @@ def read_history(
                 or (until is not None and window["end"] >= until)
             ):
                 messages.sort(key=lambda m: m.get("_archive_ordinal", -1))
-                return dict(result, messages=messages)
+                return dict(result, messages=visible_chat_messages(messages))
             next_cursor = window["start"] if boundary is not None else window["end"]
             previous = boundary if boundary is not None else cursor
             if previous is not None and next_cursor == previous:

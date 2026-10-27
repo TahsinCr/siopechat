@@ -294,6 +294,7 @@ class WorkspaceTests(unittest.TestCase):
             v._read_in_background = immediate
             v.refresh_sidebar = Mock()
             v.refresh_provider_catalog = Mock()
+            v.apply_archive_updates = Mock()
             v.busy = True
             v.tabs[0]["busy"] = True
             v.synchronize("conversation")
@@ -302,6 +303,7 @@ class WorkspaceTests(unittest.TestCase):
             )
             self.assertTrue(v.tabs[0]["busy"])
             self.assertFalse(v._synchronize_pending)
+            v.apply_archive_updates.assert_called_once_with()
 
     def test_closed_temporary_tab_forgets_remote_context_locally(self):
         forgotten = Mock(return_value={"forgotten": True})

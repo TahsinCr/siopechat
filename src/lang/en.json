@@ -123,6 +123,8 @@
   "ui.Copied latest response": "Copied latest response",
   "ui.Copy": "Copy",
   "ui.Sources": "Sources",
+  "ui.Open": "Open",
+  "ui.Source link is unavailable": "Source link is unavailable",
   "ui.Model": "Model",
   "ui.Effort": "Effort",
   "ui.Message copied": "Message copied",

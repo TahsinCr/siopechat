@@ -123,6 +123,8 @@
   "ui.Copied latest response": "Son yanıt kopyalandı",
   "ui.Copy": "Kopyala",
   "ui.Sources": "Kaynaklar",
+  "ui.Open": "Aç",
+  "ui.Source link is unavailable": "Kaynak bağlantısı kullanılamıyor",
   "ui.Model": "Model",
   "ui.Effort": "Efor",
   "ui.Message copied": "Mesaj kopyalandı",
