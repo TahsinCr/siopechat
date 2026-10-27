@@ -60,6 +60,10 @@ def workspace_layout(view):
             ),
             VSplit(
                 [
+                    text_window(
+                        lambda: [("class:button", " ⌕ ", on_click(view.open_resume))],
+                        width=3,
+                    ),
                     view.sidebar_search,
                     ConditionalContainer(
                         text_window(
@@ -92,7 +96,8 @@ def workspace_layout(view):
                     wrap_lines=False,
                     dont_extend_width=True,
                 ),
-            ]
+            ],
+            width=lambda: view.sidebar_width() + 1,
         ),
         filter=Condition(lambda: view.sidebar_visible and view.tab_kind != "settings"),
     )

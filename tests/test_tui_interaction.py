@@ -9,7 +9,7 @@ from prompt_toolkit.data_structures import Size
 from prompt_toolkit.mouse_events import MouseButton, MouseEventType
 from prompt_toolkit.output import DummyOutput
 
-from tests.tui_support import immediate, terminal, wait_until
+from tests.tui_support import immediate, screen_text, terminal, wait_until
 
 
 class InputTests(unittest.IsolatedAsyncioTestCase):
@@ -363,6 +363,48 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
                     )
                 )
                 self.assertEqual(view.transcript_width(), 100)
+            finally:
+                if view.app.is_running:
+                    view.app.exit()
+                await asyncio.wait_for(run, 2)
+
+    async def test_sidebar_search_accepts_mouse_focus_and_divider_stays_aligned(self):
+        class Output(DummyOutput):
+            size = Size(rows=24, columns=80)
+
+            def get_size(self):
+                return self.size
+
+        with terminal(output=Output()) as (view, _pipe):
+            service = Mock()
+            service.items.return_value = []
+            service.active_accounts.return_value = []
+            view.account_service = service
+            view.archive_service = lambda: None
+            view.sync_states = lambda _archive: ()
+            view.downloads_panel.service = lambda: None
+            run = asyncio.create_task(view.app.run_async())
+            try:
+                await self.settle(lambda: view.app.is_running)
+                await self.settle(
+                    lambda: view.app.renderer._last_screen is not None
+                    and any(
+                        "Ara" in line and "⌕" in line and "☷" in line
+                        for line in screen_text(view).splitlines()
+                    )
+                )
+
+                self.assertTrue(view.sidebar_search.control.focus_on_click())
+                screen = view.app.renderer._last_screen
+                search_row = next(
+                    row
+                    for row in screen.data_buffer.values()
+                    if "Ara"
+                    in "".join(cell.char for _, cell in sorted(row.items()))
+                )
+                divider = search_row.get(view.sidebar_width())
+                self.assertIsNotNone(divider)
+                self.assertEqual(divider.char, "│")
             finally:
                 if view.app.is_running:
                     view.app.exit()

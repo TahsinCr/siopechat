@@ -15,6 +15,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Changed
 
+- Make the sidebar divider width explicit, add a magnifier action for the existing chat-search popup, and allow mouse focus in the inline sidebar filter.
 - Center the empty-chat prompt and show one localized instruction instead of repeating the SiopeChat brand in the transcript.
 - Translate the remaining English Turkish UI strings, including conversation loading, command-palette descriptions, and workspace actions.
 - Make split-group lookup read-only during redraws and reconcile pane state only when group membership changes.
@@ -34,6 +35,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Fixed
 
+- Keep the sidebar divider aligned with its search/filter row at supported terminal widths.
 - Use ChatGPT's current public Sentinel SDK methods for request signing instead of matching private minified names; surface signer failures as request errors instead of falsely disabling chat.
 - Align Gemini's stream read timeout with its 120-second idle limit and translate curl timeouts into a clear provider error without retrying an ambiguous send.
 - Stop tab-bar redraws from triggering split-layout cleanup; index tabs once when building grouped titles and release stale pane state after close, restore, split, or unsplit actions.

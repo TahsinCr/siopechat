@@ -457,7 +457,10 @@ class ChatView:
         )
         self.resume_search.buffer.on_text_changed += lambda _buffer: self.filter_resume()
         self.sidebar_search = TextArea(
-            height=1, prompt=self.tr(" Ara "), style="class:sidebar.search"
+            height=1,
+            prompt=self.tr(" Ara "),
+            style="class:sidebar.search",
+            focus_on_click=True,
         )
         self.sidebar_search.buffer.on_text_changed += lambda _buffer: self.filter_sidebar()
         self.sidebar_control = SidebarControl(self)
