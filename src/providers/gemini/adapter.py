@@ -445,7 +445,14 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
             bound, visible, cid = False, False, request.conversation_id
             final_metadata = None
             output_files, published_sources = (), ()
-            async for chunk in generate(client, request, metadata, context, files=action_files):
+            async for chunk in generate(
+                client,
+                request,
+                metadata,
+                context,
+                files=action_files,
+                request_timeout=(15, self.stream_idle_timeout + 10),
+            ):
                 cid = chunk.get("cid") or cid
                 metadata = chunk["metadata"]
                 if cid and not bound:

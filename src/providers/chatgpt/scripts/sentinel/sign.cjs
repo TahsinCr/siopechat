@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
-// Static compatibility probe for ChatGPT's Sentinel SDK. Network access from
-// the evaluated SDK is blocked; this checks whether its proof engine can run in
-// Node and records browser objects requested during initialization.
+// Run ChatGPT's published Sentinel SDK in a bounded Node VM. Network access is
+// limited to fetching the SDK; its verification handshake uses a local bridge.
 
 const vm = require("vm");
 const { readJsonInput: readStdinJson } = require("../io.cjs");
@@ -115,20 +114,7 @@ async function main() {
   const loadedSdk = await loadSdk();
   const implementation = loadedSdk.implementation;
   let source = loadedSdk.source;
-  const proofExport = /var P=new _;/;
-  if (!proofExport.test(source)) {
-    throw new Error("Sentinel proof engine signature changed");
-  }
-  source = source.replace(proofExport, "var P=new _;globalThis.__proofEngine=P;");
-  const turnstileExport = /function _n\(t,n\)\{/;
-  if (!turnstileExport.test(source)) {
-    throw new Error("Sentinel turnstile VM signature changed");
-  }
-  source = source.replace(
-    turnstileExport,
-    "globalThis.__turnstileVM=(t,n)=>_n(t,n);function _n(t,n){",
-  );
-
+  let capturedInitial;
   const requestedElements = [];
   const appendedElements = [];
   const listeners = new Map();
@@ -136,6 +122,7 @@ async function main() {
   let sandbox;
   const bridgeWindow = {
     postMessage: (message) => {
+      capturedInitial = message?.p;
       if (!message?.requestId || !listeners.has("message")) return;
       const requirements = suppliedRequirements || {
         token: "probe-requirements-token",
@@ -229,25 +216,27 @@ async function main() {
   vm.runInContext(source, sandbox, { filename: "sentinel-sdk.js", timeout: 5000 });
 
   if (process.argv.includes("--emit-initial")) {
-    const initial = await sandbox.__proofEngine.getRequirementsToken();
-    process.stdout.write(`${JSON.stringify({ initial })}\n`);
+    await sandbox.SentinelSDK.init("siopechat");
+    if (typeof capturedInitial !== "string" || !capturedInitial) {
+      throw new Error("Sentinel SDK did not generate an initial proof");
+    }
+    process.stdout.write(`${JSON.stringify({ initial: capturedInitial })}\n`);
     return;
   }
 
-  const requirements = suppliedRequirements || {
-    proofofwork: {
-      required: true,
-      seed: "chatgpt-web-node-probe",
-      difficulty: "0fffff",
-    },
-  };
-  const proof = await sandbox.__proofEngine.getEnforcementToken(requirements);
   if (process.argv.includes("--emit-enforcement-json")) {
-    const initial = await sandbox.__proofEngine.getRequirementsToken();
-    const turnstile = requirements?.turnstile?.dx
-      ? await sandbox.__turnstileVM(requirements, requirements.turnstile.dx)
-      : null;
-    process.stdout.write(`${JSON.stringify({ initial, proof, turnstile })}\n`);
+    await sandbox.SentinelSDK.init("siopechat");
+    const token = JSON.parse(await sandbox.SentinelSDK.token("siopechat"));
+    if (typeof capturedInitial !== "string" || !capturedInitial) {
+      throw new Error("Sentinel SDK did not generate an initial proof");
+    }
+    if (typeof token?.p !== "string" || !token.p) {
+      throw new Error("Sentinel SDK did not generate an enforcement proof");
+    }
+    const turnstile = typeof token.t === "string" && token.t ? token.t : null;
+    process.stdout.write(
+      `${JSON.stringify({ initial: capturedInitial, proof: token.p, turnstile })}\n`,
+    );
     return;
   }
   let tokenResult;

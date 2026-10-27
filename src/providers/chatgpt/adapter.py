@@ -18,7 +18,13 @@ from ..api import (
     validate_request,
 )
 from ..contracts import OptionalFeatures, confirm_deleted
-from ..errors import AccountPaused, CompatibilityError, FeatureUnavailable, RateLimited
+from ..errors import (
+    AccountPaused,
+    CompatibilityError,
+    FeatureUnavailable,
+    ProviderError,
+    RateLimited,
+)
 from ..messages import actions_for, sources_from
 from ..models import (
     Content,
@@ -743,9 +749,13 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
                     publish(("event", ConversationBound(remote_id)))
             except _Stopped:
                 return
-            except SentinelCompatibilityError:
+            except SentinelCompatibilityError as error:
                 if not stopped.is_set():
-                    publish(("error", CompatibilityError(Capability.CHAT)))
+                    detail = " ".join(str(error).split())[:240]
+                    message = "ChatGPT isteği için doğrulama imzası oluşturulamadı"
+                    if detail:
+                        message = f"{message}: {detail}"
+                    publish(("error", ProviderError(message)))
             except (RateLimited, AccountPaused) as error:
                 if not stopped.is_set():
                     publish(("error", error))

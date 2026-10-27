@@ -134,7 +134,12 @@ def generation_request(session, request, metadata, files, notebook=None):
     return headers, {"at": session.token, "f.req": json.dumps([None, json.dumps(body)])}
 
 
-async def generate(session, request, metadata, notebook=None, *, files=None):
+async def generate(
+    session, request, metadata, notebook=None, *, files=None, request_timeout=(15, 130)
+):
+    from curl_cffi.const import CurlECode
+    from curl_cffi.requests.exceptions import RequestException
+
     from .history import candidate_metadata
 
     if files is None:
@@ -143,70 +148,83 @@ async def generate(session, request, metadata, notebook=None, *, files=None):
     frames = Frames()
     completed = False
     last_text = last_thoughts = ""
-    async with session.http.stream(
-        "POST",
-        BASE + "assistant.lamda.BardFrontendService/StreamGenerate",
-        params=session.params(),
-        headers=headers,
-        data=data,
-        allow_redirects=False,
-    ) as response:
-        WebSession.check(response)
+    try:
+        async with session.http.stream(
+            "POST",
+            BASE + "assistant.lamda.BardFrontendService/StreamGenerate",
+            params=session.params(),
+            headers=headers,
+            data=data,
+            allow_redirects=False,
+            timeout=request_timeout,
+        ) as response:
+            WebSession.check(response)
 
-        async def parts():
-            async for chunk in response.aiter_content():
-                for frame in frames.feed(chunk):
+            async def parts():
+                async for chunk in response.aiter_content():
+                    for frame in frames.feed(chunk):
+                        yield frame
+                for frame in frames.feed(b"", final=True):
                     yield frame
-            for frame in frames.feed(b"", final=True):
-                yield frame
 
-        async for frame in parts():
-            if nested(frame, 5, 2, 0, 1, 0):
-                raise ProviderError(
-                    "Gemini isteği reddetti; kota veya model uygunluğunu kontrol edin"
-                )
-            payload = nested(frame, 2)
-            if not isinstance(payload, str):
-                continue
-            try:
-                body = json.loads(payload)
-            except ValueError as error:
-                raise ProviderError("Gemini yanıt gövdesi değişti") from error
-            returned = nested(body, 1)
-            if isinstance(returned, list) and returned:
-                metadata = returned
-            context = nested(body, 25)
-            if isinstance(context, str):
-                completed = True
-            for candidate in nested(body, 4, default=[]):
-                if not nested(candidate, 0):
-                    continue
-                cid = nested(metadata, 0) or request.conversation_id
-                current = list(metadata)
-                current.extend([None] * max(0, 3 - len(current)))
-                current[2] = candidate[0]
-                completed = completed or nested(candidate, 8, 0) == 2
-                text = nested(candidate, 1, 0)
-                if isinstance(text, str) and text.startswith(
-                    (
-                        "http://googleusercontent.com/card_content/",
-                        "https://googleusercontent.com/card_content/",
+            async for frame in parts():
+                if nested(frame, 5, 2, 0, 1, 0):
+                    raise ProviderError(
+                        "Gemini isteği reddetti; kota veya model uygunluğunu kontrol edin"
                     )
-                ):
-                    text = nested(candidate, 22, 0) or text
-                last_text = text or last_text
-                last_thoughts = nested(candidate, 37, 0, 0) or last_thoughts
-                yield {
-                    "cid": cid,
-                    "metadata": current,
-                    "text": last_text,
-                    "thoughts": last_thoughts,
-                    "files": candidate_files(candidate),
-                    "sources": candidate_metadata(candidate)["sources"],
-                }
-            if isinstance(context, str):
-                metadata = [None] * 9 + [context]
-                yield {"cid": request.conversation_id, "metadata": metadata, "context_only": True}
+                payload = nested(frame, 2)
+                if not isinstance(payload, str):
+                    continue
+                try:
+                    body = json.loads(payload)
+                except ValueError as error:
+                    raise ProviderError("Gemini yanıt gövdesi değişti") from error
+                returned = nested(body, 1)
+                if isinstance(returned, list) and returned:
+                    metadata = returned
+                context = nested(body, 25)
+                if isinstance(context, str):
+                    completed = True
+                for candidate in nested(body, 4, default=[]):
+                    if not nested(candidate, 0):
+                        continue
+                    cid = nested(metadata, 0) or request.conversation_id
+                    current = list(metadata)
+                    current.extend([None] * max(0, 3 - len(current)))
+                    current[2] = candidate[0]
+                    completed = completed or nested(candidate, 8, 0) == 2
+                    text = nested(candidate, 1, 0)
+                    if isinstance(text, str) and text.startswith(
+                        (
+                            "http://googleusercontent.com/card_content/",
+                            "https://googleusercontent.com/card_content/",
+                        )
+                    ):
+                        text = nested(candidate, 22, 0) or text
+                    last_text = text or last_text
+                    last_thoughts = nested(candidate, 37, 0, 0) or last_thoughts
+                    yield {
+                        "cid": cid,
+                        "metadata": current,
+                        "text": last_text,
+                        "thoughts": last_thoughts,
+                        "files": candidate_files(candidate),
+                        "sources": candidate_metadata(candidate)["sources"],
+                    }
+                if isinstance(context, str):
+                    metadata = [None] * 9 + [context]
+                    yield {
+                        "cid": request.conversation_id,
+                        "metadata": metadata,
+                        "context_only": True,
+                    }
+    except RequestException as error:
+        if error.code != CurlECode.OPERATION_TIMEDOUT:
+            raise
+        raise ProviderError(
+            "Gemini isteği ağ zaman aşımına uğradı; gönderim otomatik tekrarlanmadı "
+            "ve sohbet geçmişi korundu."
+        ) from None
     if not completed:
         raise ProviderError("Gemini akışı tamamlanmadan kesildi; yeniden gönderilmedi")
     await session.persist()

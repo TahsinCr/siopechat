@@ -34,6 +34,8 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Fixed
 
+- Use ChatGPT's current public Sentinel SDK methods for request signing instead of matching private minified names; surface signer failures as request errors instead of falsely disabling chat.
+- Align Gemini's stream read timeout with its 120-second idle limit and translate curl timeouts into a clear provider error without retrying an ambiguous send.
 - Stop tab-bar redraws from triggering split-layout cleanup; index tabs once when building grouped titles and release stale pane state after close, restore, split, or unsplit actions.
 - Resolve Gemini's published `[cite: N]` groups into their explicit source links, deduplicate them by citation order, and render them under a localized “Sources” heading in the same thinking block as the provider-published thought summary. Responses without citations remain source-free.
 - Traverse bounded nested citation and annotation lists in shared provider metadata, including wrapped URL citations, without inspecting answer text or retaining arbitrary provider payloads.
