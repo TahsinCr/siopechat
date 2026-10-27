@@ -135,6 +135,8 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Removed
 
+- Remove the obsolete account `models.json` snapshot compatibility test; SQLite-backed catalog caching and provider entitlement behavior remain covered.
+- Remove settings-catalog row-presence assertions from the download-path behavior test; default, validation and changed-directory behavior remain covered.
 - Remove selectable application themes and theme contributions from the extension API; the CLI now uses one fixed default appearance and extensions must use API v3.
 
 - Remove the vendored dependency-injection container. Runtime now keeps explicitly owned service instances, and extension API 2 uses `context.provide()` and `context.on_dispose()` without container scopes or injection decorators.

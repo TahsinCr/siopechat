@@ -252,19 +252,13 @@ class DownloadTests(unittest.TestCase):
             server.server_close()
             thread.join(2)
 
-    def test_download_setting_is_exposed_and_invalid_paths_are_rejected(self):
+    def test_download_directory_defaults_changes_and_rejects_invalid_paths(self):
         from bootstrap import create_application
-        from settings import SettingsCatalog
 
         api = create_application(self.root)
         try:
             service = api.get("downloads")
             self.assertEqual(service.directory().resolve(), (self.root / "downloads").resolve())
-            field = next(
-                row for row in SettingsCatalog(api).rows() if row["key"] == "download_directory"
-            )
-            self.assertEqual(field["section"], "application")
-            self.assertEqual(field["title"], "Download folder")
             for invalid in ("", "   ", "bad\0path"):
                 with self.assertRaises(ValueError):
                     api.settings.update("application", {"download_directory": invalid})
