@@ -334,14 +334,13 @@ class GeminiSession:
                 if option.get("isDisabled"):
                     continue
                 level = option.get("thinkingLevel")
-                title = (option.get("title") or option.get("pickerButtonPrimaryText") or "").strip()
-                if not title or level == "THINKING_LEVEL_UNSPECIFIED":
+                if level == "THINKING_LEVEL_UNSPECIFIED":
                     continue
                 if level not in THINKING_VALUES:
                     raise ProviderError("Gemini bilinmeyen bir düşünme protokolü döndürdü")
                 identifier = level.removeprefix("THINKING_LEVEL_").lower()
                 if identifier not in values:
-                    efforts.append(Choice(identifier, title))
+                    efforts.append(Choice(identifier, identifier))
                     values[identifier] = THINKING_VALUES[level]
             implicit = policy.get("implicitThinkingLevel") or ""
             default = implicit.removeprefix("THINKING_LEVEL_").lower()

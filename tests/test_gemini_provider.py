@@ -230,6 +230,7 @@ class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
         options = [
             {"thinkingLevel": "THINKING_LEVEL_STANDARD", "title": "Fast"},
             {"thinkingLevel": "THINKING_LEVEL_MEDIUM", "title": "Balanced"},
+            {"thinkingLevel": "THINKING_LEVEL_DEEP_THINK"},
             {"thinkingLevel": "THINKING_LEVEL_EXTENDED", "title": "Thorough", "isDisabled": True},
         ]
         policy = {
@@ -260,7 +261,8 @@ class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
         session.models = await session.discover_models()
         (model,) = session.models
         self.assertEqual(
-            [(e.id, e.title) for e in model.efforts], [("standard", "Fast"), ("medium", "Balanced")]
+            [(e.id, e.title) for e in model.efforts],
+            [("standard", "standard"), ("medium", "medium"), ("deep_think", "deep_think")],
         )
         self.assertEqual(model.default_effort, "medium")
         self.assertEqual(model.title, "Provider model")
@@ -277,6 +279,7 @@ class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
 
         # A refreshed server policy changes the choices without local model-name tables.
         options[1]["isDisabled"] = True
+        options[2]["isDisabled"] = True
         policy["implicitThinkingLevel"] = "THINKING_LEVEL_STANDARD"
         session.http.get.return_value.text = json.dumps(
             [
@@ -284,7 +287,7 @@ class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
         (refreshed,) = await session.discover_models()
-        self.assertEqual(refreshed.efforts, (Choice("standard", "Fast"),))
+        self.assertEqual(refreshed.efforts, (Choice("standard", "standard"),))
         self.assertEqual(refreshed.default_effort, "standard")
         policy["modeConfig"]["isDisabled"] = True
         session.http.get.return_value.text = json.dumps(
