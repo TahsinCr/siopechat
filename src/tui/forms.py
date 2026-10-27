@@ -9,7 +9,7 @@ from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import D
 from prompt_toolkit.mouse_events import MouseButton, MouseEventType
 from prompt_toolkit.utils import get_cwidth
-from prompt_toolkit.widgets import Button, CheckboxList, Dialog, RadioList, TextArea
+from prompt_toolkit.widgets import Button, CheckboxList, Dialog, Frame, RadioList, TextArea
 
 
 def _wrap_terminal_text(value, width):
@@ -174,9 +174,8 @@ class Forms:
         self.fields = {}
         self.error = ""
         terminal = self.view.app.output.get_size()
-        dialog_width = max(24, min(76, terminal.columns - 4))
-        line_width = max(12, dialog_width - 8)
-        pane_height = max(1, terminal.rows - 8)
+        dialog_width = max(20, min(64, terminal.columns - 8))
+        line_width = max(8, dialog_width - 5)
         pane = None
 
         def scroll_by(amount):
@@ -251,17 +250,19 @@ class Forms:
             )
 
         rows, first_focus, content_height = [], None, 0
-        for item in items:
+        for index, item in enumerate(items):
             source_row, row_height = source_window(item)
             rows.append(source_row)
             content_height += row_height
             first_focus = first_focus or source_row
-            rows.append(spacer_window())
-            content_height += 1
+            if index + 1 < len(items):
+                rows.append(spacer_window())
+                content_height += 1
         if not rows:
             empty_row, content_height = source_window({})
             rows.append(empty_row)
             first_focus = empty_row
+        pane_height = min(content_height, max(1, terminal.rows - 8))
         keys = KeyBindings()
         keys.add("escape", is_global=True)(lambda _: self.close())
         keys.add("up", is_global=True)(lambda _: scroll_by(-1))
@@ -274,19 +275,27 @@ class Forms:
             HSplit(rows, padding=0, key_bindings=keys),
             keep_cursor_visible=False,
             keep_focused_window_visible=False,
-            height=lambda: D(
-                min=1,
-                preferred=min(content_height, pane_height),
-                max=pane_height,
-            ),
+            height=D.exact(pane_height),
         )
         close_button = Button(self.view.tr("Kapat"), handler=self.close)
-        self.container = Dialog(
+        self.container = Frame(
+            body=HSplit(
+                [
+                    Window(height=1),
+                    VSplit(
+                        [Window(width=1), pane, Window(width=1)],
+                        padding=0,
+                        height=pane_height,
+                    ),
+                    VSplit([Window(), close_button, Window()], padding=1, height=1),
+                ],
+                padding=0,
+            ),
             title=title,
-            body=pane,
-            buttons=[close_button],
+            style="class:dialog.body",
             width=dialog_width,
-            with_background=False,
+            height=pane_height + 4,
+            modal=True,
         )
         self.visible = True
         self.view.app.layout.update_parents_relations()

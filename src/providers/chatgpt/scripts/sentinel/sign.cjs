@@ -7,7 +7,6 @@ const vm = require("vm");
 const { readJsonInput: readStdinJson } = require("../io.cjs");
 const cryptoModule = require("crypto");
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 
 const bootstrapUrl = "https://chatgpt.com/backend-api/sentinel/sdk.js";
@@ -47,18 +46,9 @@ function sha256(value) {
 }
 
 function cacheDirectory() {
-  if (process.env.SIOPECHAT_CACHE_HOME) {
-    return path.join(process.env.SIOPECHAT_CACHE_HOME, "sentinel");
-  }
-  if (process.platform === "win32") {
-    const root = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
-    return path.join(root, "SiopeChat", "Cache", "sentinel");
-  }
-  if (process.platform === "darwin" && !process.env.XDG_CACHE_HOME) {
-    return path.join(os.homedir(), "Library", "Caches", "SiopeChat", "sentinel");
-  }
-  const root = process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache");
-  return path.join(root, "chatgpt-web", "sentinel");
+  const root = process.env.SIOPECHAT_CACHE_HOME;
+  if (!root) throw new Error("SIOPECHAT_CACHE_HOME is required");
+  return path.join(root, "sentinel");
 }
 
 function readCachedSdk() {

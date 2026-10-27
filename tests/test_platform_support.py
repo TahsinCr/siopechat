@@ -27,10 +27,10 @@ class PlatformSupportTests(unittest.TestCase):
             patch.object(platform.getpass, "getuser", return_value="test-user"),
         ):
             self.assertEqual(
-                platform.user_data_dir(), PureWindowsPath("C:/Users/test/AppData/Local/SiopeChat")
+                platform.user_data_dir(), PureWindowsPath("C:/Users/test/AppData/Local/siopechat")
             )
             self.assertEqual(
-                platform.cache_dir(), PureWindowsPath("C:/Users/test/AppData/Local/SiopeChat/Cache")
+                platform.cache_dir(), PureWindowsPath("C:/Users/test/AppData/Local/siopechat/Cache")
             )
             self.assertEqual(
                 platform.runtime_dir(),
@@ -47,7 +47,7 @@ class PlatformSupportTests(unittest.TestCase):
             process.set_private_permissions(PureWindowsPath("credentials.json"), 0o600)
         chmod.assert_not_called()
 
-    def test_unix_xdg_paths_use_stable_application_namespace(self):
+    def test_unix_xdg_paths_use_package_name(self):
         with (
             patch.object(platform.os, "name", "posix"),
             patch.object(platform.sys, "platform", "linux"),
@@ -62,9 +62,9 @@ class PlatformSupportTests(unittest.TestCase):
                 clear=True,
             ),
         ):
-            self.assertEqual(platform.user_data_dir(), TestPosixPath("/tmp/data/chatgpt-web"))
-            self.assertEqual(platform.state_dir(), TestPosixPath("/tmp/state/chatgpt-web"))
-            self.assertEqual(platform.cache_dir(), TestPosixPath("/tmp/cache/chatgpt-web"))
+            self.assertEqual(platform.user_data_dir(), TestPosixPath("/tmp/data/siopechat"))
+            self.assertEqual(platform.state_dir(), TestPosixPath("/tmp/state/siopechat"))
+            self.assertEqual(platform.cache_dir(), TestPosixPath("/tmp/cache/siopechat"))
 
     def test_macos_uses_native_data_directories(self):
         with (
@@ -75,10 +75,10 @@ class PlatformSupportTests(unittest.TestCase):
         ):
             self.assertEqual(
                 platform.user_data_dir(),
-                TestPosixPath("/Users/test/Library/Application Support/SiopeChat"),
+                TestPosixPath("/Users/test/Library/Application Support/siopechat"),
             )
             self.assertEqual(
-                platform.cache_dir(), TestPosixPath("/Users/test/Library/Caches/SiopeChat")
+                platform.cache_dir(), TestPosixPath("/Users/test/Library/Caches/siopechat")
             )
 
 

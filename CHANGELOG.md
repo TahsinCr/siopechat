@@ -18,7 +18,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Changed
 
-- Resolve the runtime root from the source checkout or the platform's per-user data directory, never from the process working directory; keep the established XDG storage namespace separate from checkout discovery.
+- Resolve per-user data, state, cache, and runtime directories from the normalized project name in package metadata; pass the caller-owned cache path to the Sentinel process instead of maintaining a second hardcoded cache root.
 - Batch title-override reads while saving provider conversation pages, avoiding one SQLite metadata query per conversation.
 - Show cited sources as wrapped, real-URL links with their provider-supplied title and description in a mouse- and keyboard-scrollable popup.
 - Reuse ChatGPT's prepared HTTP client for sends; discard the pool after canceled or failed streams while preserving interruption behavior.
@@ -44,6 +44,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 ### Fixed
 
 - Build the Sources popup from the transcript's already validated citations before scanning raw provider metadata, so large web-search payloads cannot exhaust the bounded source traversal and leave the popup empty.
+- Render the Sources popup in an opaque, explicitly sized frame whose width matches the overlay; keep long citation lists scrollable without exposing transcript text through the popup.
 - Route sidebar renames through the conversation's owning provider account, and retain confirmed names when an older in-flight history read completes.
 - Restore the visible tab state when opening a saved conversation after the last chat tab was deleted.
 - Read source citations from both archived provider metadata and prepared transcript rows; source titles and URLs open the validated citation URL directly instead of entering the file-download flow.
