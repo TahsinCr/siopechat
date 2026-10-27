@@ -12,9 +12,9 @@ from prompt_toolkit.utils import get_cwidth
 
 from backend import BackendService
 from bootstrap import create_application
-from cli.markdown import visible_chat_message
 from providers.chatgpt.formats import normalize_message
-from tests.cli_support import immediate, terminal
+from tests.tui_support import immediate, terminal
+from tui.markdown import visible_chat_message
 
 
 class WorkspaceTests(unittest.TestCase):

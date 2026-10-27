@@ -15,11 +15,11 @@ from prompt_toolkit.utils import get_cwidth
 
 from backend import BackendService
 from bootstrap import create_application
-from cli.widgets import TranscriptControl
 from providers.chatgpt import BrowserSession, ChatGPTClient, SessionPaths
 from providers.chatgpt.errors import ChatGPTWebError
 from providers.models import Choice, FeatureState, Model, ModelCatalog
-from tests.cli_support import click, immediate, terminal, wait_until
+from tests.tui_support import click, immediate, terminal, wait_until
+from tui.widgets import TranscriptControl
 
 
 class UiControlsTests(unittest.TestCase):

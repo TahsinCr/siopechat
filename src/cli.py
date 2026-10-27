@@ -1,4 +1,4 @@
-"""Read ChatGPT web conversations through a Chrome-authenticated HTTP client."""
+"""Application command-line interface, including the interactive TUI launcher."""
 
 from __future__ import annotations
 
@@ -6,7 +6,9 @@ import argparse
 import asyncio
 import json
 import os
+import sqlite3
 import sys
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -129,119 +131,10 @@ def stream_prompt(
     return result
 
 
-def run_fullscreen(
-    api,
-    socket_path: Path,
-    conversation_id: str | None = None,
-    cached_conversation: dict[str, Any] | None = None,
-    cdp_url: str = DEFAULT_CDP_URL,
-) -> int:
-    from accounts import identity, origin
-
-    from .chat import run_tui
-    from .settings import SettingsPanel
-    from .tab_session import TabSessionStore
-
-    accounts = api.get("accounts")
-    accounts.cdp_url = cdp_url
-    key = accounts.active()
-    if key != "chatgpt/default":
-        cached_conversation, conversation_id = None, None
-    session_store = TabSessionStore(Path(api.get("paths")) / "data" / "session.json")
-    initial_session = (
-        session_store.load() if conversation_id is None and cached_conversation is None else None
-    )
-    cached = {
-        name: value
-        for name, value in (cached_conversation or {}).items()
-        if name not in ("messages", "metadata")
-    }
-    cached_conversation = None
-    if not conversation_id and initial_session is None:
-        candidate = accounts.active_conversation(key)
-        conversation_id = candidate if isinstance(candidate, str) else cached.get("id")
-
-    def preferences():
-        config = api.settings.snapshot()
-        return {
-            "settings": config,
-            "translations": api.languages.merged(config["application"]["language"]),
-        }
-
-    def change_setting(section, name, value):
-        asyncio.run(api.actions.invoke("settings.change", section=section, key=name, value=value))
-        return preferences()
-
-    def layout_factory(view):
-        if api.settings.extension("layout").get("enabled", True):
-            return api.get("workspaces").create_layout(view)
-        return None
-
-    def action_host(view):
-        from actions import Action
-
-        from .actions import action_title
-
-        api.actions.unregister("terminal")
-        existing = {action.id for action in api.actions.search()}
-        for action_id in view.action_handlers:
-            if action_id not in existing:
-                api.actions.register(
-                    "terminal",
-                    Action(
-                        action_id,
-                        action_title(action_id),
-                        lambda action_id=action_id: view._dispatch_ui(
-                            lambda: view.dispatch_action(action_id)
-                        ),
-                        view.keybindings.get(action_id),
-                    ),
-                )
-        return lambda: api.actions.unregister("terminal")
-
-    callbacks = accounts.callbacks(key)
-    run_tui(
-        lambda: accounts.list_chats()["items"],
-        callbacks["load_conversation"],
-        callbacks["send_prompt"],
-        conversation_id=identity(key, origin(conversation_id or cached.get("id"), key)[1]),
-        title=cached.get("title") or "Yeni sohbet",
-        initial_messages=None,
-        model=cached.get("model"),
-        account_service=accounts,
-        action_host=action_host,
-        layout_factory=layout_factory,
-        initial_session=initial_session,
-        session_store=session_store,
-        keybindings=api.settings.snapshot()["keybindings"],
-        settings_rows=SettingsPanel(api).rows,
-        change_setting=change_setting,
-        load_preferences=preferences,
-        list_workspaces=lambda: (
-            asyncio.run(api.actions.invoke("layout.list"))
-            if api.settings.extension("layout").get("enabled", True)
-            else []
-        ),
-        list_actions=lambda: [
-            {
-                "id": action.id,
-                "title": action.title,
-                "detail": action.keybinding or "",
-                "parameters": action.parameters,
-            }
-            for action in api.actions.search()
-        ],
-        invoke_action=lambda action_id, arguments=None: asyncio.run(
-            api.actions.invoke(action_id, **(arguments or {}))
-        ),
-    )
-    return 0
-
-
 def build_parser(api) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="siopechat",
-        epilog="Management: settings, extensions, providers, actions, action. Use siopechat actions to list registered actions.",
+        epilog="Management: workspace, settings, extensions, providers, actions, action. Use siopechat actions to list registered actions.",
     )
     parser.add_argument(
         "--cdp-url",
@@ -255,7 +148,6 @@ def build_parser(api) -> argparse.ArgumentParser:
         help="daemon Unix socket (default: %(default)s)",
     )
     commands = parser.add_subparsers(dest="command")
-    commands.add_parser("workspace", help="manage saved local tab workspaces")
     commands.add_parser("login", help="launch the persistent login browser")
     auth_parser = commands.add_parser("auth", help="verify the saved ChatGPT session")
     auth_parser.add_argument(
@@ -291,7 +183,9 @@ def build_parser(api) -> argparse.ArgumentParser:
     return parser
 
 
-def main(api, argv: list[str] | None = None) -> int:
+def _provider_main(api, argv: list[str] | None = None) -> int:
+    from tui.application import run_fullscreen
+
     args = build_parser(api).parse_args(argv)
     try:
         if args.command == "login":
@@ -377,3 +271,104 @@ def main(api, argv: list[str] | None = None) -> int:
         print(f"siopechat: {error}", file=sys.stderr)
         return 1
     return 0
+
+
+async def _workspace(api, argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="siopechat workspace")
+    parser.add_argument("--db")
+    commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("create").add_argument("name")
+    commands.add_parser("list")
+    commands.add_parser("show").add_argument("id")
+    commands.add_parser("delete").add_argument("id")
+    args = parser.parse_args(argv)
+    values = {"path": args.db}
+    if args.command == "create":
+        values["name"] = args.name
+    if args.command in ("show", "delete"):
+        values["workspace_id"] = args.id
+    try:
+        result = await api.actions.invoke(f"layout.{args.command}", **values)
+        print(json.dumps(result, ensure_ascii=False))
+        return 0
+    except (LookupError, ValueError, OSError, sqlite3.Error) as error:
+        parser.exit(1, f"workspace: {error}; check whether layout extension is enabled\n")
+
+
+async def _management(api, argv: list[str]) -> int:
+    try:
+        if argv[0] == "workspace":
+            return await _workspace(api, argv[1:])
+        if argv[0] == "settings":
+            if len(argv) > 1:
+                if len(argv) != 4 or argv[1] != "set":
+                    raise ValueError("usage: siopechat settings [set KEY JSON_VALUE]")
+                key, raw = argv[2:]
+                try:
+                    value = json.loads(raw)
+                except json.JSONDecodeError:
+                    value = raw
+                if key.startswith("keybindings."):
+                    section, field = "keybindings", key.removeprefix("keybindings.")
+                elif key.startswith("extensions."):
+                    owner, field = key.removeprefix("extensions.").rsplit(".", 1)
+                    section = f"extensions.{owner}"
+                else:
+                    section, field = "application", key
+                await api.actions.invoke("settings.change", section=section, key=field, value=value)
+            print(json.dumps(api.settings.snapshot(), ensure_ascii=False, indent=2))
+            return 0
+        if argv[0] == "extensions":
+            manager = api.get("extensions")
+            if len(argv) > 1:
+                if len(argv) != 3 or argv[1] not in ("enable", "disable"):
+                    raise ValueError("usage: siopechat extensions [enable|disable ID]")
+                await api.actions.invoke(f"extensions.{argv[1]}", extension_id=argv[2])
+            print(json.dumps({key: asdict(value) for key, value in manager.statuses().items()}))
+            return 0
+        if argv[0] == "actions":
+            print(
+                json.dumps(
+                    [
+                        {"id": action.id, "title": action.title}
+                        for action in api.actions.search(" ".join(argv[1:]))
+                    ]
+                )
+            )
+            return 0
+        if argv[0] == "action":
+            if len(argv) not in (2, 3):
+                raise ValueError("usage: siopechat action ID [JSON_ARGUMENTS]")
+            arguments = json.loads(argv[2]) if len(argv) == 3 else {}
+            if not isinstance(arguments, dict):
+                raise ValueError("action arguments must be a JSON object")
+            print(json.dumps(await api.actions.invoke(argv[1], **arguments), ensure_ascii=False))
+            return 0
+        if argv[0] == "providers":
+            descriptions = [
+                asdict(await api.providers.describe(key)) for key in api.providers.ids()
+            ]
+            print(json.dumps(descriptions, ensure_ascii=False, indent=2))
+            return 0
+    except (ImportError, OSError, ValueError, KeyError, LookupError, sqlite3.Error) as error:
+        print(f"siopechat: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def main(api, argv: list[str] | None = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    management = {"workspace", "settings", "extensions", "actions", "action", "providers"}
+    if args and args[0] in management:
+
+        async def execute() -> int:
+            try:
+                return await _management(api, args)
+            finally:
+                await api.runtime.aclose()
+
+        return asyncio.run(execute())
+    try:
+        return _provider_main(api, args)
+    finally:
+        api.runtime.close()

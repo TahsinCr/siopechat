@@ -7,9 +7,9 @@ from unittest.mock import Mock
 from prompt_toolkit.styles import Style
 
 from providers import Capability
-from tests import cli_support as interaction
-from tests.cli_support import ResizableOutput, immediate, screen_text, terminal
+from tests import tui_support as interaction
 from tests.fakes import Accounts
+from tests.tui_support import ResizableOutput, immediate, screen_text, terminal
 
 
 class FormsRenderTests(unittest.IsolatedAsyncioTestCase):

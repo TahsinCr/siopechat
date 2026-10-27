@@ -10,7 +10,7 @@ from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
 from prompt_toolkit.output import DummyOutput
 
-from cli.chat import ChatView
+from tui.chat import ChatView
 
 
 @contextmanager
@@ -18,7 +18,7 @@ def terminal(output=None, **callbacks):
     with (
         create_pipe_input() as pipe,
         patch(
-            "cli.chat.Application",
+            "tui.chat.Application",
             side_effect=lambda **kw: Application(
                 input=pipe, output=output if output is not None else DummyOutput(), **kw
             ),

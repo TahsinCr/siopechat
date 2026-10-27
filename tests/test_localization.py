@@ -12,8 +12,8 @@ from unittest.mock import Mock, patch
 from bootstrap import create_application
 from language import Catalog, literal
 from settings import DEFAULTS
-from tests import cli_support as interaction
-from tests.cli_support import ResizableOutput, screen_text
+from tests import tui_support as interaction
+from tests.tui_support import ResizableOutput, screen_text
 
 ROOT = Path(__file__).resolve().parents[1]
 

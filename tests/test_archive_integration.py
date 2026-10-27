@@ -10,13 +10,13 @@ from contextlib import closing
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
-from cli.history import prepare_archive_snapshot
 from extensions.archive.repository import Files, SQLiteRepository, encode
 from extensions.archive.sync import Archive
 from providers import Capability
 from providers.models import Choice, FeatureState, Model, ModelCatalog
 from tests.account_fixture import configured_application as create_application
-from tests.cli_support import immediate, terminal
+from tests.tui_support import immediate, terminal
+from tui.history import prepare_archive_snapshot
 
 
 class ArchiveIntegrationTests(unittest.TestCase):
@@ -238,7 +238,7 @@ class ArchiveIntegrationTests(unittest.TestCase):
             sent = Mock(return_value={"conversation_id": "new"})
             view.send_prompt = sent
             with patch(
-                "cli.chat.threading.Thread",
+                "tui.chat.threading.Thread",
                 side_effect=lambda **kw: Mock(
                     start=lambda: kw["target"](*kw.get("args", ()), **kw.get("kwargs", {}))
                 ),

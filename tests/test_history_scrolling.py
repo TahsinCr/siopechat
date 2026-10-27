@@ -5,10 +5,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cli.paging import visible_window
 from extensions.archive.repository import Files, SQLiteRepository
 from extensions.archive.sync import Archive
 from tests.history_support import message
+from tui.paging import visible_window
 
 
 class AsyncPagingUITests(unittest.IsolatedAsyncioTestCase):
@@ -20,7 +20,7 @@ class AsyncPagingUITests(unittest.IsolatedAsyncioTestCase):
         from prompt_toolkit.data_structures import Size
         from prompt_toolkit.output import DummyOutput
 
-        from tests.cli_support import terminal
+        from tests.tui_support import terminal
 
         async def settle(predicate):
             for _ in range(400):
@@ -180,7 +180,7 @@ class AsyncPagingUITests(unittest.IsolatedAsyncioTestCase):
         from prompt_toolkit.data_structures import Size
         from prompt_toolkit.output import DummyOutput
 
-        from tests.cli_support import terminal
+        from tests.tui_support import terminal
 
         async def settle(predicate):
             deadline = asyncio.get_running_loop().time() + 5
@@ -250,7 +250,7 @@ class AsyncPagingUITests(unittest.IsolatedAsyncioTestCase):
         import asyncio
 
         from tests.account_fixture import configured_application
-        from tests.cli_support import terminal
+        from tests.tui_support import terminal
 
         async def settle(predicate):
             deadline = asyncio.get_running_loop().time() + 5

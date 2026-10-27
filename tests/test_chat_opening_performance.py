@@ -8,9 +8,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from cli.markdown import MessageRenderer
 from tests.account_fixture import configured_application as create_application
-from tests.cli_support import terminal
+from tests.tui_support import terminal
+from tui.markdown import MessageRenderer
 
 
 class OpeningPerformanceTests(unittest.IsolatedAsyncioTestCase):
@@ -114,7 +114,7 @@ class ArchivePollingPerformanceTests(unittest.IsolatedAsyncioTestCase):
     async def test_live_archive_polling_cannot_wait_for_storage_on_the_ui_thread(self):
         import asyncio
 
-        from tests import cli_support as interaction
+        from tests import tui_support as interaction
 
         with tempfile.TemporaryDirectory() as folder:
             api = create_application(Path(folder))
@@ -166,7 +166,7 @@ class ArchivePollingPerformanceTests(unittest.IsolatedAsyncioTestCase):
 
 class SidebarRenderingPerformanceTests(unittest.TestCase):
     def test_sidebar_content_is_lazy_and_reuses_rows_until_invalidated(self):
-        from cli.library import build_sidebar_rows
+        from tui.library import build_sidebar_rows
 
         with terminal() as (view, _):
             view.sidebar_items = [
@@ -195,7 +195,7 @@ class SidebarRenderingPerformanceTests(unittest.TestCase):
                 self.assertEqual(render_calls, [0, 1])
 
             rows = view.sidebar_rows
-            with patch("cli.chat.build_sidebar_rows", wraps=build_sidebar_rows) as build:
+            with patch("tui.chat.build_sidebar_rows", wraps=build_sidebar_rows) as build:
                 view.sidebar_control.create_content(80, 24)
                 self.assertIs(view.sidebar_rows, rows)
                 build.assert_not_called()

@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
 
-from tests.cli_support import immediate, terminal
+from tests.tui_support import immediate, terminal
 
 
 class PartialSelectionTests(unittest.TestCase):
@@ -46,7 +46,7 @@ class PartialSelectionTests(unittest.TestCase):
                 if any(len(span) > 2 for span in spans)
             )
             x = "".join(span[1] for span in control.rows[y][0]).index("Select")
-            with patch("cli.markdown.subprocess.Popen") as launch:
+            with patch("tui.markdown.subprocess.Popen") as launch:
                 for kind, column in (
                     (MouseEventType.MOUSE_DOWN, x),
                     (MouseEventType.MOUSE_MOVE, x + 6),
@@ -59,7 +59,7 @@ class PartialSelectionTests(unittest.TestCase):
                 launch.assert_not_called()
 
     def test_drag_copies_rendered_substring_without_opening_link(self):
-        from cli.editing import copy_selection
+        from tui.editing import copy_selection
 
         with terminal(
             initial_messages=[{"role": "reasoning", "text": "Before **selected text** afterwards."}]

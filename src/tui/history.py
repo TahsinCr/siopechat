@@ -154,18 +154,17 @@ def prepare_archive_snapshot(
         state = state_map.get((key, "conversation", remote))
         refresh_pending = record.get("archive_refresh_pending") is not None
         if record.get("busy"):
-            if state and state["state"] == "ready" and (
-                state.get("version") != record.get("archive_version") or refresh_pending
+            if (
+                state
+                and state["state"] == "ready"
+                and (state.get("version") != record.get("archive_version") or refresh_pending)
             ):
                 deferred_tabs.add(id(tab))
             continue
         if (
             not state
             or state["state"] != "ready"
-            or (
-                state.get("version") == record.get("archive_version")
-                and not refresh_pending
-            )
+            or (state.get("version") == record.get("archive_version") and not refresh_pending)
         ):
             continue
         window = record.get("history_window") or {}

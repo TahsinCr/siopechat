@@ -72,7 +72,8 @@ class ApplicationTests(unittest.TestCase):
         self.assertTrue(spawn.call_args.kwargs["env"]["PYTHONPATH"].startswith(str(ROOT / "src")))
 
     def test_fullscreen_network_callbacks_do_not_duplicate_daemon_cache_writes(self):
-        from cli import chat, commands
+        from tui import chat
+        from tui.application import run_fullscreen
 
         backend = Mock()
         backend.daemon_request.return_value = {"conversation": {"id": "example", "messages": []}}
@@ -97,7 +98,7 @@ class ApplicationTests(unittest.TestCase):
         }.get(key, Mock())
         with patch.object(chat, "run_tui") as run_tui:
             with patch.object(self.app, "cache_conversation") as cache:
-                commands.run_fullscreen(api, Path("unused.sock"))
+                run_fullscreen(api, Path("unused.sock"))
                 callbacks = run_tui.call_args.args
                 self.assertEqual(callbacks[1]("example")["id"], "example")
                 callbacks[2]("example", "hello", [], Mock(), Mock())

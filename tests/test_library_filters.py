@@ -5,14 +5,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from cli.library import modified_time, sort_records
 from providers.gemini.history import conversations
 from providers.gemini.notebooks import project_from_native
 from providers.models import Conversation, Origin, Page
 from tests.account_fixture import configured_application as create_application
-from tests.cli_support import terminal
 from tests.fakes import Accounts
 from tests.provider_fixtures import notebook
+from tests.tui_support import terminal
+from tui.library import modified_time, sort_records
 
 
 class LibraryTests(unittest.TestCase):
@@ -42,7 +42,7 @@ class LibraryTests(unittest.TestCase):
             {"id": "b", "title": "Beta", "updated_at": "2026-10-10T00:00:00Z"},
             {"id": "u", "title": "Missing"},
         ]
-        with patch("cli.library.modified_time", wraps=modified_time) as read_time:
+        with patch("tui.library.modified_time", wraps=modified_time) as read_time:
             self.assertEqual(
                 [row["id"] for row in sort_records(rows, "time_desc")], ["a", "b", "c", "u"]
             )

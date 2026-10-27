@@ -4,9 +4,9 @@ import asyncio
 import unittest
 from unittest.mock import patch
 
-from cli.styles import DEFAULT_TRANSCRIPT_GUTTER_WIDTH
 from extensions.layout.panes import SplitLayout, _Pane
-from tests import cli_support as interaction
+from tests import tui_support as interaction
+from tui.styles import DEFAULT_TRANSCRIPT_GUTTER_WIDTH
 
 
 class SplitTests(unittest.IsolatedAsyncioTestCase):
@@ -117,7 +117,7 @@ class SplitTests(unittest.IsolatedAsyncioTestCase):
         from prompt_toolkit.data_structures import Point
         from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
 
-        from tests.cli_support import ResizableOutput
+        from tests.tui_support import ResizableOutput
 
         with interaction.terminal(output=ResizableOutput(), layout_factory=SplitLayout) as (v, _):
             v.messages = [{"role": "assistant", "text": "Left"}]

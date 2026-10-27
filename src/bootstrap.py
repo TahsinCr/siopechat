@@ -118,7 +118,7 @@ def main(argv: list[str] | None = None) -> int:
     except (ImportError, OSError, ValueError) as error:
         print(f"siopechat: {error}", file=sys.stderr)
         return 1
-    from cli.entrypoint import main as cli_main
+    from cli import main as cli_main
 
     return cli_main(api, argv)
 

@@ -12,7 +12,7 @@ import httpx
 from downloads import Downloads
 from providers.files import DownloadSource, NativeDownloadClient
 from settings import Settings
-from tests.cli_support import terminal
+from tests.tui_support import terminal
 
 
 class DownloadTests(unittest.TestCase):

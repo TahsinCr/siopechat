@@ -435,7 +435,7 @@ class AccountTests(unittest.TestCase):
         self.assertNotIn("cookie", json.dumps(config))
 
     def test_late_session_result_does_not_change_another_account(self):
-        from tests.cli_support import terminal
+        from tests.tui_support import terminal
 
         with terminal(session_action=lambda action: {"action": action}) as (view, _):
             pending = []

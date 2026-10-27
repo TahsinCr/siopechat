@@ -11,11 +11,11 @@ from contextlib import closing
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from cli.history import prepare_virtual_transcript
-from cli.paging import visible_window
 from extensions.archive.repository import Files, SQLiteRepository, encode
 from extensions.archive.sync import Archive
 from tests.history_support import message
+from tui.history import prepare_virtual_transcript
+from tui.paging import visible_window
 
 
 class HistoryWindowTests(unittest.TestCase):
@@ -244,7 +244,7 @@ class HistoryReadTests(unittest.TestCase):
     def test_complete_read_restarts_instead_of_mixing_archive_revisions(self):
         from types import SimpleNamespace
 
-        from cli.history import read_history
+        from tui.history import read_history
 
         source = SimpleNamespace(
             conversation_window=Mock(
@@ -264,7 +264,7 @@ class HistoryReadTests(unittest.TestCase):
     def test_bounded_complete_read_stops_at_the_requested_resident_end(self):
         from types import SimpleNamespace
 
-        from cli.history import read_history
+        from tui.history import read_history
 
         source = SimpleNamespace(
             conversation_window=Mock(return_value=self.page("v", 40, 100, total=200))
@@ -279,7 +279,7 @@ class HistoryReadTests(unittest.TestCase):
     def test_continuous_revision_changes_fail_without_publishing_a_partial_read(self):
         from types import SimpleNamespace
 
-        from cli.history import read_history
+        from tui.history import read_history
 
         source = SimpleNamespace(
             conversation_window=Mock(
@@ -298,7 +298,7 @@ class HistoryReadTests(unittest.TestCase):
     def test_closed_read_stops_between_sql_batches(self):
         from types import SimpleNamespace
 
-        from cli.history import read_history
+        from tui.history import read_history
 
         source = SimpleNamespace(conversation_window=Mock(return_value=self.page("a", 0, 1)))
         self.assertIsNone(
@@ -339,7 +339,7 @@ class HistoryReadTests(unittest.TestCase):
 
 class RenderReuseTests(unittest.TestCase):
     def test_tab_switch_reuses_layout_and_close_releases_its_source(self):
-        from tests.cli_support import immediate, terminal
+        from tests.tui_support import immediate, terminal
 
         class Source(str):
             pass
@@ -356,7 +356,7 @@ class RenderReuseTests(unittest.TestCase):
             view.new_tab()
             view._virtual_transcript_rows(20)
             with patch(
-                "cli.chat.prepare_virtual_transcript", side_effect=AssertionError("rerender")
+                "tui.chat.prepare_virtual_transcript", side_effect=AssertionError("rerender")
             ):
                 view.select_tab(0)
                 view._virtual_transcript_rows(20)
@@ -369,7 +369,7 @@ class RenderReuseTests(unittest.TestCase):
     def test_inactive_render_cache_evicts_oldest_layout_under_shared_budget(self):
         from types import SimpleNamespace
 
-        from tests.cli_support import terminal
+        from tests.tui_support import terminal
 
         with terminal() as (view, _):
             layouts = [
@@ -388,7 +388,7 @@ class RenderReuseTests(unittest.TestCase):
     def test_shared_viewport_worker_uses_latest_target_and_clear_cancels_queued_work(self):
         from types import SimpleNamespace
 
-        from cli.transcript import TranscriptPrefetch
+        from tui.transcript import TranscriptPrefetch
 
         jobs = []
         layout = SimpleNamespace(line_count=1000, prefetch=Mock())
@@ -406,8 +406,8 @@ class RenderReuseTests(unittest.TestCase):
         self.assertIsNone(queue._target)
 
     def test_prepend_reuses_geometry_and_rendered_rows_without_rich_conversion(self):
-        from cli.markdown import MessageRenderer
-        from cli.transcript import VirtualTranscript
+        from tui.markdown import MessageRenderer
+        from tui.transcript import VirtualTranscript
 
         data = [message(i, 60) for i in range(5)]
         renderer = MessageRenderer()
@@ -426,7 +426,7 @@ class RenderReuseTests(unittest.TestCase):
         self.assertLessEqual(new.cache_bytes, new.CACHE_BYTES)
 
     def test_large_code_index_is_shared_across_prepend_without_reindexing(self):
-        from cli.transcript import VirtualTranscript
+        from tui.transcript import VirtualTranscript
 
         data = [{"role": "assistant", "text": "```text\n" + "body\n" * 20_000 + "```"}]
         old = VirtualTranscript(data, 60, preserve_order=True)
@@ -440,12 +440,12 @@ class RenderReuseTests(unittest.TestCase):
         self.assertIs(old._large_code[0][0].offsets, new._large_code[1][0].offsets)
 
     def test_render_cache_compresses_large_ansi_and_retains_no_source_keys(self):
-        from cli.markdown import ChatMarkdown, MessageRenderer
+        from tui.markdown import ChatMarkdown, MessageRenderer
 
         renderer = MessageRenderer()
         renderer.cache_byte_limit = 32 * 1024
         text = "**Formatted paragraph** with a [link](https://example.com).\n\n" * 300
-        with patch("cli.markdown.ChatMarkdown", wraps=ChatMarkdown) as render:
+        with patch("tui.markdown.ChatMarkdown", wraps=ChatMarkdown) as render:
             first = renderer.render("assistant", text, 60, False, False)
             second = renderer.render("assistant", text, 60, True, False)
             self.assertEqual(first, second)
@@ -457,7 +457,7 @@ class RenderReuseTests(unittest.TestCase):
         self.assertLessEqual(renderer.cache_bytes, renderer.cache_byte_limit)
 
     def test_closing_tab_releases_queued_render_payload_and_viewport_target(self):
-        from tests.cli_support import terminal
+        from tests.tui_support import terminal
 
         class Source(str):
             pass
@@ -482,13 +482,13 @@ class RenderReuseTests(unittest.TestCase):
                 jobs[0][0]()
 
     def test_history_layout_reuses_counts_after_rendered_text_was_evicted(self):
-        from cli.markdown import ChatMarkdown, MessageRenderer
-        from cli.transcript import VirtualTranscript
+        from tui.markdown import ChatMarkdown, MessageRenderer
+        from tui.transcript import VirtualTranscript
 
         renderer = MessageRenderer()
         renderer.cache_byte_limit = 1
         messages = [{"role": "assistant", "text": f"**Message {i}**\n\n" * 8} for i in range(30)]
-        with patch("cli.markdown.ChatMarkdown", wraps=ChatMarkdown) as render:
+        with patch("tui.markdown.ChatMarkdown", wraps=ChatMarkdown) as render:
             first = VirtualTranscript(messages, 60, renderer=renderer)
             calls = render.call_count
             self.assertFalse(renderer.cache)
@@ -507,10 +507,10 @@ class RenderReuseTests(unittest.TestCase):
         self.assertFalse(renderer._line_counts)
 
     def test_stream_updates_reuse_markdown_for_unchanged_messages(self):
-        from cli.markdown import ChatMarkdown
+        from tui.markdown import ChatMarkdown
 
         stable = {"role": "user", "text": "Stable **formatted** prompt"}
-        with patch("cli.markdown.ChatMarkdown", wraps=ChatMarkdown) as markdown:
+        with patch("tui.markdown.ChatMarkdown", wraps=ChatMarkdown) as markdown:
             first = prepare_virtual_transcript(
                 [stable, {"role": "assistant", "text": "Partial"}], 60, {}, True, active_index=1
             )
@@ -530,7 +530,7 @@ class RenderReuseTests(unittest.TestCase):
 
     def test_closed_split_pane_drops_its_source_and_formatted_cache(self):
         from extensions.layout.panes import SplitLayout, _Pane
-        from tests.cli_support import terminal
+        from tests.tui_support import terminal
 
         with terminal(layout_factory=SplitLayout) as (view, _):
             view.messages = [message(1)]

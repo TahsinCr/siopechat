@@ -15,6 +15,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Changed
 
+- Separate the command-line entry point (`src/cli.py`) from the terminal UI package (`src/tui/`); expose the extension-facing terminal UI contract only through `tui.api`.
 - Import ChatGPT discovery functions directly so the HTTP client no longer depends on the public package initializer.
 - Display per-response model and effort at the right of the message toolbar, immediately before reply-version controls when present; remove the separate details popup.
 - Move conversation deletion and split-pane controls beside the upper synchronization button.

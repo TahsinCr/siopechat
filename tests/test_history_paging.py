@@ -5,16 +5,16 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
-from cli.history import prepare_virtual_transcript
-from cli.paging import visible_window
 from tests.history_support import message
+from tui.history import prepare_virtual_transcript
+from tui.paging import visible_window
 
 
 class PagingUITests(unittest.TestCase):
     def test_wheel_uses_published_geometry_before_the_next_terminal_paint(self):
         from types import SimpleNamespace
 
-        from tests.cli_support import terminal
+        from tests.tui_support import terminal
 
         with terminal() as (view, _):
             view.transcript_window.render_info = SimpleNamespace(
@@ -43,7 +43,7 @@ class PagingUITests(unittest.TestCase):
     def test_loaded_messages_are_retained_and_duplicate_pages_are_deduplicated(self):
         from types import SimpleNamespace
 
-        from tests.cli_support import terminal
+        from tests.tui_support import terminal
 
         for direction, original, next_index in (("newer", (1, 2, 3), 4), ("older", (2, 3, 4), 1)):
             with self.subTest(direction=direction):
@@ -85,7 +85,7 @@ class PagingUITests(unittest.TestCase):
     def test_disjoint_sql_page_keeps_the_message_still_being_read(self):
         from types import SimpleNamespace
 
-        from tests.cli_support import terminal
+        from tests.tui_support import terminal
 
         for provider in ("chatgpt", "claude", "gemini"):
             for direction, next_ordinal in (("older", 0), ("newer", 2)):
@@ -133,7 +133,7 @@ class PagingUITests(unittest.TestCase):
     def test_idle_repaints_cannot_ping_pong_between_short_pages(self):
         from types import SimpleNamespace
 
-        from tests.cli_support import terminal
+        from tests.tui_support import terminal
 
         with terminal() as (view, _):
             view.tabs[0]["history_window"] = {"start": 40, "end": 80, "total": 120}
@@ -153,7 +153,7 @@ class PagingUITests(unittest.TestCase):
     def test_newer_target_uses_visible_ordinals_after_hidden_prefix(self):
         from types import SimpleNamespace
 
-        from tests.cli_support import terminal
+        from tests.tui_support import terminal
 
         messages = [dict(message(i, 20), _archive_ordinal=i) for i in range(2000, 2080)]
         archive = SimpleNamespace(conversation_window=Mock(return_value=None))
@@ -172,7 +172,7 @@ class PagingUITests(unittest.TestCase):
             )
 
     def test_anchor_follows_message_identity_after_sql_ordinals_change(self):
-        from cli.paging import HistoryPager
+        from tui.paging import HistoryPager
 
         data = [dict(message(i, 20), _archive_ordinal=i) for i in range(100, 103)]
         layout = prepare_virtual_transcript(data, 60, {}, True)
@@ -185,7 +185,7 @@ class PagingUITests(unittest.TestCase):
     def test_last_edge_request_loads_the_requested_tail_page(self):
         from types import SimpleNamespace
 
-        from tests.cli_support import terminal
+        from tests.tui_support import terminal
 
         original = [dict(message(i, 20), _archive_ordinal=i) for i in range(40, 120)]
         pages = [
@@ -219,7 +219,7 @@ class PagingUITests(unittest.TestCase):
     def test_edge_navigation_reads_only_the_requested_archive_page(self):
         from types import SimpleNamespace
 
-        from tests.cli_support import terminal
+        from tests.tui_support import terminal
 
         current = [dict(message(i, 20), _archive_ordinal=i) for i in range(40, 120)]
         pages = [
@@ -260,7 +260,7 @@ class PagingUITests(unittest.TestCase):
     def test_refresh_without_a_resident_range_loads_only_the_tail_page(self):
         from types import SimpleNamespace
 
-        from tests.cli_support import terminal
+        from tests.tui_support import terminal
 
         page = {
             "messages": [dict(message(i, 20), _archive_ordinal=i) for i in range(320, 400)],
@@ -287,8 +287,8 @@ class PagingUITests(unittest.TestCase):
     def test_scrolling_keeps_a_bounded_contiguous_resident_message_range(self):
         from types import SimpleNamespace
 
-        from cli.paging import MAX_LOADED_MESSAGES
-        from tests.cli_support import terminal
+        from tests.tui_support import terminal
+        from tui.paging import MAX_LOADED_MESSAGES
 
         cases = (
             ("older", 240, 480, 160, 240, 160, 400),
@@ -336,7 +336,7 @@ class PagingUITests(unittest.TestCase):
     def test_direction_reversal_keeps_new_prefix_and_the_latest_viewport(self):
         from types import SimpleNamespace
 
-        from tests.cli_support import terminal
+        from tests.tui_support import terminal
 
         original = [dict(message(i, 20), _archive_ordinal=i) for i in range(40, 120)]
         window = {"start": 40, "end": 120, "total": 200}
@@ -368,9 +368,9 @@ class PagingUITests(unittest.TestCase):
             self.assertEqual(view.transcript_window.vertical_scroll, layout.ranges[70][0])
 
     def test_prepend_retains_tail_and_late_read_cannot_replace_a_stream(self):
-        from cli.paging import HistoryPager
         from tests.account_fixture import configured_application
-        from tests.cli_support import immediate, terminal
+        from tests.tui_support import immediate, terminal
+        from tui.paging import HistoryPager
 
         with tempfile.TemporaryDirectory() as folder:
             api = configured_application(Path(folder))
@@ -436,7 +436,7 @@ class PagingUITests(unittest.TestCase):
 
     def test_late_history_page_preserves_the_viewport_after_fast_user_scroll(self):
         from tests.account_fixture import configured_application
-        from tests.cli_support import terminal
+        from tests.tui_support import terminal
 
         with tempfile.TemporaryDirectory() as folder:
             api = configured_application(Path(folder))
@@ -485,7 +485,7 @@ class PagingUITests(unittest.TestCase):
 
     def test_tab_close_releases_selection_and_sources_without_deleting_archive(self):
         from tests.account_fixture import configured_application
-        from tests.cli_support import terminal
+        from tests.tui_support import terminal
 
         with tempfile.TemporaryDirectory() as folder:
             api = configured_application(Path(folder))

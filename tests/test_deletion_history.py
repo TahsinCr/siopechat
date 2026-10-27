@@ -17,7 +17,7 @@ from providers import Capability
 from providers.errors import RemoteNotFound
 from providers.gemini import GeminiProvider
 from providers.history import merge_conversation
-from tests.cli_support import terminal
+from tests.tui_support import terminal
 
 
 def message(role, text, **extra):

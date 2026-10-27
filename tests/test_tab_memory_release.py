@@ -7,10 +7,10 @@ import unittest
 import weakref
 from pathlib import Path
 
-from cli.history import prepare_virtual_transcript
-from cli.transcript import VirtualTranscriptRows
 from tests.account_fixture import configured_application
-from tests.cli_support import terminal
+from tests.tui_support import terminal
+from tui.history import prepare_virtual_transcript
+from tui.transcript import VirtualTranscriptRows
 
 
 class TabMemoryReleaseTests(unittest.TestCase):

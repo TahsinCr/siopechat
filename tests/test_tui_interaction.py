@@ -9,7 +9,7 @@ from prompt_toolkit.data_structures import Size
 from prompt_toolkit.mouse_events import MouseButton, MouseEventType
 from prompt_toolkit.output import DummyOutput
 
-from tests.cli_support import immediate, terminal, wait_until
+from tests.tui_support import immediate, terminal, wait_until
 
 
 class InputTests(unittest.IsolatedAsyncioTestCase):
@@ -321,7 +321,7 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
     async def test_resize_recomputes_sidebar_transcript_and_tab_widths(self):
         from prompt_toolkit.utils import get_cwidth
 
-        from cli.styles import DEFAULT_TRANSCRIPT_GUTTER_WIDTH
+        from tui.styles import DEFAULT_TRANSCRIPT_GUTTER_WIDTH
 
         class Output(DummyOutput):
             size = Size(rows=24, columns=80)

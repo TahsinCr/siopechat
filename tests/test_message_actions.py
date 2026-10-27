@@ -7,13 +7,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from cli.markdown import transcript_fragments, visible_chat_message, visible_chat_messages
 from extensions.archive.repository import Files, SQLiteRepository
 from extensions.archive.sync import Archive
 from providers import ConversationBound, MessageAction, MessageMetadata, ReplaceText
 from providers.models import Content, Conversation, Message, Origin
 from tests.account_fixture import configured_application
-from tests.cli_support import terminal
+from tests.tui_support import terminal
+from tui.markdown import transcript_fragments, visible_chat_message, visible_chat_messages
 
 
 class MutationArchiveTests(unittest.TestCase):
@@ -652,7 +652,7 @@ class MessageToolbarTests(unittest.TestCase):
         )
 
     def test_completion_metadata_adds_sources_and_file_to_the_owning_answer_once(self):
-        from cli.chat import _SendStream
+        from tui.chat import _SendStream
 
         with terminal(initial_messages=[{"id": "draft", "role": "assistant", "text": "Done"}]) as (
             view,

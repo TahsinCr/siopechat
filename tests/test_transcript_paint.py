@@ -7,14 +7,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cli.markdown import MessageRenderer, index_transcript, open_link, transcript_fragments
 from tests.account_fixture import configured_application as create_application
-from tests.cli_support import terminal
+from tests.tui_support import terminal
+from tui.markdown import MessageRenderer, index_transcript, open_link, transcript_fragments
 
 
 class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
     def test_cumulative_layout_preserves_latest_viewport_during_prepend(self):
-        from cli.history import prepare_virtual_transcript
+        from tui.history import prepare_virtual_transcript
 
         def messages(start, end=None):
             return [
@@ -44,7 +44,7 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(view.transcript_window.vertical_scroll, target)
 
     def test_scroll_burst_renders_latest_viewport_in_one_queued_job(self):
-        from tests.cli_support import immediate
+        from tests.tui_support import immediate
 
         messages = [{"role": "user", "text": (f"Message {i}\n" * 20)} for i in range(100)]
         with terminal(initial_messages=messages) as (view, _):
@@ -82,7 +82,7 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
             control = view.transcript_control
             control.create_content(40, 20)
             clicked = 0
-            with patch("cli.markdown.open_link") as launch:
+            with patch("tui.markdown.open_link") as launch:
                 for y, (spans, _) in enumerate(control.rows):
                     x = 0
                     for span in spans:
@@ -128,7 +128,7 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Loading conversation", rendered)
 
     def test_link_targets_survive_wrapping_and_background_preparation(self):
-        from cli.history import prepare_transcript
+        from tui.history import prepare_transcript
 
         text = (
             "["
@@ -148,7 +148,7 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("".join(span[1] for span in spans if len(span) > 2), "red")
 
     def test_link_opener_rejects_non_web_and_control_character_targets(self):
-        with patch("cli.markdown.subprocess.Popen") as launch:
+        with patch("tui.markdown.subprocess.Popen") as launch:
             for url in (
                 "javascript:alert(1)",
                 "file:///tmp/local",
@@ -157,11 +157,11 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
             ):
                 open_link(url)
             launch.assert_not_called()
-        with patch("cli.markdown.subprocess.Popen", side_effect=OSError):
+        with patch("tui.markdown.subprocess.Popen", side_effect=OSError):
             open_link("https://example.com")
 
     async def test_terminal_mouse_event_reaches_rendered_markdown_link(self):
-        from tests.cli_support import ResizableOutput
+        from tests.tui_support import ResizableOutput
 
         output = ResizableOutput()
         with terminal(
@@ -191,7 +191,7 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
                 else:
                     self.fail("Link did not render")
                 x, y = hit
-                with patch("cli.markdown.open_link") as launch:
+                with patch("tui.markdown.open_link") as launch:
                     pipe.send_bytes(f"\x1b[<0;{x + 1};{y + 1}M\x1b[<0;{x + 1};{y + 1}m".encode())
                     for _ in range(100):
                         if launch.called:
@@ -206,22 +206,22 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
     def test_native_browser_opener_ignores_stale_browser_environment(self):
         with (
             patch.dict("os.environ", {"BROWSER": "missing-firefox"}),
-            patch("cli.markdown.sys.platform", "linux"),
-            patch("cli.markdown.shutil.which", return_value="/usr/bin/xdg-open"),
-            patch("cli.markdown.subprocess.Popen") as launch,
+            patch("tui.markdown.sys.platform", "linux"),
+            patch("tui.markdown.shutil.which", return_value="/usr/bin/xdg-open"),
+            patch("tui.markdown.subprocess.Popen") as launch,
         ):
             open_link("https://example.com")
             self.assertEqual(launch.call_args.args[0], ["xdg-open", "https://example.com"])
             self.assertNotIn("BROWSER", launch.call_args.kwargs["env"])
         with (
-            patch("cli.markdown.sys.platform", "darwin"),
-            patch("cli.markdown.subprocess.Popen") as launch,
+            patch("tui.markdown.sys.platform", "darwin"),
+            patch("tui.markdown.subprocess.Popen") as launch,
         ):
             open_link("https://example.com")
             self.assertEqual(launch.call_args.args[0], ["/usr/bin/open", "https://example.com"])
         with (
-            patch("cli.markdown.sys.platform", "win32"),
-            patch("cli.markdown.os.startfile", create=True) as launch,
+            patch("tui.markdown.sys.platform", "win32"),
+            patch("tui.markdown.os.startfile", create=True) as launch,
         ):
             open_link("https://example.com")
             launch.assert_called_once_with("https://example.com")
@@ -233,7 +233,7 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([row[1] for row in rows], [0, 1])
 
     def test_row_window_matches_full_index_without_retaining_other_rows(self):
-        from cli.markdown import index_transcript_window
+        from tui.markdown import index_transcript_window
 
         ansi = [("style", "first\nsecond\n"), ("link", "third\nfourth\n", object())]
         ranges = [(0, 2, 7), (2, 4, 8)]
@@ -264,8 +264,8 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(view._transcript_cache, "")
 
     def test_virtual_rows_match_complete_transcript_and_cache_only_prefetched_rows(self):
-        from cli.history import prepare_transcript
-        from cli.transcript import VirtualTranscript, VirtualTranscriptRows
+        from tui.history import prepare_transcript
+        from tui.transcript import VirtualTranscript, VirtualTranscriptRows
 
         messages = [
             {"role": "user", "text": "Question"},
@@ -281,7 +281,7 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(virtual.cache_bytes, 0)
 
     def test_virtual_message_snapshot_reuses_source_text_without_copying_it(self):
-        from cli.transcript import VirtualTranscript
+        from tui.transcript import VirtualTranscript
 
         source = "A long answer."
         virtual = VirtualTranscript(
@@ -291,12 +291,12 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(virtual.messages[0][1], source)
 
     def test_virtual_large_message_indexes_only_the_requested_page(self):
-        from cli.transcript import VirtualTranscript
+        from tui.transcript import VirtualTranscript
 
         message = {"role": "assistant", "text": "\n".join(f"Line {i}" for i in range(300))}
         with (
             patch.object(VirtualTranscript, "CACHE_BYTES", 1),
-            patch("cli.transcript.index_transcript", side_effect=AssertionError("full index")),
+            patch("tui.transcript.index_transcript", side_effect=AssertionError("full index")),
         ):
             virtual = VirtualTranscript([message], 48, renderer=MessageRenderer())
             rows = [virtual.row(i) for i in range(32)]
@@ -307,19 +307,19 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
 
         large = "```python\n" + "value = 1\n" * 8000 + "```"
         with (
-            patch("cli.markdown.Syntax", side_effect=AssertionError("large block highlighted")),
-            patch("cli.markdown.ChatMarkdown", side_effect=AssertionError("large block parsed")),
+            patch("tui.markdown.Syntax", side_effect=AssertionError("large block highlighted")),
+            patch("tui.markdown.ChatMarkdown", side_effect=AssertionError("large block parsed")),
         ):
             rendered = MessageRenderer().render("assistant", large, 80, False, False)
         self.assertIn("value = 1", rendered)
 
         small = "```python\nprint(1)\n```"
-        with patch("cli.markdown.Syntax", wraps=RichSyntax) as syntax:
+        with patch("tui.markdown.Syntax", wraps=RichSyntax) as syntax:
             MessageRenderer().render("assistant", small, 80, False, False)
         syntax.assert_called_once()
 
     def test_virtual_large_code_message_indexes_and_renders_only_requested_rows(self):
-        from cli.transcript import VirtualTranscript
+        from tui.transcript import VirtualTranscript
 
         text = "```text\n" + "\n".join(f"row-{index:05}" for index in range(8000)) + "\n```"
         renderer = MessageRenderer()
@@ -337,7 +337,7 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(virtual.messages, ())
 
     def test_large_code_window_checkpoints_preserve_wrapped_rows(self):
-        from cli.markdown import LargeCodeBlock
+        from tui.markdown import LargeCodeBlock
 
         source = "abcdefghij " * 40
         block = LargeCodeBlock(source, (0, len(source)), 12, 3)
@@ -370,13 +370,13 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
             )
 
     def test_virtual_prefetch_keeps_scrolled_rows_in_bounded_lru(self):
-        from cli.transcript import VirtualTranscript
+        from tui.transcript import VirtualTranscript
 
         message = {
             "role": "assistant",
             "text": "\n".join(f"Row {i}  " for i in range(1200)),
         }
-        with patch("cli.transcript.index_transcript", wraps=index_transcript) as index_rows:
+        with patch("tui.transcript.index_transcript", wraps=index_transcript) as index_rows:
             virtual = VirtualTranscript([message], 48, renderer=MessageRenderer())
             virtual.prefetch(0, 64)
             first_pages = set(virtual._pages)
@@ -390,7 +390,7 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(virtual.cache_bytes, virtual.CACHE_BYTES)
 
     def test_cached_rows_stay_visible_while_another_page_is_rendering(self):
-        from cli.transcript import VirtualTranscript
+        from tui.transcript import VirtualTranscript
 
         layout = VirtualTranscript([{"role": "assistant", "text": "Ready"}], 48)
         layout.prefetch(0, layout.line_count)
@@ -415,7 +415,7 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(layout.cached_row(0))
 
     def test_scroll_during_page_render_preserves_the_latest_visible_message(self):
-        from cli.history import prepare_virtual_transcript
+        from tui.history import prepare_virtual_transcript
 
         def messages(start):
             return [

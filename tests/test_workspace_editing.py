@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from providers import ProviderRegistry, ReplaceText, SendRequest, TextDelta
 from tasks import TaskService
-from tests.cli_support import immediate, terminal, wait_until
+from tests.tui_support import immediate, terminal, wait_until
 
 
 class EditingTests(unittest.IsolatedAsyncioTestCase):

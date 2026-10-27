@@ -1,4 +1,4 @@
-"""Platform clipboard helpers; terminal presentation stays in cli."""
+"""Platform clipboard helpers; terminal presentation stays in tui."""
 
 import base64
 import shutil

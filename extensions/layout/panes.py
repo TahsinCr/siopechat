@@ -1,20 +1,24 @@
 """Optional terminal split layouts; no provider operations or background app loops."""
 
-from prompt_toolkit.data_structures import Point
-from prompt_toolkit.layout import DynamicContainer, HSplit, VSplit, Window
-from prompt_toolkit.layout.margins import ScrollbarMargin
-from prompt_toolkit.mouse_events import MouseButton, MouseEventType
-
-from cli.history import prepare_virtual_transcript
-from cli.markdown import MessageRenderer
-from cli.transcript import TranscriptPrefetch, VirtualTranscriptRows
-from cli.widgets import (
+from tui.api import (
     BoundedTextControl,
+    DynamicContainer,
+    HSplit,
+    MessageRenderer,
+    MouseButton,
+    MouseEventType,
+    Point,
+    ScrollbarMargin,
     TranscriptControl,
     TranscriptGutter,
+    TranscriptPrefetch,
     TranscriptWindow,
+    VirtualTranscriptRows,
+    VSplit,
+    Window,
     fit_text,
     on_click,
+    prepare_virtual_transcript,
 )
 
 

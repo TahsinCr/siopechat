@@ -15,12 +15,12 @@ from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
 from prompt_toolkit.output import DummyOutput
 
 from backend import BackendService
-from cli.widgets import TranscriptControl, TranscriptGutter
 from providers import Capability
 from providers.chatgpt import BrowserSession, ChatGPTClient, ChatGPTProvider, SessionPaths
 from providers.chatgpt.errors import ChatGPTWebError
-from tests import cli_support as interaction
-from tests.cli_support import click, immediate, terminal
+from tests import tui_support as interaction
+from tests.tui_support import click, immediate, terminal
+from tui.widgets import TranscriptControl, TranscriptGutter
 
 
 class PolishTests(unittest.TestCase):

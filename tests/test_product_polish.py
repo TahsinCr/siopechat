@@ -10,9 +10,9 @@ from pathlib import Path
 
 from providers.models import Choice, FeatureState, Model, ModelCatalog
 from settings import SettingsCatalog
-from tests import cli_support as interaction
+from tests import tui_support as interaction
 from tests.account_fixture import configured_application as create_application
-from tests.cli_support import immediate
+from tests.tui_support import immediate
 
 
 class ProductServicesTests(unittest.TestCase):
@@ -164,7 +164,7 @@ class ProductServicesTests(unittest.TestCase):
 from pathlib import Path
 original = builtins.__import__
 def guarded(name,*args,**kwargs):
-    if not (args[3] if len(args) > 3 else kwargs.get('level', 0)) and (name == 'cli' or name.startswith('cli.')):
+    if not (args[3] if len(args) > 3 else kwargs.get('level', 0)) and (name == 'cli' or name == 'tui' or name.startswith('tui.')):
         raise AssertionError(name)
     return original(name,*args,**kwargs)
 builtins.__import__ = guarded

@@ -8,13 +8,13 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 from bootstrap import create_application
-from cli.projects import ProjectPanel
 from providers import Capability
 from providers.models import Origin, Project, Resource
 from providers.projects import ProjectEditing, ProjectOptions
-from tests import cli_support as interaction
-from tests.cli_support import immediate, terminal
+from tests import tui_support as interaction
 from tests.fakes import Accounts
+from tests.tui_support import immediate, terminal
+from tui.projects import ProjectPanel
 
 
 class ProjectWriteTests(unittest.IsolatedAsyncioTestCase):
@@ -133,7 +133,7 @@ class ProjectFormTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(second_args[1][0][0], "path")
         self.assertEqual(len(second_kwargs["actions"]), 1)
-        with patch("cli.projects.browse_form_field") as browse:
+        with patch("tui.projects.browse_form_field") as browse:
             second_kwargs["actions"][0][1]()
         browse.assert_called_once_with(view, "path", "application/pdf", multiple=False)
 

@@ -5,9 +5,9 @@ import unittest
 from unittest.mock import Mock, patch
 
 from providers.models import Choice, FeatureState, Model, ModelCatalog
-from tests import cli_support as interaction
-from tests.cli_support import ResizableOutput, screen_text
+from tests import tui_support as interaction
 from tests.fakes import Accounts
+from tests.tui_support import ResizableOutput, screen_text
 
 
 def project_view(view):
@@ -59,7 +59,7 @@ class ProjectComposerTests(unittest.IsolatedAsyncioTestCase):
             project = dict(v.current_project)
             v.input.text = "Tell me about this project"
             model, effort = v.model, v.effort
-            with patch("cli.chat.threading.Thread") as thread:
+            with patch("tui.chat.threading.Thread") as thread:
                 v.submit_prompt()
             self.assertEqual(len(v.tabs), 2)
             self.assertEqual(v.tabs[0]["kind"], "project")

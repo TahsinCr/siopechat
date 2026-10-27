@@ -6,9 +6,9 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from bootstrap import create_application
-from cli.settings import SettingsPanel
 from extension import Action, ExtensionAPI, ExtensionManager, ExtensionSpec, SettingField, View
 from settings import Settings
+from tui.settings import SettingsPanel
 
 
 class FoundationTests(unittest.TestCase):

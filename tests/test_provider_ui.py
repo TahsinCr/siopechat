@@ -8,8 +8,8 @@ from unittest.mock import Mock, patch
 
 from providers.chatgpt.discovery import model_catalog
 from tests.account_fixture import configured_application as create_application
-from tests.cli_support import immediate, terminal
 from tests.provider_fixtures import CATALOG
+from tests.tui_support import immediate, terminal
 
 
 class ProviderUiTests(unittest.TestCase):

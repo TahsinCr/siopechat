@@ -79,7 +79,7 @@ class ProfileAccountTests(unittest.TestCase):
 
 class ProfileUiTests(unittest.IsolatedAsyncioTestCase):
     async def test_profile_button_triggers_common_async_action_and_refresh(self):
-        from tests.cli_support import terminal
+        from tests.tui_support import terminal
 
         with terminal(
             session_action=lambda action: {
@@ -131,7 +131,7 @@ class ProfileUiTests(unittest.IsolatedAsyncioTestCase):
     async def test_profile_action_is_visible_in_resized_accounts_panel(self):
         import asyncio
 
-        from tests.cli_support import ResizableOutput, immediate, terminal, wait_until
+        from tests.tui_support import ResizableOutput, immediate, terminal, wait_until
 
         output = ResizableOutput()
         with terminal(output=output, session_action=lambda _: {}) as (view, _):

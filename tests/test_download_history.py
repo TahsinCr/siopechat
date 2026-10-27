@@ -19,7 +19,7 @@ from extensions.archive.repository import Files, SQLiteRepository
 from extensions.archive.sync import Archive
 from providers.files import DownloadSource
 from settings import Settings
-from tests.cli_support import immediate, terminal
+from tests.tui_support import immediate, terminal
 
 
 class DownloadHistoryTests(unittest.TestCase):
@@ -189,7 +189,7 @@ class DownloadHistoryTests(unittest.TestCase):
 
 class DownloadWorkspaceTests(unittest.IsolatedAsyncioTestCase):
     async def test_download_rows_format_only_terminal_requested_lines(self):
-        from cli.downloads import _DownloadsRowsControl
+        from tui.downloads import _DownloadsRowsControl
 
         class Panel:
             rows = [None] * 20_000
@@ -313,7 +313,7 @@ class DownloadWorkspaceTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("silindi", panel.message.lower())
 
     async def test_responsive_page_and_keyboard_date_groups(self):
-        from tests.cli_support import ResizableOutput
+        from tests.tui_support import ResizableOutput
 
         output = ResizableOutput()
         with terminal(output=output) as (view, pipe):

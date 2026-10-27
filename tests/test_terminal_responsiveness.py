@@ -6,9 +6,9 @@ import unittest
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.layout.controls import FormattedTextControl
 
-from cli.widgets import BoundedTextControl
-from tests import cli_support as interaction
-from tests.cli_support import ResizableOutput, immediate
+from tests import tui_support as interaction
+from tests.tui_support import ResizableOutput, immediate
+from tui.widgets import BoundedTextControl
 
 
 class CursorRenderingTests(unittest.TestCase):
@@ -92,7 +92,7 @@ class BackgroundCapacityTests(unittest.TestCase):
     def test_metadata_queue_is_bounded_and_shutdown_rejects_new_work(self):
         import threading
 
-        from cli.background import BackgroundReads
+        from tui.background import BackgroundReads
 
         pool = BackgroundReads(workers=1, capacity=2)
         started, release, finished = threading.Event(), threading.Event(), threading.Event()

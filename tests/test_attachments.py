@@ -8,10 +8,10 @@ from threading import Event
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
-from cli.attachments import AttachmentPicker
 from providers.attachments import policy_for
 from providers.chatgpt.client import ChatGPTClient
 from providers.chatgpt.errors import ChatGPTWebError
+from tui.attachments import AttachmentPicker
 
 
 class AttachmentPolicyTests(unittest.TestCase):
@@ -70,7 +70,7 @@ class AttachmentPolicyTests(unittest.TestCase):
         )
         picker = AttachmentPicker(view)
 
-        with patch("cli.file_selection.choose_files", return_value=["/tmp/new.txt"]) as choose:
+        with patch("tui.file_selection.choose_files", return_value=["/tmp/new.txt"]) as choose:
             picker._choose_files_into((".txt",))
             choose.assert_not_called()
             self.assertEqual(editor.text, "/already/selected.txt")
@@ -211,7 +211,7 @@ class AttachmentPolicyTests(unittest.TestCase):
         self.assertEqual(rejected, [])
 
     def test_attachment_queue_survives_tab_changes_during_picker_work(self):
-        from tests import cli_support as interaction
+        from tests import tui_support as interaction
 
         with interaction.terminal() as (view, _):
             view.pending_attachments = [
@@ -242,7 +242,7 @@ class AttachmentPolicyTests(unittest.TestCase):
             view.app.invalidate.assert_called_once()
 
     def test_send_from_another_tab_consumes_the_shared_attachment_queue_on_success(self):
-        from tests import cli_support as interaction
+        from tests import tui_support as interaction
 
         with interaction.terminal() as (view, _):
             attachment = {

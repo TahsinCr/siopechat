@@ -641,9 +641,7 @@ class ChatView:
         states = {(x["account"], x["kind"], x["remote"]): x for x in state_rows}
         pending_refresh = False
         for tab in pending_tabs:
-            key, remote = origin(
-                tab["conversation_id"], tab.get("account_key", self.account_key)
-            )
+            key, remote = origin(tab["conversation_id"], tab.get("account_key", self.account_key))
             state = states.get((key, "conversation", remote))
             if state and state["state"] == "ready":
                 pending_refresh = True

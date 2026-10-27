@@ -13,6 +13,7 @@ class ArchitectureTests(unittest.TestCase):
             "backend",
             "bootstrap",
             "cli",
+            "tui",
             "downloads",
             "extensions",
             "settings",
@@ -40,5 +41,5 @@ class ArchitectureTests(unittest.TestCase):
             if isinstance(node, ast.ImportFrom):
                 self.assertNotIn(
                     (node.module or "").split(".")[0],
-                    {"cli", "services", "sqlite3", "httpx", "extensions"},
+                    {"cli", "tui", "services", "sqlite3", "httpx", "extensions"},
                 )

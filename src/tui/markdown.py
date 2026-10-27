@@ -540,9 +540,7 @@ def visible_chat_messages(messages, source_label="Sources"):
         visible = visible_chat_message(message)
         if visible is not None:
             if visible.get("_thinking_sources"):
-                result.append(
-                    _source_message(visible, visible["_thinking_sources"], source_label)
-                )
+                result.append(_source_message(visible, visible["_thinking_sources"], source_label))
             result.append(visible)
     return result
 

@@ -6,7 +6,7 @@ from unittest.mock import Mock
 
 from prompt_toolkit.output import DummyOutput
 
-from tests import cli_support as interaction
+from tests import tui_support as interaction
 
 
 class RecordingOutput(DummyOutput):
