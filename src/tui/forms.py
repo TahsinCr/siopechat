@@ -7,6 +7,7 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import HSplit, ScrollablePane, VSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import D
+from prompt_toolkit.mouse_events import MouseButton, MouseEventType
 from prompt_toolkit.widgets import Button, CheckboxList, Dialog, RadioList, TextArea
 
 
@@ -132,6 +133,56 @@ class Forms:
         self.visible = True
         self.view.app.layout.update_parents_relations()
         self.view.app.layout.focus(next(iter(self.fields.values())))
+        self.view.app.invalidate()
+
+    def open_link_list(self, title, items):
+        """Show clickable links in a scrollable list without a selection step."""
+        self.inline_project = None
+        self.fields = {}
+        self.error = ""
+        keys = KeyBindings()
+        keys.add("escape", is_global=True)(lambda _: self.close())
+        rows = []
+
+        for label, callback in items:
+            def activate(event, action=callback):
+                if event.event_type != MouseEventType.MOUSE_UP or event.button != MouseButton.LEFT:
+                    return NotImplemented
+                self.close()
+                action()
+                return None
+
+            rows.append(
+                Window(
+                    content=FormattedTextControl(
+                        [("class:source.list.item", label, activate)]
+                    ),
+                    height=1,
+                )
+            )
+
+        content_height = max(1, len(rows))
+        pane = ScrollablePane(
+            HSplit(rows, padding=0, key_bindings=keys),
+            height=lambda: D(
+                min=1,
+                preferred=min(
+                    content_height, max(1, self.view.app.output.get_size().rows - 10)
+                ),
+                max=max(1, self.view.app.output.get_size().rows - 10),
+            ),
+        )
+        close_button = Button(self.view.tr("Kapat"), handler=self.close)
+        self.container = Dialog(
+            title=title,
+            body=pane,
+            buttons=[close_button],
+            width=64,
+            with_background=False,
+        )
+        self.visible = True
+        self.view.app.layout.update_parents_relations()
+        self.view.app.layout.focus(close_button)
         self.view.app.invalidate()
 
     def confirm(self, title, submit):

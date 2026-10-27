@@ -730,13 +730,15 @@ class MessageToolbarTests(unittest.TestCase):
             self.assertIn("Sources", labels[-1])
 
             view.forms.open = Mock()
+            view.forms.open_link_list = Mock()
             view.open_message_link = Mock()
             view.message_toolbar_action(view.tabs[0]["tab_id"], answer, "sources")
 
-            title, fields, submit = view.forms.open.call_args.args
-            self.assertEqual(title, "Sources")
-            self.assertEqual(fields[0][3], [("0", "example.com · Reference")])
-            submit({"source": "0"})()
+            title, items = view.forms.open_link_list.call_args.args
+            self.assertEqual(title, view.tr("Used sources"))
+            self.assertIn("example.com", items[0][0])
+            view.forms.open.assert_not_called()
+            items[0][1]()
             view.open_message_link.assert_called_once_with("https://example.com/source")
 
     def test_sources_without_a_thinking_message_stay_on_the_answer_toolbar(self):

@@ -5106,9 +5106,8 @@ class ChatView:
             return
         from urllib.parse import urlsplit
 
-        choices = []
-        by_id = {}
-        for index, source in enumerate(sources):
+        items = []
+        for source in sources:
             title = " ".join(str(source.get("title") or "Source").split())[:200]
             url = source.get("url")
             host = ""
@@ -5117,28 +5116,18 @@ class ChatView:
                     host = urlsplit(url).hostname or ""
                 except ValueError:
                     host = ""
-            label = f"{host} · {title}" if host else title
-            value = str(index)
-            choices.append((value, label[:240]))
-            by_id[value] = source
+            label = f"↗  {title}  ·  {host}" if host else f"↗  {title}"
 
-        def submit(values):
-            selected = by_id.get(values.get("source"), {})
-            url = selected.get("url")
-            if not isinstance(url, str):
-                def unavailable():
+            def open_source(source_url=url):
+                if isinstance(source_url, str):
+                    self.open_message_link(source_url)
+                else:
                     self.status = self.tr("Source link is unavailable")
                     self.app.invalidate()
 
-                return unavailable
-            return lambda: self.open_message_link(url)
+            items.append((label[:240], open_source))
 
-        self.forms.open(
-            self.tr("Sources"),
-            [("source", self.tr("Sources"), choices[0][0], choices)],
-            submit,
-            submit_label="Open",
-        )
+        self.forms.open_link_list(self.tr("Used sources"), items)
 
     def _navigate_response_version(self, tab_id, message_ref, direction):
         index = self._toolbar_message_index(tab_id, message_ref)
