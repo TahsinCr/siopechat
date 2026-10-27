@@ -24,6 +24,7 @@ from prompt_toolkit.layout.margins import ConditionalMargin, ScrollbarMargin
 from prompt_toolkit.styles import Style
 from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import TextArea
+from rich.align import Align
 from rich.console import Console
 from rich.text import Text
 
@@ -3511,6 +3512,8 @@ class ChatView:
         else:
             self.tabs.pop(self.active_tab)
             self.active_tab = min(self.active_tab, len(self.tabs) - 1)
+        if self.layout_controller:
+            self.layout_controller.reconcile_groups()
         self._restore_active_tab()
         self._persist_session()
 
@@ -3571,7 +3574,7 @@ class ChatView:
             )
         if self.layout_controller:
             self.layout_controller.pending = None
-            self.layout_controller.active_group()
+            self.layout_controller.reconcile_groups()
         self.status = self.tr("Sekmeler kapatıldı")
         self._persist_session()
         self.app.invalidate()
@@ -3932,6 +3935,24 @@ class ChatView:
             return self.tr("Sohbet görünümü hazırlanıyor…")
         if not messages:
             self.message_ranges = []
+            empty_message = (
+                self.tr("Conversation load failed: {0}").format(
+                    self.tabs[self.active_tab]["load_error"]
+                )
+                if self.tabs and self.tabs[self.active_tab].get("load_error")
+                else self.tr("Loading conversation…")
+                if self.loading_conversation
+                or (
+                    self.tabs
+                    and (
+                        self.tabs[self.active_tab].get("loading")
+                        or self.tabs[self.active_tab].get("syncing")
+                    )
+                )
+                else self.tr("This saved conversation has no messages.")
+                if self.tabs and self.tabs[self.active_tab].get("conversation_id")
+                else self.tr("Yeni bir sohbet başlatın.")
+            )
             buffer = StringIO()
             console = Console(
                 file=buffer,
@@ -3941,29 +3962,7 @@ class ChatView:
                 width=width,
                 theme=DEFAULT_MARKDOWN_THEME,
             )
-            console.print(
-                Text(
-                    (
-                        self.tr("Conversation load failed: {0}").format(
-                            self.tabs[self.active_tab]["load_error"]
-                        )
-                        if self.tabs and self.tabs[self.active_tab].get("load_error")
-                        else self.tr("Loading conversation…")
-                        if self.loading_conversation
-                        or (
-                            self.tabs
-                            and (
-                                self.tabs[self.active_tab].get("loading")
-                                or self.tabs[self.active_tab].get("syncing")
-                            )
-                        )
-                        else self.tr("This saved conversation has no messages.")
-                        if self.tabs and self.tabs[self.active_tab].get("conversation_id")
-                        else self.tr("SiopeChat\n\nYeni bir sohbet başlatın.")
-                    ),
-                    style="dim",
-                )
-            )
+            console.print(Align.center(Text(empty_message, style="dim"), width=width))
             rendered = buffer.getvalue()
         else:
             active_index = (

@@ -204,7 +204,7 @@
   "ui.Yanıt {0}. sekmede sürüyor": "Ответ генерируется во вкладке {0}",
   "ui.Sohbet yükleniyor": "Загрузка чата",
   "ui.Dosya yükleniyor": "Загрузка файла",
-  "ui.SiopeChat\n\nYeni bir sohbet başlatın.": "SiopeChat\n\nНачните новый чат.",
+  "ui.Yeni bir sohbet başlatın.": "Начните новый чат.",
   "ui.Yanıt {0}. sekmede tamamlandı": "Ответ готов во вкладке {0}",
   "ui.Sohbet senkronize edilemedi:": "Не удалось синхронизировать чат:",
   "ui.Açık ●": "Вкл. ●",

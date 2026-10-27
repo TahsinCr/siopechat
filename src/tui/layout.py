@@ -254,17 +254,21 @@ def render_tab_bar(view):
     entries = list(range(len(view.tabs)))
     group_titles = {}
     if view.layout_controller and view.layout_enabled:
-        view.layout_controller.active_group()
+        tab_indices = {tab.get("tab_id"): index for index, tab in enumerate(view.tabs)}
+        grouped_indices = set()
+        representatives = set()
         for group in view.layout_controller.groups:
-            members = [i for i, tab in enumerate(view.tabs) if tab.get("tab_id") in group["tabs"]]
+            members = [tab_indices[key] for key in group["tabs"] if key in tab_indices]
             if len(members) < 2:
                 continue
             representative = view.active_tab if view.active_tab in members else members[0]
+            grouped_indices.update(members)
+            representatives.add(representative)
             group_titles[representative] = " ◫ ".join(
                 view.title if i == view.active_tab else view.tabs[i].get("title", view.tr("Sohbet"))
                 for i in members
             )
-            entries = [i for i in entries if i not in members or i == representative]
+        entries = [i for i in entries if i not in grouped_indices or i in representatives]
     count = min(len(entries), max(1, available // 12))
     indices = sorted(sorted(entries, key=lambda i: (abs(i - view.active_tab), i))[:count])
     base, remainder = divmod(available, max(1, len(indices)))

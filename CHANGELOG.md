@@ -15,6 +15,9 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Changed
 
+- Center the empty-chat prompt and show one localized instruction instead of repeating the SiopeChat brand in the transcript.
+- Translate the remaining English Turkish UI strings, including conversation loading, command-palette descriptions, and workspace actions.
+- Make split-group lookup read-only during redraws and reconcile pane state only when group membership changes.
 - Consolidate extension-facing view contracts and their registry in `src/extension.py`; route extension TUI access through its lazy public API loader.
 - Keep `tui.api` as the TUI extension surface, loaded through `extension.load_tui_api` only when needed.
 - Separate the command-line entry point (`src/cli.py`) from the terminal UI package (`src/tui/`).
@@ -31,6 +34,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Fixed
 
+- Stop tab-bar redraws from triggering split-layout cleanup; index tabs once when building grouped titles and release stale pane state after close, restore, split, or unsplit actions.
 - Resolve Gemini's published `[cite: N]` groups into their explicit source links, deduplicate them by citation order, and render them under a localized “Sources” heading in the same thinking block as the provider-published thought summary. Responses without citations remain source-free.
 - Traverse bounded nested citation and annotation lists in shared provider metadata, including wrapped URL citations, without inspecting answer text or retaining arbitrary provider payloads.
 - Preserve confirmed response settings and resource metadata when a provider refresh omits them, rebuild source sections without duplicates, and refresh saved Gemini image references when downloading.

@@ -131,19 +131,30 @@ class SplitLayout:
                 )
                 if index is not None:
                     view.select_tab(index)
+        self.reconcile_groups()
         view.app.invalidate()
 
     def active_group(self):
+        if not self.view.tabs:
+            return None
+        key = self.view.tabs[self.view.active_tab].get("tab_id")
+        return next((group for group in self.groups if key in group["tabs"]), None)
+
+    def reconcile_groups(self):
+        """Remove invalid group members and release panes after a layout change."""
         existing = {tab.get("tab_id") for tab in self.view.tabs}
+        previous = tuple((group["axis"], tuple(group["tabs"])) for group in self.groups)
         for group in self.groups:
             group["tabs"] = [key for key in group["tabs"] if key in existing]
         self.groups = [group for group in self.groups if len(group["tabs"]) > 1]
+        current = tuple((group["axis"], tuple(group["tabs"])) for group in self.groups)
+        if current != previous:
+            self._layout_signature = None
+            self._layout_container = None
         required = {key for group in self.groups for key in group["tabs"]}
         for pane_key in tuple(self._panes):
             if pane_key not in required:
                 self.release(pane_key)
-        key = self.view.tabs[self.view.active_tab].get("tab_id")
-        return next((group for group in self.groups if key in group["tabs"]), None)
 
     def release(self, key):
         pane = self._panes.pop(key, None)
@@ -188,6 +199,7 @@ class SplitLayout:
             self.groups.append(group)
         if target not in group["tabs"]:
             group["tabs"].append(target)
+        self.reconcile_groups()
         self.pending = None
         self.view.status = self.view.tr("Bölünmüş görünüm · panele tıklayarak odaklanın")
         self.view.app.invalidate()
@@ -196,6 +208,7 @@ class SplitLayout:
         group = self.active_group()
         if group:
             self.groups.remove(group)
+        self.reconcile_groups()
         self.pending = None
         self.view.app.invalidate()
 

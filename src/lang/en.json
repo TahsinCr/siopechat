@@ -204,7 +204,7 @@
   "ui.Yanıt {0}. sekmede sürüyor": "Reply running in tab {0}",
   "ui.Sohbet yükleniyor": "Loading chat",
   "ui.Dosya yükleniyor": "Uploading file",
-  "ui.SiopeChat\n\nYeni bir sohbet başlatın.": "SiopeChat\n\nStart a new conversation.",
+  "ui.Yeni bir sohbet başlatın.": "Start a new conversation.",
   "ui.Yanıt {0}. sekmede tamamlandı": "Reply completed in tab {0}",
   "ui.Sohbet senkronize edilemedi:": "Could not synchronize conversation:",
   "ui.Açık ●": "On ●",
