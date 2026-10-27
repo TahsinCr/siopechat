@@ -90,7 +90,7 @@ class ClaudeRecordsTests(unittest.TestCase):
         self.assertEqual([item["role"] for item in visible], ["reasoning", "assistant"])
         self.assertEqual(visible[0]["text"], "Searching the web")
         self.assertEqual(
-            visible[0]["_thinking_sources"],
+            visible[1]["_thinking_sources"],
             ({"title": "Reference", "url": "https://example.com/reference"},),
         )
 

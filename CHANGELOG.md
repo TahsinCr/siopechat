@@ -10,7 +10,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Added
 
-- Add a per-answer Sources action to the thinking row; create a source-only row when citations exist without a provider-published thought summary.
+- Add a per-answer Sources action at the end of the assistant toolbar's action group.
 - Show generated-file cards inside assistant replies with available file type and size.
 - Carry generated-file descriptors through the common provider metadata event and SQLite history; file-card clicks use the shared background download manager and authenticated provider resolution.
 
@@ -37,10 +37,9 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Fixed
 
-- Attach validated published citations from ChatGPT, Gemini, and Claude to the matching thinking row; sources that arrive on a separate SQLite page are joined before rendering.
+- Keep validated ChatGPT, Gemini, and Claude citations on their assistant answer so the Sources action remains with that answer, including when thinking is absent or loaded from another SQLite page.
 - Read Gemini's published web-search activity labels and result links from both history and streaming, combining those labels with its published thought summary without inferring private reasoning.
 - Refresh cached conversations from their provider in the background on open, then apply the archive update without blocking the composer or replacing an in-progress local turn.
-- Keep the Sources toolbar action visible for one-line synthetic thinking rows and preserve the source association when adjacent thought records are grouped.
 - Exit the one-shot Sentinel signer after its JSON result is flushed instead of waiting for the SDK's residual five-second fallback timer.
 - Enable Claude's native web-search tool in web-session completion requests so it can search when a prompt needs current information.
 - Keep the sidebar divider aligned with its search/filter row at supported terminal widths.

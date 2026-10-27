@@ -68,11 +68,11 @@ class MutationArchiveTests(unittest.TestCase):
             dict(visible[-1]["_response_settings"]), {"Model": "model-a", "Effort": "high"}
         )
         self.assertEqual(
-            visible[0]["_thinking_sources"],
+            visible[-1]["_thinking_sources"],
             ({"title": "Reference", "url": "https://example.com/source"},),
         )
 
-    def test_chatgpt_search_groups_render_as_sources_after_sqlite_reload(self):
+    def test_chatgpt_search_groups_remain_answer_sources_after_sqlite_reload(self):
         from tui.markdown import MessageRenderer
 
         message = {
@@ -104,16 +104,14 @@ class MutationArchiveTests(unittest.TestCase):
             self.archive.get("chatgpt/default", "conversation", "chat")["messages"]
         )
 
-        self.assertEqual([item["role"] for item in visible], ["reasoning", "assistant"])
-        self.assertEqual(visible[0]["_source_owner"], "answer")
+        self.assertEqual([item["role"] for item in visible], ["assistant"])
         self.assertEqual(
             visible[0]["_thinking_sources"],
             ({"title": "Official documentation", "url": "https://docs.example/guide"},),
         )
-        self.assertEqual(visible[0]["text"], "")
-        self.assertEqual(visible[1]["text"], "Published answer")
+        self.assertEqual(visible[0]["text"], "Published answer")
         rendered, _ = MessageRenderer().transcript(visible, 80, show_reasoning=True)
-        self.assertIn("Düşünme özeti", rendered)
+        self.assertNotIn("Düşünme özeti", rendered)
         self.assertNotIn("Official documentation", rendered)
         self.assertIn("Published answer", rendered)
 
@@ -672,15 +670,15 @@ class MessageToolbarTests(unittest.TestCase):
             "metadata": {"sources": [{"title": "notes.pdf", "file_id": "file-ref"}]},
         }
         with terminal(initial_messages=[message]) as (view, _):
-            self.assertEqual(view.messages[0]["role"], "reasoning")
+            self.assertEqual(view.messages[0]["role"], "assistant")
             self.assertEqual(
                 view.messages[0]["_thinking_sources"],
                 ({"title": "notes.pdf", "file_id": "file-ref"},),
             )
             self.assertNotIn("](", view.messages[0]["text"])
-            self.assertEqual(view.messages[1]["text"], "From your file")
+            self.assertEqual(view.messages[0]["text"], "From your file")
 
-    def test_published_sources_survive_repeated_presentation_without_duplicate_sections(self):
+    def test_published_sources_stay_with_the_answer_after_repeated_presentation(self):
         raw = [
             {"id": "think", "role": "reasoning", "text": "Published summary"},
             {
@@ -699,15 +697,16 @@ class MessageToolbarTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual([x["role"] for x in second], ["reasoning", "assistant"])
         self.assertEqual(second[0]["text"], "Published summary")
+        self.assertNotIn("_thinking_sources", second[0])
         self.assertEqual(
-            second[0]["_thinking_sources"],
+            second[1]["_thinking_sources"],
             ({"title": "Reference", "url": "https://example.com/source"},),
         )
         self.assertEqual(
             second[-1]["_response_settings"], (("Model", "model-a"), ("Effort", "high"))
         )
 
-    def test_reasoning_toolbar_opens_the_selected_published_source(self):
+    def test_assistant_toolbar_opens_sources_after_other_left_actions(self):
         message = {
             "id": "answer",
             "role": "assistant",
@@ -715,17 +714,24 @@ class MessageToolbarTests(unittest.TestCase):
             "metadata": {
                 "sources": [{"title": "Reference", "url": "https://example.com/source"}]
             },
+            "actions": ["retry", "branch"],
         }
         with terminal(initial_messages=[message]) as (view, _):
             from tui.widgets import TranscriptControl
 
-            reasoning = view.messages[0]
+            answer = view.messages[0]
             fragments = TranscriptControl(view)._message_toolbar(0, 100)
-            self.assertTrue(any("↗" in text or "Sources" in text for _, text, *_ in fragments))
+            labels = [
+                text
+                for style, text, *_ in fragments
+                if style == "class:message.toolbar.action"
+            ]
+            self.assertEqual(len(labels), 4)
+            self.assertIn("Sources", labels[-1])
 
             view.forms.open = Mock()
             view.open_message_link = Mock()
-            view.message_toolbar_action(view.tabs[0]["tab_id"], reasoning, "sources")
+            view.message_toolbar_action(view.tabs[0]["tab_id"], answer, "sources")
 
             title, fields, submit = view.forms.open.call_args.args
             self.assertEqual(title, "Sources")
@@ -733,18 +739,23 @@ class MessageToolbarTests(unittest.TestCase):
             submit({"source": "0"})()
             view.open_message_link.assert_called_once_with("https://example.com/source")
 
-    def test_source_toolbar_is_rendered_for_single_line_synthetic_thinking_row(self):
+    def test_sources_without_a_thinking_message_stay_on_the_answer_toolbar(self):
         from tui.widgets import TranscriptControl
 
-        message = {
-            "id": "answer:sources",
-            "role": "reasoning",
-            "text": "",
-            "_source_only": True,
-            "_source_owner": "answer",
-            "_thinking_sources": ({"title": "Reference", "url": "https://example.com"},),
-        }
-        with terminal(initial_messages=[message]) as (view, _):
+        visible = visible_chat_messages(
+            [
+                {
+                    "id": "answer",
+                    "role": "assistant",
+                    "text": "Answer",
+                    "metadata": {
+                        "sources": [{"title": "Reference", "url": "https://example.com"}]
+                    },
+                }
+            ]
+        )
+        self.assertEqual([message["role"] for message in visible], ["assistant"])
+        with terminal(initial_messages=visible) as (view, _):
             view.render_transcript()
             control = TranscriptControl(view)
             content = control.create_content(80, 20)
@@ -773,10 +784,10 @@ class MessageToolbarTests(unittest.TestCase):
             }
             stream.on_event(event)
             stream.on_event(event)
-            self.assertEqual(len(view.messages), 2)
-            self.assertEqual(view.messages[0]["_source_owner"], "answer")
-            self.assertEqual(view.messages[-1]["text"].count("↓"), 1)
-            self.assertEqual(view.messages[-1]["_body_length"], len("Done"))
+            self.assertEqual(len(view.messages), 1)
+            self.assertEqual(view.messages[0]["_thinking_sources"], tuple(event["sources"]))
+            self.assertEqual(view.messages[0]["text"].count("↓"), 1)
+            self.assertEqual(view.messages[0]["_body_length"], len("Done"))
 
     def test_file_card_retains_metadata_and_starts_the_download_manager(self):
         message = {

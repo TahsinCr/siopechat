@@ -411,8 +411,7 @@ def visible_chat_message(message: dict[str, Any]) -> dict[str, Any] | None:
     """Return user-facing turns while excluding web tool protocol nodes."""
     role = message.get("role")
     text = message.get("text")
-    source_only_reasoning = role == "reasoning" and bool(message.get("_thinking_sources"))
-    if not text and not source_only_reasoning:
+    if not text:
         # Older archives retained structured text blocks without flattening them.
         parts = []
         for block in message.get("content") or ():
@@ -448,7 +447,7 @@ def visible_chat_message(message: dict[str, Any]) -> dict[str, Any] | None:
     from providers.messages import files_from
 
     files = files_from(message) if role == "assistant" and not reasoning else ()
-    if not visible or not isinstance(text, str) or not (text or files or source_only_reasoning):
+    if not visible or not isinstance(text, str) or not (text or files):
         return None
     visible = {"role": "reasoning" if reasoning else role, "text": text} | {
         key: message[key]
@@ -464,8 +463,6 @@ def visible_chat_message(message: dict[str, Any]) -> dict[str, Any] | None:
             "_thinking_sources",
             "_body_length",
             "_files",
-            "_source_owner",
-            "_source_only",
         )
         if key in message and message[key] is not None
     }
@@ -506,116 +503,13 @@ def message_body_text(message):
     return text[: message.get("_body_length", len(text))]
 
 
-def update_message_sources(messages, message, sources):
-    """Attach published citations to the answer's reasoning row."""
-    owner = str(message.get("id") or id(message))
-    index = next((i for i, item in enumerate(messages) if item is message), None)
-    if index is None:
-        return
-    for position in range(len(messages) - 1, -1, -1):
-        item = messages[position]
-        if item.get("_source_owner") != owner:
-            continue
-        if item.get("_source_only"):
-            messages.pop(position)
-            if position < index:
-                index -= 1
-        else:
-            item.pop("_thinking_sources", None)
-            item.pop("_source_owner", None)
-    if not sources:
-        message.pop("_thinking_sources", None)
-        return
-    message["_thinking_sources"] = tuple(sources)
-    reasoning = []
-    for item in reversed(messages[:index]):
-        role = item.get("role")
-        is_reasoning = role == "reasoning" or (
-            role == "assistant" and item.get("channel") == "analysis"
-        )
-        if role == "user" or (role == "assistant" and not is_reasoning):
-            break
-        if is_reasoning:
-            reasoning.append(item)
-    if reasoning:
-        target = reasoning[-1]
-        target["_thinking_sources"] = tuple(sources)
-        target["_source_owner"] = owner
-        return
-    messages.insert(
-        index,
-        {
-            "id": owner + ":sources",
-            "role": "reasoning",
-            "text": "",
-            "_thinking_sources": tuple(sources),
-            "_source_owner": owner,
-            "_source_only": True,
-            **{
-                key: message[key]
-                for key in ("_archive_ordinal", "local_pending")
-                if key in message
-            },
-        },
-    )
-
-
 def visible_chat_messages(messages):
-    """Pair published citations with the reasoning row for their answer."""
-    result = []
-    pending_reasoning = []
-    for message in messages:
-        visible = visible_chat_message(message)
-        if visible is None:
-            continue
-        role = visible.get("role")
-        if role == "user":
-            pending_reasoning.clear()
-        elif role == "reasoning":
-            if visible.get("_source_only") and pending_reasoning:
-                target_index = next(
-                    (
-                        index
-                        for index in pending_reasoning
-                        if not result[index].get("_source_only")
-                    ),
-                    None,
-                )
-                if target_index is not None:
-                    target = result[target_index]
-                    target["_thinking_sources"] = tuple(visible.get("_thinking_sources", ()))
-                    target["_source_owner"] = visible.get("_source_owner")
-                    continue
-            result.append(visible)
-            pending_reasoning.append(len(result) - 1)
-            continue
-        elif role == "assistant":
-            sources = visible.get("_thinking_sources")
-            if sources:
-                if pending_reasoning:
-                    target = result[pending_reasoning[0]]
-                    target["_thinking_sources"] = tuple(sources)
-                    target["_source_owner"] = str(visible.get("id") or id(visible))
-                else:
-                    owner = str(visible.get("id") or id(visible))
-                    result.append(
-                        {
-                            "id": owner + ":sources",
-                            "role": "reasoning",
-                            "text": "",
-                            "_thinking_sources": tuple(sources),
-                            "_source_owner": owner,
-                            "_source_only": True,
-                            **{
-                                key: visible[key]
-                                for key in ("_archive_ordinal", "local_pending")
-                                if key in visible
-                            },
-                        }
-                    )
-            pending_reasoning.clear()
-        result.append(visible)
-    return result
+    """Return visible transcript messages without moving answer metadata."""
+    return [
+        visible
+        for message in messages
+        if (visible := visible_chat_message(message)) is not None
+    ]
 
 
 OSC_LINK = re.compile(r"\x1b\]8;[^;]*;([^\x1b\x07]*)(?:\x1b\\|\x07)")

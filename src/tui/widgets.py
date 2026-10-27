@@ -73,8 +73,6 @@ class TranscriptControl(UIControl):
             role = message.get("role")
             if role in ("user", "assistant") and end - start > 1:
                 self._toolbar_rows[end - 2] = index
-            elif role == "reasoning" and message.get("_thinking_sources") and end > start:
-                self._toolbar_rows[end - 1] = index
         self._toolbar_fragments = {}
         cursor = self.view.transcript_cursor_position()
         cursor = Point(0, min(max(0, cursor.y), max(0, len(rows) - 1)))
@@ -121,11 +119,7 @@ class TranscriptControl(UIControl):
             return []
         message = self.view.messages[index]
         role = message.get("role")
-        if role == "reasoning":
-            if not message.get("_thinking_sources"):
-                return []
-            actions = [("sources", "↗", self.view.tr("Sources"))]
-        elif role in ("user", "assistant"):
+        if role in ("user", "assistant"):
             actions = [("copy", "⧉", self.view.tr("Copy"))]
         else:
             return []
@@ -143,6 +137,8 @@ class TranscriptControl(UIControl):
             ):
                 if action in available:
                     actions.append((action, icon, self.view.tr(label)))
+        if role == "assistant" and message.get("_thinking_sources"):
+            actions.append(("sources", "↗", self.view.tr("Sources")))
         tab_id = tab.get("tab_id")
         has_versions = version_count > 1 and role == "assistant"
         version_label = f"{version_index}/{version_count}"
@@ -219,10 +215,19 @@ class TranscriptControl(UIControl):
                 (
                     index
                     for index in range(len(visible_actions) - 1, 0, -1)
-                    if visible_actions[index][0] != "copy"
+                    if visible_actions[index][0] not in ("copy", "sources")
                 ),
                 None,
             )
+            if removable is None:
+                removable = next(
+                    (
+                        index
+                        for index in range(len(visible_actions) - 1, 0, -1)
+                        if visible_actions[index][0] != "copy"
+                    ),
+                    None,
+                )
             if removable is None:
                 break
             visible_actions.pop(removable)

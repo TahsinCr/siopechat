@@ -53,7 +53,6 @@ from .markdown import (
     message_body_text,
     render_chatgpt_annotations,
     transcript_fragments,
-    update_message_sources,
     visible_chat_message,
     visible_chat_messages,
 )
@@ -154,7 +153,6 @@ class _SendStream:
                 final["actions"] = list(event.get("actions", ()))
                 if event.get("sources"):
                     final["_thinking_sources"] = tuple(event["sources"])
-                    update_message_sources(self.messages, final, final["_thinking_sources"])
                 final["_response_settings"] = tuple(
                     (label, event[key])
                     for label, key in (("Model", "model"), ("Effort", "effort"))
@@ -5215,11 +5213,6 @@ class ChatView:
                             "current_index", result["count"]
                         )
                         tab["messages"][target_index] = displayed
-                        update_message_sources(
-                            tab["messages"],
-                            displayed,
-                            displayed.get("_thinking_sources", ()),
-                        )
                         if tab is self.tabs[self.active_tab]:
                             self.messages = tab["messages"]
                             tab["render_revision"] = tab.get("render_revision", 0) + 1

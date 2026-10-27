@@ -12,7 +12,7 @@ from tui.paging import visible_window
 
 
 class PagingUITests(unittest.TestCase):
-    def test_source_row_is_joined_to_thinking_across_sql_page_boundary(self):
+    def test_sources_remain_on_answer_across_sql_page_boundary(self):
         source = {"title": "Reference", "url": "https://example.com/reference"}
         pages = [
             {
@@ -47,8 +47,8 @@ class PagingUITests(unittest.TestCase):
         result = read_history(archive, "gemini/a", "chat", start=0, complete=True)
 
         self.assertEqual([item["role"] for item in result["messages"]], ["reasoning", "assistant"])
-        self.assertEqual(result["messages"][0]["_thinking_sources"], (source,))
-        self.assertEqual(result["messages"][0]["_source_owner"], "answer")
+        self.assertNotIn("_thinking_sources", result["messages"][0])
+        self.assertEqual(result["messages"][1]["_thinking_sources"], (source,))
         self.assertEqual(archive.conversation_window.call_count, 2)
 
     def test_wheel_uses_published_geometry_before_the_next_terminal_paint(self):
