@@ -17,7 +17,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Changed
 
-- Show cited sources in a titled, scrollable list that opens a link on click without a separate select/open step.
+- Show cited sources as wrapped, real-URL links with their provider-supplied title and description in a mouse- and keyboard-scrollable popup.
 - Reuse ChatGPT's prepared HTTP client for sends; discard the pool after canceled or failed streams while preserving interruption behavior.
 - Make the sidebar divider width explicit, add a magnifier action for the existing chat-search popup, and allow mouse focus in the inline sidebar filter.
 - Center the empty-chat prompt and show one localized instruction instead of repeating the SiopeChat brand in the transcript.
@@ -39,6 +39,9 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Fixed
 
+- Passed declared provider capabilities through the lazy sidebar row renderer, so supported rename/delete actions render at the far right instead of disappearing; unsupported provider actions remain hidden.
+- Kept empty cached conversations in a loading state until the background provider read and its current archive snapshot finish; stale snapshots that race a provider write are discarded instead of briefly hiding messages.
+- Preserved bounded source snippets/descriptions in the shared citation metadata so the Sources popup can display them below each URL.
 - Keep validated ChatGPT, Gemini, and Claude citations on their assistant answer so the Sources action remains with that answer, including when thinking is absent or loaded from another SQLite page.
 - Read Gemini's published web-search activity labels and result links from both history and streaming, combining those labels with its published thought summary without inferring private reasoning.
 - Refresh cached conversations from their provider in the background on open, then apply the archive update without blocking the composer or replacing an in-progress local turn.

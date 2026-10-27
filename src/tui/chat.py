@@ -273,6 +273,7 @@ class ChatView:
         self._project_requests = {}
         self._archive_revision = -1
         self._archive_page_ids = {}
+        self._sidebar_capabilities_cache = {}
         self._model_picker_requests = set()
         self.attach_file_callback = None
         self.attachment_policy_callback = None
@@ -637,7 +638,12 @@ class ChatView:
             and not tab.get("busy")
             and tab.get("conversation_id")
         ]
-        if revision == self._archive_revision and not pending_tabs:
+        pending_history_tabs = [
+            tab
+            for tab in self.tabs
+            if tab.get("history_load_complete") and tab.get("conversation_id")
+        ]
+        if revision == self._archive_revision and not pending_tabs and not pending_history_tabs:
             return
         state_rows = self.sync_states(archive)
         states = {(x["account"], x["kind"], x["remote"]): x for x in state_rows}
@@ -648,7 +654,7 @@ class ChatView:
             if state and state["state"] == "ready":
                 pending_refresh = True
                 break
-        if revision == self._archive_revision and not pending_refresh:
+        if revision == self._archive_revision and not pending_refresh and not pending_history_tabs:
             return
         if snapshot is None and self.app.is_running:
             if getattr(self, "_archive_read_pending", False):
@@ -702,7 +708,11 @@ class ChatView:
             def completed(result):
                 self._archive_read_pending = False
                 if self.archive_service() is source:
-                    self.apply_archive_updates(result)
+                    if result.revision != source.revision:
+                        self._archive_revision = -1
+                        self.apply_archive_updates()
+                    else:
+                        self.apply_archive_updates(result)
 
             def failed(reason):
                 self._archive_read_pending = False
@@ -758,13 +768,24 @@ class ChatView:
             key, remote = origin(tab["conversation_id"], tab.get("account_key", self.account_key))
             if archive.deleted(key, "conversation", remote):
                 tab["syncing"] = False
+                tab.pop("history_load_pending", None)
+                tab.pop("history_load_complete", None)
                 tab["load_error"] = self.tr("Sağlayıcıdan silinmiş sohbet")
                 tab.pop("archive_refresh_pending", None)
                 if i == self.active_tab:
                     self.status = self.tr("Bu sohbet sağlayıcıdan silinmiş · yeni sohbet açın")
                 continue
             state = states.get((key, "conversation", remote))
-            tab["syncing"] = bool(state and state["state"] == "syncing")
+            if tab.get("history_load_complete") and not (
+                state and state["state"] == "syncing"
+            ):
+                tab.pop("history_load_pending", None)
+                tab.pop("history_load_complete", None)
+                if i == self.active_tab and not tab.get("messages"):
+                    self.status = ""
+            tab["syncing"] = bool(state and state["state"] == "syncing") or bool(
+                tab.get("history_load_pending")
+            )
             if tab.get("busy"):
                 if (
                     state
@@ -1583,7 +1604,7 @@ class ChatView:
                 controls.append(
                     (
                         "class:button",
-                        " ✎ " + self.tr("Sohbeti yeniden adlandır") + " ",
+                        " ✎ " + self.tr("Yeniden Adlandır") + " ",
                         on_click(
                             lambda: self.open_conversation_rename(
                                 self.conversation_id, self.title
@@ -1864,7 +1885,21 @@ class ChatView:
             result[item["account"], item["kind"], item["remote"]] = item["state"]
         return result
 
-    def render_sidebar_row(self, index, states=None, open_ids=None, capabilities=None):
+    def _sidebar_provider_capabilities(self, provider_id):
+        registry = getattr(getattr(self.account_service, "api", None), "providers", None)
+        if registry is None:
+            return frozenset()
+        capabilities = self._sidebar_capabilities_cache.get(provider_id)
+        if capabilities is not None:
+            return capabilities
+        try:
+            capabilities = frozenset(registry.get(provider_id).capabilities)
+        except (KeyError, AttributeError):
+            return frozenset()
+        self._sidebar_capabilities_cache[provider_id] = capabilities
+        return capabilities
+
+    def render_sidebar_row(self, index, states=None, open_ids=None):
         if not 0 <= index < len(self.sidebar_rows):
             return []
         row = self.sidebar_rows[index]
@@ -1891,15 +1926,18 @@ class ChatView:
         )
         indent = "   " if row.get("nested") else " "
         fragments = [(style, indent + marker + " ", click)]
+        prefix_width = get_cwidth(indent + marker + " ")
         if kind in ("chat", "project"):
             provider = row.get("provider_id", "chatgpt")
+            provider_icon = PROVIDERS.get(provider, (provider, "◈", ""))[1]
             fragments.append(
                 (
                     "class:provider." + provider,
-                    PROVIDERS.get(provider, (provider, "◈", ""))[1] + " ",
+                    provider_icon + " ",
                     click,
                 )
             )
+            prefix_width += get_cwidth(provider_icon + " ")
         suffix = " " + str(row.get("count", "")) if kind in ("section", "project") else ""
         if kind == "project":
             suffix += " ⓘ"
@@ -1918,8 +1956,8 @@ class ChatView:
             suffix += " ↻"
         elif state == "error":
             suffix += " !"
-        provider_capabilities = (capabilities or {}).get(
-            row.get("provider_id", "chatgpt"), frozenset()
+        provider_capabilities = self._sidebar_provider_capabilities(
+            row.get("provider_id", "chatgpt")
         )
         can_rename = (
             kind == "chat"
@@ -1929,13 +1967,7 @@ class ChatView:
         can_delete = kind == "chat" and Capability.DELETE in provider_capabilities
         action_suffix = (" ✎" if can_rename else "") + (" 🗑" if can_delete else "")
         reserve_suffix = suffix + action_suffix + ("  +" if section_action is not None else "")
-        width = (
-            self.sidebar_width()
-            - len(indent)
-            - 3
-            - (2 if kind in ("chat", "project") else 0)
-            - get_cwidth(reserve_suffix)
-        )
+        width = self.sidebar_width() - prefix_width - get_cwidth(reserve_suffix)
         title = fit_text(row["title"], max(1, width))
         fragments.append(
             (
@@ -1960,6 +1992,9 @@ class ChatView:
             fragments.append((style, "  +", on_click(section_action)))
             fragments.append((style, "\n", click))
         elif kind == "chat":
+            padding = max(0, width - get_cwidth(title))
+            if padding:
+                fragments.append((style, " " * padding, click))
             if suffix:
                 fragments.append((style, suffix, click))
             chat_id = row.get("id")
@@ -1992,22 +2027,9 @@ class ChatView:
         self._build_sidebar_rows()
         states = self._sidebar_sync_states()
         open_ids = {tab.get("conversation_id") for tab in self.tabs}
-        provider_ids = {
-            row.get("provider_id", "chatgpt")
-            for row in self.sidebar_rows
-            if row.get("kind") == "chat"
-        }
-        registry = getattr(getattr(self.account_service, "api", None), "providers", None)
-        capabilities = {}
-        if registry is not None:
-            for provider_id in provider_ids:
-                try:
-                    capabilities[provider_id] = registry.get(provider_id).capabilities
-                except (KeyError, AttributeError):
-                    capabilities[provider_id] = frozenset()
         fragments = []
         for index in range(len(self.sidebar_rows)):
-            fragments.extend(self.render_sidebar_row(index, states, open_ids, capabilities))
+            fragments.extend(self.render_sidebar_row(index, states, open_ids))
         return FormattedText(fragments)
 
     def click_sidebar(self, index):
@@ -4008,6 +4030,7 @@ class ChatView:
                     and (
                         self.tabs[self.active_tab].get("loading")
                         or self.tabs[self.active_tab].get("syncing")
+                        or self.tabs[self.active_tab].get("history_load_pending")
                     )
                 )
                 else self.tr("This saved conversation has no messages.")
@@ -5190,22 +5213,16 @@ class ChatView:
             return
 
     def _show_message_sources(self, message):
-        sources = tuple(message.get("_thinking_sources", ()))
+        from providers.messages import sources_from
+
+        sources = sources_from(*(message.get("_thinking_sources") or ()))
         if not sources:
             return
-        from urllib.parse import urlsplit
-
         items = []
         for source in sources:
             title = " ".join(str(source.get("title") or "Source").split())[:200]
             url = source.get("url")
-            host = ""
-            if isinstance(url, str):
-                try:
-                    host = urlsplit(url).hostname or ""
-                except ValueError:
-                    host = ""
-            label = f"↗  {title}  ·  {host}" if host else f"↗  {title}"
+            description = source.get("description") or source.get("snippet") or ""
 
             def open_source(source_url=url):
                 if isinstance(source_url, str):
@@ -5214,7 +5231,14 @@ class ChatView:
                     self.status = self.tr("Source link is unavailable")
                     self.app.invalidate()
 
-            items.append((label[:240], open_source))
+            items.append(
+                {
+                    "url": url if isinstance(url, str) else "",
+                    "title": title,
+                    "description": description,
+                    "callback": open_source if isinstance(url, str) else None,
+                }
+            )
 
         self.forms.open_link_list(self.tr("Used sources"), items)
 
@@ -5634,6 +5658,8 @@ class ChatView:
                 project=project,
                 loading=False,
                 syncing=True,
+                history_load_pending=True,
+                history_load_complete=False,
             )
             self._restore_active_tab(focus=False)
             self.status = self.tr("Geçmiş arka planda yükleniyor · mesaj yazabilirsiniz")
@@ -5691,6 +5717,9 @@ class ChatView:
                         loading_started=None,
                         load_error=None,
                         syncing=cached is not None and self.archive_service() is not None,
+                        history_load_pending=cached is not None
+                        and self.archive_service() is not None,
+                        history_load_complete=False,
                     )
                     model = conversation.get("model") or conversation.get("default_model_slug")
                     if isinstance(model, str) and model:
@@ -5727,14 +5756,27 @@ class ChatView:
                         ):
                             return
                         target_tab["syncing"] = False
+                        target_tab.pop("history_load_pending", None)
+                        target_tab.pop("history_load_complete", None)
+                        if not target_tab.get("messages"):
+                            target_tab["load_error"] = reason
                         self.status = self.tr("Senkronizasyon: ") + reason
                         self.app.invalidate()
+
+                    def sync_completed(_result):
+                        if (
+                            not any(tab is target_tab for tab in self.tabs)
+                            or target_tab.get("load_token") != token
+                        ):
+                            return
+                        target_tab["history_load_complete"] = True
+                        self.apply_archive_updates()
 
                     self._read_in_background(
                         lambda: self.account_service.load(
                             conversation_id, key, force=True, window=True
                         ),
-                        lambda _: self.apply_archive_updates(),
+                        sync_completed,
                         sync_failed,
                         session_bound=False,
                     )
@@ -5752,6 +5794,8 @@ class ChatView:
                     target_tab.update(
                         loading=False, syncing=False, loading_started=None, load_error=message
                     )
+                    target_tab.pop("history_load_pending", None)
+                    target_tab.pop("history_load_complete", None)
                     if target_tab is self.tabs[self.active_tab]:
                         self.loading_conversation = False
                         self.loading_started = None
@@ -5762,6 +5806,8 @@ class ChatView:
 
         if not self._reads.submit(load_selected):
             target_tab.update(loading=False, syncing=False, loading_started=None)
+            target_tab.pop("history_load_pending", None)
+            target_tab.pop("history_load_complete", None)
             self.loading_conversation, self.loading_started = False, None
             self.status = self.tr("Arka plan iş kuyruğu dolu; yeniden deneyin")
 

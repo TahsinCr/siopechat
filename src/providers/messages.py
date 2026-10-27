@@ -73,14 +73,25 @@ def sources_from(*roots):
             return
         seen.add(url)
         label = source.get("title") or source.get("name") or value.get("title") or url
-        sources.append(
-            {
-                "title": " ".join(
-                    "".join(c for c in str(label) if ord(c) >= 32 and ord(c) != 127).split()
-                )[:200],
-                "url": url,
-            }
+        item = {
+            "title": " ".join(
+                "".join(c for c in str(label) if ord(c) >= 32 and ord(c) != 127).split()
+            )[:200],
+            "url": url,
+        }
+        description = (
+            source.get("description")
+            or source.get("snippet")
+            or value.get("description")
+            or value.get("snippet")
         )
+        if isinstance(description, str):
+            clean_description = " ".join(
+                "".join(c for c in description if ord(c) >= 32 and ord(c) != 127).split()
+            )[:1200]
+            if clean_description:
+                item["description"] = clean_description
+        sources.append(item)
 
     def visit(value, depth=0):
         nonlocal remaining_nodes

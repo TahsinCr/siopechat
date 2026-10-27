@@ -107,7 +107,13 @@ class MutationArchiveTests(unittest.TestCase):
         self.assertEqual([item["role"] for item in visible], ["assistant"])
         self.assertEqual(
             visible[0]["_thinking_sources"],
-            ({"title": "Official documentation", "url": "https://docs.example/guide"},),
+            (
+                {
+                    "title": "Official documentation",
+                    "url": "https://docs.example/guide",
+                    "description": "Published citation excerpt",
+                },
+            ),
         )
         self.assertEqual(visible[0]["text"], "Published answer")
         rendered, _ = MessageRenderer().transcript(visible, 80, show_reasoning=True)
@@ -736,9 +742,9 @@ class MessageToolbarTests(unittest.TestCase):
 
             title, items = view.forms.open_link_list.call_args.args
             self.assertEqual(title, view.tr("Used sources"))
-            self.assertIn("example.com", items[0][0])
+            self.assertIn("example.com", items[0]["url"])
             view.forms.open.assert_not_called()
-            items[0][1]()
+            items[0]["callback"]()
             view.open_message_link.assert_called_once_with("https://example.com/source")
 
     def test_sources_without_a_thinking_message_stay_on_the_answer_toolbar(self):

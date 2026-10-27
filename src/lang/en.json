@@ -430,6 +430,8 @@
   "ui.Model seç": "Select model",
   "ui.Düşünme seviyesi seç": "Select reasoning effort",
   "ui.Sohbeti yeniden adlandır": "Rename chat",
+  "ui.Yeniden Adlandır": "Rename",
+  "ui.No sources available": "No sources available",
   "ui.Proje bilgileri": "Project details",
   "ui.Projeleri listele": "List projects",
   "ui.Proje oluştur": "Create project",

@@ -8,7 +8,40 @@ from prompt_toolkit.layout import HSplit, ScrollablePane, VSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import D
 from prompt_toolkit.mouse_events import MouseButton, MouseEventType
+from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Button, CheckboxList, Dialog, RadioList, TextArea
+
+
+def _wrap_terminal_text(value, width):
+    """Wrap text by terminal-cell width, breaking long URLs without changing them."""
+    lines = []
+    for paragraph in str(value or "").splitlines() or [""]:
+        words = paragraph.split()
+        if not words:
+            lines.append("")
+            continue
+        line = ""
+        for word in words:
+            if line and get_cwidth(line + " " + word) <= width:
+                line += " " + word
+                continue
+            if line:
+                lines.append(line)
+                line = ""
+            while get_cwidth(word) > width:
+                part, used = "", 0
+                for char in word:
+                    cells = get_cwidth(char)
+                    if part and used + cells > width:
+                        break
+                    part += char
+                    used += cells
+                lines.append(part)
+                word = word[len(part) :]
+            line = word
+        if line:
+            lines.append(line)
+    return lines or [""]
 
 
 class Forms:
@@ -140,36 +173,111 @@ class Forms:
         self.inline_project = None
         self.fields = {}
         self.error = ""
-        keys = KeyBindings()
-        keys.add("escape", is_global=True)(lambda _: self.close())
-        rows = []
+        terminal = self.view.app.output.get_size()
+        dialog_width = max(24, min(76, terminal.columns - 4))
+        line_width = max(12, dialog_width - 8)
+        pane_height = max(1, terminal.rows - 8)
+        pane = None
 
-        for label, callback in items:
+        def scroll_by(amount):
+            pane.vertical_scroll = max(0, pane.vertical_scroll + amount)
+            self.view.app.invalidate()
+
+        def scroll(event):
+            if event.event_type == MouseEventType.SCROLL_UP:
+                scroll_by(-3)
+                return None
+            if event.event_type == MouseEventType.SCROLL_DOWN:
+                scroll_by(3)
+                return None
+            return NotImplemented
+
+        def source_window(item):
+            fragments, line_count = [], 0
+
+            def add_lines(value, style, handler=None):
+                nonlocal line_count
+                for line in _wrap_terminal_text(value, line_width):
+                    if line_count:
+                        fragments.append((style, "\n", scroll))
+                    width = get_cwidth(line)
+                    fragments.append((style, line, handler or scroll))
+                    if width < line_width:
+                        fragments.append((style, " " * (line_width - width), scroll))
+                    line_count += 1
+
+            url = str(item.get("url") or "").strip()
+            title_text = " ".join(str(item.get("title") or "").split())
+            description = " ".join(str(item.get("description") or "").split())
+            callback = item.get("callback")
+
             def activate(event, action=callback):
+                if event.event_type in (MouseEventType.SCROLL_UP, MouseEventType.SCROLL_DOWN):
+                    return scroll(event)
                 if event.event_type != MouseEventType.MOUSE_UP or event.button != MouseButton.LEFT:
                     return NotImplemented
+                if action is None:
+                    return None
                 self.close()
                 action()
                 return None
 
-            rows.append(
+            if url:
+                add_lines(url, "class:source.list.url", activate)
+            if title_text:
+                add_lines(title_text, "class:source.list.title")
+            if description:
+                add_lines(description, "class:source.list.description")
+            if not line_count:
+                add_lines(self.view.tr("No sources available"), "class:source.list.description")
+            return (
                 Window(
-                    content=FormattedTextControl(
-                        [("class:source.list.item", label, activate)]
-                    ),
-                    height=1,
-                )
+                    content=FormattedTextControl(fragments),
+                    width=line_width,
+                    height=line_count,
+                    always_hide_cursor=True,
+                ),
+                line_count,
             )
 
-        content_height = max(1, len(rows))
+        def spacer_window():
+            return Window(
+                content=FormattedTextControl(
+                    [("class:source.list.description", " " * line_width, scroll)]
+                ),
+                width=line_width,
+                height=1,
+                always_hide_cursor=True,
+            )
+
+        rows, first_focus, content_height = [], None, 0
+        for item in items:
+            source_row, row_height = source_window(item)
+            rows.append(source_row)
+            content_height += row_height
+            first_focus = first_focus or source_row
+            rows.append(spacer_window())
+            content_height += 1
+        if not rows:
+            empty_row, content_height = source_window({})
+            rows.append(empty_row)
+            first_focus = empty_row
+        keys = KeyBindings()
+        keys.add("escape", is_global=True)(lambda _: self.close())
+        keys.add("up", is_global=True)(lambda _: scroll_by(-1))
+        keys.add("down", is_global=True)(lambda _: scroll_by(1))
+        keys.add("pageup", is_global=True)(lambda _: scroll_by(-max(1, pane_height - 1)))
+        keys.add("pagedown", is_global=True)(lambda _: scroll_by(max(1, pane_height - 1)))
+        keys.add("home", is_global=True)(lambda _: scroll_by(-content_height))
+        keys.add("end", is_global=True)(lambda _: scroll_by(content_height))
         pane = ScrollablePane(
             HSplit(rows, padding=0, key_bindings=keys),
+            keep_cursor_visible=False,
+            keep_focused_window_visible=False,
             height=lambda: D(
                 min=1,
-                preferred=min(
-                    content_height, max(1, self.view.app.output.get_size().rows - 10)
-                ),
-                max=max(1, self.view.app.output.get_size().rows - 10),
+                preferred=min(content_height, pane_height),
+                max=pane_height,
             ),
         )
         close_button = Button(self.view.tr("Kapat"), handler=self.close)
@@ -177,12 +285,12 @@ class Forms:
             title=title,
             body=pane,
             buttons=[close_button],
-            width=64,
+            width=dialog_width,
             with_background=False,
         )
         self.visible = True
         self.view.app.layout.update_parents_relations()
-        self.view.app.layout.focus(close_button)
+        self.view.app.layout.focus(first_focus or close_button)
         self.view.app.invalidate()
 
     def confirm(self, title, submit):
