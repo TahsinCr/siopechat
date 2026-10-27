@@ -19,6 +19,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 ### Changed
 
 - Read Gemini thinking choices, provider labels, disabled states, and defaults from the account's native web model policy; keep the shared model/effort picker and five-minute catalog cache.
+- Show the provider-localized effort title in selection status messages while retaining stable identifiers for saved preferences and wire requests.
 - Resolve per-user data, state, cache, and runtime directories from the normalized project name in package metadata; pass the caller-owned cache path to the Sentinel process instead of maintaining a second hardcoded cache root.
 - Batch title-override reads while saving provider conversation pages, avoiding one SQLite metadata query per conversation.
 - Show cited sources as wrapped, real-URL links with their provider-supplied title and description in a mouse- and keyboard-scrollable popup.

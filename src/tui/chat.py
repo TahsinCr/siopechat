@@ -2480,7 +2480,13 @@ class ChatView:
             self.effort_preference = effort or ""
             self.remember_selection()
             self._save_active_tab()
-            self.status = self.tr("Efor: {0}").format(effort or self.tr("sağlayıcı varsayılanı"))
+            selected_effort = self.tr("sağlayıcı varsayılanı")
+            if selected is not None and effort is not None:
+                selected_effort = next(
+                    (choice.title for choice in selected.efforts if choice.id == effort),
+                    selected_effort,
+                )
+            self.status = self.tr("Efor: {0}").format(selected_effort)
         self.app.invalidate()
 
     def refresh_projects(self, more: bool = False) -> None:
