@@ -36,6 +36,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Fixed
 
+- Exit the one-shot Sentinel signer after its JSON result is flushed instead of waiting for the SDK's residual five-second fallback timer.
 - Enable Claude's native web-search tool in web-session completion requests so it can search when a prompt needs current information.
 - Keep the sidebar divider aligned with its search/filter row at supported terminal widths.
 - Use ChatGPT's current public Sentinel SDK methods for request signing instead of matching private minified names; surface signer failures as request errors instead of falsely disabling chat.

@@ -15,6 +15,12 @@ const cacheTtlMs = Number(
   process.env.CHATGPT_WEB_SENTINEL_CACHE_TTL_MS || "21600000");
 
 const maxSdkBytes = 8 * 1024 * 1024;
+function writeResult(value) {
+  // Sentinel can leave a fallback timeout pending after token() has resolved.
+  // This helper is a one-shot process, so exit after its result reaches the caller.
+  process.stdout.write(`${JSON.stringify(value)}\n`, (error) => process.exit(error ? 1 : 0));
+}
+
 function sdkUrl(value) {
   const url = new URL(value);
   if (url.protocol !== "https:" || url.username || url.password ||
@@ -220,7 +226,7 @@ async function main() {
     if (typeof capturedInitial !== "string" || !capturedInitial) {
       throw new Error("Sentinel SDK did not generate an initial proof");
     }
-    process.stdout.write(`${JSON.stringify({ initial: capturedInitial })}\n`);
+    writeResult({ initial: capturedInitial });
     return;
   }
 
@@ -234,9 +240,7 @@ async function main() {
       throw new Error("Sentinel SDK did not generate an enforcement proof");
     }
     const turnstile = typeof token.t === "string" && token.t ? token.t : null;
-    process.stdout.write(
-      `${JSON.stringify({ initial: capturedInitial, proof: token.p, turnstile })}\n`,
-    );
+    writeResult({ initial: capturedInitial, proof: token.p, turnstile });
     return;
   }
   let tokenResult;
@@ -281,7 +285,7 @@ async function main() {
     full_token_shape: tokenShape,
     full_token_error: tokenError || null,
   };
-  process.stdout.write(`${JSON.stringify(result)}\n`);
+  writeResult(result);
 }
 
 main().catch((error) => {
