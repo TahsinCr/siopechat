@@ -17,8 +17,13 @@ from urllib.parse import quote, urljoin, urlsplit
 import httpx
 
 from ..errors import RateLimited
-from . import discovery
 from .constants import CHATGPT_ORIGIN, DEFAULT_PAGE_SIZE
+from .discovery import (
+    model_catalog as parse_model_catalog,
+    page as parse_page,
+    project as parse_project,
+    project_id as extract_project_id,
+)
 from .errors import ChatGPTWebError, SentinelCompatibilityError
 from .formats import message_parts, text_from_parts
 from .resources import Script, script_path
@@ -228,7 +233,7 @@ class ChatGPTClient:
                 "supports_model_picker_upgrade_presets": "true",
             },
         ).json()
-        catalog = discovery.model_catalog(raw)
+        catalog = parse_model_catalog(raw)
         self._model_catalog = (time.monotonic(), catalog)
         return catalog
 
@@ -239,8 +244,8 @@ class ChatGPTClient:
         raw = self.request(
             "GET", urljoin(CHATGPT_ORIGIN, "/backend-api/gizmos/snorlax/sidebar"), params=params
         ).json()
-        items, next_cursor = discovery.page(raw)
-        projects = [value for item in items if (value := discovery.project(item)) is not None]
+        items, next_cursor = parse_page(raw)
+        projects = [value for item in items if (value := parse_project(item)) is not None]
         return {"items": projects, "cursor": next_cursor}
 
     def create_project(self, name, instructions="", *, visibility="private", memory="default"):
@@ -259,7 +264,7 @@ class ChatGPTClient:
         ).json()
         if raw.get("error") or not isinstance(raw.get("resource"), dict):
             raise ChatGPTWebError("Project creation response changed; request was not replayed")
-        project = discovery.project(raw["resource"])
+        project = parse_project(raw["resource"])
         if project is None:
             raise ChatGPTWebError("Project creation returned no project")
         return self.get_project(project["id"])
@@ -268,7 +273,7 @@ class ChatGPTClient:
         raw = self.request(
             "GET", urljoin(CHATGPT_ORIGIN, f"/backend-api/gizmos/{quote(project_id, safe='')}")
         ).json()
-        value = discovery.project(raw)
+        value = parse_project(raw)
         if value is None:
             raise ChatGPTWebError("Requested gizmo is not a project")
         return value
@@ -281,7 +286,7 @@ class ChatGPTClient:
             ),
             params={"cursor": cursor or "0", "limit": 30, "owned_only": "false"},
         ).json()
-        items, next_cursor = discovery.page(raw)
+        items, next_cursor = parse_page(raw)
         return {
             "items": [dict(item, project_id=project_id) for item in items],
             "cursor": next_cursor,
@@ -325,7 +330,7 @@ class ChatGPTClient:
                 item for item in items if isinstance(item, dict) and item.get("id") not in seen
             ]
             conversations.extend(
-                dict(item, project_id=discovery.project_id(item)) for item in fresh
+                dict(item, project_id=extract_project_id(item)) for item in fresh
             )
             seen.update(item["id"] for item in fresh if item.get("id"))
             offset += len(items)
@@ -381,7 +386,7 @@ class ChatGPTClient:
             json={"gizmo_id": project_id},
         )
         conversation = self.get_conversation(conversation_id)
-        if discovery.project_id(conversation) != project_id:
+        if extract_project_id(conversation) != project_id:
             raise ChatGPTWebError(
                 "Server did not confirm project membership; refresh this conversation"
             )
@@ -430,7 +435,7 @@ class ChatGPTClient:
                 }
 
         if project_id:
-            if previous and discovery.project_id(previous) not in (None, project_id):
+            if previous and extract_project_id(previous) not in (None, project_id):
                 raise ChatGPTWebError("conversation belongs to another project")
             previous = dict(previous or {}, project_id=project_id)
         catalog = self.model_catalog()
@@ -594,8 +599,8 @@ class ChatGPTClient:
         if effort:
             body["thinking_effort"] = effort
 
-        if conversation and discovery.project_id(conversation):
-            body["gizmo_id"] = discovery.project_id(conversation)
+        if conversation and extract_project_id(conversation):
+            body["gizmo_id"] = extract_project_id(conversation)
         body["history_and_training_disabled"] = temporary
         headers.pop("x-openai-web-sse-compression", None)
         headers["x-openai-target-path"] = "/backend-api/f/conversation"
@@ -867,7 +872,7 @@ class ChatGPTClient:
         if model:
             body["model"] = model
         if conversation:
-            project_id = discovery.project_id(conversation)
+            project_id = extract_project_id(conversation)
             if project_id:
                 body["gizmo_id"] = project_id
             conversation_id = conversation.get("conversation_id") or conversation.get("id")
