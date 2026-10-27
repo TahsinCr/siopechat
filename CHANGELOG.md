@@ -35,6 +35,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Fixed
 
+- Enable Claude's native web-search tool in web-session completion requests so it can search when a prompt needs current information.
 - Keep the sidebar divider aligned with its search/filter row at supported terminal widths.
 - Use ChatGPT's current public Sentinel SDK methods for request signing instead of matching private minified names; surface signer failures as request errors instead of falsely disabling chat.
 - Align Gemini's stream read timeout with its 120-second idle limit and translate curl timeouts into a clear provider error without retrying an ambiguous send.

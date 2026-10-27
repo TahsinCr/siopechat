@@ -15,6 +15,8 @@ from ..projects import ProjectOptions, source_file
 from ..session import WebSession, read_session
 from .catalog import selector_catalog
 
+_WEB_SEARCH_TOOL = {"type": "web_search_v0", "name": "web_search"}
+
 
 def remote_id(value):
     try:
@@ -305,6 +307,7 @@ class ClaudeTransport:
             "attachments": v.get("original_attachments", []),
             "files": [item["id"] for item in v.get("attachments", []) if item.get("id")],
             "rendering_mode": "messages",
+            "tools": [_WEB_SEARCH_TOOL.copy()],
         }
         if parent:
             body["parent_message_uuid"] = parent

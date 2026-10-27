@@ -429,9 +429,15 @@ class ClaudeActionsTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("parent_message_uuid", edit[1])
         self.assertEqual(edit[1]["files"], ["uploaded-file"])
         self.assertEqual(edit[1]["attachments"][0]["extracted_content"], "data")
+        self.assertEqual(
+            edit[1]["tools"], [{"type": "web_search_v0", "name": "web_search"}]
+        )
         self.assertTrue(retry[0].endswith("/retry_completion"))
         self.assertEqual(retry[1]["parent_message_uuid"], answer_id)
         self.assertEqual(retry[1]["model"], "available-model")
+        self.assertEqual(
+            retry[1]["tools"], [{"type": "web_search_v0", "name": "web_search"}]
+        )
         with self.assertRaisesRegex(ValueError, "from this account"):
             _ = [
                 event
