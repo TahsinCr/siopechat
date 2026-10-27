@@ -62,7 +62,8 @@ class UiControlsTests(unittest.TestCase):
             metadata = next(
                 i for i, span in enumerate(fragments) if span[0] == "class:message.toolbar.metadata"
             )
-            self.assertIn("gpt · high", fragments[metadata][1])
+            self.assertNotIn("gpt", fragments[metadata][1])
+            self.assertIn(" high ", fragments[metadata][1])
             self.assertLess(
                 metadata, next(i for i, span in enumerate(fragments) if span[1].strip() == "1/2")
             )

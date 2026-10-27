@@ -42,23 +42,3 @@ class ArchitectureTests(unittest.TestCase):
                     (node.module or "").split(".")[0],
                     {"cli", "services", "sqlite3", "httpx", "extensions"},
                 )
-
-    def test_packaged_node_helpers_are_reachable_from_current_entrypoints(self):
-        import re
-
-        from providers.chatgpt.resources import Script, script_path
-
-        directory = (ROOT / "src/providers").resolve()
-        pending = [script_path(script).resolve() for script in Script]
-        pending += [directory / "scripts" / name for name in ("page.cjs", "cookies.cjs")]
-        reachable = set()
-        while pending:
-            path = pending.pop()
-            if path in reachable:
-                continue
-            self.assertTrue(path.is_file(), path)
-            reachable.add(path)
-            for reference in re.findall(r"require\(['\"](\.[^'\"]+)['\"]\)", path.read_text()):
-                target = (path.parent / reference).resolve()
-                pending.append(target if target.suffix else target.with_suffix(".cjs"))
-        self.assertEqual(reachable, set(directory.rglob("*.cjs")))

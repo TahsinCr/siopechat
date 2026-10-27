@@ -20,6 +20,11 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 - Move conversation deletion and split-pane controls beside the upper synchronization button.
 - Add a trash icon to the conversation delete action in the upper toolbar.
 - Present generated files as compact inline links with natural wrapping, matching the assistant background and using blue underlined text.
+- Group project pagination checks with provider UI tests and cursor-boundary checks with terminal responsiveness tests.
+
+### Removed
+
+- Remove static locale-key/source scans and the source-tree JavaScript file-set check; keep runtime text-format validation, architecture boundaries, and built-package smoke checks.
 
 ### Fixed
 

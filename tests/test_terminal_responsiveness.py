@@ -3,8 +3,26 @@
 import asyncio
 import unittest
 
+from prompt_toolkit.data_structures import Point
+from prompt_toolkit.layout.controls import FormattedTextControl
+
+from cli.widgets import BoundedTextControl
 from tests import cli_support as interaction
 from tests.cli_support import ResizableOutput, immediate
+
+
+class CursorRenderingTests(unittest.TestCase):
+    def test_wrapped_cursor_is_clamped_to_the_current_snapshot(self):
+        content = "short"
+        control = FormattedTextControl(lambda: content, get_cursor_position=lambda: Point(0, 599))
+        previous = control.create_content(8, 20)
+        with self.assertRaises(IndexError):
+            previous.get_height_for_line(previous.cursor_position.y, 8, None)
+
+        bounded = BoundedTextControl(lambda: content, get_cursor_position=lambda: Point(99, 599))
+        current = bounded.create_content(8, 20)
+        self.assertEqual(current.cursor_position, Point(5, 0))
+        self.assertEqual(current.get_height_for_line(current.cursor_position.y, 8, None), 1)
 
 
 class ResponsiveSettingsTests(unittest.IsolatedAsyncioTestCase):
