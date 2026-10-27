@@ -2456,21 +2456,22 @@ class Accounts:
             return self.call(provider.move_chat(remote, project_remote))
 
         def rename(chat, title):
-            _, remote = origin(chat, key)
+            context, remote = origin(chat, key)
+            target = self.provider(context)
 
             async def rename_remote():
-                gate = self.api.tasks.account_gate(*key.split("/", 1))
+                gate = self.api.tasks.account_gate(*context.split("/", 1))
                 async with gate:
-                    await provider.rename_chat(remote, title)
+                    await target.rename_chat(remote, title)
 
             self.call(rename_remote())
             archive = self.archive()
             if archive:
-                archive.rename_conversation(key, remote, title)
-            cached = self.repository.cache_get(key, "conversation", remote)
+                archive.rename_conversation(context, remote, title)
+            cached = self.repository.cache_get(context, "conversation", remote)
             if isinstance(cached, dict):
                 cached["title"] = title
-                self.repository.cache_put(key, "conversation", remote, cached)
+                self.repository.cache_put(context, "conversation", remote, cached)
 
         def forget(chat):
             _, remote = origin(chat, key)

@@ -385,16 +385,27 @@ class SQLiteRepository:
                 if kind in ("chats", "container_chats")
                 else []
             )
+            conversation_ids = list(dict.fromkeys(
+                self._remote(account, item.get("remote_id") or item.get("id") or remote)
+                for item in conversations
+            ))
+            pending_titles = {}
+            for start in range(0, len(conversation_ids), 500):
+                batch = conversation_ids[start : start + 500]
+                placeholders = ",".join("?" for _ in batch)
+                rows = db.execute(
+                    "SELECT remote,metadata FROM conversations WHERE account=? "
+                    f"AND remote IN ({placeholders})",
+                    (account, *batch),
+                )
+                for item_id, metadata in rows:
+                    if override := json.loads(metadata).get("_local_title_override"):
+                        pending_titles[item_id] = override
             title_overrides = {}
             cleared_title_overrides = False
             for item in conversations:
                 item_id = self._remote(account, item.get("remote_id") or item.get("id") or remote)
-                row = db.execute(
-                    "SELECT metadata FROM conversations WHERE account=? AND remote=?",
-                    (account, item_id),
-                ).fetchone()
-                metadata = json.loads(row[0]) if row else {}
-                override = metadata.get("_local_title_override")
+                override = pending_titles.get(item_id)
                 if not override:
                     continue
                 if item.get("title") != override:
@@ -520,13 +531,15 @@ class SQLiteRepository:
             for kind, record_remote, payload in rows:
                 value = json.loads(payload)
                 changed = False
-                if kind in ("chats", "container_chats"):
-                    for item in value.get("items", ()):
-                        item_remote = item.get("remote_id") or item.get("id")
-                        if item_remote and self._remote(account, item_remote) == remote:
-                            if item.get("title") != title:
-                                item["title"] = title
-                                changed = True
+                for item in value.get("items", ()):
+                    item_remote = item.get("remote_id") or item.get("id")
+                    if (
+                        item_remote
+                        and self._remote(account, item_remote) == remote
+                        and item.get("title") != title
+                    ):
+                        item["title"] = title
+                        changed = True
                 if changed:
                     encoded = encode(value)
                     digest = hashlib.sha256(encoded.encode()).hexdigest()

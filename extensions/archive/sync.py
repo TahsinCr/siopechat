@@ -85,7 +85,10 @@ class Archive:
                             _, (_, removed_size) = self._hot.popitem(last=False)
                             self._size -= removed_size
                 for key in tuple(self._pending):
-                    if key[0] == account and key[1] in ("chats", "container_chats"):
+                    if key[0] == account and (
+                        key[1] in ("chats", "container_chats")
+                        or key[1:] == ("conversation", remote)
+                    ):
                         self._versions[key] = self._versions.get(key, 0) + 1
                 self.revision += 1
 
@@ -479,6 +482,8 @@ class Archive:
                                 and result.get("history_complete", True) is False
                             ):
                                 current = self.conversation_window(account, remote)
+                                if not accept and current is not None:
+                                    result = dict(result, title=current.get("title"))
                                 partial_written = self._merge_partial_history(
                                     account, remote, result, current, base_end
                                 )

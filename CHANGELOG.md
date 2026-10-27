@@ -18,6 +18,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Changed
 
+- Batch title-override reads while saving provider conversation pages, avoiding one SQLite metadata query per conversation.
 - Show cited sources as wrapped, real-URL links with their provider-supplied title and description in a mouse- and keyboard-scrollable popup.
 - Reuse ChatGPT's prepared HTTP client for sends; discard the pool after canceled or failed streams while preserving interruption behavior.
 - Make the sidebar divider width explicit, add a magnifier action for the existing chat-search popup, and allow mouse focus in the inline sidebar filter.
@@ -40,6 +41,8 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Fixed
 
+- Route sidebar renames through the conversation's owning provider account, and retain confirmed names when an older in-flight history read completes.
+- Restore the visible tab state when opening a saved conversation after the last chat tab was deleted.
 - Read source citations from both archived provider metadata and prepared transcript rows; source titles and URLs open the validated citation URL directly instead of entering the file-download flow.
 - Removed deleted conversations from open tabs, selected the preceding tab when the active chat was deleted, and released its transcript/render state without replacing it with a visible new-chat tab.
 - Kept renamed conversation titles canonical in SQLite and cached listing pages; stale provider responses retain the confirmed title until the provider reports it, after which later provider renames are accepted.

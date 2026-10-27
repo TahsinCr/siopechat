@@ -812,6 +812,24 @@ class MessageToolbarTests(unittest.TestCase):
             self.assertFalse(view.tabs[0]["empty_workspace"])
             self.assertEqual(view.tabs[0]["title"], view.tr("New conversation"))
 
+    def test_open_existing_chat_after_deleting_last_tab_restores_visible_tab(self):
+        with terminal() as (view, _):
+            view.conversation_id = "deleted"
+            view._save_active_tab()
+            view.remove_deleted_conversation_tabs({"deleted"})
+            view.load_conversation = Mock(return_value={
+                "title": "Saved conversation",
+                "messages": [{"id": "answer", "role": "assistant", "text": "Hello"}],
+            })
+            view._dispatch_ui = lambda callback: callback()
+            with patch.object(view._reads, "submit", side_effect=lambda read: read() or True):
+                view.resume_conversation("saved")
+
+            self.assertEqual(view.conversation_id, "saved")
+            self.assertEqual(view.messages[0]["text"], "Hello")
+            self.assertEqual(view.tabs[view.active_tab]["title"], "Saved conversation")
+            self.assertFalse(view.tabs[view.active_tab]["empty_workspace"])
+
     def test_sources_without_a_thinking_message_stay_on_the_answer_toolbar(self):
         from tui.widgets import TranscriptControl
 

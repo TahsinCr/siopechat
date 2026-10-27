@@ -5063,13 +5063,14 @@ class ChatView:
             self.app.invalidate()
             return
         self.status = self.tr("Renaming conversation…")
+        rename_callback = self.rename_conversation
         self.background_jobs += 1
         self.app.invalidate()
 
         def rename() -> None:
             error_text = None
             try:
-                self.rename_conversation(conversation_id, title)
+                rename_callback(conversation_id, title)
             except Exception as error:
                 error_text = str(error)
 
@@ -5724,7 +5725,10 @@ class ChatView:
         self.loading_conversation = True
         self.loading_started = time.monotonic()
         self.status = self.tr("Loading conversation…")
-        target_tab.update(loading=True, loading_started=self.loading_started, load_token=token)
+        target_tab.update(
+            loading=True, loading_started=self.loading_started, load_token=token,
+            empty_workspace=False,
+        )
         if self.account_service:
             # The conversation ID is already known, so keep the composer usable
             # while local history and provider synchronization arrive. Their

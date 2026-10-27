@@ -28,6 +28,39 @@ class SyncConcurrencyTests(unittest.TestCase):
         self.archive = Archive(self.repo, Files(root / "files"))
         self.addCleanup(self.archive.close)
 
+    def test_rename_survives_older_history_after_listing_confirms_new_title(self):
+        account, remote = "claude/a", "chat"
+        history = {"id": remote, "title": "Old", "messages": [
+            {"id": "one", "role": "assistant", "text": "Existing answer"}
+        ]}
+        self.archive.put(account, "conversation", remote, history)
+        entered, release = threading.Event(), threading.Event()
+
+        def fetch():
+            entered.set()
+            if not release.wait(3):
+                raise TimeoutError("test barrier")
+            return dict(history, messages=history["messages"] + [
+                {"id": "two", "role": "assistant", "text": "New remote answer"}
+            ])
+
+        with ThreadPoolExecutor(1) as pool:
+            pending = pool.submit(
+                self.archive.read, account, "conversation", remote, fetch, fresh=True
+            )
+            try:
+                self.assertTrue(entered.wait(1))
+                self.archive.rename_conversation(account, remote, "Renamed")
+                self.archive.put(account, "chats", "", {"items": [
+                    {"id": remote, "title": "Renamed"}
+                ]})
+            finally:
+                release.set()
+            result = pending.result(3)
+        self.assertEqual(result["title"], "Renamed")
+        self.assertEqual([message["id"] for message in result["messages"]], ["one", "two"])
+        self.assertEqual(self.repo.get(account, "conversation", remote)["title"], "Renamed")
+
     def test_save_turn_preserves_history_hydrated_after_the_sender_read(self):
         self.archive.put(
             "gemini/a",
@@ -378,6 +411,30 @@ class AccountConcurrencyTests(unittest.TestCase):
         return self.accounts.send(
             key, identity(key, "c_fixture"), "question", [], lambda _: None, lambda _: None
         )
+
+    def test_sidebar_rename_uses_conversation_account_instead_of_active_account(self):
+        target = self.accounts._providers[self.gemini]
+        target.rename_chat = AsyncMock()
+        active = self.accounts._providers["chatgpt/default"]
+        active.rename_chat = AsyncMock()
+        archive = self.accounts.archive()
+        for key in (self.gemini, "chatgpt/default"):
+            value = {"id": "same-id", "title": "Original", "messages": []}
+            archive.put(key, "conversation", "same-id", value)
+            self.accounts.repository.cache_put(key, "conversation", "same-id", value)
+
+        self.accounts.callbacks("chatgpt/default")["rename_conversation"](
+            identity(self.gemini, "same-id"), "Renamed"
+        )
+
+        target.rename_chat.assert_awaited_once_with("same-id", "Renamed")
+        active.rename_chat.assert_not_called()
+        for key, title in ((self.gemini, "Renamed"), ("chatgpt/default", "Original")):
+            self.assertEqual(archive.get(key, "conversation", "same-id")["title"], title)
+            self.assertEqual(
+                self.accounts.repository.cache_get(key, "conversation", "same-id")["title"],
+                title,
+            )
 
     def test_background_catalog_verification_does_not_resume_a_paused_send_account(self):
         account = tuple(self.gemini.split("/", 1))
