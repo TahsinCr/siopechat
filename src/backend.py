@@ -22,7 +22,7 @@ from providers.chatgpt.errors import ChatGPTWebError
 from providers.chatgpt.formats import normalize_conversation
 from providers.errors import ProviderError
 from utils.files import atomic_json_write
-from utils.paths import cache_dir, legacy_data_dir, project_root, runtime_dir, state_dir
+from utils.paths import application_root, cache_dir, runtime_dir, state_dir, user_data_dir
 from utils.process import acquire_exclusive, detached_process_options, set_private_permissions
 
 MAX_DAEMON_MESSAGE = 64 * 1024 * 1024
@@ -33,13 +33,13 @@ IPC_PROTOCOL = 6
 
 class BackendService:
     def __init__(self, root: Path | None = None):
-        self.root = Path(root) if root is not None else project_root()
+        self.root = Path(root) if root is not None else application_root()
         self._daemon_start_lock = threading.Lock()
 
     def auth_store_path(self) -> Path:
         return (
             state_dir()
-            if self.root.resolve() == project_root().resolve()
+            if self.root.resolve() == application_root().resolve()
             else self.root / "data" / "session"
         ) / "session.json"
 
@@ -58,11 +58,11 @@ class BackendService:
             SessionPaths(
                 store,
                 cache_dir()
-                if self.root.resolve() == project_root().resolve()
+                if self.root.resolve() == application_root().resolve()
                 else self.root / "data" / "session" / "cache",
                 (
-                    legacy_data_dir()
-                    if self.root.resolve() == project_root().resolve()
+                    user_data_dir()
+                    if self.root.resolve() == application_root().resolve()
                     else self.root / "data" / "session"
                 )
                 / "chrome-profile",

@@ -37,9 +37,9 @@ def create_application(root: Path | None = None):
     from lang import __file__ as language_file
     from providers import create_provider
     from settings import Settings, SettingsCatalog
-    from utils.paths import project_root
+    from utils.paths import application_root
 
-    root = Path(root) if root is not None else project_root()
+    root = Path(root) if root is not None else application_root()
     settings = Settings(root / "config.json")
     api = ExtensionAPI(settings)
     api.provide("application", "paths", root)

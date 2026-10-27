@@ -5291,9 +5291,10 @@ class ChatView:
     def _show_message_sources(self, message):
         from providers.messages import sources_from
 
-        sources = sources_from(
-            message, {"sources": message.get("_thinking_sources") or ()}
-        )
+        prepared_sources = message.get("_thinking_sources") or ()
+        sources = sources_from({"sources": prepared_sources}) if prepared_sources else ()
+        if not sources:
+            sources = sources_from(message)
         if not sources:
             self.status = self.tr("No sources available")
             self.app.invalidate()

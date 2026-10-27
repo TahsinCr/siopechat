@@ -27,7 +27,7 @@ class PlatformSupportTests(unittest.TestCase):
             patch.object(platform.getpass, "getuser", return_value="test-user"),
         ):
             self.assertEqual(
-                platform.legacy_data_dir(), PureWindowsPath("C:/Users/test/AppData/Local/SiopeChat")
+                platform.user_data_dir(), PureWindowsPath("C:/Users/test/AppData/Local/SiopeChat")
             )
             self.assertEqual(
                 platform.cache_dir(), PureWindowsPath("C:/Users/test/AppData/Local/SiopeChat/Cache")
@@ -47,7 +47,7 @@ class PlatformSupportTests(unittest.TestCase):
             process.set_private_permissions(PureWindowsPath("credentials.json"), 0o600)
         chmod.assert_not_called()
 
-    def test_unix_xdg_paths_preserve_legacy_directory_name(self):
+    def test_unix_xdg_paths_use_stable_application_namespace(self):
         with (
             patch.object(platform.os, "name", "posix"),
             patch.object(platform.sys, "platform", "linux"),
@@ -62,7 +62,7 @@ class PlatformSupportTests(unittest.TestCase):
                 clear=True,
             ),
         ):
-            self.assertEqual(platform.legacy_data_dir(), TestPosixPath("/tmp/data/chatgpt-web"))
+            self.assertEqual(platform.user_data_dir(), TestPosixPath("/tmp/data/chatgpt-web"))
             self.assertEqual(platform.state_dir(), TestPosixPath("/tmp/state/chatgpt-web"))
             self.assertEqual(platform.cache_dir(), TestPosixPath("/tmp/cache/chatgpt-web"))
 
@@ -74,7 +74,7 @@ class PlatformSupportTests(unittest.TestCase):
             patch.object(platform, "Path", TestPosixPath),
         ):
             self.assertEqual(
-                platform.legacy_data_dir(),
+                platform.user_data_dir(),
                 TestPosixPath("/Users/test/Library/Application Support/SiopeChat"),
             )
             self.assertEqual(
