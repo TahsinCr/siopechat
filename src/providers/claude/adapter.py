@@ -66,18 +66,20 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
         self.account_id = account_id
         self.transport = ClaudeTransport(self.credential_file)
         self._gate = asyncio.Lock()
+        self._rename_gate = asyncio.Lock()
         self.editor = ClaudeProjectEditor(self.transport)
 
     async def close(self):
-        try:
-            await self.editor.close()
-        except BaseException as editor_error:
+        async with self._rename_gate:
             try:
-                await self.transport.close()
-            except BaseException as close_error:
-                raise editor_error from close_error
-            raise
-        await self.transport.close()
+                await self.editor.close()
+            except BaseException as editor_error:
+                try:
+                    await self.transport.close()
+                except BaseException as close_error:
+                    raise editor_error from close_error
+                raise
+            await self.transport.close()
 
     async def prepare(self):
         await self.transport.prepare()
@@ -272,7 +274,7 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
     async def rename_chat(self, conversation_id, title):
         if not isinstance(title, str) or not 1 <= len(title.strip()) <= 200:
             raise ValueError("Chat title must contain 1–200 characters")
-        async with self._gate:
+        async with self._rename_gate:
             await self.transport.request(
                 "rename_chat", conversation_id=conversation_id, title=title.strip()
             )

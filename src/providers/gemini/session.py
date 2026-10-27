@@ -76,7 +76,6 @@ class GeminiSession:
             self.rpc_path_prefix = fields["eptZe"]
             if not self.token:
                 raise AccountPaused("Gemini oturumu geçersiz; hesabı doğrulayın")
-            self.models = await self.discover_models()
             self.verified = True
             await self.persist()
             self.refresh_task = asyncio.create_task(self.refresh(), name="gemini-session-refresh")

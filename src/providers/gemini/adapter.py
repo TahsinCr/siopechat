@@ -126,7 +126,6 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
         )
         await client.open()
         self._client = client
-        self._catalog_at = time.monotonic()
         return client
 
     async def close(self):
@@ -172,7 +171,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
 
     async def prepare(self):
         """Open the authenticated HTTP session and discover its initial models."""
-        await self._connect()
+        await self.models()
 
     async def forget_session(self):
         async with self._gate:
@@ -199,12 +198,10 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
     async def models(self, *, force: bool = False):
         async with self._model_gate:
             client = await self._connect()
-            if force or (
-                self._catalog_at is not None and time.monotonic() - self._catalog_at >= 300
+            if force or not client.models or self._catalog_at is None or (
+                time.monotonic() - self._catalog_at >= 300
             ):
                 client.models = await client.discover_models()
-                self._catalog_at = time.monotonic()
-            elif self._catalog_at is None:
                 self._catalog_at = time.monotonic()
             return ModelCatalog(FeatureState.AVAILABLE, client.models)
 
@@ -376,6 +373,8 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
 
         async with self._gate:
             client = await self._connect()
+            if not client.models:
+                await self.models()
             context = None
             action_files = None
             if project:

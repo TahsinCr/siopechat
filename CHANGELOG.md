@@ -21,7 +21,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 - Resolve per-user data, state, cache, and runtime directories from the normalized project name in package metadata; pass the caller-owned cache path to the Sentinel process instead of maintaining a second hardcoded cache root.
 - Batch title-override reads while saving provider conversation pages, avoiding one SQLite metadata query per conversation.
 - Show cited sources as wrapped, real-URL links with their provider-supplied title and description in a mouse- and keyboard-scrollable popup.
-- Run conversation rename through the provider's own concurrency controls, so Gemini title changes do not wait behind a long-running answer stream.
+- Let title changes proceed during active generation: ChatGPT uses an isolated request client, Claude bypasses its generation lock, and Gemini separates authenticated session bootstrap from model-catalog discovery. Rename-only locks still coordinate ChatGPT/Claude shutdown.
 - Reuse ChatGPT's prepared HTTP client for sends; discard the pool after canceled or failed streams while preserving interruption behavior.
 - Make the sidebar divider width explicit, add a magnifier action for the existing chat-search popup, and allow mouse focus in the inline sidebar filter.
 - Center the empty-chat prompt and show one localized instruction instead of repeating the SiopeChat brand in the transcript.

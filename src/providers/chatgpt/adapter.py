@@ -94,6 +94,7 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
         self._http_lock = threading.RLock()
         self._temporary_conversations = OrderedDict()
         self._gate = asyncio.Lock()
+        self._rename_gate = asyncio.Lock()
         self._history_list_gate = asyncio.Lock()
         self._history_list_next_request = 0.0
         self.editor = ChatGPTProjectEditor(
@@ -178,10 +179,11 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
 
     async def close(self):
         async with self._gate:
-            try:
-                await self.editor.close()
-            finally:
-                await self._discard_http_client()
+            async with self._rename_gate:
+                try:
+                    await self.editor.close()
+                finally:
+                    await self._discard_http_client()
 
     async def session_status(self) -> SessionStatus:
         saved = session_exists(self.session.paths.session_file)
@@ -609,10 +611,13 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
             raise ValueError("title must be nonempty")
 
         def rename():
-            with self._client_scope() as client:
+            # A long-running stream owns the pooled client's scope and lock.
+            # Rename uses a short-lived client so metadata changes can proceed
+            # without waiting for generation to finish.
+            with self._factory(self.session) as client:
                 client.rename_conversation(conversation_id, title.strip())
 
-        async with self._gate:
+        async with self._rename_gate:
             await asyncio.to_thread(rename)
 
     async def move_chat(self, conversation_id: str, project_id: str | None) -> None:
