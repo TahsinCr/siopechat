@@ -45,6 +45,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
             Capability.MESSAGE_EDIT,
             Capability.MESSAGE_RETRY,
             Capability.CHAT_BRANCH,
+            Capability.RENAME,
         }
     )
 
@@ -280,6 +281,13 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                 ),
                 lambda parts: not parts,
             )
+
+    async def rename_chat(self, conversation_id, title):
+        if not isinstance(title, str) or not 1 <= len(title.strip()) <= 100:
+            raise ValueError("Gemini chat title must contain 1–100 characters")
+        async with self._gate:
+            client = await self._connect()
+            await client.rename_conversation(conversation_id, title.strip())
 
     async def delete_project(self, project_id):
         from .notebooks import notebook_id

@@ -12,6 +12,9 @@ from ..session import WebSession, read_session, save_session_async
 ORIGIN = "https://gemini.google.com"
 BASE = ORIGIN + "/_/BardChatUi/data/"
 HEADERS = {"Origin": ORIGIN, "Referer": ORIGIN + "/", "X-Same-Domain": "1"}
+GRAPHQL_PATH = "/_/BardChatUi/"
+GRAPHQL_SCHEMA = "GEMINI_WEB_GRAPHQL"
+RENAME_CONVERSATION_SIGNATURE = "2/AK6lUKXaLqlYDDOn9zA0qKcCFN+eXBsWI9SXBtcRr1o="
 
 
 def nested(value, *path, default=None):
@@ -42,6 +45,7 @@ class GeminiSession:
         self.language = "en"
         self.push_id = ""
         self.build = self.sid = self.token = ""
+        self.rpc_path_prefix = ""
         self.request_id = random.randint(10000, 99999)
         self.session_id = str(uuid.uuid4()).upper()
         self.models = ()
@@ -63,12 +67,13 @@ class GeminiSession:
             response = await self.http.get(ORIGIN + "/app", headers=HEADERS, allow_redirects=False)
             WebSession.check(response)
             fields = {}
-            for name in ("SNlM0e", "cfb2h", "FdrFJe", "TuX5cc", "qKIAYe"):
+            for name in ("SNlM0e", "cfb2h", "FdrFJe", "TuX5cc", "qKIAYe", "eptZe"):
                 match = re.search(r'"' + name + r'"\s*:\s*"([^"\\]*)"', response.text)
                 fields[name] = match.group(1) if match else ""
             self.token, self.build, self.sid = (fields[k] for k in ("SNlM0e", "cfb2h", "FdrFJe"))
             self.language = fields["TuX5cc"] or "en"
             self.push_id = fields["qKIAYe"]
+            self.rpc_path_prefix = fields["eptZe"]
             if not self.token:
                 raise AccountPaused("Gemini oturumu geçersiz; hesabı doğrulayın")
             self.models = await self.discover_models()
@@ -127,6 +132,119 @@ class GeminiSession:
         WebSession.check(response)
         await self.persist()
         return response
+
+    def graphql_endpoints(self):
+        prefix = self.rpc_path_prefix
+        marker = GRAPHQL_PATH
+        if not prefix.startswith("/") or marker not in prefix:
+            raise ProviderError("Gemini sohbet adı değiştirme uç noktası kullanılamıyor")
+        base = ORIGIN + prefix[: prefix.index(marker)] + marker + "graphql"
+        return (
+            f"{base}/schemas/{GRAPHQL_SCHEMA}/executeQuery",
+            f"{base}/xsrfToken",
+        )
+
+    async def rename_conversation(self, conversation_id, title):
+        if not isinstance(title, str):
+            raise ValueError("Gemini chat title must be text")
+        title = title.strip()
+        if not conversation_id or not 1 <= len(title) <= 100:
+            raise ValueError("Gemini chat title must contain 1–100 characters")
+        if self.http is None or not self.token:
+            raise AccountPaused("Gemini oturumu hazır değil; hesabı yeniden doğrulayın")
+
+        endpoint, xsrf_endpoint = self.graphql_endpoints()
+        headers = {
+            **HEADERS,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "X-Framework-XSRF-Token": self.token,
+        }
+        body = json.dumps(
+            {
+                "querySignature": RENAME_CONVERSATION_SIGNATURE,
+                "variables": {"conversationId": conversation_id, "title": title},
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        response = await self.http.post(
+            endpoint,
+            headers=headers,
+            data=body,
+            allow_redirects=False,
+        )
+        if response.status_code == 400 and self._has_xsrf_error(response):
+            token_response = await self.http.get(
+                xsrf_endpoint,
+                headers={**HEADERS, "Accept": "text/plain"},
+                allow_redirects=False,
+            )
+            WebSession.check(token_response)
+            token = token_response.text.strip()
+            if not token:
+                raise ProviderError("Gemini oturum doğrulama belirteci yenilenemedi")
+            self.token = token
+            response = await self.http.post(
+                endpoint,
+                headers={**headers, "X-Framework-XSRF-Token": token},
+                data=body,
+                allow_redirects=False,
+            )
+        WebSession.check(response)
+        result = self._decode_graphql(response.text)
+        errors = result.get("errors")
+        if errors:
+            message = errors[0].get("message") if isinstance(errors[0], dict) else None
+            raise ProviderError(message or "Gemini sohbeti yeniden adlandıramadı")
+        data = result.get("data")
+        update = data.get("updateConversation") if isinstance(data, dict) else None
+        conversation = update.get("clientConversation") if isinstance(update, dict) else None
+        if (
+            not isinstance(conversation, dict)
+            or conversation.get("conversationId") != conversation_id
+            or conversation.get("title") != title
+        ):
+            raise ProviderError("Gemini sohbet adı sunucuda doğrulanamadı")
+        await self.persist()
+
+    @staticmethod
+    def _has_xsrf_error(response):
+        try:
+            payload = response.json()
+        except (ValueError, TypeError):
+            return False
+        if not isinstance(payload, list):
+            return False
+        return any(
+            isinstance(item, dict)
+            and isinstance(item.get("error"), dict)
+            and isinstance(item["error"].get("details"), list)
+            and any(
+                isinstance(detail, dict)
+                and detail.get("@type") == "type.googleapis.com/fava.request.XsrfData"
+                for detail in item["error"]["details"]
+            )
+            for item in payload
+        )
+
+    @staticmethod
+    def _decode_graphql(text):
+        payload = text.lstrip()
+        if payload.startswith(")]}'"):
+            payload = payload[4:].lstrip("\r\n")
+        try:
+            results = json.loads(payload)
+        except (ValueError, TypeError) as error:
+            raise ProviderError("Gemini sohbet adı yanıtı çözümlenemedi") from error
+        if not isinstance(results, list):
+            raise ProviderError("Gemini sohbet adı yanıt biçimi değişti")
+        for result in results:
+            if isinstance(result, dict) and isinstance(result.get("data"), dict):
+                return result
+            if isinstance(result, dict) and result.get("errors"):
+                return result
+        raise ProviderError("Gemini sohbet adı yanıtı eksik")
 
     async def discover_models(self):
         from ..models import Choice, Model
