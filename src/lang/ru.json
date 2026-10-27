@@ -231,6 +231,8 @@
   "ui.Loading conversations…": "Загрузка чатов…",
   "ui.No matching conversations": "Подходящие чаты не найдены",
   "ui.Conversation renamed": "Чат переименован",
+  "ui.Yeni ad": "Новое название",
+  "ui.Yeni ad boş olamaz": "Название не может быть пустым",
   "ui.Rename failed: {0}": "Не удалось переименовать: {0}",
   "ui.Rename failed in tab {0}: {1}": "Ошибка переименования во вкладке {0}: {1}",
   "ui.Rename completed in tab {0}": "Чат переименован во вкладке {0}",

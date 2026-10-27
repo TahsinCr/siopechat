@@ -231,6 +231,8 @@
   "ui.Loading conversations…": "Sohbetler yükleniyor…",
   "ui.No matching conversations": "Eşleşen sohbet bulunamadı",
   "ui.Conversation renamed": "Sohbet yeniden adlandırıldı",
+  "ui.Yeni ad": "Yeni ad",
+  "ui.Yeni ad boş olamaz": "Yeni ad boş olamaz",
   "ui.Rename failed: {0}": "Yeniden adlandırma başarısız: {0}",
   "ui.Rename failed in tab {0}: {1}": "{0}. sekmede yeniden adlandırma başarısız: {1}",
   "ui.Rename completed in tab {0}": "Yeniden adlandırma {0}. sekmede tamamlandı",

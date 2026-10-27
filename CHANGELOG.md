@@ -10,6 +10,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Added
 
+- Add conversation renaming to the active-chat toolbar and inline rename/delete actions to supported sidebar chat rows, including chats nested under projects.
 - Add a per-answer Sources action at the end of the assistant toolbar's action group.
 - Show generated-file cards inside assistant replies with available file type and size.
 - Carry generated-file descriptors through the common provider metadata event and SQLite history; file-card clicks use the shared background download manager and authenticated provider resolution.

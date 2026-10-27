@@ -1579,6 +1579,18 @@ class ChatView:
             )
         ]
         if self.conversation_id:
+            if self.rename_conversation and Capability.RENAME in self.provider_features:
+                controls.append(
+                    (
+                        "class:button",
+                        " ✎ " + self.tr("Sohbeti yeniden adlandır") + " ",
+                        on_click(
+                            lambda: self.open_conversation_rename(
+                                self.conversation_id, self.title
+                            )
+                        ),
+                    )
+                )
             controls.append(
                 (
                     "class:button",
@@ -1852,7 +1864,7 @@ class ChatView:
             result[item["account"], item["kind"], item["remote"]] = item["state"]
         return result
 
-    def render_sidebar_row(self, index, states=None, open_ids=None):
+    def render_sidebar_row(self, index, states=None, open_ids=None, capabilities=None):
         if not 0 <= index < len(self.sidebar_rows):
             return []
         row = self.sidebar_rows[index]
@@ -1906,7 +1918,17 @@ class ChatView:
             suffix += " ↻"
         elif state == "error":
             suffix += " !"
-        reserve_suffix = suffix + ("  +" if section_action is not None else "")
+        provider_capabilities = (capabilities or {}).get(
+            row.get("provider_id", "chatgpt"), frozenset()
+        )
+        can_rename = (
+            kind == "chat"
+            and self.rename_conversation is not None
+            and Capability.RENAME in provider_capabilities
+        )
+        can_delete = kind == "chat" and Capability.DELETE in provider_capabilities
+        action_suffix = (" ✎" if can_rename else "") + (" 🗑" if can_delete else "")
+        reserve_suffix = suffix + action_suffix + ("  +" if section_action is not None else "")
         width = (
             self.sidebar_width()
             - len(indent)
@@ -1937,6 +1959,31 @@ class ChatView:
             fragments.append((style, suffix, click))
             fragments.append((style, "  +", on_click(section_action)))
             fragments.append((style, "\n", click))
+        elif kind == "chat":
+            if suffix:
+                fragments.append((style, suffix, click))
+            chat_id = row.get("id")
+            if can_rename:
+                fragments.append(
+                    (
+                        "class:button",
+                        " ✎",
+                        on_click(
+                            lambda identifier=chat_id, name=row["title"]: self.open_conversation_rename(
+                                identifier, name
+                            )
+                        ),
+                    )
+                )
+            if can_delete:
+                fragments.append(
+                    (
+                        "class:button",
+                        " 🗑",
+                        on_click(lambda identifier=chat_id: self.delete_record(value=identifier)),
+                    )
+                )
+            fragments.append((style, "\n", click))
         else:
             fragments.append((style, suffix + "\n", click))
         return fragments
@@ -1945,9 +1992,22 @@ class ChatView:
         self._build_sidebar_rows()
         states = self._sidebar_sync_states()
         open_ids = {tab.get("conversation_id") for tab in self.tabs}
+        provider_ids = {
+            row.get("provider_id", "chatgpt")
+            for row in self.sidebar_rows
+            if row.get("kind") == "chat"
+        }
+        registry = getattr(getattr(self.account_service, "api", None), "providers", None)
+        capabilities = {}
+        if registry is not None:
+            for provider_id in provider_ids:
+                try:
+                    capabilities[provider_id] = registry.get(provider_id).capabilities
+                except (KeyError, AttributeError):
+                    capabilities[provider_id] = frozenset()
         fragments = []
         for index in range(len(self.sidebar_rows)):
-            fragments.extend(self.render_sidebar_row(index, states, open_ids))
+            fragments.extend(self.render_sidebar_row(index, states, open_ids, capabilities))
         return FormattedText(fragments)
 
     def click_sidebar(self, index):
@@ -4874,8 +4934,37 @@ class ChatView:
             self.app.invalidate()
             return
         conversation_id = self.conversation_id
-        target_tab = self.active_tab
-        target_state = self.tabs[self.active_tab]
+        self._rename_conversation_record(conversation_id, title)
+
+    def open_conversation_rename(self, conversation_id: str, current_title: str) -> None:
+        if not conversation_id:
+            self.status = self.tr("Save the conversation before renaming it")
+            self.app.invalidate()
+            return
+        if self.rename_conversation is None:
+            self.status = self.tr("Conversation rename is unavailable")
+            self.app.invalidate()
+            return
+
+        def submit(values):
+            title = str(values["title"]).strip()
+            if not title:
+                raise ValueError(self.tr("Yeni ad boş olamaz"))
+            if title == current_title.strip():
+                return
+            self._rename_conversation_record(conversation_id, title)
+
+        self.forms.open(
+            self.tr("Sohbeti yeniden adlandır"),
+            [("title", self.tr("Yeni ad"), current_title, None)],
+            submit,
+        )
+
+    def _rename_conversation_record(self, conversation_id: str, title: str) -> None:
+        if self.rename_conversation is None:
+            self.status = self.tr("Conversation rename is unavailable")
+            self.app.invalidate()
+            return
         self.status = self.tr("Renaming conversation…")
         self.background_jobs += 1
         self.app.invalidate()
@@ -4890,20 +4979,19 @@ class ChatView:
             def apply_result() -> None:
                 self.background_jobs = max(0, self.background_jobs - 1)
                 if error_text is None:
-                    target_state["title"] = title
-                if target_state is self.tabs[self.active_tab]:
-                    if error_text is None:
+                    for item in self.sidebar_items:
+                        if item.get("id") == conversation_id:
+                            item["title"] = title
+                    for tab in self.tabs + self.background_tabs:
+                        if tab.get("conversation_id") == conversation_id:
+                            tab["title"] = title
+                    if self.conversation_id == conversation_id:
                         self.title = title
                         self._save_active_tab()
-                        self.status = self.tr("Conversation renamed")
-                    else:
-                        self.status = self.tr("Rename failed: {0}").format(error_text)
+                    self._invalidate_sidebar_rows()
+                    self.status = self.tr("Conversation renamed")
                 else:
-                    self.status = (
-                        self.tr("Rename failed in tab {0}: {1}").format(target_tab + 1, error_text)
-                        if error_text
-                        else self.tr("Rename completed in tab {0}").format(target_tab + 1)
-                    )
+                    self.status = self.tr("Rename failed: {0}").format(error_text)
                 self.app.invalidate()
 
             self._dispatch_ui(apply_result)
@@ -4911,6 +4999,7 @@ class ChatView:
         if not self._operations.submit(rename):
             self.background_jobs = max(0, self.background_jobs - 1)
             self.status = self.tr("Arka plan iş kuyruğu dolu; yeniden deneyin")
+            self.app.invalidate()
 
     def paste_clipboard_image(self) -> None:
         if self.uploading_image:

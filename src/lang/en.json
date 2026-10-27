@@ -231,6 +231,8 @@
   "ui.Loading conversations…": "Loading conversations…",
   "ui.No matching conversations": "No matching conversations",
   "ui.Conversation renamed": "Conversation renamed",
+  "ui.Yeni ad": "New name",
+  "ui.Yeni ad boş olamaz": "The new name cannot be empty",
   "ui.Rename failed: {0}": "Rename failed: {0}",
   "ui.Rename failed in tab {0}: {1}": "Rename failed in tab {0}: {1}",
   "ui.Rename completed in tab {0}": "Rename completed in tab {0}",
