@@ -45,6 +45,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Fixed
 
+- Send Gemini's `bard_activity_enabled` activity RPC with the upstream JSON nesting immediately before generation; this is one request per send, without periodic polling.
 - Cancel and join Gemini's streaming HTTP transfer on interruption so a stalled connection cannot keep the provider's generation gate occupied after cancellation.
 - Send Gemini's selected thinking level consistently in the request body and model header, including native Medium; match the temporary-chat flag in both locations.
 - Bind Gemini conversations at the server's initial acknowledgement instead of waiting for answer text, preserving the remote identity during slow or interrupted generation.

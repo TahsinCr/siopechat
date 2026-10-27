@@ -452,6 +452,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
             bound, visible, cid = False, False, request.conversation_id
             final_metadata = None
             output_files, published_sources = (), ()
+            await client.sync_activity()
             async for chunk in generate(
                 client,
                 request,

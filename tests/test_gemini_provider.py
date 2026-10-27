@@ -82,6 +82,44 @@ class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
         client.discover_models.assert_awaited_once_with()
         await provider.close()
 
+    async def test_web_activity_is_synced_immediately_before_generation(self):
+        provider = GeminiProvider(Path("unused"), "test")
+        events = []
+        client = SimpleNamespace(
+            models=(Model("flash", "Flash"),),
+            sync_activity=AsyncMock(side_effect=lambda: events.append("activity")),
+        )
+        provider._connect = AsyncMock(return_value=client)
+
+        async def generate(*_args, **_kwargs):
+            events.append("generation")
+            yield {
+                "cid": "remote",
+                "metadata": ["remote", "rid", "rcid"],
+                "context_only": False,
+                "files": [],
+                "sources": (),
+                "text": "answer",
+                "thoughts": "",
+            }
+
+        request = SendRequest("gemini", "test", None, "question")
+        with patch("providers.gemini.transport.generate", generate):
+            _ = [event async for event in provider._stream(request)]
+
+        self.assertEqual(events, ["activity", "generation"])
+
+    async def test_activity_sync_uses_the_web_preference_rpc(self):
+        session = GeminiSession(Path("unused"))
+        session.batch = AsyncMock()
+
+        await session.sync_activity()
+
+        payloads = session.batch.await_args.args[0]
+        self.assertEqual([(item.rpcid, item.payload) for item in payloads], [
+            ("ESY5D", '[[["bard_activity_enabled"]]]'),
+        ])
+
     async def test_catalog_is_cached_but_expiry_and_force_refresh_entitlements(self):
         provider = GeminiProvider(Path("unused"))
         first, second = Model("first", "First"), Model("second", "Second")

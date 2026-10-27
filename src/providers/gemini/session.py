@@ -140,6 +140,12 @@ class GeminiSession:
         await self.persist()
         return response
 
+    async def sync_activity(self):
+        """Mark the authenticated web session active before model generation."""
+        from .rpc import RPCPayload
+
+        await self.batch([RPCPayload("ESY5D", '[[["bard_activity_enabled"]]]')])
+
     def graphql_endpoints(self):
         prefix = self.rpc_path_prefix
         marker = GRAPHQL_PATH
