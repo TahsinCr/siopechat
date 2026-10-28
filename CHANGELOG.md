@@ -13,7 +13,8 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 - Add provider-specific error types for Claude and Gemini and stable error codes plus prompt-submission state to the shared provider contract.
 - Add conversation renaming to the active-chat toolbar and inline rename/delete actions to supported sidebar chat rows, including chats nested under projects.
 - Add Gemini's native chat rename action through its authenticated web GraphQL mutation and confirm the returned server title before reporting success.
-- Add a per-answer Sources action at the end of the assistant toolbar's action group.
+- Add a per-answer Sources action that opens provider-published citations with validated links, titles, and descriptions in a scrollable panel.
+- Show provider-published thinking summaries and web-search activity with the assistant reply they belong to, without presenting them as private reasoning.
 - Show generated-file cards inside assistant replies with available file type and size.
 - Carry generated-file descriptors through the common provider metadata event and SQLite history; file-card clicks use the shared background download manager and authenticated provider resolution.
 
