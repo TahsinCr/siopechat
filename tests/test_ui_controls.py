@@ -85,13 +85,19 @@ class UiControlsTests(unittest.TestCase):
 
             for _ in range(2):
                 control.mouse_handler(
-                    MouseEvent(Point(x + 1, 0), MouseEventType.MOUSE_DOWN, MouseButton.LEFT, frozenset())
+                    MouseEvent(
+                        Point(x + 1, 0), MouseEventType.MOUSE_DOWN, MouseButton.LEFT, frozenset()
+                    )
                 )
                 control.mouse_handler(
-                    MouseEvent(Point(x + 2, 0), MouseEventType.MOUSE_MOVE, MouseButton.LEFT, frozenset())
+                    MouseEvent(
+                        Point(x + 2, 0), MouseEventType.MOUSE_MOVE, MouseButton.LEFT, frozenset()
+                    )
                 )
                 control.mouse_handler(
-                    MouseEvent(Point(x + 2, 0), MouseEventType.MOUSE_UP, MouseButton.LEFT, frozenset())
+                    MouseEvent(
+                        Point(x + 2, 0), MouseEventType.MOUSE_UP, MouseButton.LEFT, frozenset()
+                    )
                 )
 
             self.assertEqual(len(operations.pending), 1)
@@ -111,9 +117,7 @@ class UiControlsTests(unittest.TestCase):
                     and span[0] == "class:message.toolbar.action"
                     and span[1].strip() == arrow
                 )
-                x = sum(
-                    get_cwidth(span[1]) for span in fragments[: fragments.index(button)]
-                )
+                x = sum(get_cwidth(span[1]) for span in fragments[: fragments.index(button)])
                 control.rows = ((fragments, 0),)
                 control._toolbar_rows = {0: 0}
                 control._toolbar_fragments = {0: fragments}
@@ -204,10 +208,14 @@ class UiControlsTests(unittest.TestCase):
             control._toolbar_fragments = {0: fragments}
             control._content_width = 100
             control.mouse_handler(
-                MouseEvent(Point(x + 1, 0), MouseEventType.MOUSE_DOWN, MouseButton.LEFT, frozenset())
+                MouseEvent(
+                    Point(x + 1, 0), MouseEventType.MOUSE_DOWN, MouseButton.LEFT, frozenset()
+                )
             )
             control.mouse_handler(
-                MouseEvent(Point(x + 2, 0), MouseEventType.MOUSE_MOVE, MouseButton.LEFT, frozenset())
+                MouseEvent(
+                    Point(x + 2, 0), MouseEventType.MOUSE_MOVE, MouseButton.LEFT, frozenset()
+                )
             )
             control.mouse_handler(
                 MouseEvent(Point(x + 2, 0), MouseEventType.MOUSE_UP, MouseButton.LEFT, frozenset())
@@ -496,7 +504,8 @@ class ToolbarMouseIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     target = None
                     for y, row in screen_rows():
                         line = "".join(
-                            row[x].char if x in row else " " for x in range(max(row, default=-1) + 1)
+                            row[x].char if x in row else " "
+                            for x in range(max(row, default=-1) + 1)
                         )
                         if "1/2" not in line and "2/2" not in line:
                             continue
@@ -505,8 +514,7 @@ class ToolbarMouseIntegrationTests(unittest.IsolatedAsyncioTestCase):
                                 (x, y)
                                 for x, cell in row.items()
                                 if cell.char == arrow
-                                and x
-                                in view.app.renderer.mouse_handlers.mouse_handlers.get(y, {})
+                                and x in view.app.renderer.mouse_handlers.mouse_handlers.get(y, {})
                             ),
                             None,
                         )
@@ -517,9 +525,7 @@ class ToolbarMouseIntegrationTests(unittest.IsolatedAsyncioTestCase):
                         f"version arrow {arrow} for {expected}/2 has no mouse hit area",
                     )
                     x, y = target
-                    pipe.send_bytes(
-                        f"\x1b[<0;{x + 1};{y + 1}M\x1b[<0;{x + 1};{y + 1}m".encode()
-                    )
+                    pipe.send_bytes(f"\x1b[<0;{x + 1};{y + 1}M\x1b[<0;{x + 1};{y + 1}m".encode())
                     await wait_for_version(expected)
                     await wait_for_rendered_version(expected)
             finally:

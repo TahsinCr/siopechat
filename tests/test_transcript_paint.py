@@ -89,10 +89,14 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
                         if len(span) > 2:
                             point = Point(x, y)
                             control.mouse_handler(
-                                MouseEvent(point, MouseEventType.MOUSE_DOWN, MouseButton.LEFT, frozenset())
+                                MouseEvent(
+                                    point, MouseEventType.MOUSE_DOWN, MouseButton.LEFT, frozenset()
+                                )
                             )
                             control.mouse_handler(
-                                MouseEvent(point, MouseEventType.MOUSE_UP, MouseButton.LEFT, frozenset())
+                                MouseEvent(
+                                    point, MouseEventType.MOUSE_UP, MouseButton.LEFT, frozenset()
+                                )
                             )
                             self.assertEqual(launch.call_args.args[0], url)
                             clicked += 1
