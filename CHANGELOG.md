@@ -22,6 +22,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 - Read Gemini thinking choices, disabled states, and defaults from the account's native web model policy; display each available effort's provider identifier unchanged in the shared picker.
 - Resolve per-user data, state, cache, and runtime directories from the normalized project name in package metadata; pass the caller-owned cache path to the Sentinel process instead of maintaining a second hardcoded cache root.
 - Batch title-override reads while saving provider conversation pages, avoiding one SQLite metadata query per conversation.
+- Preserve the unchanged message prefix when syncing archived histories; SQLite now replaces only the changed suffix instead of deleting and reinserting every message.
 - Show cited sources as wrapped, real-URL links with their provider-supplied title and description in a mouse- and keyboard-scrollable popup.
 - Let title changes proceed during active generation: ChatGPT uses an isolated request client, Claude bypasses its generation lock, and Gemini separates authenticated session bootstrap from model-catalog discovery. Rename-only locks still coordinate ChatGPT/Claude shutdown.
 - Reuse ChatGPT's prepared HTTP client for sends; discard the pool after canceled or failed streams while preserving interruption behavior.

@@ -565,26 +565,58 @@ class SQLiteRepository:
 
     @staticmethod
     def _write_messages(db, account, remote, messages, *, start=0):
-        db.execute(
-            "DELETE FROM messages WHERE account=? AND conversation=? AND ordinal>=?",
+        incoming = iter(messages)
+        existing = db.execute(
+            "SELECT ordinal,metadata FROM messages WHERE account=? AND conversation=? "
+            "AND ordinal>=? ORDER BY ordinal",
             (account, remote, start),
         )
-        db.executemany(
-            "INSERT INTO messages VALUES(?,?,?,?,?,?,?,?)",
-            (
-                (
-                    account,
-                    remote,
-                    start + index,
-                    message.get("id"),
-                    message.get("role"),
-                    message.get("channel"),
-                    message.get("text", ""),
-                    encode(message),
-                )
-                for index, message in enumerate(messages)
-            ),
-        )
+
+        def row(index, message, metadata=None):
+            return (
+                account,
+                remote,
+                start + index,
+                message.get("id"),
+                message.get("role"),
+                message.get("channel"),
+                message.get("text", ""),
+                metadata if metadata is not None else encode(message),
+            )
+
+        index = 0
+        while True:
+            try:
+                message = next(incoming)
+            except StopIteration:
+                break
+            metadata = encode(message)
+            stored = existing.fetchone()
+            if stored == (start + index, metadata):
+                index += 1
+                continue
+
+            existing.close()
+            db.execute(
+                "DELETE FROM messages WHERE account=? AND conversation=? AND ordinal>=?",
+                (account, remote, start + index),
+            )
+
+            def changed_rows():
+                yield row(index, message, metadata)
+                for offset, item in enumerate(incoming, start=index + 1):
+                    yield row(offset, item)
+
+            db.executemany("INSERT INTO messages VALUES(?,?,?,?,?,?,?,?)", changed_rows())
+            return
+
+        has_extra = existing.fetchone() is not None
+        existing.close()
+        if has_extra:
+            db.execute(
+                "DELETE FROM messages WHERE account=? AND conversation=? AND ordinal>=?",
+                (account, remote, start + index),
+            )
 
     def append_turn(self, account, remote, value):
         """Reconcile only the bounded tail, never decode/rewrite the complete history."""
