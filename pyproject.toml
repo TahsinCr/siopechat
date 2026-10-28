@@ -47,7 +47,7 @@ select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.setuptools]
 package-dir = {"" = "src", "extensions" = "extensions"}
-py-modules = ["account_repository", "downloads", "views", "accounts", "bootstrap", "cli", "settings", "actions", "tasks", "runtime", "extension", "backend", "language"]
+py-modules = ["account_repository", "downloads", "accounts", "bootstrap", "cli", "settings", "actions", "tasks", "runtime", "extension", "backend", "language"]
 # Resource-only namespace packages are listed explicitly so setuptools includes
 # their bundled helpers and translations without package-discovery ambiguity.
 packages = [

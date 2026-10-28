@@ -45,6 +45,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Removed
 
+- Remove the stale setuptools declaration for the retired top-level `views` module so package builds do not warn about a missing source file.
 - Remove the app-suite test that copied and reran the full provider suite; `run_tests.py` now runs provider tests once from an isolated temporary package copy, while CI checks the installed wheel and source distribution.
 - Remove the unused `data_dir` path helper and replace misleading legacy-path naming with explicit application-root and user-data paths.
 - Remove static locale-key/source scans and the source-tree JavaScript file-set check; keep runtime text-format validation, architecture boundaries, and built-package smoke checks.
