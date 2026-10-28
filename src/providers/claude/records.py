@@ -1,6 +1,6 @@
 """Lossless Claude records mapped to the shared provider contract."""
 
-from ..errors import ProviderError
+from .errors import ClaudeCompatibilityError
 from ..messages import actions_for, files_from, sources_from
 from ..models import Content, Conversation, Message, Origin, Project, Resource
 
@@ -48,7 +48,7 @@ def conversation_attachment_count(value):
 
 def conversation(value, account_id):
     if not isinstance(value, dict) or not value.get("uuid"):
-        raise ProviderError("Claude conversation contract changed")
+        raise ClaudeCompatibilityError("Claude conversation response contract changed")
     messages = []
     turns = value.get("chat_messages")
     if not isinstance(turns, list):
@@ -168,7 +168,7 @@ def conversation(value, account_id):
 
 def project(value, account_id):
     if not isinstance(value, dict) or not value.get("uuid"):
-        raise ProviderError("Claude project contract changed")
+        raise ClaudeCompatibilityError("Claude project response contract changed")
     resources = tuple(
         Resource(
             str(x.get("uuid") or x.get("id") or ""),

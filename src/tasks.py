@@ -17,6 +17,7 @@ from providers.api import (
     ConversationBound,
     MessageAction,
     MessageMetadata,
+    ProviderError,
     RateLimited,
     ReplaceText,
     SendRequest,
@@ -384,6 +385,10 @@ class TaskService:
             if self.provider_resolver is None:
                 self.providers.mark_unavailable(request.provider_id, error.capability)
             job.error_code = "capability_changed"
+            self._changed(job_id, JobState.FAILED)
+        except ProviderError as error:
+            job.error = error
+            job.error_code = error.code
             self._changed(job_id, JobState.FAILED)
         except Exception as error:
             job.error = error

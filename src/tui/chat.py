@@ -6047,11 +6047,24 @@ class ChatView:
                 result, messages, stream.rendered
             )
         except Exception as error:
+            error_code = getattr(error, "code", None)
+            message_submitted = getattr(error, "message_submitted", None)
+            if error_code == "chatgpt_sentinel_incompatible":
+                failure_message = self.tr(
+                    "ChatGPT verification is incompatible; the message was not sent"
+                )
+                final_status = self.tr("Message not sent")
+            elif message_submitted is False:
+                failure_message = self.tr("Message not sent: {0}").format(error)
+                final_status = self.tr("Message not sent")
+            else:
+                failure_message = self.tr("Request stopped: {0}").format(error)
+                final_status = self.tr("Response stopped")
             if not stream.rendered:
                 with self.lock:
-                    messages[-1]["text"] = "*" + self.tr("Request stopped: {0}").format(error) + "*"
-            final_status = self.tr("Response stopped")
-            if message_action:
+                    if messages and messages[-1].get("role") == "assistant":
+                        messages[-1]["text"] = "*" + failure_message + "*"
+            if message_action and message_submitted is not False:
                 final_status = self.tr("Message action failed: {0}").format(error)
         finally:
             if started is not None:

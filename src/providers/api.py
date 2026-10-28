@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import AsyncGenerator, Protocol
 
-from .errors import AccountPaused, CompatibilityError, RateLimited
+from .errors import AccountPaused, CompatibilityError, ProviderError, RateLimited
 
 
 class Capability(str, Enum):
@@ -115,6 +115,9 @@ class Provider(Protocol):
 
         Normal exhaustion means a confirmed successful response. Adapters must
         raise on truncated streams and must never log credentials in exceptions.
+        Provider failures derive from ProviderError, expose a stable ``code``,
+        and set ``message_submitted`` to False only when the prompt is known not
+        to have reached the provider.
         Model/effort identifiers remain provider-owned, not a universal enum.
         """
         ...
@@ -143,6 +146,7 @@ def validate_request(provider, request: SendRequest) -> None:
 __all__ = [
     "AccountPaused",
     "CompatibilityError",
+    "ProviderError",
     "RateLimited",
     "Capability",
     "MessageAction",

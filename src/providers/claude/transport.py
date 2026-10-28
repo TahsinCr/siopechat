@@ -14,6 +14,7 @@ from ..errors import AccountPaused, ProviderError
 from ..projects import ProjectOptions, source_file
 from ..session import WebSession, read_session
 from .catalog import selector_catalog
+from .errors import ClaudeCompatibilityError, ClaudeRequestNotSent, ClaudeStreamError
 
 _WEB_SEARCH_TOOL = {"type": "web_search_v0", "name": "web_search"}
 
@@ -146,10 +147,10 @@ class ClaudeTransport:
         finally:
             body.close()
         if not isinstance(result, dict):
-            raise ProviderError("Claude dosya yükleme yanıtı geçersiz")
+            raise ClaudeCompatibilityError("Claude file upload response changed")
         file_id = result.get("file_uuid") or result.get("uuid") or result.get("id")
         if not isinstance(file_id, str) or not file_id:
-            raise ProviderError("Claude dosya yüklemesi kimlik döndürmedi")
+            raise ClaudeCompatibilityError("Claude file upload returned no file identity")
         return {
             "id": file_id,
             "name": path.name,
@@ -205,7 +206,7 @@ class ClaudeTransport:
             detail = await call("GET", path)
             docs, files = await call("GET", path + "/docs"), await call("GET", path + "/files")
             if not isinstance(docs, list) or not isinstance(files, list):
-                raise ProviderError("Claude resource contract changed")
+                raise ClaudeCompatibilityError("Claude project resource response changed")
             return dict(detail, docs=docs, files=files)
         if cid is None:
             raise ValueError("Conversation required")
@@ -249,7 +250,7 @@ class ClaudeTransport:
                 else await self.session.request("GET", path)
             )
             if v.get("temporary") and history.get("is_temporary") is not True:
-                raise ProviderError("Claude geçici sohbeti doğrulanamadı; mesaj gönderilmedi")
+                raise ClaudeRequestNotSent("Claude temporary conversation could not be verified")
             parent = history.get("current_leaf_message_uuid")
             if v.get("action"):
                 from ..messages import target_message
@@ -291,11 +292,13 @@ class ClaudeTransport:
                     try:
                         await self.request("delete_chat", conversation_id=cid)
                     except Exception:
-                        raise ProviderError(
+                        raise ClaudeRequestNotSent(
                             "Claude geçici sohbeti doğrulayamadı; mesaj gönderilmedi ve "
                             "boş sohbet temizliği doğrulanamadı"
                         ) from None
-                    raise ProviderError("Claude geçici sohbeti doğrulayamadı; mesaj gönderilmedi")
+                    raise ClaudeRequestNotSent(
+                        "Claude temporary conversation could not be verified"
+                    )
             parent = created.get("current_leaf_message_uuid") if isinstance(created, dict) else None
             if pid:
                 await self.request("move_chat", conversation_id=cid, project_id=pid)
@@ -340,7 +343,7 @@ class ClaudeTransport:
                     payload.append(line[5:].lstrip())
                     payload_size += len(payload[-1])
                     if payload_size > 1_048_576:
-                        raise ProviderError("Claude stream event exceeds size limit")
+                        raise ClaudeStreamError("Claude stream event exceeded its size limit")
                     continue
                 if line or not payload:
                     continue
@@ -356,7 +359,7 @@ class ClaudeTransport:
                     parent_id = native.get("parent_uuid")
                     response_model = native.get("model")
                 if kind == "error" or event.get("error"):
-                    raise ProviderError("Claude akışı hata verdi; istek tekrarlanmadı")
+                    raise ClaudeStreamError("Claude stream failed; the request was not retried")
                 if kind == "content_block_start":
                     block = event.get("content_block", {})
                     from ..messages import files_from
@@ -428,7 +431,7 @@ class ClaudeTransport:
                 if kind == "message_stop" or (kind == "message_delta" and delta.get("stop_reason")):
                     completed = True
         if not completed:
-            raise ProviderError("Claude yanıtı tamamlanmadı; istek yeniden gönderilmedi")
+            raise ClaudeStreamError("Claude response ended before completion; it was not resent")
         if response_id:
             yield {
                 "type": "metadata",

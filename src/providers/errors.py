@@ -9,10 +9,20 @@ if TYPE_CHECKING:
 
 
 class ProviderError(RuntimeError):
-    pass
+    """Safe, machine-readable failure returned by a provider operation.
+
+    ``message_submitted`` is specific to send operations: ``False`` guarantees
+    that the user's prompt was not sent, while ``None`` means the boundary
+    cannot be proven. ``code`` is stable for callers; display text is not.
+    """
+
+    code = "provider_error"
+    message_submitted: bool | None = None
 
 
 class FeatureUnavailable(ProviderError):
+    code = "feature_unavailable"
+
     def __init__(self, capability, reason: str = "unsupported"):
         super().__init__(f"{capability.value}: {reason}")
         self.capability = capability
@@ -20,6 +30,8 @@ class FeatureUnavailable(ProviderError):
 
 
 class RateLimited(ProviderError):
+    code = "rate_limited"
+
     def __init__(self, retry_after: float | None = None):
         suffix = (
             f"; retry after {retry_after:g} seconds"
@@ -33,8 +45,12 @@ class RateLimited(ProviderError):
 class AccountPaused(ProviderError):
     """Login or user verification is needed before new sends are allowed."""
 
+    code = "account_paused"
+
 
 class CompatibilityError(ProviderError):
+    code = "capability_changed"
+
     def __init__(self, capability: Capability):
         super().__init__("provider capability changed")
         self.capability = capability
@@ -42,3 +58,5 @@ class CompatibilityError(ProviderError):
 
 class RemoteNotFound(ProviderError):
     """The provider confirmed that this remote record no longer exists."""
+
+    code = "remote_not_found"

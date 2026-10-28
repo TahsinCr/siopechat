@@ -734,8 +734,7 @@ class ChatGPTClient:
         except subprocess.TimeoutExpired as error:
             raise SentinelCompatibilityError("Sentinel signing timed out") from error
         if result.returncode != 0:
-            detail = result.stderr.strip() or "Sentinel signing failed"
-            raise SentinelCompatibilityError(detail)
+            raise SentinelCompatibilityError("ChatGPT web verification could not be prepared")
         try:
             value = json.loads(result.stdout)
         except json.JSONDecodeError as error:

@@ -88,6 +88,14 @@ use the analysis channel. Cancellation closes the transport; requests are never
 automatically resent after an ambiguous send failure. Closing a client cancels its
 active streams and closes all accounts, while keeping credential files intact.
 
+Provider failures derive from `ProviderError` and expose a stable machine-readable
+`code`. For send failures, `message_submitted is False` guarantees the prompt did
+not reach the provider; `None` means the client cannot prove whether it did. The
+ChatGPT Sentinel compatibility failure has its own code and is reported as
+“message not sent.” Claude and Gemini expose provider-specific compatibility and
+stream error types for callers that need to distinguish a changed web contract
+from an interrupted response.
+
 Message tools use provider identities, not list positions. `Message.actions` contains
 supported operations for that message on the current conversation path. Use
 `SendRequest(action=MessageAction.EDIT, message_id=..., prompt=...)` to edit a user

@@ -7,12 +7,44 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from providers.chatgpt.discovery import model_catalog
+from providers.chatgpt.errors import SentinelCompatibilityError
 from tests.account_fixture import configured_application as create_application
 from tests.provider_fixtures import CATALOG
 from tests.tui_support import immediate, terminal
 
 
 class ProviderUiTests(unittest.TestCase):
+    def test_sentinel_failure_says_message_was_not_sent_and_finishes_the_turn(self):
+        with terminal() as (view, _pipe):
+            view.messages = [
+                {"role": "user", "text": "hello"},
+                {"role": "assistant", "text": ""},
+            ]
+            view.tabs[0]["messages"] = view.messages
+            view.tabs[0]["busy"] = True
+
+            def fail(*_args, **_kwargs):
+                raise SentinelCompatibilityError("private signer detail")
+
+            view.run_send(
+                "hello",
+                [],
+                0,
+                view.messages,
+                None,
+                "account-thinking",
+                "standard",
+                send_callback=fail,
+            )
+
+            self.assertEqual(view.status, view.tr("Message not sent"))
+            self.assertIn(
+                view.tr("ChatGPT verification is incompatible; the message was not sent"),
+                view.messages[-1]["text"],
+            )
+            self.assertNotIn("private signer detail", view.messages[-1]["text"])
+            self.assertFalse(view.tabs[0]["busy"])
+
     def test_work_model_is_preserved_as_provenance_but_not_offered_or_restored_as_chat_selection(
         self,
     ):

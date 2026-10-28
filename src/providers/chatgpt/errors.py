@@ -2,8 +2,11 @@ from ..errors import ProviderError
 
 
 class ChatGPTWebError(ProviderError):
-    pass
+    code = "chatgpt_error"
 
 
 class SentinelCompatibilityError(ChatGPTWebError):
-    pass
+    """The local proof helper cannot satisfy the current web verification flow."""
+
+    code = "chatgpt_sentinel_incompatible"
+    message_submitted = False

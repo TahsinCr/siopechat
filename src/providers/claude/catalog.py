@@ -1,13 +1,13 @@
 """Account-entitled model selector, separate from global model definitions."""
 
-from ..errors import ProviderError
+from .errors import ClaudeCompatibilityError
 
 
 def selector_catalog(data):
     config = next((x for x in data.get("model_selector_config", []) if x.get("id") == "chat"), None)
     state = next((x for x in data.get("model_selector_state", []) if x.get("id") == "chat"), {})
     if not config or not isinstance(config.get("models"), list):
-        raise ProviderError("Claude hesap model seçim sözleşmesi değişmiş")
+        raise ClaudeCompatibilityError("Claude account model-selection contract changed")
     states = {x["id"]: x.get("thinking", {}) for x in state.get("thinking_by_model", [])}
     if state.get("model"):
         states[state["model"]] = state.get("thinking", {})
@@ -70,7 +70,7 @@ def selector_catalog(data):
             }
         )
     if not models:
-        raise ProviderError("Claude bu hesap için kullanılabilir sohbet modeli sunmadı")
+        raise ClaudeCompatibilityError("Claude returned no selectable chat model for this account")
     preferred = state.get("model")
     return {
         "models": models,

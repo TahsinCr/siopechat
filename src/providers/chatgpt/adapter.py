@@ -45,7 +45,6 @@ from ..projects import ProjectEditing
 from ..session import delete_session, session_exists
 from .client import ChatGPTClient
 from .discovery import project_id
-from .errors import SentinelCompatibilityError
 from .formats import message_files, message_parts
 from .projects import ChatGPTProjectEditor
 from .session import BrowserSession
@@ -754,14 +753,7 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
                     publish(("event", ConversationBound(remote_id)))
             except _Stopped:
                 return
-            except SentinelCompatibilityError as error:
-                if not stopped.is_set():
-                    detail = " ".join(str(error).split())[:240]
-                    message = "ChatGPT isteği için doğrulama imzası oluşturulamadı"
-                    if detail:
-                        message = f"{message}: {detail}"
-                    publish(("error", ProviderError(message)))
-            except (RateLimited, AccountPaused) as error:
+            except ProviderError as error:
                 if not stopped.is_set():
                     publish(("error", error))
             except Exception:

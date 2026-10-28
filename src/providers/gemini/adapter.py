@@ -29,6 +29,7 @@ from ..models import (
 )
 from ..projects import ProjectEditing
 from ..session import delete_session, session_exists
+from .errors import GeminiCompatibilityError, GeminiError, GeminiStreamError
 
 
 class GeminiProvider(ProjectEditing, OptionalFeatures):
@@ -239,7 +240,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
             "hNvQHb", [conversation_id, 1000, None, 1, [1], [4], None, 1], "/app"
         )
         if len(parts) != 1:
-            raise ProviderError("Gemini geçmiş yanıtı değişmiş")
+            raise GeminiCompatibilityError("Gemini history response format changed")
         return await asyncio.to_thread(history, parts[0], self._origin, conversation_id)
 
     async def branch_chat(self, conversation_id, message_id):
@@ -299,7 +300,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
             if not any(x.origin.remote_id == remote for x in (await self.notebooks.list()).items):
                 return
             await asyncio.sleep(0.25 * 2**attempt)
-        raise ProviderError("Defter silme sunucuda doğrulanamadı; işlem tekrarlanmadı")
+        raise GeminiError("Defter silme sunucuda doğrulanamadı; işlem tekrarlanmadı")
 
     async def list_projects(self, cursor=None):
         if self.notebooks is None:
@@ -343,7 +344,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                 async for event in iterator:
                     yield event
         except TimeoutError:
-            raise ProviderError("Gemini isteği 10 dakikalık süre sınırını aştı") from None
+            raise GeminiStreamError("Gemini isteği 10 dakikalık süre sınırını aştı") from None
         finally:
             await iterator.aclose()
 
@@ -430,7 +431,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                     rid = nested(turn, 0, 1)
                     rcid = nested(turn, 3, 0, 0, 0)
                     if turn is not None and (not rid or not rcid):
-                        raise ProviderError("Gemini sohbet devam kimlikleri alınamadı")
+                        raise GeminiCompatibilityError("Gemini sohbet devam kimlikleri alınamadı")
                     metadata[1:3] = [rid or "", rcid or ""]
             bound, visible, cid = False, False, request.conversation_id
             final_metadata = None
@@ -490,7 +491,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                         files=output_files,
                     )
             if not visible or not cid:
-                raise ProviderError("Gemini yanıtı tamamlanmadı; yeniden gönderilmedi")
+                raise GeminiStreamError("Gemini yanıtı tamamlanmadı; yeniden gönderilmedi")
             if final_metadata:
                 yield final_metadata
             if request.temporary:

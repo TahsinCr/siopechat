@@ -8,6 +8,7 @@ import uuid
 
 from ..errors import AccountPaused, ProviderError, RateLimited
 from ..session import WebSession, read_session, save_session_async
+from .errors import GeminiCompatibilityError, GeminiError
 
 ORIGIN = "https://gemini.google.com"
 BASE = ORIGIN + "/_/BardChatUi/data/"
@@ -280,7 +281,7 @@ class GeminiSession:
         native = {item["modeCategory"]: item["id"] for item in status.get("bardModeConfigs") or []}
         policy = status.get("geminiModePolicy")
         if not isinstance(policy, dict) or not isinstance(policy.get("configs"), list):
-            raise ProviderError("Gemini düşünme seçenekleri sözleşmesi değişti")
+            raise GeminiCompatibilityError("Gemini düşünme seçenekleri sözleşmesi değişti")
         policies = {}
         for item in policy["configs"]:
             config = item.get("modeConfig") or {}
@@ -307,7 +308,7 @@ class GeminiSession:
         body = parts[0]
         rows = nested(body, 15)
         if not isinstance(rows, list):
-            raise ProviderError("Gemini model kataloğu sözleşmesi değişti")
+            raise GeminiCompatibilityError("Gemini model kataloğu sözleşmesi değişti")
         tiers, flags = nested(body, 16, default=[]), nested(body, 17, default=[])
         capacity, slot = (
             (1, 13)
@@ -337,7 +338,9 @@ class GeminiSession:
                 if level == "THINKING_LEVEL_UNSPECIFIED":
                     continue
                 if level not in THINKING_VALUES:
-                    raise ProviderError("Gemini bilinmeyen bir düşünme protokolü döndürdü")
+                    raise GeminiCompatibilityError(
+                        "Gemini bilinmeyen bir düşünme protokolü döndürdü"
+                    )
                 identifier = level.removeprefix("THINKING_LEVEL_").lower()
                 if identifier not in values:
                     efforts.append(Choice(identifier, identifier))
@@ -368,7 +371,7 @@ class GeminiSession:
                 )
             )
         if not models:
-            raise ProviderError("Gemini kullanılabilir model döndürmedi")
+            raise GeminiError("Gemini kullanılabilir model döndürmedi")
         return tuple(models)
 
     async def persist(self):

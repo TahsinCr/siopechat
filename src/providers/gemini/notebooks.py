@@ -3,7 +3,7 @@
 import re
 from urllib.parse import urlparse
 
-from ..errors import ProviderError
+from .errors import GeminiCompatibilityError, GeminiError
 from ..models import Conversation, Origin, Page, Project, Resource
 from .history import timestamp
 
@@ -33,7 +33,9 @@ def project_from_native(row, account_id):
         or not isinstance(detail, list)
         or not isinstance(field(detail, 0), str)
     ):
-        raise ProviderError("Gemini defter sözleşmesi değişmiş; kayıt eşlemesi güncellenmeli")
+        raise GeminiCompatibilityError(
+            "Gemini defter sözleşmesi değişmiş; kayıt eşlemesi güncellenmeli"
+        )
     bundle = field(detail, 10, []) or []
     resources = []
     for source in field(bundle, 0, []) or []:
@@ -79,11 +81,11 @@ class Notebooks:
                 operation=mode or "list",
                 cursor=cursor,
             )
-        raise ProviderError("Gemini defter HTTP okuyucusu yapılandırılmamış")
+        raise GeminiError("Gemini defter HTTP okuyucusu yapılandırılmamış")
 
     async def list(self, cursor=None):
         if cursor:
-            raise ProviderError("Gemini defter sayfalaması bu sürümde desteklenmiyor")
+            raise GeminiError("Gemini defter sayfalaması bu sürümde desteklenmiyor")
         parts = await self.read()
         rows = [row for part in parts for row in field(part, 2, []) or []]
         return Page(tuple(project_from_native(row, self.account_id) for row in rows))
@@ -95,7 +97,7 @@ class Notebooks:
         conversations = []
         for row in rows:
             if not isinstance(field(row, 0), str) or not isinstance(field(row, 1), str):
-                raise ProviderError("Gemini defter sohbeti eşlemesi değişmiş")
+                raise GeminiCompatibilityError("Gemini defter sohbeti eşlemesi değişmiş")
             conversations.append(
                 Conversation(
                     Origin("gemini", self.account_id, row[0]),
@@ -112,5 +114,5 @@ class Notebooks:
         parts = await self.read(remote)
         rows = [row for part in parts for row in part if field(row, 0) == remote]
         if len(rows) != 1:
-            raise ProviderError("Gemini defter ayrıntıları bulunamadı")
+            raise GeminiError("Gemini defter ayrıntıları bulunamadı")
         return project_from_native(rows[0], self.account_id)

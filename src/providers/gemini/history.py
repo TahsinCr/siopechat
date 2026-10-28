@@ -2,7 +2,7 @@
 
 import re
 
-from ..errors import ProviderError
+from .errors import GeminiCompatibilityError, GeminiError
 from ..messages import actions_for, sources_from
 from ..models import Content, Conversation, Message, Resource
 from .media import _field, candidate_files, resolve_image_links
@@ -97,7 +97,9 @@ def conversations(pages, origin):
             continue
         rows = nested(page, 2)
         if not isinstance(rows, list):
-            raise ProviderError("Gemini sohbet listesi sözleşmesi değişti; eşitleme tamamlanmadı")
+            raise GeminiCompatibilityError(
+                "Gemini sohbet listesi sözleşmesi değişti; eşitleme tamamlanmadı"
+            )
         for row in rows:
             cid, title = nested(row, 0), nested(row, 1)
             if not isinstance(cid, str) or not cid.startswith("c_"):
@@ -122,12 +124,12 @@ def conversations(pages, origin):
 def history(data, origin, cid):
     turns = nested(data, 0)
     if not isinstance(turns, list):
-        raise ProviderError("Gemini geçmişi henüz okunamıyor; kayıtlı geçmiş korunuyor")
+        raise GeminiError("Gemini geçmişi henüz okunamıyor; kayıtlı geçmiş korunuyor")
     messages = []
     for turn_index, turn in enumerate(reversed(turns)):
         rid = nested(turn, 0, 1)
         if not isinstance(rid, str):
-            raise ProviderError("Gemini geçmişinde yanıt kimliği eksik")
+            raise GeminiCompatibilityError("Gemini geçmişinde yanıt kimliği eksik")
         user = nested(turn, 2, 0, 0)
         if isinstance(user, str) and user:
             messages.append(

@@ -9,8 +9,8 @@ import uuid
 from pathlib import Path
 
 from ..api import MessageAction
-from ..errors import ProviderError
 from ..session import WebSession
+from .errors import GeminiCompatibilityError, GeminiError, GeminiStreamError
 from .media import candidate_files
 from .session import BASE, HEADERS, nested
 
@@ -35,7 +35,7 @@ class Frames:
         try:
             self.pending += self.decoder.decode(data, final=final)
         except UnicodeDecodeError as error:
-            raise ProviderError("Gemini akışı geçersiz UTF-8 içeriyor") from error
+            raise GeminiStreamError("Gemini akışı geçersiz UTF-8 içeriyor") from error
 
         self._strip_prefix()
         while self.expected_units is not None or self._read_length_marker():
@@ -49,16 +49,16 @@ class Frames:
             try:
                 rows = json.loads(payload)
             except ValueError as error:
-                raise ProviderError("Gemini akış biçimi değişti") from error
+                raise GeminiStreamError("Gemini akış biçimi değişti") from error
             if isinstance(rows, list):
                 yield from rows
             else:
                 yield rows
 
         if len(self.pending) > self._MAX_FRAME_UNITS + 16:
-            raise ProviderError("Gemini akış çerçevesi boyut sınırını aştı")
+            raise GeminiStreamError("Gemini akış çerçevesi boyut sınırını aştı")
         if final and self.pending.strip():
-            raise ProviderError("Gemini akışı tamamlanmamış bir çerçeveyle kesildi")
+            raise GeminiStreamError("Gemini akışı tamamlanmamış bir çerçeveyle kesildi")
 
     def _strip_prefix(self):
         if self.prefix_checked:
@@ -80,12 +80,12 @@ class Frames:
             if self.pending.isdecimal() and len(self.pending) <= 10:
                 return False
             if self.pending[0].isdigit() and "\n" not in self.pending:
-                raise ProviderError("Gemini akış çerçevesinin uzunluğu geçersiz")
-            raise ProviderError("Gemini akış çerçevesinin uzunluk alanı geçersiz")
+                raise GeminiStreamError("Gemini akış çerçevesinin uzunluğu geçersiz")
+            raise GeminiStreamError("Gemini akış çerçevesinin uzunluk alanı geçersiz")
 
         length = int(match.group(1))
         if not 1 <= length <= self._MAX_FRAME_UNITS:
-            raise ProviderError("Gemini akış çerçevesi boyut sınırını aştı")
+            raise GeminiStreamError("Gemini akış çerçevesi boyut sınırını aştı")
         self.expected_units = length
         # Google counts the newline after the length marker in the UTF-16 size.
         self.payload_start = len(match.group(1))
@@ -98,7 +98,7 @@ class Frames:
         while self.scanned_units < self.expected_units and index < len(self.pending):
             units = 2 if ord(self.pending[index]) > 0xFFFF else 1
             if self.scanned_units + units > self.expected_units:
-                raise ProviderError("Gemini akış çerçevesinin UTF-16 uzunluğu geçersiz")
+                raise GeminiStreamError("Gemini akış çerçevesinin UTF-16 uzunluğu geçersiz")
             self.scanned_chars += 1
             self.scanned_units += units
             index += 1
@@ -256,7 +256,7 @@ async def generate(
 
             async for frame in parts():
                 if nested(frame, 5, 2, 0, 1, 0):
-                    raise ProviderError(
+                    raise GeminiError(
                         "Gemini isteği reddetti; kota veya model uygunluğunu kontrol edin"
                     )
                 payload = nested(frame, 2)
@@ -265,7 +265,7 @@ async def generate(
                 try:
                     body = json.loads(payload)
                 except ValueError as error:
-                    raise ProviderError("Gemini yanıt gövdesi değişti") from error
+                    raise GeminiCompatibilityError("Gemini yanıt gövdesi değişti") from error
                 returned = nested(body, 1)
                 if isinstance(returned, list) and returned:
                     metadata = returned
@@ -320,10 +320,10 @@ async def generate(
     except RequestException as error:
         if error.code != CurlECode.OPERATION_TIMEDOUT:
             raise
-        raise ProviderError(
+        raise GeminiStreamError(
             "Gemini isteği ağ zaman aşımına uğradı; gönderim otomatik tekrarlanmadı "
             "ve sohbet geçmişi korundu."
         ) from None
     if not completed:
-        raise ProviderError("Gemini akışı tamamlanmadan kesildi; yeniden gönderilmedi")
+        raise GeminiStreamError("Gemini akışı tamamlanmadan kesildi; yeniden gönderilmedi")
     await session.persist()

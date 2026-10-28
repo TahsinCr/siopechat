@@ -11,7 +11,7 @@ from ..api import (
     validate_request,
 )
 from ..contracts import OptionalFeatures
-from ..errors import AccountPaused, FeatureUnavailable, ProviderError
+from ..errors import AccountPaused, FeatureUnavailable
 from ..models import (
     Choice,
     Feature,
@@ -28,6 +28,7 @@ from ..projects import ProjectEditing
 from ..session import delete_session, session_exists
 from .records import conversation, conversation_attachment_count, project
 from .transport import ClaudeProjectEditor, ClaudeTransport
+from .errors import ClaudeCompatibilityError, ClaudeStreamError
 
 
 class ClaudeProvider(ProjectEditing, OptionalFeatures):
@@ -209,7 +210,7 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
     async def list_chats(self, cursor=None, limit=50):
         values = await self.transport.request("chats", cursor=cursor, limit=limit)
         if not isinstance(values, list):
-            raise ProviderError("Claude conversation list contract changed")
+            raise ClaudeCompatibilityError("Claude conversation list response changed")
         return Page(
             tuple(conversation(x, self.account_id) for x in values),
             str(int(cursor or 0) + limit) if len(values) == limit else None,
@@ -233,7 +234,7 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
         async with self._gate:
             values = await self.transport.request("projects")
             if not isinstance(values, list):
-                raise ProviderError("Claude project list contract changed")
+                raise ClaudeCompatibilityError("Claude project list response changed")
             return Page(tuple(project(x, self.account_id) for x in values))
 
     async def get_project(self, project_id):
@@ -247,7 +248,7 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
         async with self._gate:
             values = await self.transport.request("project_chats", project_id=project_id)
             if not isinstance(values, list):
-                raise ProviderError("Claude project conversation contract changed")
+                raise ClaudeCompatibilityError("Claude project conversation response changed")
             return Page(
                 tuple(
                     conversation(dict(x, project_uuid=project_id), self.account_id) for x in values
@@ -337,4 +338,4 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
                         files=tuple(event.get("files", ())),
                     )
             if not completed:
-                raise ProviderError("Claude yanıtı tamamlanmadı; istek yeniden gönderilmedi")
+                raise ClaudeStreamError("Claude response ended before completion; it was not resent")

@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 from providers import Capability, ProviderRegistry, ReplaceText, SendRequest, TextDelta
 from providers.chatgpt import BrowserSession, ChatGPTProvider, SessionPaths
 from providers.chatgpt.client import ChatGPTClient
+from providers.chatgpt.errors import SentinelCompatibilityError
 from providers.errors import RateLimited, RemoteNotFound
 from providers.models import Choice, FeatureState, Model, ModelCatalog, SessionState
 from tasks import JobState, TaskService
@@ -287,6 +288,19 @@ class ProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
             ):
                 pass
         self.assertEqual(raised.exception.retry_after, 30)
+
+    async def test_sentinel_compatibility_error_keeps_its_type_and_submission_state(self):
+        self.client.closed.set()
+        failure = SentinelCompatibilityError("private signer detail")
+        self.client.failure = failure
+        with self.assertRaises(SentinelCompatibilityError) as raised:
+            async for _ in self.provider.stream(
+                SendRequest("chatgpt", "default", "local", "hello")
+            ):
+                pass
+        self.assertIs(raised.exception, failure)
+        self.assertEqual(raised.exception.code, "chatgpt_sentinel_incompatible")
+        self.assertFalse(raised.exception.message_submitted)
 
     async def test_runtime_health_overlay_leaves_unrelated_capabilities_usable(self):
         registry = ProviderRegistry()

@@ -10,6 +10,7 @@ from providers import (
     TextDelta,
 )
 from providers.registry import ProviderRegistry
+from providers.chatgpt.errors import SentinelCompatibilityError
 from tasks import JobState, TaskService
 from tests.fakes import ControlledProvider, request
 
@@ -260,6 +261,20 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.gemini.release("other")
         other = self.runtime.submit(request("other", "gemini"))
         self.assertEqual((await self.finish(other)).state, JobState.COMPLETED)
+
+    async def test_pre_submission_failure_is_terminal_and_releases_chat_for_next_send(self):
+        self.gpt.failure = SentinelCompatibilityError("private signer detail")
+        first = self.runtime.submit(request())
+        self.gpt.release("one")
+        failed = await self.finish(first)
+        self.assertEqual(failed.state, JobState.FAILED)
+        self.assertEqual(failed.error_code, "chatgpt_sentinel_incompatible")
+        self.assertFalse(self.gpt.failure.message_submitted)
+
+        self.gpt.failure = None
+        second = self.runtime.submit(request())
+        succeeded = await self.finish(second)
+        self.assertEqual(succeeded.state, JobState.COMPLETED)
 
     async def test_malformed_retry_delay_still_fails_cleanly_and_pauses(self):
         self.gpt.failure = RateLimited("invalid header")
