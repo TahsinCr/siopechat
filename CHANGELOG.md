@@ -48,6 +48,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Fixed
 
+- Preserve Gemini's total generation deadline on Python 3.10, the standalone provider package's minimum supported version, while keeping caller cancellation distinct.
 - Preserve ChatGPT Sentinel incompatibility errors through the provider/task layers, report clearly that the prompt was not sent, and release the chat operation so the user can try again after an update.
 - Keep signer diagnostics out of user-visible errors and exceptions; the Sentinel failure reports a safe compatibility message without exposing raw subprocess output.
 - Separate Gemini's total request deadline from visible response events; the transport read timeout handles actual network silence without canceling a stream that is still delivering non-visible frames.

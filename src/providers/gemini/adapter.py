@@ -339,13 +339,23 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
     async def stream(self, request: SendRequest):
         validate_request(self, request)
         iterator = self._stream(request)
+        loop = asyncio.get_running_loop()
+        task = asyncio.current_task()
+        deadline_cancel = object()
+
+        def cancel_at_deadline() -> None:
+            task.cancel(deadline_cancel)
+
+        timeout = loop.call_later(self.stream_total_timeout, cancel_at_deadline)
         try:
-            async with asyncio.timeout(self.stream_total_timeout):
-                async for event in iterator:
-                    yield event
-        except TimeoutError:
+            async for event in iterator:
+                yield event
+        except asyncio.CancelledError as error:
+            if not error.args or error.args[0] is not deadline_cancel:
+                raise
             raise GeminiStreamError("Gemini isteği 10 dakikalık süre sınırını aştı") from None
         finally:
+            timeout.cancel()
             await iterator.aclose()
 
     async def _stream(self, request: SendRequest):

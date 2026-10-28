@@ -14,6 +14,8 @@ from providers import (
     SendRequest,
     create_provider,
 )
+from providers.gemini.adapter import GeminiProvider
+from providers.gemini.errors import GeminiStreamError
 
 
 class FakeBackend:
@@ -42,6 +44,59 @@ class FakeBackend:
 
 
 class PublicAPITests(unittest.IsolatedAsyncioTestCase):
+    async def test_gemini_total_stream_deadline_uses_supported_asyncio_api(self):
+        provider = GeminiProvider(Path("unused"), "test")
+        provider.stream_total_timeout = 0.005
+        stopped = asyncio.Event()
+
+        async def stalled_response(_request):
+            try:
+                await asyncio.Event().wait()
+                yield ReplaceText("late")
+            finally:
+                stopped.set()
+
+        provider._stream = stalled_response
+        with self.assertRaisesRegex(GeminiStreamError, "10 dakikalık süre sınırını"):
+            _ = [
+                event
+                async for event in provider.stream(
+                    SendRequest("gemini", "test", "local", "Hello")
+                )
+            ]
+        self.assertTrue(stopped.is_set())
+
+    async def test_gemini_stream_preserves_caller_cancellation(self):
+        provider = GeminiProvider(Path("unused"), "test")
+        provider.stream_total_timeout = 30
+        started = asyncio.Event()
+        stopped = asyncio.Event()
+
+        async def stalled_response(_request):
+            started.set()
+            try:
+                await asyncio.Event().wait()
+                yield ReplaceText("late")
+            finally:
+                stopped.set()
+
+        provider._stream = stalled_response
+
+        async def consume():
+            return [
+                event
+                async for event in provider.stream(
+                    SendRequest("gemini", "test", "local", "Hello")
+                )
+            ]
+
+        task = asyncio.create_task(consume())
+        await started.wait()
+        task.cancel("caller stopped")
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertTrue(stopped.is_set())
+
     async def test_routes_both_account_identity_and_conversation_project_context(self):
         async with ProviderClient() as client:
             first = client.add(FakeBackend("first"))
