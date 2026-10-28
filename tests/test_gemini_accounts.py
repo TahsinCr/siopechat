@@ -27,8 +27,10 @@ class AccountNativeTests(unittest.TestCase):
                     notebooks=SimpleNamespace(cdp_url="http://127.0.0.1:9231"),
                 )
                 provider._connect = AsyncMock(side_effect=AssertionError("SDK must not send"))
+                requests = []
 
                 async def stream(request):
+                    requests.append(request)
                     if not request.conversation_id:
                         self.assertEqual(request.project_id, "notebooks/abcdef")
                     yield ConversationBound("c_abcdef")
@@ -71,6 +73,9 @@ class AccountNativeTests(unittest.TestCase):
                 continued = accounts.cached(key, "c_abcdef")
                 self.assertEqual(continued["project_id"], identity(key, "notebooks/abcdef"))
                 self.assertEqual(len(continued["messages"]), 6)
+                self.assertEqual(
+                    [request.conversation_id for request in requests], [None, "c_abcdef"]
+                )
                 provider._connect.assert_not_awaited()
                 accounts.callbacks(key)["forget_temporary"](identity(key, "temporary_fixture"))
                 self.assertNotIn("temporary_fixture", provider._temporary)

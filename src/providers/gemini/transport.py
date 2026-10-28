@@ -4,6 +4,7 @@ import asyncio
 import codecs
 import json
 import mimetypes
+import re
 import uuid
 from pathlib import Path
 
@@ -15,29 +16,98 @@ from .session import BASE, HEADERS, nested
 
 
 class Frames:
-    """Decode newline-framed JSPB without retaining the full response."""
+    """Decode Gemini's length-prefixed JSPB stream incrementally."""
+
+    _MAX_FRAME_UNITS = 8 * 1024 * 1024
+    _LENGTH_MARKER = re.compile(r"(\d+)\n")
+    _ANTI_XSSI = ")]}'"
 
     def __init__(self):
         self.decoder = codecs.getincrementaldecoder("utf-8")()
         self.pending = ""
+        self.expected_units = None
+        self.payload_start = 0
+        self.scanned_chars = 0
+        self.scanned_units = 0
+        self.prefix_checked = False
 
     def feed(self, data, final=False):
         try:
             self.pending += self.decoder.decode(data, final=final)
         except UnicodeDecodeError as error:
             raise ProviderError("Gemini akışı geçersiz UTF-8 içeriyor") from error
-        if len(self.pending) > 8 * 1024 * 1024:
-            raise ProviderError("Gemini akış çerçevesi boyut sınırını aştı")
-        lines = self.pending.split("\n")
-        self.pending = "" if final else lines.pop()
-        for line in lines:
-            if not line.startswith("[["):
-                continue
+
+        self._strip_prefix()
+        while self.expected_units is not None or self._read_length_marker():
+            self._scan_payload()
+            if self.scanned_units < self.expected_units:
+                break
+
+            end = self.payload_start + self.scanned_chars
+            payload, self.pending = self.pending[self.payload_start:end], self.pending[end:]
+            self._reset_frame()
             try:
-                rows = json.loads(line)
+                rows = json.loads(payload)
             except ValueError as error:
                 raise ProviderError("Gemini akış biçimi değişti") from error
-            yield from rows
+            if isinstance(rows, list):
+                yield from rows
+            else:
+                yield rows
+
+        if len(self.pending) > self._MAX_FRAME_UNITS + 16:
+            raise ProviderError("Gemini akış çerçevesi boyut sınırını aştı")
+        if final and self.pending.strip():
+            raise ProviderError("Gemini akışı tamamlanmamış bir çerçeveyle kesildi")
+
+    def _strip_prefix(self):
+        if self.prefix_checked:
+            return
+        if len(self.pending) < len(self._ANTI_XSSI) and self._ANTI_XSSI.startswith(self.pending):
+            return
+        if self.pending.startswith(self._ANTI_XSSI):
+            self.pending = self.pending[len(self._ANTI_XSSI) :].lstrip()
+        self.prefix_checked = True
+
+    def _read_length_marker(self):
+        if not self.prefix_checked:
+            return False
+        self.pending = self.pending.lstrip()
+        if not self.pending:
+            return False
+        match = self._LENGTH_MARKER.match(self.pending)
+        if match is None:
+            if self.pending.isdecimal() and len(self.pending) <= 10:
+                return False
+            if self.pending[0].isdigit() and "\n" not in self.pending:
+                raise ProviderError("Gemini akış çerçevesinin uzunluğu geçersiz")
+            raise ProviderError("Gemini akış çerçevesinin uzunluk alanı geçersiz")
+
+        length = int(match.group(1))
+        if not 1 <= length <= self._MAX_FRAME_UNITS:
+            raise ProviderError("Gemini akış çerçevesi boyut sınırını aştı")
+        self.expected_units = length
+        # Google counts the newline after the length marker in the UTF-16 size.
+        self.payload_start = len(match.group(1))
+        self.scanned_chars = 0
+        self.scanned_units = 0
+        return True
+
+    def _scan_payload(self):
+        index = self.payload_start + self.scanned_chars
+        while self.scanned_units < self.expected_units and index < len(self.pending):
+            units = 2 if ord(self.pending[index]) > 0xFFFF else 1
+            if self.scanned_units + units > self.expected_units:
+                raise ProviderError("Gemini akış çerçevesinin UTF-16 uzunluğu geçersiz")
+            self.scanned_chars += 1
+            self.scanned_units += units
+            index += 1
+
+    def _reset_frame(self):
+        self.expected_units = None
+        self.payload_start = 0
+        self.scanned_chars = 0
+        self.scanned_units = 0
 
 
 async def upload_files(session, paths):

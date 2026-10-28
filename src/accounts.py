@@ -1584,7 +1584,7 @@ class Accounts:
         if remote and archive and archive.deleted(key, "conversation", remote):
             raise RemoteNotFound("Silinmiş bir sohbete mesaj gönderilemez")
         baseline = archive.conversation_window(key, remote, limit=1) if archive and remote else None
-        if not archive and remote:
+        if baseline is None and remote:
             baseline = self.cached(key, remote)
         base_end = baseline.get("history_window", {}).get("total") if baseline else None
         pending_branch = (baseline or {}).get("pending_branch")

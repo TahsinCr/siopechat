@@ -10,7 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from providers import SendRequest
+from providers import ReplaceText, SendRequest
 from providers.errors import AccountPaused, ProviderError
 from providers.gemini import GeminiProvider
 from providers.gemini.session import GeminiSession
@@ -109,6 +109,42 @@ class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(events, ["activity", "generation"])
 
+    async def test_silent_generation_time_is_not_mistaken_for_network_idle(self):
+        provider = GeminiProvider(Path("unused"), "test")
+        provider.stream_idle_timeout = 0.005
+        provider.stream_total_timeout = 0.5
+
+        async def delayed_response(_request):
+            await asyncio.sleep(0.02)
+            yield ReplaceText("answer")
+
+        provider._stream = delayed_response
+        events = [
+            event
+            async for event in provider.stream(
+                SendRequest("gemini", "test", "local", "question")
+            )
+        ]
+
+        self.assertEqual(events, [ReplaceText("answer")])
+
+    async def test_stream_still_enforces_the_total_request_deadline(self):
+        provider = GeminiProvider(Path("unused"), "test")
+        provider.stream_total_timeout = 0.005
+
+        async def stalled_response(_request):
+            await asyncio.sleep(0.02)
+            yield ReplaceText("answer")
+
+        provider._stream = stalled_response
+        with self.assertRaisesRegex(ProviderError, "10 dakikalık süre sınırını"):
+            _ = [
+                event
+                async for event in provider.stream(
+                    SendRequest("gemini", "test", "local", "question")
+                )
+            ]
+
     async def test_activity_sync_uses_the_web_preference_rpc(self):
         session = GeminiSession(Path("unused"))
         session.batch = AsyncMock()
@@ -170,21 +206,31 @@ class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(session.http)
 
     def test_frames_handle_utf8_boundaries_lengths_and_multiple_packets(self):
-        frame = [["wrb.fr", None, json.dumps(["Türkçe"])]]
-        wire = (")]}'\n\n123\n" + json.dumps(frame, ensure_ascii=False) + "\n").encode()
+        frames = [
+            [["wrb.fr", None, json.dumps(["Türkçe 🛰️"])]],
+            [["wrb.fr", None, json.dumps(["ikinci çerçeve"])]],
+        ]
+
+        def encode(rows):
+            payload = json.dumps(rows, ensure_ascii=False, separators=(",", ":"))
+            size = len(("\n" + payload).encode("utf-16-le")) // 2
+            return f"{size}\n{payload}"
+
+        wire = (")]}'\n\n" + "".join(encode(frame) for frame in frames) + "\n"
+        ).encode()
         parser = Frames()
         output = []
         for byte in wire:
             output.extend(parser.feed(bytes([byte])))
         output.extend(parser.feed(b"", final=True))
-        self.assertEqual(output, frame)
+        self.assertEqual(output, frames[0] + frames[1])
         self.assertEqual(parser.pending, "")
 
     def test_frame_size_and_invalid_json_are_rejected(self):
         with self.assertRaises(ProviderError):
-            list(Frames().feed(b"x" * (8 * 1024 * 1024 + 1)))
+            list(Frames().feed(b"8388609\n"))
         with self.assertRaises(ProviderError):
-            list(Frames().feed(b"[[invalid\n"))
+            list(Frames().feed(b"10\n[[invalid", final=True))
 
     def test_model_selection_notebook_temporary_and_effort_are_native(self):
         model = Model(
@@ -204,13 +250,21 @@ class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
             models=(model,), language="en", token="test", session_id="session"
         )
         request = SendRequest(
-            "gemini", "test", "local", "hello", model="dynamic", effort="extended", temporary=True
+            "gemini",
+            "test",
+            "local",
+            "hello",
+            model="dynamic",
+            effort="extended",
+            temporary=True,
         )
         headers, data = generation_request(session, request, ["cid"], [], ("notebooks/test", [2]))
         body = json.loads(json.loads(data["f.req"])[1])
         self.assertEqual(
             (body[19], body[40][13], body[45], body[79], body[80]), ("notebooks/test", [2], 1, 3, 2)
         )
+        self.assertEqual(body[6], [1])
+        self.assertEqual(body[17], [[0]])
         selector = json.loads(headers["x-goog-ext-525001261-jspb"])
         self.assertEqual(selector[11], 2)
         self.assertEqual(selector[7], 1)
@@ -459,10 +513,16 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
         candidate[37] = [["thought"], [activity]]
         body = [None, ["c_new", "rid"], None, None, [candidate]]
         acknowledged = [None, ["c_new", "rid"]]
+
+        def encode_frame(payload):
+            encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+            units = len(("\n" + encoded).encode("utf-16-le")) // 2
+            return f"{units}\n{encoded}"
+
         wire = (
-            json.dumps([["wrb.fr", None, json.dumps(acknowledged)]])
-            + "\n"
-            + json.dumps([["wrb.fr", None, json.dumps(body)]])
+            ")]}'\n\n"
+            + encode_frame([["wrb.fr", None, json.dumps(acknowledged)]])
+            + encode_frame([["wrb.fr", None, json.dumps(body)]])
             + "\n"
         ).encode()
         response = self.response([wire[:20], wire[20:]])
@@ -478,6 +538,7 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             result[1]["sources"], ({"title": "Example", "url": "https://example.com"},)
         )
+        self.assertEqual(session.http.request.await_args.kwargs["params"], {})
         self.assertTrue(result[0]["context_only"])
         self.assertEqual(result[0]["cid"], "c_new")
         self.assertTrue(response.closed)

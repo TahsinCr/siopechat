@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from dataclasses import replace
 from pathlib import Path
 
 from ..api import (
@@ -337,28 +338,12 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
     async def stream(self, request: SendRequest):
         validate_request(self, request)
         iterator = self._stream(request)
-        deadline = asyncio.get_running_loop().time() + self.stream_total_timeout
         try:
-            while True:
-                try:
-                    remaining = deadline - asyncio.get_running_loop().time()
-                    if remaining <= 0:
-                        raise ProviderError("Gemini isteği 10 dakikalık süre sınırını aştı")
-                    timeout = min(self.stream_idle_timeout, remaining)
-                    total_deadline_is_next = remaining <= self.stream_idle_timeout
-                    event = await asyncio.wait_for(anext(iterator), timeout=timeout)
-                except StopAsyncIteration:
-                    break
-                except asyncio.TimeoutError:
-                    if total_deadline_is_next or asyncio.get_running_loop().time() >= deadline:
-                        raise ProviderError(
-                            "Gemini isteği 10 dakikalık süre sınırını aştı"
-                        ) from None
-                    raise ProviderError(
-                        "Gemini 120 saniye boyunca veri döndürmedi; istek durduruldu. "
-                        "Yeniden göndermeden önce sohbet geçmişini eşitleyin."
-                    ) from None
-                yield event
+            async with asyncio.timeout(self.stream_total_timeout):
+                async for event in iterator:
+                    yield event
+        except TimeoutError:
+            raise ProviderError("Gemini isteği 10 dakikalık süre sınırını aştı") from None
         finally:
             await iterator.aclose()
 
@@ -420,8 +405,6 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                     turns = nested(parts[0], 0, default=[])
                     turn = turns[0] if turns else None
                     if request.action:
-                        from dataclasses import replace
-
                         from ..messages import target_message
                         from .history import history
 
@@ -513,7 +496,8 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
             if request.temporary:
                 self._temporary[cid] = metadata
                 while len(self._temporary) > 32:
-                    self._temporary.pop(next(iter(self._temporary)))
+                    oldest = next(iter(self._temporary))
+                    self._temporary.pop(oldest)
 
     async def resolve_download(self, url, conversation_id=None, message_id=None):
         from ..files import DownloadSource, NativeDownloadClient, cookie_header

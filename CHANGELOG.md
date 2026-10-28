@@ -47,6 +47,8 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Fixed
 
+- Separate Gemini's total request deadline from visible response events; the transport read timeout handles actual network silence without canceling a stream that is still delivering non-visible frames.
+- Parse Gemini's length-prefixed stream frames by UTF-16 code units, including multiple frames and Unicode split across network chunks.
 - Send Gemini's `bard_activity_enabled` activity RPC with the upstream JSON nesting immediately before generation; this is one request per send, without periodic polling.
 - Cancel and join Gemini's streaming HTTP transfer on interruption so a stalled connection cannot keep the provider's generation gate occupied after cancellation.
 - Send Gemini's selected thinking level consistently in the request body and model header, including native Medium; match the temporary-chat flag in both locations.
