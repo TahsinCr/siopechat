@@ -5336,6 +5336,11 @@ class ChatView:
         message_id = message.get("id")
         current = message.get("_response_version_index", 1)
         count = message.get("_response_version_count", 1)
+        if tab.get("response_version_loading") == message_id:
+            requested = tab.get("response_version_target", current) + direction
+            if 1 <= requested <= count:
+                tab["response_version_target"] = requested
+            return
         target = current + direction
         if (
             not message_id
@@ -5343,10 +5348,10 @@ class ChatView:
             or not tab.get("account_key")
             or not self.account_service
             or not 1 <= target <= count
-            or tab.get("response_version_loading") == message_id
         ):
             return
         tab["response_version_loading"] = message_id
+        tab["response_version_target"] = target
         tab["follow_output"] = True
         self.follow_output = True
         self.transcript_window.scroll_direction = 0
@@ -5355,71 +5360,83 @@ class ChatView:
         conversation_id = tab["conversation_id"]
         account_key = tab["account_key"]
 
-        def work():
-            try:
-                result = self.account_service.response_version(
-                    account_key, conversation_id, message_id, target
-                )
-                reason = None
-            except Exception as error:
-                result, reason = None, str(error)
-
-            def ready():
-                if tab.get("response_version_loading") != message_id:
-                    return
-                tab.pop("response_version_loading", None)
-                target_index = next(
-                    (
-                        position
-                        for position, item in enumerate(tab.get("messages", ()))
-                        if item.get("id") == message_id
-                    ),
-                    None,
-                )
-                if target_index is None:
-                    return
-                if reason:
-                    self.status = self.tr("Response version could not be loaded: {0}").format(
-                        reason
+        def load_version(requested):
+            def work():
+                try:
+                    result = self.account_service.response_version(
+                        account_key, conversation_id, message_id, requested
                     )
-                elif result:
-                    from .markdown import visible_chat_message
+                    reason = None if result else self.tr("Response version is unavailable")
+                except Exception as error:
+                    result, reason = None, str(error)
 
-                    alternate = visible_chat_message(result["message"])
-                    if alternate is not None:
-                        displayed = dict(tab["messages"][target_index])
-                        displayed["text"] = alternate["text"]
-                        for field in (
-                            "_thinking_sources",
-                            "_response_settings",
-                            "_body_length",
-                            "_files",
-                        ):
-                            if field in alternate:
-                                displayed[field] = alternate[field]
-                            else:
-                                displayed.pop(field, None)
-                        displayed["_response_version_index"] = result["index"]
-                        displayed["_response_version_count"] = result["count"]
-                        displayed["_response_version_current_index"] = result.get(
-                            "current_index", result["count"]
+                def ready():
+                    if tab.get("response_version_loading") != message_id:
+                        return
+                    latest = tab.get("response_version_target", requested)
+                    if latest != requested:
+                        load_version(latest)
+                        return
+                    tab.pop("response_version_loading", None)
+                    tab.pop("response_version_target", None)
+                    error_reason = reason
+                    target_index = next(
+                        (
+                            position
+                            for position, item in enumerate(tab.get("messages", ()))
+                            if item.get("id") == message_id
+                        ),
+                        None,
+                    )
+                    if target_index is None:
+                        return
+                    if error_reason is None:
+                        from .markdown import visible_chat_message
+
+                        alternate = visible_chat_message(result["message"])
+                        if alternate is None:
+                            error_reason = self.tr("Response version is unavailable")
+                        else:
+                            displayed = dict(tab["messages"][target_index])
+                            displayed["text"] = alternate["text"]
+                            for field in (
+                                "_thinking_sources",
+                                "_response_settings",
+                                "_body_length",
+                                "_files",
+                            ):
+                                if field in alternate:
+                                    displayed[field] = alternate[field]
+                                else:
+                                    displayed.pop(field, None)
+                            displayed["_response_version_index"] = result["index"]
+                            displayed["_response_version_count"] = result["count"]
+                            displayed["_response_version_current_index"] = result.get(
+                                "current_index", result["count"]
+                            )
+                            tab["messages"][target_index] = displayed
+                            if tab is self.tabs[self.active_tab]:
+                                self.messages = tab["messages"]
+                                tab["follow_output"] = True
+                                self.follow_output = True
+                                self.transcript_window.scroll_direction = 0
+                                self.transcript_window.vertical_scroll = 10**9
+                                tab["render_revision"] = tab.get("render_revision", 0) + 1
+                    if error_reason:
+                        self.status = self.tr("Response version could not be loaded: {0}").format(
+                            error_reason
                         )
-                        tab["messages"][target_index] = displayed
-                        if tab is self.tabs[self.active_tab]:
-                            self.messages = tab["messages"]
-                            tab["follow_output"] = True
-                            self.follow_output = True
-                            self.transcript_window.scroll_direction = 0
-                            self.transcript_window.vertical_scroll = 10**9
-                            tab["render_revision"] = tab.get("render_revision", 0) + 1
+                    self.app.invalidate()
+
+                self._dispatch_ui(ready)
+
+            if not self._operations.submit(work):
+                tab.pop("response_version_loading", None)
+                tab.pop("response_version_target", None)
+                self.status = self.tr("Arka plan iş kuyruğu dolu; yeniden deneyin")
                 self.app.invalidate()
 
-            self._dispatch_ui(ready)
-
-        if not self._operations.submit(work):
-            tab.pop("response_version_loading", None)
-            self.status = self.tr("Arka plan iş kuyruğu dolu; yeniden deneyin")
-            self.app.invalidate()
+        load_version(target)
 
     def _branch_message(self, tab, message):
         key, conversation_id = tab["account_key"], tab["conversation_id"]

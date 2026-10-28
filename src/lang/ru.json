@@ -130,6 +130,7 @@
   "ui.Effort": "Уровень рассуждения",
   "ui.Message copied": "Сообщение скопировано",
   "ui.Response version could not be loaded: {0}": "Не удалось загрузить версию ответа: {0}",
+  "ui.Response version is unavailable": "Эта версия ответа отсутствует в архиве",
   "ui.Sent message to the terminal clipboard": "Сообщение отправлено в буфер терминала",
   "ui.This message is no longer loaded": "Это сообщение больше не загружено",
   "ui.This message has no text to copy": "В этом сообщении нет текста для копирования",

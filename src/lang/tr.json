@@ -130,6 +130,7 @@
   "ui.Effort": "Efor",
   "ui.Message copied": "Mesaj kopyalandı",
   "ui.Response version could not be loaded: {0}": "Yanıt sürümü yüklenemedi: {0}",
+  "ui.Response version is unavailable": "Bu yanıt sürümü arşivde bulunamadı",
   "ui.Sent message to the terminal clipboard": "Mesaj terminal panosuna gönderildi",
   "ui.This message is no longer loaded": "Bu mesaj artık yüklü değil",
   "ui.This message has no text to copy": "Bu mesajda kopyalanacak metin yok",
