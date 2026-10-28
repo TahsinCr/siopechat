@@ -1,7 +1,7 @@
 """Standalone ChatGPT backend; all session paths are supplied by callers."""
 
-from .errors import ChatGPTWebError, SentinelCompatibilityError
 from .client import ChatGPTClient
+from .errors import ChatGPTWebError, SentinelCompatibilityError
 from .session import BrowserSession, SessionPaths
 
 __all__ = [

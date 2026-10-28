@@ -30,9 +30,11 @@ class SyncConcurrencyTests(unittest.TestCase):
 
     def test_rename_survives_older_history_after_listing_confirms_new_title(self):
         account, remote = "claude/a", "chat"
-        history = {"id": remote, "title": "Old", "messages": [
-            {"id": "one", "role": "assistant", "text": "Existing answer"}
-        ]}
+        history = {
+            "id": remote,
+            "title": "Old",
+            "messages": [{"id": "one", "role": "assistant", "text": "Existing answer"}],
+        }
         self.archive.put(account, "conversation", remote, history)
         entered, release = threading.Event(), threading.Event()
 
@@ -40,9 +42,11 @@ class SyncConcurrencyTests(unittest.TestCase):
             entered.set()
             if not release.wait(3):
                 raise TimeoutError("test barrier")
-            return dict(history, messages=history["messages"] + [
-                {"id": "two", "role": "assistant", "text": "New remote answer"}
-            ])
+            return dict(
+                history,
+                messages=history["messages"]
+                + [{"id": "two", "role": "assistant", "text": "New remote answer"}],
+            )
 
         with ThreadPoolExecutor(1) as pool:
             pending = pool.submit(
@@ -51,9 +55,9 @@ class SyncConcurrencyTests(unittest.TestCase):
             try:
                 self.assertTrue(entered.wait(1))
                 self.archive.rename_conversation(account, remote, "Renamed")
-                self.archive.put(account, "chats", "", {"items": [
-                    {"id": remote, "title": "Renamed"}
-                ]})
+                self.archive.put(
+                    account, "chats", "", {"items": [{"id": remote, "title": "Renamed"}]}
+                )
             finally:
                 release.set()
             result = pending.result(3)

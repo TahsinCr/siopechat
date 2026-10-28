@@ -385,10 +385,12 @@ class SQLiteRepository:
                 if kind in ("chats", "container_chats")
                 else []
             )
-            conversation_ids = list(dict.fromkeys(
-                self._remote(account, item.get("remote_id") or item.get("id") or remote)
-                for item in conversations
-            ))
+            conversation_ids = list(
+                dict.fromkeys(
+                    self._remote(account, item.get("remote_id") or item.get("id") or remote)
+                    for item in conversations
+                )
+            )
             pending_titles = {}
             for start in range(0, len(conversation_ids), 500):
                 batch = conversation_ids[start : start + 500]

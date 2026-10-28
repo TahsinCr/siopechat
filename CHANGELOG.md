@@ -19,6 +19,8 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Changed
 
+- Move provider protocol, transport, catalog, session, history, upload, and message-action tests into the standalone `src/providers/tests` suite; keep application integration tests under `tests/`.
+- Run application, standalone provider, provider-package smoke, and JavaScript tests from `run_tests.py`; prefer the existing `python/` virtual environment before other environment fallbacks.
 - Capture all browser cookies scoped to `gemini.google.com` during Gemini verification instead of restricting the provider session to a fixed name allowlist.
 - Read Gemini thinking choices, disabled states, and defaults from the account's native web model policy; display each available effort's provider identifier unchanged in the shared picker.
 - Resolve per-user data, state, cache, and runtime directories from the normalized project name in package metadata; pass the caller-owned cache path to the Sentinel process instead of maintaining a second hardcoded cache root.
@@ -43,6 +45,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 
 ### Removed
 
+- Remove the app-suite test that copied and reran the full provider suite; `run_tests.py` now runs provider tests once from an isolated temporary package copy, while CI checks the installed wheel and source distribution.
 - Remove the unused `data_dir` path helper and replace misleading legacy-path naming with explicit application-root and user-data paths.
 - Remove static locale-key/source scans and the source-tree JavaScript file-set check; keep runtime text-format validation, architecture boundaries, and built-package smoke checks.
 

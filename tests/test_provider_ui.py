@@ -8,8 +8,8 @@ from unittest.mock import Mock, patch
 
 from providers.chatgpt.discovery import model_catalog
 from providers.chatgpt.errors import SentinelCompatibilityError
+from providers.tests.fixtures import CATALOG
 from tests.account_fixture import configured_application as create_application
-from tests.provider_fixtures import CATALOG
 from tests.tui_support import immediate, terminal
 
 

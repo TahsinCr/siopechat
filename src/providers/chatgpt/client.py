@@ -20,8 +20,14 @@ from ..errors import RateLimited
 from .constants import CHATGPT_ORIGIN, DEFAULT_PAGE_SIZE
 from .discovery import (
     model_catalog as parse_model_catalog,
+)
+from .discovery import (
     page as parse_page,
+)
+from .discovery import (
     project as parse_project,
+)
+from .discovery import (
     project_id as extract_project_id,
 )
 from .errors import ChatGPTWebError, SentinelCompatibilityError
@@ -329,9 +335,7 @@ class ChatGPTClient:
             fresh = [
                 item for item in items if isinstance(item, dict) and item.get("id") not in seen
             ]
-            conversations.extend(
-                dict(item, project_id=extract_project_id(item)) for item in fresh
-            )
+            conversations.extend(dict(item, project_id=extract_project_id(item)) for item in fresh)
             seen.update(item["id"] for item in fresh if item.get("id"))
             offset += len(items)
             if maximum is not None and len(conversations) >= maximum:

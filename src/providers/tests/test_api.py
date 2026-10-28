@@ -60,9 +60,7 @@ class PublicAPITests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(GeminiStreamError, "10 dakikalık süre sınırını"):
             _ = [
                 event
-                async for event in provider.stream(
-                    SendRequest("gemini", "test", "local", "Hello")
-                )
+                async for event in provider.stream(SendRequest("gemini", "test", "local", "Hello"))
             ]
         self.assertTrue(stopped.is_set())
 
@@ -85,9 +83,7 @@ class PublicAPITests(unittest.IsolatedAsyncioTestCase):
         async def consume():
             return [
                 event
-                async for event in provider.stream(
-                    SendRequest("gemini", "test", "local", "Hello")
-                )
+                async for event in provider.stream(SendRequest("gemini", "test", "local", "Hello"))
             ]
 
         task = asyncio.create_task(consume())

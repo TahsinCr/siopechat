@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 
-from backend import BackendService
 from providers.claude.transport import ClaudeTransport, organization_from_bootstrap
 from providers.errors import AccountPaused, ProviderError, RateLimited, RemoteNotFound
 from providers.gemini.rpc import NotebookEditor, NotebookRPC
@@ -106,13 +105,6 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
         self.path.write_text("[]")
         with self.assertRaises(AccountPaused):
             read_session(self.path)
-
-    def test_custom_application_root_cannot_overwrite_real_session(self):
-        backend = BackendService(Path(self.directory.name))
-        self.assertTrue(backend.auth_store_path().is_relative_to(Path(self.directory.name)))
-        self.assertTrue(
-            backend.create_session().paths.profile.is_relative_to(Path(self.directory.name))
-        )
 
 
 class NotebookHTTPTests(unittest.IsolatedAsyncioTestCase):

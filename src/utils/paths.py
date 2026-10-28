@@ -27,9 +27,7 @@ def _application_data_name() -> str:
         for distribution in importlib.metadata.distributions():
             for entry in distribution.files or ():
                 entry_parts = tuple(str(entry).replace("\\", "/").split("/"))
-                installed_path = os.path.normcase(
-                    os.path.realpath(distribution.locate_file(entry))
-                )
+                installed_path = os.path.normcase(os.path.realpath(distribution.locate_file(entry)))
                 if entry_parts[-2:] == ("utils", "paths.py") and installed_path == module_path:
                     project_name = distribution.metadata["Name"]
                     break

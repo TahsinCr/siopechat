@@ -1,7 +1,7 @@
 """Independent Gemini web-session adapter (no paid model API)."""
 
-from .errors import GeminiCompatibilityError, GeminiError, GeminiStreamError
 from .adapter import GeminiProvider
+from .errors import GeminiCompatibilityError, GeminiError, GeminiStreamError
 
 __all__ = [
     "GeminiCompatibilityError",

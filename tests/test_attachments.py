@@ -15,16 +15,6 @@ from tui.attachments import AttachmentPicker
 
 
 class AttachmentPolicyTests(unittest.TestCase):
-    def test_provider_limits_are_runtime_owned_and_distinct(self):
-        self.assertEqual(policy_for("gemini").max_files, 10)
-        self.assertEqual(policy_for("gemini").max_video_bytes, 2 * 1024 * 1024 * 1024)
-        self.assertEqual(policy_for("claude").max_files, 20)
-        self.assertEqual(policy_for("claude").max_files_scope, "conversation")
-        self.assertEqual(policy_for("chatgpt").max_bytes, 512 * 1024 * 1024)
-        self.assertEqual(policy_for("chatgpt").max_image_bytes, 20 * 1024 * 1024)
-        self.assertEqual(policy_for("chatgpt").max_spreadsheet_bytes, 50 * 1024 * 1024)
-        self.assertIsNone(policy_for("unknown"))
-
     def test_preflight_keeps_earliest_eligible_files_and_trims_limits(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

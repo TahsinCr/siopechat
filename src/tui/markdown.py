@@ -506,9 +506,7 @@ def message_body_text(message):
 def visible_chat_messages(messages):
     """Return visible transcript messages without moving answer metadata."""
     return [
-        visible
-        for message in messages
-        if (visible := visible_chat_message(message)) is not None
+        visible for message in messages if (visible := visible_chat_message(message)) is not None
     ]
 
 

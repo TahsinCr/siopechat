@@ -2,9 +2,9 @@
 
 import re
 
-from .errors import GeminiCompatibilityError, GeminiError
 from ..messages import actions_for, sources_from
 from ..models import Content, Conversation, Message, Resource
+from .errors import GeminiCompatibilityError, GeminiError
 from .media import _field, candidate_files, resolve_image_links
 
 _CITATION_MARKER = re.compile(r"\[cite:\s*([\d,\s]+)\]")

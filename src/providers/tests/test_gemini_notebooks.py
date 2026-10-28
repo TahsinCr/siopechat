@@ -1,16 +1,16 @@
-"""Synthetic native notebook records; no captured personal data in fixtures."""
+"""Gemini notebook protocol tests without application imports."""
 
 import unittest
 from unittest.mock import AsyncMock
 
-from accounts import Accounts
 from providers.errors import ProviderError
 from providers.gemini.notebooks import Notebooks, project_from_native
-from tests.provider_fixtures import notebook
+
+from .fixtures import notebook
 
 
 class NotebookTests(unittest.IsolatedAsyncioTestCase):
-    async def test_list_details_resources_and_native_types_stay_in_gemini(self):
+    async def test_native_notebook_details_and_resources_are_normalized(self):
         service = Notebooks("http://127.0.0.1:9231", "account")
         service.read = AsyncMock(return_value=[[None, None, [notebook()]]])
         page = await service.list()
@@ -24,17 +24,10 @@ class NotebookTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(project.metadata["kind"], "notebook")
         self.assertEqual(project.metadata["notebook_type"], 3)
         self.assertTrue(project.metadata["url"].startswith("https://gemini.google.com/"))
-        common = Accounts.project_record("gemini/account", project)
-        self.assertEqual(common["kind"], "notebook")
-        self.assertEqual(common["name"], project.name)
-        self.assertEqual(common["instructions"], project.instructions)
-        self.assertEqual(common["resources"][0]["name"], "Research notes")
-        self.assertEqual(common["provider_id"], "gemini")
-        self.assertTrue(common["metadata"]["supports_chat"])
         service.read.return_value = [[notebook()]]
         self.assertEqual(await service.get("notebooks/abcdef"), project)
 
-    async def test_unknown_native_contract_is_explicit_and_does_not_invent_data(self):
+    async def test_unknown_native_contract_fails_without_inventing_data(self):
         with self.assertRaises(ProviderError):
             project_from_native(["wrong-id", []], "account")
         service = Notebooks("http://127.0.0.1:9231", "account")

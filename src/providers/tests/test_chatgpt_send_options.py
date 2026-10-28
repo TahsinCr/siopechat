@@ -11,7 +11,8 @@ import httpx
 from providers.chatgpt import BrowserSession, ChatGPTClient, SessionPaths
 from providers.chatgpt.discovery import model_catalog
 from providers.chatgpt.errors import ChatGPTWebError, SentinelCompatibilityError
-from tests.provider_fixtures import CATALOG
+
+from .fixtures import CATALOG
 
 
 class SendOptionsTests(unittest.TestCase):

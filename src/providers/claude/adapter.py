@@ -26,9 +26,9 @@ from ..models import (
 )
 from ..projects import ProjectEditing
 from ..session import delete_session, session_exists
+from .errors import ClaudeCompatibilityError, ClaudeStreamError
 from .records import conversation, conversation_attachment_count, project
 from .transport import ClaudeProjectEditor, ClaudeTransport
-from .errors import ClaudeCompatibilityError, ClaudeStreamError
 
 
 class ClaudeProvider(ProjectEditing, OptionalFeatures):
@@ -338,4 +338,6 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
                         files=tuple(event.get("files", ())),
                     )
             if not completed:
-                raise ClaudeStreamError("Claude response ended before completion; it was not resent")
+                raise ClaudeStreamError(
+                    "Claude response ended before completion; it was not resent"
+                )

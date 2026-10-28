@@ -3,8 +3,8 @@
 import re
 from urllib.parse import urlparse
 
-from .errors import GeminiCompatibilityError, GeminiError
 from ..models import Conversation, Origin, Page, Project, Resource
+from .errors import GeminiCompatibilityError, GeminiError
 from .history import timestamp
 
 

@@ -10,13 +10,13 @@ from unittest.mock import patch
 
 import httpx
 
-from backend import BackendService
 from providers.chatgpt import BrowserSession, ChatGPTClient, ChatGPTProvider, SessionPaths
 from providers.chatgpt.discovery import model_catalog
 from providers.chatgpt.errors import ChatGPTWebError
 from providers.chatgpt.formats import normalize_conversation
 from providers.models import ModelCatalog
-from tests.provider_fixtures import CATALOG
+
+from .fixtures import CATALOG
 
 PROJECT = {
     "gizmo": {
@@ -90,21 +90,6 @@ class DiscoveryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.client.create_project("Demo", visibility="public")
         self.client.request.assert_not_called()
-
-    def test_catalog_is_account_data_cached_and_roundtrips_through_ipc(self):
-        backend = BackendService()
-        value, stop = backend.handle_daemon_command(self.client, {"command": "models"})
-        catalog = ModelCatalog.from_dict(json.loads(json.dumps(value))["catalog"])
-        self.assertFalse(stop)
-        self.assertEqual([m.id for m in catalog.models], ["account-thinking", "account-instant"])
-        self.assertEqual(catalog.effort("account-thinking"), "standard")
-        self.assertEqual(catalog.models[0].efforts[0].title, "Standard")
-        self.assertIsNone(catalog.effort("account-instant"))
-        self.client.model_catalog()
-        self.assertEqual(len(self.requests), 1)
-        self.client.model_catalog(refresh=True)
-        self.assertEqual(len(self.requests), 2)
-        self.assertEqual(self.requests[0].url.params["is_gizmo"], "false")
 
     def test_chat_picker_uses_categories_without_exposing_work_variants_or_pinning_versions(self):
         raw = {
@@ -251,19 +236,6 @@ class DiscoveryTests(unittest.TestCase):
         self.client.delete_conversation("chat")
         with self.assertRaises(ChatGPTWebError):
             self.client.request("GET", "https://chatgpt.com/backend-api/test")
-
-    def test_old_daemon_is_replaced_before_new_discovery_commands(self):
-        backend = BackendService()
-        with (
-            patch.object(
-                backend, "daemon_request", side_effect=[{"ready": True}, {"stopping": True}]
-            ) as request,
-            patch.object(backend, "daemon_is_ready", return_value=False),
-            patch.object(backend, "start_daemon") as start,
-        ):
-            backend.ensure_daemon(Path("unused"), "http://localhost:9222")
-        self.assertEqual(request.call_args_list[-1].args[1], {"command": "stop"})
-        start.assert_called_once()
 
     def test_model_and_effort_reach_the_actual_stream_request(self):
         sent = []

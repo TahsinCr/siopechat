@@ -19,8 +19,6 @@ from ..api import (
 )
 from ..contracts import OptionalFeatures, confirm_deleted
 from ..errors import (
-    AccountPaused,
-    CompatibilityError,
     FeatureUnavailable,
     ProviderError,
     RateLimited,

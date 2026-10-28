@@ -717,20 +717,15 @@ class MessageToolbarTests(unittest.TestCase):
             "id": "answer",
             "role": "assistant",
             "text": "Answer",
-            "metadata": {
-                "sources": [{"title": "Reference", "url": "https://example.com/source"}]
-            },
+            "metadata": {"sources": [{"title": "Reference", "url": "https://example.com/source"}]},
             "actions": ["retry", "branch"],
         }
         with terminal(initial_messages=[message]) as (view, _):
             from tui.widgets import TranscriptControl
 
-            answer = view.messages[0]
             fragments = TranscriptControl(view)._message_toolbar(0, 100)
             labels = [
-                text
-                for style, text, *_ in fragments
-                if style == "class:message.toolbar.action"
+                text for style, text, *_ in fragments if style == "class:message.toolbar.action"
             ]
             self.assertEqual(len(labels), 4)
             self.assertIn("↗", labels[-1])
@@ -781,9 +776,7 @@ class MessageToolbarTests(unittest.TestCase):
             view._restore_active_tab(focus=False)
             view.remove_deleted_conversation_tabs({"deleted"})
 
-            self.assertEqual(
-                [item["conversation_id"] for item in view.tabs], ["previous", "next"]
-            )
+            self.assertEqual([item["conversation_id"] for item in view.tabs], ["previous", "next"])
             self.assertEqual(view.tabs[view.active_tab]["conversation_id"], "previous")
 
             view.tabs = [tab("left"), tab("inactive-delete"), tab("active")]
@@ -791,9 +784,7 @@ class MessageToolbarTests(unittest.TestCase):
             view._restore_active_tab(focus=False)
             view.remove_deleted_conversation_tabs({"inactive-delete"})
             self.assertEqual(view.tabs[view.active_tab]["conversation_id"], "active")
-            self.assertEqual(
-                [item["conversation_id"] for item in view.tabs], ["left", "active"]
-            )
+            self.assertEqual([item["conversation_id"] for item in view.tabs], ["left", "active"])
 
             view.tabs = [tab("last")]
             view.active_tab = 0
@@ -817,10 +808,12 @@ class MessageToolbarTests(unittest.TestCase):
             view.conversation_id = "deleted"
             view._save_active_tab()
             view.remove_deleted_conversation_tabs({"deleted"})
-            view.load_conversation = Mock(return_value={
-                "title": "Saved conversation",
-                "messages": [{"id": "answer", "role": "assistant", "text": "Hello"}],
-            })
+            view.load_conversation = Mock(
+                return_value={
+                    "title": "Saved conversation",
+                    "messages": [{"id": "answer", "role": "assistant", "text": "Hello"}],
+                }
+            )
             view._dispatch_ui = lambda callback: callback()
             with patch.object(view._reads, "submit", side_effect=lambda read: read() or True):
                 view.resume_conversation("saved")
@@ -839,9 +832,7 @@ class MessageToolbarTests(unittest.TestCase):
                     "id": "answer",
                     "role": "assistant",
                     "text": "Answer",
-                    "metadata": {
-                        "sources": [{"title": "Reference", "url": "https://example.com"}]
-                    },
+                    "metadata": {"sources": [{"title": "Reference", "url": "https://example.com"}]},
                 }
             ]
         )
@@ -850,10 +841,12 @@ class MessageToolbarTests(unittest.TestCase):
             view.render_transcript()
             control = TranscriptControl(view)
             content = control.create_content(80, 20)
-            toolbar_row, = control._toolbar_rows
+            (toolbar_row,) = control._toolbar_rows
 
             self.assertEqual(control._toolbar_rows[toolbar_row], 0)
-            self.assertTrue(any("Sources" in fragment[1] for fragment in content.get_line(toolbar_row)))
+            self.assertTrue(
+                any("Sources" in fragment[1] for fragment in content.get_line(toolbar_row))
+            )
 
     def test_completion_metadata_adds_sources_and_file_to_the_owning_answer_once(self):
         from tui.chat import _SendStream

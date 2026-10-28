@@ -388,10 +388,12 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
             try:
                 await self.settle(lambda: view.app.is_running)
                 await self.settle(
-                    lambda: view.app.renderer._last_screen is not None
-                    and any(
-                        "Ara" in line and "⌕" in line and "☷" in line
-                        for line in screen_text(view).splitlines()
+                    lambda: (
+                        view.app.renderer._last_screen is not None
+                        and any(
+                            "Ara" in line and "⌕" in line and "☷" in line
+                            for line in screen_text(view).splitlines()
+                        )
                     )
                 )
 
@@ -400,8 +402,7 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
                 search_row = next(
                     row
                     for row in screen.data_buffer.values()
-                    if "Ara"
-                    in "".join(cell.char for _, cell in sorted(row.items()))
+                    if "Ara" in "".join(cell.char for _, cell in sorted(row.items()))
                 )
                 divider = search_row.get(view.sidebar_width())
                 self.assertIsNotNone(divider)

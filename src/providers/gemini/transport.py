@@ -44,7 +44,7 @@ class Frames:
                 break
 
             end = self.payload_start + self.scanned_chars
-            payload, self.pending = self.pending[self.payload_start:end], self.pending[end:]
+            payload, self.pending = self.pending[self.payload_start : end], self.pending[end:]
             self._reset_frame()
             try:
                 rows = json.loads(payload)

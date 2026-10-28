@@ -121,9 +121,7 @@ class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
         provider._stream = delayed_response
         events = [
             event
-            async for event in provider.stream(
-                SendRequest("gemini", "test", "local", "question")
-            )
+            async for event in provider.stream(SendRequest("gemini", "test", "local", "question"))
         ]
 
         self.assertEqual(events, [ReplaceText("answer")])
@@ -152,9 +150,12 @@ class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
         await session.sync_activity()
 
         payloads = session.batch.await_args.args[0]
-        self.assertEqual([(item.rpcid, item.payload) for item in payloads], [
-            ("ESY5D", '[[["bard_activity_enabled"]]]'),
-        ])
+        self.assertEqual(
+            [(item.rpcid, item.payload) for item in payloads],
+            [
+                ("ESY5D", '[[["bard_activity_enabled"]]]'),
+            ],
+        )
 
     async def test_catalog_is_cached_but_expiry_and_force_refresh_entitlements(self):
         provider = GeminiProvider(Path("unused"))
@@ -216,8 +217,7 @@ class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
             size = len(("\n" + payload).encode("utf-16-le")) // 2
             return f"{size}\n{payload}"
 
-        wire = (")]}'\n\n" + "".join(encode(frame) for frame in frames) + "\n"
-        ).encode()
+        wire = (")]}'\n\n" + "".join(encode(frame) for frame in frames) + "\n").encode()
         parser = Frames()
         output = []
         for byte in wire:

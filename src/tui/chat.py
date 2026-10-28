@@ -776,9 +776,7 @@ class ChatView:
                     self.status = self.tr("Bu sohbet sağlayıcıdan silinmiş · yeni sohbet açın")
                 continue
             state = states.get((key, "conversation", remote))
-            if tab.get("history_load_complete") and not (
-                state and state["state"] == "syncing"
-            ):
+            if tab.get("history_load_complete") and not (state and state["state"] == "syncing"):
                 tab.pop("history_load_pending", None)
                 tab.pop("history_load_complete", None)
                 if i == self.active_tab and not tab.get("messages"):
@@ -1602,9 +1600,7 @@ class ChatView:
                         "class:button",
                         " ✎ " + self.tr("Yeniden Adlandır") + " ",
                         on_click(
-                            lambda: self.open_conversation_rename(
-                                self.conversation_id, self.title
-                            )
+                            lambda: self.open_conversation_rename(self.conversation_id, self.title)
                         ),
                     )
                 )
@@ -2000,8 +1996,8 @@ class ChatView:
                         "class:button",
                         " ✎",
                         on_click(
-                            lambda identifier=chat_id, name=row["title"]: self.open_conversation_rename(
-                                identifier, name
+                            lambda identifier=chat_id, name=row["title"]: (
+                                self.open_conversation_rename(identifier, name)
                             )
                         ),
                     )
@@ -3607,21 +3603,23 @@ class ChatView:
             )
         self.tabs.pop(index)
         if not self.tabs:
-            self.tabs.append({
-                "tab_id": uuid.uuid4().hex,
-                "account_key": self.account_key,
-                "catalog": self.catalog,
-                "effort_preference": self.effort_preference,
-                "conversation_id": None,
-                "title": "" if empty_workspace else self.tr("New conversation"),
-                "messages": [],
-                "model": self.model,
-                "effort": self.effort,
-                "project": {},
-                "busy": False,
-                "completed_pending": False,
-                "empty_workspace": empty_workspace,
-            })
+            self.tabs.append(
+                {
+                    "tab_id": uuid.uuid4().hex,
+                    "account_key": self.account_key,
+                    "catalog": self.catalog,
+                    "effort_preference": self.effort_preference,
+                    "conversation_id": None,
+                    "title": "" if empty_workspace else self.tr("New conversation"),
+                    "messages": [],
+                    "model": self.model,
+                    "effort": self.effort,
+                    "project": {},
+                    "busy": False,
+                    "completed_pending": False,
+                    "empty_workspace": empty_workspace,
+                }
+            )
             self.active_tab = 0
         elif index < old_active:
             self.active_tab = old_active - 1
@@ -3640,9 +3638,7 @@ class ChatView:
     def remove_deleted_conversation_tabs(self, conversation_ids):
         removed = set(conversation_ids)
         indexes = [
-            index
-            for index, tab in enumerate(self.tabs)
-            if tab.get("conversation_id") in removed
+            index for index, tab in enumerate(self.tabs) if tab.get("conversation_id") in removed
         ]
         if not indexes:
             return
@@ -5740,7 +5736,9 @@ class ChatView:
         self.loading_started = time.monotonic()
         self.status = self.tr("Loading conversation…")
         target_tab.update(
-            loading=True, loading_started=self.loading_started, load_token=token,
+            loading=True,
+            loading_started=self.loading_started,
+            load_token=token,
             empty_workspace=False,
         )
         if self.account_service:
@@ -5906,9 +5904,8 @@ class ChatView:
                 self._dispatch_ui(show_error)
 
         def enqueue_load(delay=0.1):
-            if (
-                target_tab.get("load_token") != token
-                or not any(tab is target_tab for tab in self.tabs)
+            if target_tab.get("load_token") != token or not any(
+                tab is target_tab for tab in self.tabs
             ):
                 return
             if self._reads.submit(load_selected):

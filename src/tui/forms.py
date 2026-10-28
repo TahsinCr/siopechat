@@ -53,9 +53,7 @@ class Forms:
         self.fields = {}
         self.error = ""
 
-    def open(
-        self, title, fields, submit, *, inline_project=None, actions=None, submit_label=None
-    ):
+    def open(self, title, fields, submit, *, inline_project=None, actions=None, submit_label=None):
         self.inline_project = inline_project
         self.fields, body, self.error = {}, [], ""
         single_line_controls = []
@@ -204,9 +202,7 @@ class Forms:
                     width = get_cwidth(line)
                     fragments.append((style, line, handler or scroll))
                     if width < line_width:
-                        fragments.append(
-                            ("class:dialog.body", " " * (line_width - width), scroll)
-                        )
+                        fragments.append(("class:dialog.body", " " * (line_width - width), scroll))
                     line_count += 1
 
             url = str(item.get("url") or "").strip()
@@ -277,12 +273,8 @@ class Forms:
         keys.add("pagedown", is_global=True, filter=popup_active)(
             lambda _: scroll_by(max(1, pane_height - 1))
         )
-        keys.add("home", is_global=True, filter=popup_active)(
-            lambda _: scroll_by(-content_height)
-        )
-        keys.add("end", is_global=True, filter=popup_active)(
-            lambda _: scroll_by(content_height)
-        )
+        keys.add("home", is_global=True, filter=popup_active)(lambda _: scroll_by(-content_height))
+        keys.add("end", is_global=True, filter=popup_active)(lambda _: scroll_by(content_height))
         pane = ScrollablePane(
             HSplit(rows, padding=0, key_bindings=keys),
             keep_cursor_visible=False,
