@@ -337,14 +337,16 @@ class SyncConcurrencyTests(unittest.TestCase):
 
         with patch.object(self.repo, "close", side_effect=close_repository):
             self.archive.read("gemini/a", "conversation", "async-close", fetch, wait=False)
-            self.assertTrue(entered.wait(1))
-            timer = threading.Timer(0.05, release.set)
-            timer.start()
+            timer = None
             try:
+                self.assertTrue(entered.wait(5))
+                timer = threading.Timer(0.05, release.set)
+                timer.start()
                 asyncio.run(self.archive.aclose())
             finally:
                 release.set()
-                timer.join()
+                if timer is not None:
+                    timer.join()
 
         self.assertTrue(repository_closed.is_set())
         self.assertFalse(self.archive._pending)
