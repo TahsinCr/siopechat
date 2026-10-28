@@ -4165,7 +4165,7 @@ class ChatView:
     def transcript_width(self) -> int:
         return min(
             DEFAULT_MESSAGE_WIDTH,
-            max(8, self.main_width() - DEFAULT_TRANSCRIPT_GUTTER_WIDTH - 2),
+            max(8, self.main_width() - DEFAULT_TRANSCRIPT_GUTTER_WIDTH - 1),
         )
 
     def transcript_rows(self, viewport_height=None):
