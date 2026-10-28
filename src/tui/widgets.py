@@ -25,6 +25,7 @@ class TranscriptControl(UIControl):
         self._content_width = 0
         self._toolbar_rows = {}
         self._toolbar_fragments = {}
+        self._pressed_interactive = None
         self.clear_selection()
 
     def clear_selection(self):
@@ -32,6 +33,7 @@ class TranscriptControl(UIControl):
         self.anchor = self.extent = None
         self.selection_rows = ()
         self.selected_text = ""
+        self._pressed_interactive = None
 
     def _bounds(self, line):
         if not self.selected_text or self.anchor is None or self.extent is None:
@@ -142,7 +144,11 @@ class TranscriptControl(UIControl):
         tab_id = tab.get("tab_id")
         has_versions = version_count > 1 and role == "assistant"
         version_label = f"{version_index}/{version_count}"
-        message_width = min(width, self.view.transcript_width())
+        # The UIContent width includes the transcript's right edge, but the
+        # scrollbar margin owns those terminal cells for mouse input. Keep the
+        # toolbar two cells inside the painted edge so its last arrow remains
+        # inside the Window's registered click area.
+        message_width = max(1, min(width, self.view.transcript_width()) - 2)
         prefix = " " if message_width >= 2 else ""
         toolbar_style = f"class:message.toolbar.{role}"
         settings = dict(message.get("_response_settings", ())) if role == "assistant" else {}
@@ -251,6 +257,47 @@ class TranscriptControl(UIControl):
             fragments.extend(versions)
         return fragments
 
+    def _line_fragments(self, line):
+        if line in self._toolbar_rows:
+            spans = self._toolbar_fragments.get(line)
+            if spans is None:
+                spans = self._message_toolbar(self._toolbar_rows[line], self._content_width)
+                self._toolbar_fragments[line] = spans
+            return spans
+        if hasattr(self.rows, "paint_row"):
+            row = self.rows.paint_row(line)
+            return row[0] if row is not None else ()
+        return self.rows[line][0]
+
+    def _fragment_hit(self, line, x):
+        spans = self._line_fragments(line)
+        if not spans:
+            return None
+        position = 0
+        for span in spans:
+            end = position + get_cwidth(span[1])
+            if position <= x < end:
+                return position, end, span
+            position = end
+        return None
+
+    @staticmethod
+    def _is_interactive(span):
+        if span is None or len(span) < 3:
+            return False
+        handler = span[2]
+        return callable(handler) or bool(getattr(handler, "url", None))
+
+    def _activate_fragment(self, line, span, mouse_event):
+        handler = span[2]
+        url = getattr(handler, "url", None)
+        if url and hasattr(self.view, "open_message_link"):
+            self.view.open_message_link(url, self.rows[line][1])
+            return None
+        if callable(handler):
+            return handler(mouse_event)
+        return None
+
     def mouse_handler(self, mouse_event):
         if mouse_event.button != MouseButton.LEFT:
             return NotImplemented
@@ -259,41 +306,51 @@ class TranscriptControl(UIControl):
             return NotImplemented
         if mouse_event.event_type == MouseEventType.MOUSE_DOWN:
             self.clear_selection()
+            self.view.select_message(self.rows[line][1])
+            hit = self._fragment_hit(line, mouse_event.position.x)
+            if line in self._toolbar_rows:
+                target = hit if hit and self._is_interactive(hit[2]) else None
+                self._pressed_interactive = ("toolbar", line, target)
+                return None
             self.dragging = True
             self.selection_rows = self.rows
             self.anchor = (line, mouse_event.position.x)
             self.extent = self.anchor
-            self.view.select_message(self.rows[line][1])
+            if hit and self._is_interactive(hit[2]):
+                self._pressed_interactive = ("content", line, hit)
             return None
-        if mouse_event.event_type == MouseEventType.MOUSE_MOVE and self.anchor is not None:
+        if mouse_event.event_type == MouseEventType.MOUSE_MOVE and self._pressed_interactive:
+            kind, pressed_line, hit = self._pressed_interactive
+            if kind == "toolbar":
+                return None
+            if self.anchor == (line, mouse_event.position.x):
+                return None
+            self._pressed_interactive = None
+        if (
+            mouse_event.event_type == MouseEventType.MOUSE_MOVE
+            and self.dragging
+            and self.anchor is not None
+        ):
             self._select_to(mouse_event.position)
             return None
         if mouse_event.event_type == MouseEventType.MOUSE_UP:
+            pressed = self._pressed_interactive
+            if pressed is not None:
+                self._pressed_interactive = None
+                kind, pressed_line, hit = pressed
+                if kind == "toolbar":
+                    if hit and line == pressed_line and hit[0] <= mouse_event.position.x < hit[1]:
+                        return self._activate_fragment(pressed_line, hit[2], mouse_event)
+                    return None
+                if self.anchor == (line, mouse_event.position.x):
+                    return self._activate_fragment(pressed_line, hit[2], mouse_event)
             self.dragging = False
             if self.anchor is not None:
                 self._select_to(mouse_event.position)
             if self.selected_text:
                 return None
-            spans = self._toolbar_fragments.get(line)
-            if spans is None and line in self._toolbar_rows:
-                spans = self._message_toolbar(self._toolbar_rows[line], self._content_width)
-                self._toolbar_fragments[line] = spans
-            if spans is None:
-                spans = self.rows[line][0]
-            position = 0
-            for span in spans:
-                end = position + get_cwidth(span[1])
-                if position <= mouse_event.position.x < end and len(span) > 2:
-                    # The view resolves files with the originating account/chat context.
-                    handler = span[2]
-                    url = getattr(handler, "url", None)
-                    if url and hasattr(self.view, "open_message_link"):
-                        self.view.open_message_link(url, self.rows[line][1])
-                        return None
-                    if callable(handler):
-                        return handler(mouse_event)
-                position = end
-            self.view.select_message(self.rows[line][1])
+            self.anchor = self.extent = None
+            self.selection_rows = ()
             return None
         return NotImplemented
 

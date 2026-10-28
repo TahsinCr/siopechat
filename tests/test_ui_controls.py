@@ -18,11 +18,129 @@ from bootstrap import create_application
 from providers.chatgpt import BrowserSession, ChatGPTClient, SessionPaths
 from providers.chatgpt.errors import ChatGPTWebError
 from providers.models import Choice, FeatureState, Model, ModelCatalog
-from tests.tui_support import click, immediate, terminal, wait_until
+from tests.tui_support import ResizableOutput, click, immediate, terminal, wait_until
 from tui.widgets import TranscriptControl
 
 
 class UiControlsTests(unittest.TestCase):
+    def test_repeated_next_clicks_with_pointer_drift_load_the_newest_reply_once(self):
+        message = {
+            "id": "answer",
+            "role": "assistant",
+            "text": "version 1",
+            "actions": [],
+            "_response_version_index": 1,
+            "_response_version_count": 2,
+            "_response_version_current_index": 2,
+        }
+
+        class QueuedOperations:
+            def __init__(self):
+                self.pending = []
+
+            def submit(self, work):
+                self.pending.append(work)
+                return True
+
+        class ResponseVersions:
+            def __init__(self):
+                self.requested = []
+
+            def response_version(self, account, conversation, message_id, version):
+                self.requested.append(version)
+                return {
+                    "message": {
+                        "id": message_id,
+                        "role": "assistant",
+                        "text": f"version {version}",
+                    },
+                    "index": version,
+                    "count": 2,
+                    "current_index": 2,
+                }
+
+        with terminal(initial_messages=[message]) as (view, _):
+            tab = view.tabs[view.active_tab]
+            tab.update(conversation_id="chat", account_key="chatgpt/default")
+            view.messages = tab["messages"]
+            operations = QueuedOperations()
+            service = ResponseVersions()
+            view._operations = operations
+            view.account_service = service
+
+            control = TranscriptControl(view)
+            fragments = control._message_toolbar(0, 100)
+            next_button = next(
+                span
+                for span in fragments
+                if len(span) > 2
+                and span[0] == "class:message.toolbar.action"
+                and span[1].strip() == "›"
+            )
+            x = sum(get_cwidth(span[1]) for span in fragments[: fragments.index(next_button)])
+            control.rows = ((fragments, 0),)
+            control._toolbar_rows = {0: 0}
+            control._toolbar_fragments = {0: fragments}
+            control._content_width = 100
+
+            for _ in range(2):
+                control.mouse_handler(
+                    MouseEvent(Point(x + 1, 0), MouseEventType.MOUSE_DOWN, MouseButton.LEFT, frozenset())
+                )
+                control.mouse_handler(
+                    MouseEvent(Point(x + 2, 0), MouseEventType.MOUSE_MOVE, MouseButton.LEFT, frozenset())
+                )
+                control.mouse_handler(
+                    MouseEvent(Point(x + 2, 0), MouseEventType.MOUSE_UP, MouseButton.LEFT, frozenset())
+                )
+
+            self.assertEqual(len(operations.pending), 1)
+            operations.pending.pop()()
+            self.assertEqual(service.requested, [2])
+            self.assertEqual(view.messages[0]["text"], "version 2")
+            self.assertEqual(view.messages[0]["_response_version_index"], 2)
+            self.assertNotIn("response_version_loading", tab)
+
+            for expected_index in (1, 2, 1, 2, 1, 2):
+                fragments = control._message_toolbar(0, 100)
+                arrow = "‹" if expected_index == 1 else "›"
+                button = next(
+                    span
+                    for span in fragments
+                    if len(span) > 2
+                    and span[0] == "class:message.toolbar.action"
+                    and span[1].strip() == arrow
+                )
+                x = sum(
+                    get_cwidth(span[1]) for span in fragments[: fragments.index(button)]
+                )
+                control.rows = ((fragments, 0),)
+                control._toolbar_rows = {0: 0}
+                control._toolbar_fragments = {0: fragments}
+                control._content_width = 100
+                control.mouse_handler(
+                    MouseEvent(
+                        Point(x + 1, 0), MouseEventType.MOUSE_DOWN, MouseButton.LEFT, frozenset()
+                    )
+                )
+                control.mouse_handler(
+                    MouseEvent(
+                        Point(x + 2, 0), MouseEventType.MOUSE_MOVE, MouseButton.LEFT, frozenset()
+                    )
+                )
+                control.mouse_handler(
+                    MouseEvent(
+                        Point(x + 2, 0), MouseEventType.MOUSE_UP, MouseButton.LEFT, frozenset()
+                    )
+                )
+
+                self.assertEqual(len(operations.pending), 1)
+                operations.pending.pop()()
+                self.assertEqual(view.messages[0]["_response_version_index"], expected_index)
+                self.assertNotIn("response_version_loading", tab)
+
+            self.assertEqual(service.requested, [2, 1, 2, 1, 2, 1, 2])
+
     def test_message_toolbar_fits_its_row_and_ignores_disabled_version_callbacks(self):
         message = {
             "id": "answer",
@@ -48,10 +166,14 @@ class UiControlsTests(unittest.TestCase):
             )
             self.assertEqual(len(disabled), 2)
             control.rows = ((fragments, 0),)
+            control._toolbar_rows = {0: 0}
             control._toolbar_fragments = {0: fragments}
             control._content_width = 14
             control.view.select_message = Mock()
             x = sum(get_cwidth(fragment[1]) for fragment in fragments[: fragments.index(disabled)])
+            control.mouse_handler(
+                MouseEvent(Point(x, 0), MouseEventType.MOUSE_DOWN, MouseButton.LEFT, frozenset())
+            )
             control.mouse_handler(
                 MouseEvent(Point(x, 0), MouseEventType.MOUSE_UP, MouseButton.LEFT, frozenset())
             )
@@ -78,10 +200,17 @@ class UiControlsTests(unittest.TestCase):
                 get_cwidth(fragment[1]) for fragment in fragments[: fragments.index(version_next)]
             )
             control.rows = ((fragments, 0),)
+            control._toolbar_rows = {0: 0}
             control._toolbar_fragments = {0: fragments}
             control._content_width = 100
             control.mouse_handler(
-                MouseEvent(Point(x, 0), MouseEventType.MOUSE_UP, MouseButton.LEFT, frozenset())
+                MouseEvent(Point(x + 1, 0), MouseEventType.MOUSE_DOWN, MouseButton.LEFT, frozenset())
+            )
+            control.mouse_handler(
+                MouseEvent(Point(x + 2, 0), MouseEventType.MOUSE_MOVE, MouseButton.LEFT, frozenset())
+            )
+            control.mouse_handler(
+                MouseEvent(Point(x + 2, 0), MouseEventType.MOUSE_UP, MouseButton.LEFT, frozenset())
             )
             view.message_toolbar_action.assert_called_once_with(
                 view.tabs[view.active_tab]["tab_id"], view.messages[0], "version_next"
@@ -297,6 +426,105 @@ class UiControlsTests(unittest.TestCase):
             view.settings_dialog.cycle_choice(1)
             self.assertEqual(view.settings_dialog.editor.text, "tr")
             self.assertEqual(rows[0]["value"], "en")
+
+
+class ToolbarMouseIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_right_version_arrow_stays_clickable_across_repeated_navigation(self):
+        class ResponseVersions:
+            closed = False
+
+            def items(self):
+                return []
+
+            def response_version(self, account, conversation, message_id, version):
+                return {
+                    "message": {
+                        "id": message_id,
+                        "role": "assistant",
+                        "text": f"version {version}",
+                    },
+                    "index": version,
+                    "count": 2,
+                    "current_index": 2,
+                }
+
+        message = {
+            "id": "answer",
+            "role": "assistant",
+            "text": "version 1",
+            "actions": [],
+            "_response_version_index": 1,
+            "_response_version_count": 2,
+            "_response_version_current_index": 2,
+        }
+        with terminal(output=ResizableOutput(), initial_messages=[message]) as (view, pipe):
+            tab = view.tabs[view.active_tab]
+            tab.update(conversation_id="chat", account_key="chatgpt/default")
+            view.messages = tab["messages"]
+            view.account_service = ResponseVersions()
+            app_task = asyncio.create_task(view.app.run_async())
+            await asyncio.sleep(0.05)
+
+            async def wait_for_version(index):
+                for _ in range(100):
+                    if tab["messages"][0].get("_response_version_index") == index:
+                        return
+                    await asyncio.sleep(0.01)
+                self.fail(f"reply version did not change to {index}")
+
+            def screen_rows():
+                return sorted(view.app.renderer._last_screen.data_buffer.items())
+
+            async def wait_for_rendered_version(index):
+                label = f"{index}/2"
+                for _ in range(100):
+                    if any(
+                        label
+                        in "".join(
+                            row[x].char if x in row else " "
+                            for x in range(max(row, default=-1) + 1)
+                        )
+                        for _, row in screen_rows()
+                    ):
+                        return
+                    await asyncio.sleep(0.01)
+                self.fail(f"reply version {label} was not painted")
+
+            try:
+                await wait_for_rendered_version(1)
+                for arrow, expected in (("›", 2), ("‹", 1), ("›", 2), ("‹", 1), ("›", 2)):
+                    target = None
+                    for y, row in screen_rows():
+                        line = "".join(
+                            row[x].char if x in row else " " for x in range(max(row, default=-1) + 1)
+                        )
+                        if "1/2" not in line and "2/2" not in line:
+                            continue
+                        target = next(
+                            (
+                                (x, y)
+                                for x, cell in row.items()
+                                if cell.char == arrow
+                                and x
+                                in view.app.renderer.mouse_handlers.mouse_handlers.get(y, {})
+                            ),
+                            None,
+                        )
+                        if target is not None:
+                            break
+                    self.assertIsNotNone(
+                        target,
+                        f"version arrow {arrow} for {expected}/2 has no mouse hit area",
+                    )
+                    x, y = target
+                    pipe.send_bytes(
+                        f"\x1b[<0;{x + 1};{y + 1}M\x1b[<0;{x + 1};{y + 1}m".encode()
+                    )
+                    await wait_for_version(expected)
+                    await wait_for_rendered_version(expected)
+            finally:
+                view.app.exit()
+                await asyncio.wait_for(app_task, 2)
 
 
 class DialogInputTests(unittest.IsolatedAsyncioTestCase):

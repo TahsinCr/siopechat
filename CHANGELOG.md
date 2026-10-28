@@ -4,9 +4,11 @@ All notable changes to SiopeChat are documented here.
 
 The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
-Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.2-beta`).
+Python distributions use the corresponding PEP 440 version (`1.5b0` for `v1.5-beta`).
 
 ## [Unreleased]
+
+## [1.5-beta] - 2026-10-28
 
 ### Added
 
@@ -54,6 +56,7 @@ Python distributions use the corresponding PEP 440 version (`1.4.2b0` for `v1.4.
 ### Fixed
 
 - Keep rapid previous/next answer-version clicks in order while an archived version is loading; report a missing archive version instead of silently ignoring the selection.
+- Keep answer-version arrows inside the transcript's clickable area, clear of the scrollbar margin, and separate toolbar presses from transcript text selection.
 - Preserve Gemini's total generation deadline on Python 3.10, the standalone provider package's minimum supported version, while keeping caller cancellation distinct.
 - Preserve ChatGPT Sentinel incompatibility errors through the provider/task layers, report clearly that the prompt was not sent, and release the chat operation so the user can try again after an update.
 - Keep signer diagnostics out of user-visible errors and exceptions; the Sentinel failure reports a safe compatibility message without exposing raw subprocess output.

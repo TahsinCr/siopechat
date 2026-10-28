@@ -24,7 +24,7 @@ Uygulama, giriş yaptığınız kendi web oturumlarınızı kullanır. API anaht
 - Komut paleti, değiştirilebilir kısayollar, fare desteği ve yerel eklentiler.
 - İngilizce, Türkçe ve Rusça arayüz katalogları.
 
-**v1.4.2-beta**, sağlayıcıya uygun mesaj düzenleme, yeniden deneme ve dallandırma araçları ekler; yeniden deneme geçmişini yerel SQLite arşivinde saklar. Dalların eşitlenmesini iyileştirir ve bağımsız sağlayıcı API'sine yerel mesaj kimlikleriyle kaynak metaverisini ekler. Python dağıtım sürümü `1.4.2b0` olur.
+**v1.5-beta**, sağlayıcıların yayımladığı kaynakları, düşünme özetlerini ve arama etkinliğini yanıtlara ekler; üretilen dosyaları sohbet içinde indirmeyi ve sohbetleri yeniden adlandırmayı sağlar. Gemini efor seçenekleri hesabın web politikasından alınır. Arka plan geçmiş eşitlemesi ve yanıt sürümleri arasında gezinme iyileştirildi. Python dağıtım sürümü `1.5b0` olur.
 
 ## Kurulum ve giriş
 
@@ -212,6 +212,6 @@ GitHub Actions, Linux, Windows ve macOS üzerinde uygulama için Python 3.11/3.1
 
 Telif hakkı © TahsinCr. [GPL-3.0-only](LICENSE) ile lisanslanmıştır. Dahil edilen üçüncü taraf bileşenlerin bildirimleri `src/utils/` altında korunur.
 
-[version-shield]: https://img.shields.io/badge/version-v1.4.2--beta-b7a3e3.svg?style=for-the-badge
+[version-shield]: https://img.shields.io/badge/version-v1.5--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge

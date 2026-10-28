@@ -24,7 +24,7 @@ It uses your own signed-in web sessions. There are no API keys to configure, and
 - A command palette, configurable shortcuts, mouse controls and local extensions.
 - English, Turkish and Russian interface catalogs.
 
-**v1.4.2-beta** adds provider-aware message editing, retries and branching, with retry history saved in the local SQLite archive. It also improves branch synchronization and adds native message identities and source metadata to the standalone provider API. The Python distribution version is `1.4.2b0`.
+**v1.5-beta** adds provider-published sources, thinking summaries and search activity to replies, along with inline generated-file downloads and conversation renaming. Gemini effort choices now follow the account’s web policy. Background history synchronization and reply-version navigation are more reliable. The Python distribution version is `1.5b0`.
 
 ## Install and sign in
 
@@ -218,6 +218,6 @@ The GitHub Actions workflow runs the locked application Python 3.11/3.14 and Nod
 
 Copyright © TahsinCr. Licensed under [GPL-3.0-only](LICENSE). Vendored components retain their own notices in `src/utils/`.
 
-[version-shield]: https://img.shields.io/badge/version-v1.4.2--beta-b7a3e3.svg?style=for-the-badge
+[version-shield]: https://img.shields.io/badge/version-v1.5--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge
