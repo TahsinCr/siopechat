@@ -11,6 +11,7 @@ from unittest.mock import Mock, patch
 
 from bootstrap import create_application
 from language import Catalog, literal
+from providers import Capability
 from settings import DEFAULTS
 from tests import tui_support as interaction
 from tests.tui_support import ResizableOutput, screen_text
@@ -82,6 +83,20 @@ class LocalizationTests(unittest.TestCase):
                 self.assertEqual(statuses["archive"].state, "active")
             finally:
                 api.runtime.close()
+
+    def test_temporary_status_label_is_rendered_in_each_bundled_locale(self):
+        expected = {
+            "en": ("Temporary", "Off"),
+            "tr": ("Geçici", "Kapalı"),
+            "ru": ("Временный", "Выкл."),
+        }
+        with interaction.terminal() as (view, _):
+            view.provider_features = frozenset({Capability.TEMPORARY})
+            for locale, (label, state) in expected.items():
+                view.translations = catalog().merged(locale)
+                header = "".join(fragment[1] for fragment in view.render_chat_header())
+                self.assertIn(label, header, locale)
+                self.assertIn(state, header, locale)
 
 
 class RussianTerminalTests(unittest.IsolatedAsyncioTestCase):

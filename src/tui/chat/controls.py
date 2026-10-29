@@ -102,15 +102,16 @@ class ControlsComponent:
             + f" {ICONS['dropdown'].icon} "
         )
         temporary_supported = Capability.TEMPORARY in self.provider_features
+        temporary_label = self.tr("Geçici")
         if self.temporary:
             temporary_style = "class:metadata.temporary"
-            temporary_text = f" {self.tr('Açık')} {ICONS['running'].icon} "
+            temporary_text = f" {temporary_label} {self.tr('Açık')} {ICONS['running'].icon} "
         elif temporary_supported:
             temporary_style = "class:metadata.temporary.disabled"
-            temporary_text = f" {self.tr('Kapalı')} {ICONS['disabled'].icon} "
+            temporary_text = f" {temporary_label} {self.tr('Kapalı')} {ICONS['disabled'].icon} "
         else:
             temporary_style = "class:metadata.temporary.disabled"
-            temporary_text = f" {self.tr('Desteklenmiyor')} "
+            temporary_text = f" {temporary_label} {self.tr('Desteklenmiyor')} "
         fragments = (
             list(self.render_project_actions()) + [("", "\n")] if self.tab_kind == "project" else []
         )
