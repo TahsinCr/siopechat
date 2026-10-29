@@ -144,11 +144,10 @@ class TranscriptControl(UIControl):
         tab_id = tab.get("tab_id")
         has_versions = version_count > 1 and role == "assistant"
         version_label = f"{version_index}/{version_count}"
-        # Keep controls two cells inside the content edge: the final columns
-        # can be claimed by the scrollbar's mouse area. Paint that reserved
-        # space with the message toolbar background below.
-        paint_width = min(width, self.view.transcript_width())
-        message_width = max(1, paint_width - 2)
+        # Window supplies the usable content width after subtracting margins.
+        # Use it directly: main_width() is only an estimate in split panes.
+        paint_width = max(1, width)
+        message_width = paint_width
         prefix = " " if message_width >= 2 else ""
         toolbar_style = f"class:message.toolbar.{role}"
         settings = dict(message.get("_response_settings", ())) if role == "assistant" else {}

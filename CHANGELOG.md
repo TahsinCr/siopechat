@@ -10,7 +10,7 @@ Python distributions use the corresponding PEP 440 version (`1.5b0` for `v1.5-be
 
 ### Fixed
 
-- Fill the transcript's reserved right edge with each message's background while keeping reply-version controls inside the scrollbar-safe click area.
+- Align reply-version controls with the active transcript pane's actual right edge, including split panes.
 
 ## [1.5-beta] - 2026-10-28
 
