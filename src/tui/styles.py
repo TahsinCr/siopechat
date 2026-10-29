@@ -62,10 +62,10 @@ DEFAULT_COMPOSER_MAX_LINES = 6
 
 ICONS: dict[str, IconStyleItem] = {
     "role.user": IconStyleItem(
-        name="role.user", color="#69aef2", bgcolor="#202020", style="bold", icon="●"
+        name="role.user", color="#69aef2", bgcolor="#202020", style="bold", icon=">"
     ),
     "role.assistant": IconStyleItem(
-        name="role.assistant", color="#78c9a6", bgcolor="#202020", style="bold", icon="◆"
+        name="role.assistant", color="#78c9a6", bgcolor="#202020", style="bold", icon="*"
     ),
     "role.reasoning": IconStyleItem(
         name="role.reasoning", color="#b6a2e5", bgcolor="#202020", style="bold", icon="◇"
