@@ -4,6 +4,7 @@ import asyncio
 import json
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -23,6 +24,17 @@ from tui.widgets import TranscriptControl
 
 
 class UiControlsTests(unittest.TestCase):
+    def test_running_footer_formats_elapsed_time_without_crashing(self):
+        with terminal() as (view, _):
+            view.busy = True
+            view.busy_tab_index = view.active_tab
+            view.active_started = time.monotonic() - 65.25
+
+            activity = "".join(fragment[1] for fragment in view.render_activity())
+
+            self.assertIn(view.tr("Yanıt üretiliyor"), activity)
+            self.assertRegex(activity, r"\b\d+m \d{2}s\b")
+
     def test_stopping_active_response_closes_its_provider_connection(self):
         with terminal() as (view, _):
             tab = view.tabs[view.active_tab]

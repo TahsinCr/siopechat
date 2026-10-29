@@ -61,9 +61,9 @@ DEFAULT_TRANSCRIPT_GUTTER_WIDTH = 4
 DEFAULT_COMPOSER_MAX_LINES = 6
 
 ICONS: dict[str, IconStyleItem] = {
-    "role.user": IconStyleItem(name="role.user", color="#69aef2", style="bold", icon=">"),
-    "role.assistant": IconStyleItem(name="role.assistant", color="#78c9a6", style="bold", icon="◆"),
-    "role.reasoning": IconStyleItem(name="role.reasoning", color="#b6a2e5", style="bold", icon="◇"),
+    "role.user": IconStyleItem(name="role.user", color="#67ff53", style="bold", icon=">"),
+    "role.assistant": IconStyleItem(name="role.assistant", color="#ff8000", style="bold", icon="◆"),
+    "role.reasoning": IconStyleItem(name="role.reasoning", color="#ff8000", style="bold", icon="◇"),
     "provider.chatgpt": IconStyleItem(
         name="provider.chatgpt", color="#ffffff", style="bold", icon="◎"
     ),

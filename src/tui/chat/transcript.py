@@ -32,6 +32,7 @@ from ..styles import (
 
 
 class TranscriptComponent:
+    @staticmethod
     def format_elapsed(seconds: float) -> str:
         total = max(0, int(seconds))
         if total < 60:
