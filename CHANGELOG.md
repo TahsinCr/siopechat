@@ -8,6 +8,10 @@ Python distributions use the corresponding PEP 440 version (`1.5b0` for `v1.5-be
 
 ## [Unreleased]
 
+### Fixed
+
+- Use the transcript background behind role icons in the conversation gutter while preserving each role's icon color.
+
 ### Added
 
 - List every built-in and registered extension action in Settings → Shortcuts, including actions without a default shortcut; allow users to leave a shortcut unassigned.
