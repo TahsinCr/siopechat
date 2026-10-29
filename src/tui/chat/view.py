@@ -22,6 +22,7 @@ from providers.models import FeatureState, ModelCatalog
 from settings import DEFAULT_KEYBINDINGS
 
 from ..bindings import key_bindings
+from ..icons import Icon
 from ..layout import render_tab_bar, workspace_layout
 from ..markdown import (
     MessageRenderer,
@@ -323,7 +324,9 @@ class ChatView(
         self.sidebar_window = Window(
             content=self.sidebar_control, wrap_lines=False, always_hide_cursor=True
         )
-        self.palette_search = TextArea(height=1, prompt="⌕ ", style="class:palette.search")
+        self.palette_search = TextArea(
+            height=1, prompt=f"{Icon.SEARCH} ", style="class:palette.search"
+        )
         self.palette_search.buffer.on_text_changed += lambda _buffer: self.filter_palette()
         self.palette_control = BoundedTextControl(
             text=self.render_palette,

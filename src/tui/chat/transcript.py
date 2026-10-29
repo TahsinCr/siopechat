@@ -18,6 +18,7 @@ from ..history import (
     prepare_transcript,
     prepare_virtual_transcript,
 )
+from ..icons import Icon
 from ..markdown import (
     DEFAULT_MARKDOWN_THEME,
     index_transcript,
@@ -54,9 +55,11 @@ class TranscriptComponent:
                 [
                     (
                         "",
-                        self.tr(
-                            " ● Yanıt {0}. sekmede sürüyor · diğer sekmelere geçebilirsiniz "
-                        ).format(running),
+                        f" {Icon.RUNNING} "
+                        + self.tr(
+                            "Yanıt {0}. sekmede sürüyor · diğer sekmelere geçebilirsiniz"
+                        ).format(running)
+                        + " ",
                     )
                 ]
             )
@@ -68,7 +71,7 @@ class TranscriptComponent:
             else self.upload_started
         )
         if started is not None:
-            frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+            frames = Icon.SPINNER
             frame = frames[int((time.monotonic() - started) * 10) % len(frames)]
             elapsed = self.format_elapsed(time.monotonic() - started)
             phase = (
@@ -90,9 +93,11 @@ class TranscriptComponent:
                     [
                         (
                             "class:sync",
-                            self.tr(" ↻ Senkronizasyon · {0} kayıt · {1} ").format(
+                            f" {Icon.RETRY} "
+                            + self.tr("Senkronizasyon · {0} kayıt · {1}").format(
                                 len(pending_sync), self.status
-                            ),
+                            )
+                            + " ",
                         )
                     ]
                 )
@@ -140,7 +145,7 @@ class TranscriptComponent:
                 [
                     (
                         "",
-                        " 📎 "
+                        f" {Icon.ATTACHMENT} "
                         + self.tr("{0} dosya hazır").format(len(self.pending_attachments))
                         + " ",
                     )

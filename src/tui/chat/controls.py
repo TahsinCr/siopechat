@@ -8,6 +8,7 @@ from prompt_toolkit.utils import get_cwidth
 from accounts import origin
 from providers import Capability
 
+from ..icons import Icon
 from ..layout import render_tab_bar
 from ..widgets import (
     fit_text,
@@ -39,11 +40,19 @@ class ControlsComponent:
             [
                 (
                     "class:button",
-                    self.tr(" ✎ Düzenle "),
+                    f" {Icon.EDIT} {self.tr('Düzenle')} ",
                     on_click(lambda: self.project_panel.edit(self.current_project.get("id"))),
                 ),
-                ("class:button", self.tr(" ＋ Kaynak "), on_click(self.project_panel.add_source)),
-                ("class:button", self.tr(" − Kaynak "), on_click(self.project_panel.remove_source)),
+                (
+                    "class:button",
+                    f" {Icon.ADD} {self.tr('Kaynak')} ",
+                    on_click(self.project_panel.add_source),
+                ),
+                (
+                    "class:button",
+                    f" {Icon.MINUS} {self.tr('Kaynak')} ",
+                    on_click(self.project_panel.remove_source),
+                ),
                 (
                     "class:button",
                     self.tr(" Sil "),
@@ -53,7 +62,7 @@ class ControlsComponent:
                 ),
                 (
                     "class:button",
-                    self.tr(" ↻ Eşitle "),
+                    f" {Icon.RETRY} {self.tr('Eşitle')} ",
                     on_click(self.show_project_details),
                 ),
             ]
@@ -85,18 +94,22 @@ class ControlsComponent:
                 if selected.metadata.get("effort_error")
                 else self.tr("Desteklenmiyor")
             )
-        model_text = self.tr(" Model: {0} ▾ ").format(model)
-        effort_text = self.tr(" Efor: {0} ▾ ").format(effort)
+        model_text = self.tr(" Model: {0}").format(model) + f" {Icon.DROPDOWN} "
+        effort_text = self.tr(" Efor: {0}").format(effort) + f" {Icon.DROPDOWN} "
         project_text = (
             self.tr(" Proje: ")
             + fit_text(self.current_project.get("name") or self.tr("Projesiz"), 22)
-            + " ▾ "
+            + f" {Icon.DROPDOWN} "
         )
         temporary_supported = Capability.TEMPORARY in self.provider_features
         temporary_text = (
             self.tr(" Geçici: ")
             + (
-                (self.tr("Açık ●") if self.temporary else self.tr("Kapalı ○"))
+                (
+                    self.tr("Açık") + f" {Icon.RUNNING}"
+                    if self.temporary
+                    else self.tr("Kapalı") + f" {Icon.DISABLED}"
+                )
                 if temporary_supported
                 else self.tr("Desteklenmiyor")
             )
@@ -334,7 +347,7 @@ class ControlsComponent:
         controls = [
             (
                 "class:button",
-                self.tr(" ↻ Eşitle "),
+                f" {Icon.RETRY} {self.tr('Eşitle')} ",
                 on_click(lambda: self.synchronize("conversation")),
             )
         ]
@@ -343,7 +356,7 @@ class ControlsComponent:
                 controls.append(
                     (
                         "class:button",
-                        " ✎ " + self.tr("Yeniden Adlandır") + " ",
+                        f" {Icon.EDIT} " + self.tr("Yeniden Adlandır") + " ",
                         on_click(
                             lambda: self.open_conversation_rename(self.conversation_id, self.title)
                         ),
@@ -352,12 +365,14 @@ class ControlsComponent:
             controls.append(
                 (
                     "class:button",
-                    " 🗑" + self.tr(" Sil "),
+                    f" {Icon.DELETE}" + self.tr(" Sil "),
                     on_click(lambda: self.delete_record(value=self.conversation_id)),
                 )
             )
         if self.layout_enabled:
-            controls.append(("class:button", self.tr(" ◫ Böl "), on_click(self.begin_split)))
+            controls.append(
+                ("class:button", f" {Icon.SPLIT} {self.tr('Böl')} ", on_click(self.begin_split))
+            )
         return controls
 
     def render_composer_actions(self):
@@ -367,21 +382,21 @@ class ControlsComponent:
             controls.append(
                 (
                     "class:button",
-                    f" {len(self.pending_attachments)} 📎 "
+                    f" {len(self.pending_attachments)} {Icon.ATTACHMENT} "
                     if self.pending_attachments
-                    else " ＋ "
+                    else f" {Icon.ADD} "
                     if compact
-                    else self.tr(" ＋ Dosya "),
+                    else f" {Icon.ADD} {self.tr('Dosya')} ",
                     on_click(self.open_attachment),
                 )
             )
         if not self.follow_output:
-            controls.append(("class:button", " ↓ ", on_click(self.scroll_bottom)))
+            controls.append(("class:button", f" {Icon.DOWN} ", on_click(self.scroll_bottom)))
         if self.active_busy():
             controls.append(
                 (
                     "class:button",
-                    " ■ " if compact else " ■ " + self.tr("Durdur") + " ",
+                    f" {Icon.STOP} " if compact else f" {Icon.STOP} " + self.tr("Durdur") + " ",
                     on_click(self.stop_active_response),
                 )
             )
@@ -389,7 +404,7 @@ class ControlsComponent:
             controls.append(
                 (
                     "class:button",
-                    " ↑ " if compact else self.tr(" Gönder ↑ "),
+                    f" {Icon.UP} " if compact else self.tr(" Gönder") + f" {Icon.UP} ",
                     on_click(self.submit_prompt),
                 )
             )
@@ -403,11 +418,14 @@ class ControlsComponent:
                 lambda: self.handle_command("/help"),
             ),
             (self.downloads_panel.footer_label(), self.downloads_panel.open),
-            (" ⚙ " + self.text("settings", self.tr("Ayarlar")) + " ", self.settings_dialog.open),
             (
-                self.tr(" ● Hesaplar ")
+                f" {Icon.SETTINGS} " + self.text("settings", self.tr("Ayarlar")) + " ",
+                self.settings_dialog.open,
+            ),
+            (
+                f" {Icon.RUNNING} " + self.tr("Hesaplar") + " "
                 if self.session_state.get("authenticated")
-                else self.tr(" ○ Hesaplar "),
+                else f" {Icon.DISABLED} " + self.tr("Hesaplar") + " ",
                 self.session_dialog.open,
             ),
         ]

@@ -16,6 +16,7 @@ from prompt_toolkit.layout.margins import ScrollbarMargin
 from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Button, TextArea
 
+from .icons import Icon
 from .widgets import BoundedTextControl, SelectionWindow, fit_text, on_click
 
 
@@ -136,7 +137,9 @@ class DownloadsPanel:
         panel_keys.add("tab")(lambda event: event.app.layout.focus_next())
         panel_keys.add("s-tab")(lambda event: event.app.layout.focus_previous())
         panel_keys.add("escape")(lambda _: view.close_tab())
-        refresh = self.refresh_button = Button(view.tr("↻ Eşitle"), handler=self.refresh, width=14)
+        refresh = self.refresh_button = Button(
+            f"{Icon.RETRY} {view.tr('Eşitle')}", handler=self.refresh, width=14
+        )
         actions = [
             Button(view.tr("Sohbete git"), handler=self.open_chat, width=18),
             Button(view.tr("Dosyayı sil"), handler=lambda: self.remove(True), width=18),
@@ -184,7 +187,7 @@ class DownloadsPanel:
     def header(self):
         tr = self.view.tr
         return [
-            ("class:downloads.title", "  ↓ " + tr("İndirmeler")),
+            ("class:downloads.title", f"  {Icon.DOWN} " + tr("İndirmeler")),
             ("class:downloads.summary", f"   {len(self.records)} {tr('Kayıt')}"),
             ("class:downloads.summary", f"  ·  {self.active_count} {tr('Devam eden')}"),
         ]
@@ -211,7 +214,7 @@ class DownloadsPanel:
             totals = [r.get("total") for r in active]
             detail = str(int(size * 100 / sum(totals))) + "%" if all(totals) else size_label(size)
             label += f" {len(active)} · {detail}"
-        return " ↓ " + label + " "
+        return f" {Icon.DOWN} " + label + " "
 
     def service(self):
         api = getattr(self.view.account_service, "api", None)
@@ -225,7 +228,7 @@ class DownloadsPanel:
     def labels(self):
         tr = self.view.tr
         self.search.prompt = tr("Ara  ")
-        self.refresh_button.text = tr("↻ Eşitle")
+        self.refresh_button.text = f"{Icon.RETRY} {tr('Eşitle')}"
         for index, label in (
             (0, "Sohbete git"),
             (1, "Dosyayı sil"),
@@ -421,7 +424,7 @@ class DownloadsPanel:
         selected = " class:downloads.selected" if index == self.index else ""
         click = on_click(lambda: self.pick(index))
         if row[0] == "day":
-            marker = "▸" if row[1] in self.collapsed else "▾"
+            marker = Icon.COLLAPSED if row[1] in self.collapsed else Icon.DROPDOWN
             text = fit_text(f"  {marker}  {row[1]}   ·   {row[2]} {tr('Kayıt')}", width)
             return [("class:downloads.group" + selected, text, click)]
         else:
@@ -466,7 +469,7 @@ class DownloadsPanel:
             )
             if not item.get("conversation_id"):
                 chat = tr("Geçici sohbet / kaynak yok")
-            text = fit_text(f"      ↳  {chat}   ·   {item['account']}", width)
+            text = fit_text(f"      {Icon.NEXT}  {chat}   ·   {item['account']}", width)
             return [("class:downloads.source" + selected, text, click)]
 
     def activate(self):

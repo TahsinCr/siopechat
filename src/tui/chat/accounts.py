@@ -7,6 +7,7 @@ from providers import Capability
 from providers.models import FeatureState, ModelCatalog
 from providers.registry import PROVIDERS
 
+from ..icons import Icon
 from ..library import SORT_OPTIONS
 
 
@@ -72,7 +73,11 @@ class AccountComponent:
             and hasattr(self.account_service, "enabled")
             and not self.account_service.enabled(key.split("/")[0])
         ):
-            self.status = self.tr("Sağlayıcı devre dışı · Ayarlar → Sağlayıcılar")
+            self.status = (
+                self.tr("Sağlayıcı devre dışı · Ayarlar")
+                + f" {Icon.RIGHT} "
+                + self.tr("Sağlayıcılar")
+            )
             self.app.invalidate()
             return False
         if (

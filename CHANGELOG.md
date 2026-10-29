@@ -17,6 +17,7 @@ Python distributions use the corresponding PEP 440 version (`1.5b0` for `v1.5-be
 
 ### Changed
 
+- Centralize terminal UI glyphs in `src/tui/icons.py` while preserving the current appearance, so icon choices can be reviewed and changed consistently.
 - Permit duplicate shortcut assignments and mark every conflicting action in red in Settings.
 - Reduce the sidebar width on narrow terminals so the transcript and its controls retain usable space.
 - Resolve built-in action labels from the active locale and use the existing English catalog fallback for untranslated keys.

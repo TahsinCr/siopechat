@@ -10,6 +10,8 @@ import uuid
 from providers import Capability
 from providers.models import FeatureState
 
+from ..icons import Icon
+
 
 class ComposerComponent:
     def submit_prompt(self) -> None:
@@ -27,7 +29,11 @@ class ComposerComponent:
             and hasattr(self.account_service, "enabled")
             and not self.account_service.enabled(self.provider_id)
         ):
-            self.status = self.tr("Sağlayıcı devre dışı · taslak korundu · Ayarlar → Sağlayıcılar")
+            self.status = (
+                self.tr("Sağlayıcı devre dışı · taslak korundu · Ayarlar")
+                + f" {Icon.RIGHT} "
+                + self.tr("Sağlayıcılar")
+            )
             self.app.invalidate()
             return
         self.normalize_model_selection()
@@ -136,7 +142,7 @@ class ComposerComponent:
         prompt = prompt or self.tr("Please review the attached files.")
         display_prompt = prompt
         if attachments:
-            labels = " ".join(f"[📎 {item['name']}]" for item in attachments)
+            labels = " ".join(f"[{Icon.ATTACHMENT} {item['name']}]" for item in attachments)
             display_prompt = f"{display_prompt}\n\n{labels}"
         tab = self.tabs[self.active_tab]
         window = tab.get("history_window")
@@ -375,7 +381,7 @@ class ComposerComponent:
                 for action_id, _key in sorted(self.keybindings.items())
             )
             navigation_help = self.tr(
-                "- `{0}`: Sol paneli aç ve odağı al\n- `{1}` / `{2}`: proje ve sohbetlerde gezin; `Enter` sohbeti açar veya grubu değiştirir\n- `{3}`: seçili proje/bölümü daralt veya genişlet\n- `{4}`: yüklenmiş sohbetleri ara; `Enter` seçili sohbeti açar\n- `{5}`: sol paneli gizle/göster\n- `{6}`: son 50 sohbeti ara; `Enter` seçileni sekmede açar\n- `{7}` yeni sekme; `{8}` / `{9}` sekme değiştirir; `{10}` sekmeyi kapatır\n- Sekmede `●` yanıtın sürdüğünü, `✓` yanıtın tamamlandığını gösterir\n- Yanıt sürerken açık sekmelere geçilebilir; uyumluluk daemon'ı seri çalıştığı için başka sohbet yükleme/gönderme bekler\n"
+                "- `{0}`: Sol paneli aç ve odağı al\n- `{1}` / `{2}`: proje ve sohbetlerde gezin; `Enter` sohbeti açar veya grubu değiştirir\n- `{3}`: seçili proje/bölümü daralt veya genişlet\n- `{4}`: yüklenmiş sohbetleri ara; `Enter` seçili sohbeti açar\n- `{5}`: sol paneli gizle/göster\n- `{6}`: son 50 sohbeti ara; `Enter` seçileni sekmede açar\n- `{7}` yeni sekme; `{8}` / `{9}` sekme değiştirir; `{10}` sekmeyi kapatır\n- Sekmede `{11}` yanıtın sürdüğünü, `{12}` yanıtın tamamlandığını gösterir\n- Yanıt sürerken açık sekmelere geçilebilir; uyumluluk daemon'ı seri çalıştığı için başka sohbet yükleme/gönderme bekler\n"
             ).format(
                 self.shortcut("navigation.focus_sidebar"),
                 self.shortcut("navigation.sidebar_up"),
@@ -388,6 +394,8 @@ class ComposerComponent:
                 self.shortcut("chat.previous_tab"),
                 self.shortcut("chat.next_tab"),
                 self.shortcut("chat.close_tab"),
+                Icon.RUNNING,
+                Icon.COMPLETE,
             )
             self.append_system(
                 self.text(

@@ -10,6 +10,7 @@ from prompt_toolkit.layout.margins import ScrollbarMargin
 from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Button, Frame
 
+from .icons import Icon
 from .widgets import BoundedTextControl, fit_text, on_click
 
 
@@ -20,7 +21,7 @@ class SessionDialog:
         self.loading = False
         self.confirm_logout = False
         self.add_account_button = Button(
-            self.view.tr("＋ Hesap ekle"), handler=self.view.add_account
+            Icon.ADD + " " + self.view.tr("Hesap ekle"), handler=self.view.add_account
         )
         self.edit_account_button = Button(
             self.view.tr("Hesabı düzenle"), handler=self.view.edit_account
@@ -110,11 +111,15 @@ class SessionDialog:
         if accounts:
             buttons = [self.add_account_button, self.edit_account_button, self.buttons["remove"]]
             labels = [
-                self.view.tr("＋ Hesap ekle"),
+                Icon.ADD + " " + self.view.tr("Hesap ekle"),
                 self.view.tr("Hesabı düzenle"),
                 self.view.tr("Hesabı sil"),
             ]
-            compact = [self.view.tr("＋ Ekle"), self.view.tr("Düzenle"), self.view.tr("Sil")]
+            compact = [
+                Icon.ADD + " " + self.view.tr("Ekle"),
+                self.view.tr("Düzenle"),
+                self.view.tr("Sil"),
+            ]
         else:
             buttons = [self.buttons["verify_profile"], self.buttons["logout"]]
             labels = [
@@ -127,7 +132,7 @@ class SessionDialog:
             ]
         # Both rows share column widths so their second buttons line up.
         full_labels = [
-            self.view.tr("＋ Hesap ekle"),
+            Icon.ADD + " " + self.view.tr("Hesap ekle"),
             self.view.tr("Hesabı sil"),
             self.view.tr("Hesabı düzenle"),
             self.view.text("verify_profile", "Profil ile doğrula"),
@@ -138,7 +143,7 @@ class SessionDialog:
         button_width = max(1, min(preferred, (width - 2) // 3))
         if any(get_cwidth(label) + 2 > button_width for label in labels):
             labels = compact
-        symbols = ["＋", "✎", "×"] if accounts else ["✓", "⏻"]
+        symbols = [Icon.ADD, Icon.EDIT, Icon.CLOSE] if accounts else [Icon.COMPLETE, Icon.POWER]
         labels = [
             label if get_cwidth(label) + 2 <= button_width else symbol
             for label, symbol in zip(labels, symbols)
@@ -173,7 +178,7 @@ class SessionDialog:
     def account_line(self, item, active_keys):
         width = max(1, self.view.settings_dialog.content_width() - 5)
         label = (
-            ("› " if item["key"] == self.view.account_key else "  ")
+            (f"{Icon.FORWARD} " if item["key"] == self.view.account_key else "  ")
             + f"{item['icon']} {item['label']} · {item['provider']}"
             + (self.view.tr(" · etkin") if item["key"] in active_keys else "")
             + (self.view.tr(" · kapalı") if not item.get("enabled", True) else "")
@@ -201,7 +206,7 @@ class SessionDialog:
         self.view.settings_dialog.open("accounts")
 
     def activate(self, focus=True):
-        self.add_account_button.text = self.view.tr("＋ Hesap ekle")
+        self.add_account_button.text = Icon.ADD + " " + self.view.tr("Hesap ekle")
         self.visible = True
         self.confirm_logout = False
         if self.view.account_service:
