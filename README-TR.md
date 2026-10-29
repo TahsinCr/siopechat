@@ -1,4 +1,4 @@
-[![Sürüm: v1.5-beta][version-shield]](CHANGELOG.md)
+[![Sürüm: v1.5.1-beta][version-shield]](CHANGELOG.md)
 [![Python 3.11+][python-shield]](https://www.python.org/downloads/)
 [![GPL-3.0-only][license-shield]](LICENSE)
 
@@ -27,7 +27,7 @@ Sohbetlerinize devam edin, sağlayıcı projelerinizi düzenleyin ve yanıtları
 | --- | --- | --- |
 | Yanıtlarda üretilen dosyaları indirin; ilerlemeyi indirme yöneticisinde izleyin. | Komut paleti, değiştirilebilir kısayollar, fare kontrolleri ve yerel eklentileri kullanın. | İngilizce, Türkçe veya Rusça arayüzü seçin. |
 
-> **Güncel sürüm: v1.5-beta** — Sağlayıcının yayımladığı kaynaklar, düşünme özetleri ve arama etkinliği yanıtlara eklenebilir. Üretilen dosyalar sohbetten indirilebilir ve sohbetler yeniden adlandırılabilir. Gemini efor seçenekleri giriş yapılan hesabın web politikasına uyar. Python dağıtım sürümü `1.5b0`.
+> **Güncel sürüm: v1.5.1-beta** — Sağlayıcının yayımladığı kaynaklar, düşünme özetleri ve arama etkinliği yanıtlara eklenebilir. Üretilen dosyalar sohbetten indirilebilir ve sohbetler yeniden adlandırılabilir. Gemini efor seçenekleri giriş yapılan hesabın web politikasına uyar. Python dağıtım sürümü `1.5.1b0`.
 
 ## Kurulum ve giriş
 
@@ -245,6 +245,6 @@ GitHub Actions, Linux, Windows ve macOS üzerinde uygulama için Python 3.11/3.1
 
 Telif hakkı © TahsinCr. [GPL-3.0-only](LICENSE) ile lisanslanmıştır. Dahil edilen üçüncü taraf bileşenlerin bildirimleri `src/utils/` altında korunur.
 
-[version-shield]: https://img.shields.io/badge/version-v1.5--beta-b7a3e3.svg?style=for-the-badge
+[version-shield]: https://img.shields.io/badge/version-v1.5.1--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge

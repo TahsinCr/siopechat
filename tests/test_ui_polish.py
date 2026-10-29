@@ -141,7 +141,9 @@ class PolishTests(unittest.TestCase):
             )
             self.assertGreater(temporary_index, project_index)
             self.assertIn("Geçici", fragments[temporary_index][1])
-            self.assertIn("Kapalı", fragments[temporary_index][1])
+            self.assertEqual(fragments[temporary_index][0], "class:metadata.temporary.disabled")
+            self.assertIn(ICONS["disabled"].icon, fragments[temporary_index][1])
+            self.assertNotIn("Kapalı", fragments[temporary_index][1])
             count = len(v.tabs)
             v.input.text = "Draft stays here"
             v.current_project = {"id": "project", "name": "Work"}
@@ -150,9 +152,11 @@ class PolishTests(unittest.TestCase):
             self.assertEqual(len(v.tabs), count)
             self.assertEqual(v.input.text, "Draft stays here")
             self.assertEqual(v.current_project, {})
-            header = "".join(fragment[1] for fragment in v.render_chat_header())
+            header_fragments = v.render_chat_header()
+            header = "".join(fragment[1] for fragment in header_fragments)
             self.assertIn("Geçici", header)
-            self.assertIn("Açık", header)
+            self.assertIn(ICONS["running"].icon, header)
+            self.assertNotIn("Açık", header)
             v.toggle_temporary_chat()
             self.assertFalse(v.temporary)
 
@@ -162,9 +166,16 @@ class PolishTests(unittest.TestCase):
             self.assertIn("ilk mesajdan önce", v.status)
 
             v.provider_features = frozenset({Capability.PROJECTS})
-            header = "".join(fragment[1] for fragment in v.render_chat_header())
+            header_fragments = v.render_chat_header()
+            header = "".join(fragment[1] for fragment in header_fragments)
             self.assertIn("Geçici", header)
-            self.assertIn("Desteklenmiyor", header)
+            unsupported_control = next(
+                fragment
+                for fragment in header_fragments
+                if fragment[0] == "class:metadata.temporary.disabled"
+            )
+            self.assertNotIn("Desteklenmiyor", header)
+            self.assertNotIn(ICONS["disabled"].icon, unsupported_control[1])
             v.toggle_temporary_chat()
             self.assertFalse(v.temporary)
             self.assertIn("desteklemiyor", v.status)

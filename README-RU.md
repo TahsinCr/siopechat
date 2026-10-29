@@ -1,4 +1,4 @@
-[![Версия: v1.5-beta][version-shield]](CHANGELOG.md)
+[![Версия: v1.5.1-beta][version-shield]](CHANGELOG.md)
 [![Python 3.11+][python-shield]](https://www.python.org/downloads/)
 [![GPL-3.0-only][license-shield]](LICENSE)
 
@@ -27,7 +27,7 @@
 | --- | --- | --- |
 | Скачивайте созданные файлы прямо из ответов и следите за ходом загрузки. | Используйте палитру команд, настраиваемые сочетания клавиш, мышь и локальные расширения. | Выберите английский, турецкий или русский интерфейс. |
 
-> **Текущая версия: v1.5-beta** — К ответам могут добавляться опубликованные провайдером источники, сводки рассуждений и активность поиска. Созданные файлы можно скачивать из чата, беседы — переименовывать. Усилие Gemini соответствует веб-политике вошедшего аккаунта. Версия Python-дистрибутива — `1.5b0`.
+> **Текущая версия: v1.5.1-beta** — К ответам могут добавляться опубликованные провайдером источники, сводки рассуждений и активность поиска. Созданные файлы можно скачивать из чата, беседы — переименовывать. Усилие Gemini соответствует веб-политике вошедшего аккаунта. Версия Python-дистрибутива — `1.5.1b0`.
 
 ## Установка и вход
 
@@ -245,6 +245,6 @@ GitHub Actions запускает матрицу приложения Python 3.1
 
 Авторское право © TahsinCr. Лицензия — [GPL-3.0-only](LICENSE). Уведомления сторонних компонентов сохранены в `src/utils/`.
 
-[version-shield]: https://img.shields.io/badge/version-v1.5--beta-b7a3e3.svg?style=for-the-badge
+[version-shield]: https://img.shields.io/badge/version-v1.5.1--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge

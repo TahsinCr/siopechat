@@ -1,4 +1,4 @@
-[![Version: v1.5-beta][version-shield]](CHANGELOG.md)
+[![Version: v1.5.1-beta][version-shield]](CHANGELOG.md)
 [![Python 3.11+][python-shield]](https://www.python.org/downloads/)
 [![GPL-3.0-only][license-shield]](LICENSE)
 
@@ -27,7 +27,7 @@ Keep conversations moving, organize provider projects and compare replies side b
 | --- | --- | --- |
 | Download generated files from replies and track progress in the built-in download manager. | Use the command palette, configurable shortcuts, mouse controls and local extensions. | Choose the English, Turkish or Russian interface. |
 
-> **Latest: v1.5-beta** — Provider-published sources, thinking summaries and search activity can accompany replies. Generated files can be downloaded from the conversation, and chats can be renamed. Gemini effort choices follow the signed-in account’s web policy. The Python distribution version is `1.5b0`.
+> **Latest: v1.5.1-beta** — Provider-published sources, thinking summaries and search activity can accompany replies. Generated files can be downloaded from the conversation, and chats can be renamed. Gemini effort choices follow the signed-in account’s web policy. The Python distribution version is `1.5.1b0`.
 
 ## Install and sign in
 
@@ -251,6 +251,6 @@ The GitHub Actions workflow runs the locked application Python 3.11/3.14 and Nod
 
 Copyright © TahsinCr. Licensed under [GPL-3.0-only](LICENSE). Vendored components retain their own notices in `src/utils/`.
 
-[version-shield]: https://img.shields.io/badge/version-v1.5--beta-b7a3e3.svg?style=for-the-badge
+[version-shield]: https://img.shields.io/badge/version-v1.5.1--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge

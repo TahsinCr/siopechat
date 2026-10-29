@@ -4,19 +4,16 @@ All notable changes to SiopeChat are documented here.
 
 The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
-Python distributions use the corresponding PEP 440 version (`1.5b0` for `v1.5-beta`).
+Python distributions use the corresponding PEP 440 version (`1.5.1b0` for `v1.5.1-beta`).
 
 ## [Unreleased]
 
-### Fixed
-
-- Use the transcript background behind role icons in the conversation gutter while preserving each role's icon color.
-- Show only the localized temporary-chat label in the composer bar while retaining its state icon and color.
+## [1.5.1-beta] - 2026-10-29
 
 ### Added
 
-- List every built-in and registered extension action in Settings → Shortcuts, including actions without a default shortcut; allow users to leave a shortcut unassigned.
-- Add copy and paste to the shared action handlers, and bind shortcuts for registered extension actions.
+- List built-in and registered extension actions in Settings → Shortcuts, including actions without a default shortcut; allow users to leave shortcuts unassigned.
+- Add shared copy and paste actions and support shortcuts for registered extension actions.
 - Split the terminal chat view into focused sync, account, tab, sidebar, project, transcript, message-action, history, and send components composed by `ChatView`.
 - Move built-in action titles and group labels into the English, Turkish, and Russian locale bundles.
 
@@ -25,13 +22,13 @@ Python distributions use the corresponding PEP 440 version (`1.5b0` for `v1.5-be
 - Replace emoji and full-width UI glyphs with monochrome, single-cell symbols and an ASCII spinner to reduce platform-dependent rendering and terminal-width drift.
 - Keep application and provider glyphs together in the typed `ICONS` dictionary in `src/tui/styles.py`; each `IconStyleItem` owns its symbol and colors, while provider registry entries contain only provider metadata.
 - Distinguish transcript roles with a prompt-style `>` for user messages, a filled `◆` for assistant replies, and an outlined `◇` for reasoning.
-- Let transcript gutter markers inherit their matching message background instead of forcing a separate fixed background.
-- Store terminal and Markdown styles as typed records with separate foreground, background, and text-attribute fields.
-- Require named fields in TUI style records and require a glyph on every icon-style entry.
+- Use the transcript surface behind role gutter icons when their style has no explicit background, while preserving each role's icon color.
+- Store terminal and Markdown styles as typed records with separate foreground, background, and text-attribute fields; require named fields and a glyph on every icon-style entry.
 - Give user, assistant, and thinking messages distinct dark surfaces, with separately configurable text and role-icon colors.
 - Permit duplicate shortcut assignments and mark every conflicting action in red in Settings.
 - Reduce the sidebar width on narrow terminals so the transcript and its controls retain usable space.
 - Resolve built-in action labels from the active locale and use the existing English catalog fallback for untranslated keys.
+- Show the localized temporary-chat label without textual enabled/disabled status; preserve its state icon and color.
 
 ### Removed
 
@@ -39,17 +36,14 @@ Python distributions use the corresponding PEP 440 version (`1.5b0` for `v1.5-be
 
 ### Fixed
 
-- Drain view-owned background work when shared TUI test terminals close, before temporary SQLite files are removed on Windows.
-- Restore the temporary chat label beside its state in the footer, with English, Turkish, and Russian translations; remove the unused colon-suffixed locale entries.
-- Kept the response-version counter visible in compact message toolbars and simplified the chat footer controls to show values without field labels; inactive temporary chat now uses a muted style while retaining its status icon.
-- Drain TUI-owned background reads before application services and temporary data are closed; wait for actual prompt-toolkit rendering in the Windows mouse-navigation test instead of relying on short fixed sleeps.
+- Drain TUI-owned background work before application services or temporary SQLite files are closed, avoiding Windows file locks in shared terminal tests.
+- Keep the response-version counter visible in compact message toolbars and simplify chat footer values by removing field labels.
 - Keep the project information icon inset from the sidebar divider, including when the sidebar is narrow.
 - Close the active provider connection correctly when a user stops a response.
 - Format elapsed time as a static helper so the running footer redraw does not crash.
 - Keep dynamic running/completed reply markers formatted correctly in English, Turkish, and Russian help text.
 - Mark the transcript message-key helper static so initial rendering does not fail on an unexpected bound `self` argument.
-- Keep transcript role markers in the content coordinate space so reply-version arrow hit targets remain aligned; compact the toolbar and preserve navigation as the terminal narrows.
-- Keep compact message-toolbar controls visually separated without displacing reply-version navigation at narrow widths.
+- Keep transcript role markers in content coordinates so reply-version controls remain aligned and visible as the pane narrows.
 
 ## [1.5-beta] - 2026-10-28
 
