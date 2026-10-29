@@ -1,4 +1,4 @@
-[![Sürüm: v1.4.2-beta][version-shield]](CHANGELOG.md)
+[![Sürüm: v1.5-beta][version-shield]](CHANGELOG.md)
 [![Python 3.11+][python-shield]](https://www.python.org/downloads/)
 [![GPL-3.0-only][license-shield]](LICENSE)
 
@@ -6,29 +6,36 @@
 
 # SiopeChat
 
-SiopeChat; ChatGPT, Gemini ve Claude sohbetlerini aynı terminalde kullanmanızı sağlar. Birden fazla sohbeti açık tutabilir, bölünmüş panellerde yanıtları karşılaştırabilir ve siteler arasında geçmeden projelerinizle çalışabilirsiniz.
+### ChatGPT, Gemini ve Claude web sohbetleri — tek terminalde.
 
-Uygulama, giriş yaptığınız kendi web oturumlarınızı kullanır. API anahtarı gerektirmez; hesabınızın model erişimi ve kullanım sınırları geçerlidir. Bağımsız ve resmî olmayan bir istemcidir. Sağlayıcıların sitelerinde yapılan değişiklikler bazı özellikleri etkileyebilir.
+Sohbetlerinize devam edin, sağlayıcı projelerinizi düzenleyin ve yanıtları yan yana karşılaştırın; hepsi odaklı bir terminal çalışma alanında.
+
+> **API ürünleri değil, web sohbeti için.** SiopeChat, ChatGPT, Gemini ve Claude web oturumlarınız üzerinden çalışan bağımsız ve resmî olmayan bir istemcidir. Sağlayıcıların resmî geliştirici API’lerini veya Codex ve Claude Code gibi kodlama ajanı ürünlerini kullanmaz. API anahtarı gerekmez; aboneliğinizin model erişimi ve kullanım sınırları geçerlidir. Sağlayıcı sitelerindeki değişiklikler uyumluluğu etkileyebilir.
 
 ![SiopeChat terminal çalışma alanı](assets/siopechat.png)
 
-*Sabit varsayılan stilli ve örnek verili gerçek terminal görüntüsü.*
+*Örnek verilerle gösterilen, SiopeChat’in varsayılan arayüzünden gerçek terminal görüntüsü.*
 
-## Neler sunuyor?
+## Neler yapabilirsiniz?
 
-- Ayrı taslak, kaydırma konumu ve yanıt göstergeleri olan sekmeler; grupta en fazla dört bölünmüş panel.
-- Hesaba göre model ve düşünme eforu seçimi; her hesap için son seçimin hatırlanması.
-- ChatGPT ve Claude projeleri, Gemini defterleri; desteklendiği ölçüde talimat ve kaynak yönetimi.
-- Proje ve sohbetlere uygulanan arama, hesap filtresi, tarih ve isim sıralaması.
-- Kayıtlı geçmişi önce gösterip arka planda eşitleyen SQLite arşivi.
-- Komut paleti, değiştirilebilir kısayollar, fare desteği ve yerel eklentiler.
-- İngilizce, Türkçe ve Rusça arayüz katalogları.
+| Sohbetler | Projeler ve bağlam | Yerel geçmiş |
+| --- | --- | --- |
+| Taslak ve kaydırma konumlarını koruyan sekmeler kullanın; bir grupta en fazla dört paneli karşılaştırın. | ChatGPT ve Claude projeleri ya da Gemini defterleriyle çalışın; sağlayıcının desteklediği talimat ve kaynakları yönetin. | Kayıtlı sohbetleri hemen açın, geçmişi arka planda eşitleyin. |
+| Hesaba göre model ve efor seçin; sağlayıcı destekliyorsa yanıtı düzenleyin, yeniden deneyin veya dallandırın. | Proje ve sohbetleri arayın, sıralayın ve sağlayıcı hesabına göre filtreleyin. | Sohbet geçmişini ve kaynak metaverisini yerel SQLite arşivinde tutun. |
 
-**v1.5-beta**, sağlayıcıların yayımladığı kaynakları, düşünme özetlerini ve arama etkinliğini yanıtlara ekler; üretilen dosyaları sohbet içinde indirmeyi ve sohbetleri yeniden adlandırmayı sağlar. Gemini efor seçenekleri hesabın web politikasından alınır. Arka plan geçmiş eşitlemesi ve yanıt sürümleri arasında gezinme iyileştirildi. Python dağıtım sürümü `1.5b0` olur.
+| Dosyalar ve indirmeler | Kısayollar ve eklentiler | Diliniz |
+| --- | --- | --- |
+| Yanıtlarda üretilen dosyaları indirin; ilerlemeyi indirme yöneticisinde izleyin. | Komut paleti, değiştirilebilir kısayollar, fare kontrolleri ve yerel eklentileri kullanın. | İngilizce, Türkçe veya Rusça arayüzü seçin. |
+
+> **Güncel sürüm: v1.5-beta** — Sağlayıcının yayımladığı kaynaklar, düşünme özetleri ve arama etkinliği yanıtlara eklenebilir. Üretilen dosyalar sohbetten indirilebilir ve sohbetler yeniden adlandırılabilir. Gemini efor seçenekleri giriş yapılan hesabın web politikasına uyar. Python dağıtım sürümü `1.5b0`.
 
 ## Kurulum ve giriş
 
+### Gereksinimler
+
 SiopeChat için Python **3.11+** gerekir. Giriş yardımcıları ve ChatGPT istek imzalayıcısı Node.js **22+** kullanır; kurulum ve başlatma araçları iki sürümü de önceden denetler. Bağımsız sağlayıcı paketi ayrı olarak Python 3.10+ desteğini korur. Chrome/Chromium yalnızca açıkça başlatılan giriş işlemi için gerekir. Unicode destekli bir terminal kullanın; gerçek renk ve fare raporlama desteği önerilir.
+
+### Kurulum ve başlatma
 
 Depoyu indirdiğiniz dizinde tek seferlik kurulum aracını çalıştırın. Python 3.11+ ve Node.js 22+ sürümlerini denetler, bulduğu uyumlu sanal ortamı kullanır ve SiopeChat ile Python bağımlılıklarını o ortama kurar. Ortam bulamazsa `python/` oluşturur; mevcut bir dizini silmez veya üzerine yazmaz.
 
@@ -47,19 +54,31 @@ Depoyu indirdiğiniz dizinde tek seferlik kurulum aracını çalıştırın. Pyt
 | Windows PowerShell | `./siopechat.ps1` |
 | Kurulu konsol komutu | `siopechat` |
 
+<details>
+<summary>Sanal ortam ve bağımlılık ayrıntıları</summary>
+
 Kurulum ve başlatma araçları ortamları şu sırayla arar: `python/`, `.venv/`, `venv/`, `env/`. Başka bir ortam kullanmak için `SIOPECHAT_VENV` değişkenini ortam dizinine ayarlayın; göreli yollar depo dizinine göre çözülür. Uygun ortam yoksa yalnızca kurulum aracı yenisini oluşturur. Bozuk veya uyumsuz mevcut dizinlere dokunulmaz. Depoyu güncelledikten sonra değişen bağımlılıkları kurmak için kurulum aracını yeniden çalıştırın. Başlatıcılar her açılışta paket kurmaz ve ağa çıkmaz; yalnızca gerekli sürümleri denetleyip ortamı başlatır.
 
 Son kullanıcı kurulumu `pyproject.toml` içindeki sürüm aralıklarını pip ile kullanır; uv yüklemek gerekmez. `uv.lock`, CI ve geliştirme ortamlarında tam bağımlılık çözümünü sabitlemeye devam eder.
 
-Yeni kurulum hesap eklenmeden başlar. İlk hesabınızı Ayarlar → Hesaplar bölümünden ekleyin; otomatik ChatGPT hesap kaydı oluşturulmaz.
+</details>
 
-**Ayarlar → Hesaplar** bölümünde bir hesap ekleyin veya mevcut hesabınızı seçin; ardından **Profil ile doğrula** seçeneğine basın. Varsayılan tarayıcınızın son kullanılan profilinde sağlayıcı hesabına önceden giriş yapmış olmalısınız. SiopeChat bu oturumu tarayıcı başlatmadan aktarır ve doğrular. Sohbet, geçmiş, model ve proje işlemleri HTTP üzerinden yürür. Oturumun süresi dolarsa normal tarayıcınızda yeniden giriş yapıp **Profil ile doğrula** işlemini tekrarlayın.
+### Hesap bağlama
+
+Yeni kurulumlarda hesap listesi boştur. **Ayarlar → Hesaplar** bölümünden bir hesap ekleyin veya seçin ve **Profil ile doğrula** seçeneğine basın. Önce varsayılan tarayıcınızın son kullanılan profilinde sağlayıcıya giriş yapmış olun. SiopeChat oturumu tarayıcı başlatmadan aktarır ve doğrular. Sohbet, geçmiş, model ve proje işlemleri HTTP üzerinden yürür. Oturum süresi dolarsa normal tarayıcınızda yeniden giriş yapıp doğrulamayı tekrarlayın.
 
 Hesap ekle, düzenle ve sil düğmeleri hesap listesinin altında yan yana durur. Düzenle yalnız seçili hesabın görünen adını değiştirir; oturumu ve geçmişi korunur. Profil doğrulama ve çıkış düğmeleri oturum bilgilerinin altındadır. Dar terminallerde düğme adları kısalır.
+
+<details>
+<summary>Desteklenen tarayıcı profilleri ve sorun giderme</summary>
 
 **Profil ile doğrula**, varsayılan tarayıcının son kullanılan profilinden seçili sağlayıcının açık oturumunu aktarır; tarayıcı başlatmaz ve hata ayıklama bayrağı gerektirmez. Chrome, Chromium, Brave/Brave Origin, Edge, Vivaldi, Firefox ve Zen’in standart profil konumları desteklenir. Yalnız seçili sağlayıcının kimlik doğrulama çerezleri alınır; Firefox’ta varsayılan kapsayıcı kullanılır. Yeni oturum, kayıtlı oturumun yerine yazılmadan önce sağlayıcıda doğrulanır. Sistem anahtarlığı erişim izni isteyebilir. Kilitli veritabanı, özel/yalıtılmış profil konumu veya desteklenmeyen şifreleme (bazı Windows Chromium yapılandırmaları dahil) aktarımı engelleyebilir; kayıtlı oturum silinmeden hata gösterilir. Bu aktarım seçeneği Safari’yi desteklemez. Aktarım hataları; eksik bağımlılık, dosya izni, veritabanı erişimi, anahtarlık erişimi ve çerez çözme sorunlarını ayrı gösterir. Bağımlılıkları SiopeChat’i başlatan Python ortamında güncelleyin. Firefox/Zen’in güncel kurtarma kaydındaki oturum çerezleri de okunur; ayrı container hesapları ve eski kurtarma kayıtları birleştirilmez. Çerez veritabanı kilitliyse WAL/journal dosyalarıyla birlikte özel geçici kopyadan yeniden okunur; asıl profil değiştirilmez.
 
 Firefox ve Zen aynı salt okunur çerez okuyucusunu kullanır. Profil seçimi `profiles.ini` ve `installs.ini` üzerinden yapılır; belirsiz profiller birleştirilmeden hata bildirilir. Linux’ta Firefox’un Snap/Flatpak konumları ve Zen’in güncel XDG, eski ve Flatpak konumları bulunur.
+
+</details>
+
+### Birden fazla hesap
 
 Birden fazla hesap ekleyebilirsiniz. Gönderim için her sağlayıcıda bir hesap seçilidir; başka hesabın geçmişini görüntülemek bu seçimi değiştirmez. Farklı bir hesabı doğrulamak için önce varsayılan tarayıcınızda o hesabın açık olduğu profili seçin, ardından SiopeChat’te ilgili hesapta **Profil ile doğrula** seçeneğini kullanın.
 
@@ -67,21 +86,29 @@ Hesap satırına tıklayarak seçim yapın; ok işareti yönetilen hesabı göst
 
 ## Kullanım
 
+### Sohbet başlatma ve gezinme
+
 Mesaj alanına yazıp **Enter** ile gönderin. Destekleyen terminallerde **Shift+Enter** yeni satır ekler; uygulama açıkken genişletilmiş tuş bildirimi istenir. Terminal Enter ve Shift+Enter’ı ayırt etmiyorsa **Alt+Enter** veya **Ctrl+J** kullanın. Yazma alanı ayarlanan yüksekliğe kadar büyür, ardından kaydırılır. Ctrl+A metni seçer, Ctrl+C seçimi kopyalar, Ctrl+V yapıştırır. Bir mesaja tıklayarak içeriğini seçip kopyalayabilirsiniz.
 
 Yeni sohbette, etkin sağlayıcıların seçili hesaplarına ait modeller gösterilir. Durum satırı kataloglardaki toplam model sayısını ve hazır katalog/sağlayıcı oranını gösterir; kalan kataloglar arka planda yüklenir. Mevcut sohbet kendi hesabına bağlı kalır. Model ve efor seçenekleri sağlayıcının kataloğundan alınır; erişilemeyen veya üst paket gerektiren modeller, bu bilgi mevcutsa elenir. Sunucu yine de listelenen bir modeli reddedebilir. Sağlayıcının yayımladığı düşünme özetleri yanıttan ayrı gösterilir; gizli düşünme verilerine erişilmez.
 
 Mesajdaki Markdown web bağlantısına tıklayarak varsayılan tarayıcınızda açabilirsiniz. Mesajın diğer alanlarına tıklamak kopyalamak için mesajı seçer.
 
+### Yanıt araçları ve oluşturulan dosyalar
+
 Her mesajın altında küçük bir araç çubuğu bulunur. Kopyalama yerel çalışır; kullanıcı mesajları düzenlenip yeniden gönderilebilir. ChatGPT ve Claude yanıtları yeniden denenebilir; ChatGPT ve Gemini yanıtlarından ayrı bir sohbet dalı açılabilir. Sağlayıcının yayımladığı kaynaklar, ilgili yanıtın düşünme özetleriyle birlikte gösterilir. Yanıta ait mevcut model ve efor bilgisi sağda, varsa kayıtlı sürüm kontrollerinin hemen solunda yer alır. Araçlar mesaja ve sağlayıcıya, model erişimi seçili hesaba bağlıdır. Düzenleme ve yeniden deneme, sağlayıcı doğrulamasından sonra aktif geçmişi günceller; dallandırma yeni bir sohbet açar. Sohbet silme ve bölme kontrolleri üstteki eşitleme düğmesinin yanındadır.
 
 Üretilen dosyalar yanıtın içinde, mevcut ad, tür ve boyut bilgileriyle tıklanabilir dosya kartları olarak listelenir. Bir karta tıklamak indirme yöneticisinde arka plan aktarımı başlatır; dosya referansları ve metaverisi arşivlenmiş sohbette korunur. Korumalı kaynaklar ilgili sağlayıcı ve hesap üzerinden çözümlenir. Sağlayıcının saklama süresi ve dosyanın erişilebilirliği geçerlidir.
+
+### İndirme yöneticisi
 
 Dosya bağlantıları arka planda proje dizinindeki `downloads/` klasörüne indirilir. Konumu **Ayarlar → Genel → İndirme klasörü** bölümünden değiştirebilirsiniz; göreli yollar proje dizinine göre çözülür, tam yollar da desteklenir. Aynı anda en fazla iki aktarım çalışır, ilerleme durum çubuğunda gösterilir; mevcut dosyaların üzerine yazılmaz ve başarısız aktarımlar temizlenir. Normal web sayfaları varsayılan tarayıcıda açılır. ChatGPT sandbox dosyaları ait olduğu sohbet üzerinden, Gemini görsel yer tutucuları gerçek medya kayıtlarından çözümlenir; Claude sandbox/computer bağlantıları ait olduğu sohbetin dosya deposundan alınır. Korumalı indirmelerde seçili hesabın kayıtlı oturumu kullanılır; hesap bilgileri başka adreslere yönlendirilmez. Bulunamayan veya süresi dolmuş kaynaklar için hata gösterilir.
 
 **Yardım** ile **Ayarlar** arasındaki **İndirmeler** düğmesini, `/downloads` komutunu veya **Alt+J** kısayolunu kullanın. Sayfada alınan baytlar, biliniyorsa toplam ve kalan boyut, tamamlanan/başarısız aktarımlar ve kaynak sohbet görünür. Tarih grupları katlanır; arama dosya adı, sohbet başlığı ve hesabı kapsar. Duruma göre filtreleyebilir; tarih, dosya adı ve boyuta göre sıralayabilirsiniz. **Eşitle** dosyaları arka planda kontrol eder; aynı kontrol on saniyede bir yapılır. Klasörden kaldırılan dosya **Silindi** olarak listede kalır; silindiği bilinen sohbetler de belirtilir. **Dosyayı sil** geçmiş kaydını korur, **Listeden kaldır** diskteki dosyaya dokunmaz. Arşiv eklentisi yeni indirme kayıtlarını SQLite’ta kalıcı tutar; eklenti kapalıyken geçmiş yalnız mevcut oturumda tutulur. Uygulama kapanırken yarıda kalan aktarımlar **Kesildi** olarak görünür. Bu özellik eklenmeden önce indirilen dosyalara otomatik kaynak sohbet kaydı oluşturulmaz.
 
 İndirmelerde varsayılan sınır 512 MiB’tır. Genel ayarlardan bayt cinsinden boyut sınırını ve yerel ağdan indirme iznini değiştirebilirsiniz. Genel indirme yolu özel ve loopback adreslerini engeller, her yönlendirmeyi doğrular ve HTTPS bağlantısını HTTP’ye düşürmez. Bağlantıda doğrulanmış IP kullanılır; TLS ve HTTP için özgün alan adı korunur.
+
+### Kısayollar, seçim ve arka plan yanıtları
 
 Yanıt veya düşünme özeti üzerinde sürükleyerek metnin bir kısmını seçip Ctrl+C ile kopyalayabilirsiniz. Mesaja tıkladıktan sonra Ctrl+A ile mesajın tamamını seçebilirsiniz.
 
@@ -127,13 +154,19 @@ Her dosya için yerel ek sınırı **20 MiB**’dır; sağlayıcı daha düşük
 
 ## Ayarlar ve yerel veriler
 
+### Ayarlar ve gizlilik
+
 `config.json` yerelde oluşturulur ve Git kapsamı dışındadır. Varsayılanlar `src/settings.py` içinde tanımlıdır. Dil, **Ayarlar → Genel → Dil** bölümünden (`en`, `tr`, `ru`); sağlayıcılar **Sağlayıcılar**, özellik paketleri **Eklentiler** bölümünden yönetilir. En az bir sağlayıcı etkin kalmalıdır.
 
 Farklı bir ayar/veri dizini için `SIOPECHAT_HOME` kullanın. Yapılandırmayı, hesap oturumlarını ve `data/` dizinini gizli tutun; hata raporlarına eklemeyin.
 
+### Arşiv ve dosya saklama
+
 Arşiv eklentisi; sohbetleri, sıralı mesajları, yayımlanmış düşünme verilerini, proje/defterleri, üyelikleri ve kaynak metaverilerini `data/archive.sqlite3` içinde tutar. Yüklenen dosyalar arşive kopyalanmaz; sağlayıcı kimliği ve mevcut dosya metaverisi saklanır, yerel dosya yolu veya içerik tutulmaz. Eski arşivlerdeki içerik adresli dosya kopyaları yükseltme sırasında kaldırılır; sohbet ve kaynak metaverisi korunur. İndirilen dosyalar seçilen indirme klasöründe kalır, arşivde yalnızca indirme geçmişi metaverisi bulunur. Uzak görsel ve kaynaklar referans olarak tutulur; her uzak dosya otomatik indirilmez.
 
 **Yükseltme notu:** Şema v5 geçişi eski yükleme kopyalarını kalıcı olarak siler. Bu sürümle eski bir arşivi ilk kez açmadan önce çevrimdışı kopyalara ihtiyaç duyuyorsanız veya eski SiopeChat sürümüne dönme ihtimaliniz varsa `data/archive.sqlite3` ile `data/files/` klasörünü birlikte yedekleyin. Özel `SIOPECHAT_HOME` kullanıyorsanız bu yolları veri dizininize göre uyarlayın.
+
+### Yükleme, bellek ve eşitleme
 
 Arşiv açıkken sohbetler, SQLite okuması başına en fazla 80 görünür mesaj ve 262.144 karakterlik serileştirilmiş kayıt bütçesiyle açılır. Yukarı kaydırdıkça eski parçalar eklenir; önceden yüklenen mesajlar kaldırılmaz. Görünür konum kalıcı mesaj kimliğiyle korunur. Sekmede yalnız çizim için gereken metin ve metaveri tutulur; metinler görünümle paylaşılır. Render önce görünür alanı, sonra üstte ve altta ikişer ekranı hazırlar. Her görünümde render satırları için 1 MiB LRU, büyük ANSI kayıtlarını sıkıştıran ayrı bir 256 KiB önbellek vardır. Etkin olmayan ana sekme görünümleri ortak 4 MiB boşaltma bütçesine uyar. Kabul edilmiş yanıtlar yalnız sınırlı bir SQL son bölümünü günceller. Sekme kapatıldığında kaynak ve render referansları bırakılır; arka planda süren yanıtın mevcut turu kaydedilene kadar tutulur. Tek mesaj parça bütçesine sığdırılmak için kesilmez. Kaynak belleği gezilen geçmişle büyür; render önbellekleri sınırlı kalır. Python bırakılan süreç belleğini tutabildiğinden RSS hemen düşmeyebilir.
 
@@ -148,14 +181,12 @@ Arşivin bellek ve iş kuyrukları sınırlıdır. Büyük geçmişlerin hazırl
 ```python
 from extension import Action, ExtensionSpec, SettingField
 
-
 def activate(context):
     context.settings(SettingField("enabled", bool, True, "my_feature.enabled"))
     context.translations("en", {"enabled": "Enable my feature"})
     context.translations("tr", {"enabled": "Özelliğimi etkinleştir"})
     context.translations("ru", {"enabled": "Включить расширение"})
     context.action(Action("my_feature.hello", "Hello", lambda: "Hello"))
-
 
 SPEC = ExtensionSpec("my_feature", activate, api_version=3)
 ```

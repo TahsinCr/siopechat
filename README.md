@@ -1,4 +1,4 @@
-[![Version: v1.4.2-beta][version-shield]](CHANGELOG.md)
+[![Version: v1.5-beta][version-shield]](CHANGELOG.md)
 [![Python 3.11+][python-shield]](https://www.python.org/downloads/)
 [![GPL-3.0-only][license-shield]](LICENSE)
 
@@ -6,29 +6,36 @@
 
 # SiopeChat
 
-SiopeChat brings ChatGPT, Gemini and Claude conversations into a terminal workspace. Keep several chats open, compare replies in split panes, and work with projects without switching between websites.
+### ChatGPT, Gemini and Claude web chats — together in one terminal.
 
-It uses your own signed-in web sessions. There are no API keys to configure, and your account's model access and usage limits still apply. This is an independent, unofficial client; changes to provider websites can affect individual features.
+Keep conversations moving, organize provider projects and compare replies side by side, all from a focused terminal workspace.
+
+> **For web chat, not API products.** SiopeChat is an independent, unofficial client that works through your signed-in ChatGPT, Gemini and Claude web sessions. It does not connect through the providers’ official developer APIs or use coding-agent products such as Codex or Claude Code. No API key is required; your plan’s model access and usage limits still apply. Changes to provider websites can affect compatibility.
 
 ![SiopeChat terminal workspace](assets/siopechat.png)
 
-*An actual terminal capture with the fixed default style and demonstration data.*
+*A real terminal capture of the default SiopeChat interface, shown with demonstration data.*
 
-## What is included
+## What you can do
 
-- Tabs with separate drafts, scroll positions and reply indicators; up to four split panes per group.
-- Account-scoped models and reasoning effort, with the last selection remembered for each account.
-- ChatGPT and Claude projects, plus Gemini notebooks, with instructions and source management where supported.
-- Search, account filters and date/name ordering shared by projects and chats.
-- A SQLite archive that displays saved history first and synchronizes in the background.
-- A command palette, configurable shortcuts, mouse controls and local extensions.
-- English, Turkish and Russian interface catalogs.
+| Conversations | Projects and context | Local-first history |
+| --- | --- | --- |
+| Keep chats open in tabs, preserve drafts and scroll positions, or compare up to four panes in a group. | Use ChatGPT and Claude projects or Gemini notebooks, with provider-supported instructions and sources. | Open saved conversations immediately while history refreshes in the background. |
+| Select models and effort per account; edit, retry or branch replies when the provider supports it. | Search and sort projects and chats, with filters for provider accounts. | Keep conversation history and resource metadata in a local SQLite archive. |
 
-**v1.5-beta** adds provider-published sources, thinking summaries and search activity to replies, along with inline generated-file downloads and conversation renaming. Gemini effort choices now follow the account’s web policy. Background history synchronization and reply-version navigation are more reliable. The Python distribution version is `1.5b0`.
+| Files and downloads | Keyboard and extensions | Your language |
+| --- | --- | --- |
+| Download generated files from replies and track progress in the built-in download manager. | Use the command palette, configurable shortcuts, mouse controls and local extensions. | Choose the English, Turkish or Russian interface. |
+
+> **Latest: v1.5-beta** — Provider-published sources, thinking summaries and search activity can accompany replies. Generated files can be downloaded from the conversation, and chats can be renamed. Gemini effort choices follow the signed-in account’s web policy. The Python distribution version is `1.5b0`.
 
 ## Install and sign in
 
+### Requirements
+
 You need Python **3.11+** for SiopeChat and Node.js **22+** for login helpers and the ChatGPT request signer. The included installers and launchers check both versions before continuing. The standalone provider package keeps a separate Python 3.10+ contract. Chrome/Chromium is needed only for the explicit sign-in step. Use a Unicode terminal. True color and mouse reporting are recommended.
+
+### Install and launch
 
 Run the one-time installer from the checkout. It checks Python 3.11+ and Node.js 22+, reuses a supported virtual environment if it finds one, and installs SiopeChat plus its Python dependencies there. If no environment exists, it creates `python/` without replacing an existing directory.
 
@@ -47,19 +54,31 @@ Run the one-time installer from the checkout. It checks Python 3.11+ and Node.js
 | Windows PowerShell | `./siopechat.ps1` |
 | Installed console command | `siopechat` |
 
+<details>
+<summary>Virtual environments and dependency details</summary>
+
 Installers and launchers look for environments in this order: `python/`, `.venv/`, `venv/`, `env/`. Set `SIOPECHAT_VENV` to a different environment directory to override that lookup; relative paths are resolved from the checkout. Installers only create an environment when none is available, and they leave an existing but invalid directory untouched. Run an installer again after updating the checkout to install changed dependencies. Launchers check the required runtimes and start the selected environment directly; they do not install packages or access the network on each launch.
 
 The installer uses the dependency ranges in `pyproject.toml` with pip, so uv is not required for end-user installation. `uv.lock` remains the exact dependency resolution used by CI and development workflows.
 
-New installations start without any accounts. Add your first account under Settings → Accounts; SiopeChat does not create a ChatGPT account entry automatically.
+</details>
 
-Open **Settings → Accounts**, add or select an account and choose **Verify from profile**. You must already be signed in to the provider in your default browser’s last-used profile. SiopeChat imports and verifies that session without launching a browser. Chat, history, model and project operations then use HTTP. If the session expires, sign in again in your usual browser and repeat **Verify from profile**.
+### Connect an account
+
+New installations start with no accounts. Add or select an account under **Settings → Accounts**, then choose **Verify from profile**. First sign in to the provider in your default browser’s last-used profile. SiopeChat imports and verifies that session without launching a browser. Chat, history, model and project operations then use HTTP. If the session expires, sign in again in your usual browser and repeat verification.
 
 Add, edit and remove account buttons sit beneath the account list. Edit changes only the selected account’s display name; its login and history stay intact. Profile verification and logout share a separate row below the session details. Labels shorten in narrow terminals.
+
+<details>
+<summary>Supported browser profiles and troubleshooting</summary>
 
 **Verify from profile** imports the selected provider’s signed-in session from the default browser’s last-used profile, without starting a browser or enabling debugging flags. Supported standard profile locations include Chrome, Chromium, Brave/Brave Origin, Edge, Vivaldi, Firefox and Zen. Only the selected provider’s authentication cookies are retained; Firefox uses the default container. The candidate session is checked with the provider before replacing a saved session. Your OS keyring may request access. Locked databases, custom/sandboxed profile locations and unsupported encryption (including some Windows Chromium configurations) can prevent import; the error is shown without deleting the saved session. Safari is not supported by this import option. Import errors distinguish missing reader dependencies, file permissions, database access, keyring access and decryption failures. Update dependencies using the same Python environment that launches SiopeChat. Session cookies in the current Firefox/Zen recovery snapshot are also supported; separate containers are excluded and old recovery snapshots are not combined. If the live cookie database is locked, the reader retries from a private copy including its WAL/journal; it does not modify your profile.
 
 Firefox and Zen share a read-only cookie reader. Profile selection follows `profiles.ini` and `installs.ini`; ambiguous profiles are reported rather than merged. Linux discovery includes Firefox Snap/Flatpak locations and Zen’s current XDG, legacy and Flatpak locations.
+
+</details>
+
+### Multiple accounts
 
 You can add several accounts. One account per provider is selected for sending; browsing another account’s history does not silently change that selection. To verify a different account, first select its signed-in profile in your default browser, then use **Verify from profile** on the corresponding SiopeChat account.
 
@@ -67,21 +86,29 @@ Click an account row to select it; the arrow marks the account currently being m
 
 ## Everyday use
 
+### Start and navigate conversations
+
 Write in the composer and press **Enter** to send. **Shift+Enter** inserts a newline on terminals with extended keyboard reporting, which SiopeChat requests while active. If your terminal sends the same code for Enter and Shift+Enter, use **Alt+Enter** or **Ctrl+J**. The composer grows to its configured height, then scrolls. Ctrl+A selects text, Ctrl+C copies a selection, and Ctrl+V pastes. Click a message to select and copy its contents.
 
 A new chat offers models from the selected accounts of enabled providers. Its status counts the models in those catalogs and shows how many provider catalogs have loaded; remaining catalogs load in the background. An existing chat stays with its original account. Model and effort choices come from provider catalogs; unavailable or upgrade-only entries are filtered when that information is available. A listed model can still be refused by the server. Provider-published thinking summaries appear separately from answers; private reasoning is not available.
 
 Click a Markdown web link in a message to open it in your default browser. Clicking elsewhere in the message still selects it for copying.
 
+### Message actions and generated files
+
 Each message has a compact toolbar. Copy works locally; user messages can be edited and sent again. ChatGPT and Claude replies can be retried, while ChatGPT and Gemini replies can start a separate branch. Provider-published sources appear with the associated thinking summaries. The reply's available model and effort appear on the right, before its saved-version controls. Tools depend on the message and provider; model access follows the selected account. Editing or retrying updates the active history after provider confirmation, and branching opens a new chat. Conversation deletion and splitting are beside the upper synchronization button.
 
 Generated files appear inside the assistant reply as clickable file cards with their available name, type and size. Clicking a card starts a background transfer in the download manager; file references and metadata remain in the archived conversation. Downloads use the owning provider and account to resolve protected resources. Provider retention and file availability still apply.
+
+### Download manager
 
 File links download in the background to `downloads/` under the project directory. Change this in **Settings → General → Download folder**; relative paths are resolved against the project and absolute paths are supported. At most two transfers run at once, progress appears in the status bar, existing files are preserved and failed transfers are cleaned up. Ordinary web pages still open in your default browser. ChatGPT sandbox files are resolved through the owning conversation; Gemini image placeholders use actual provider media records, and Claude sandbox/computer links use the owning conversation’s file store. Protected downloads use the selected account’s saved session; account credentials are not forwarded to other origins. Missing or expired resources show an error instead of a fabricated URL.
 
 Open **Downloads** between Help and Settings, use `/downloads`, or press **Alt+J**. The workspace shows received bytes, total size and remaining bytes when known, completed and failed transfers, and the source chat. Date groups collapse; search matches filenames, chat titles and accounts. Filter by status and sort by date, filename or size. **Sync** checks file presence in the background; the same check runs every ten seconds. A removed file stays marked **Deleted**, and known deleted chats are labelled accordingly. **Delete file** keeps its history entry; **Remove entry** leaves the file on disk. The archive extension persists new download records in SQLite across restarts; disabling it keeps only the current session history. Transfers interrupted by shutdown are marked **Interrupted**. Existing files downloaded before history tracking was added have no automatic source-chat record.
 
 Downloads default to a 512 MiB limit. General settings expose the size limit in bytes and an opt-in for local-network downloads. Public downloads reject private and loopback addresses, validate every redirect and keep HTTPS connections on HTTPS. The checked address is used for the actual connection, while the original hostname is retained for TLS and HTTP.
+
+### Keyboard, selection and background replies
 
 Drag across a response or thinking summary to select part of its rendered text, then press Ctrl+C. Click a message and press Ctrl+A to select the whole message.
 
@@ -127,13 +154,19 @@ Attachments are limited locally to **20 MiB** per file; providers may have stric
 
 ## Configuration and local data
 
+### Settings and privacy
+
 `config.json` is created locally and excluded from Git. Defaults are defined in `src/settings.py`. Choose a language under **Settings → General → Language** (`en`, `tr`, `ru`), enable providers under **Providers**, and manage feature packages under **Extensions**. At least one provider must remain enabled.
 
 Set `SIOPECHAT_HOME` to use a different configuration/data directory. Keep configuration, account sessions and `data/` private; do not attach them to bug reports.
 
+### Archive and file retention
+
 The archive extension stores conversations, ordered messages, published thinking, projects/notebooks, memberships and resource metadata in `data/archive.sqlite3`. Uploaded files are never copied into the archive: only provider identifiers and available file metadata are retained, without the local file path or bytes. Upgrading from an older archive removes its content-addressed upload copies while preserving conversation and resource metadata. Downloaded files remain in the configured downloads folder; the archive keeps only their download-history metadata. Remote images and sources are retained as references, and not every remote file is downloaded automatically.
 
 **Upgrade note:** The schema v5 migration permanently removes legacy upload copies. Before opening an older archive with this version, back up `data/archive.sqlite3` and `data/files/` together if you need those offline copies or may return to an older SiopeChat version. Adjust these paths if you use a custom `SIOPECHAT_HOME` directory.
+
+### Loading, memory and synchronization
 
 With the archive enabled, chats initially read at most 80 visible messages within a 262,144-character serialized-record budget per SQLite batch. Scrolling loads older batches without removing messages already loaded; stable message IDs keep the visible position anchored. Only lean display text and metadata remain in the tab, shared with its layout. The renderer prioritizes the viewport, then prepares two screens above and below it. Rendered rows use a one-megabyte LRU per view; large ANSI cache entries are compressed within a separate 256 KiB budget. Inactive main-tab layouts share a 4 MiB eviction budget. Accepted turns update only a bounded SQL tail. Closing a tab releases its source and render references; an active background response retains its current turn until it is saved. A single message is never truncated to fit a batch. Source memory grows with visited history, while render caches remain bounded. Python may retain freed process memory, so RSS does not necessarily fall immediately.
 
@@ -148,14 +181,12 @@ Add `extensions/my_feature/plugin.py`. Export an `ExtensionSpec` whose activatio
 ```python
 from extension import Action, ExtensionSpec, SettingField
 
-
 def activate(context):
     context.settings(SettingField("enabled", bool, True, "my_feature.enabled"))
     context.translations("en", {"enabled": "Enable my feature"})
     context.translations("tr", {"enabled": "Özelliğimi etkinleştir"})
     context.translations("ru", {"enabled": "Включить расширение"})
     context.action(Action("my_feature.hello", "Hello", lambda: "Hello"))
-
 
 SPEC = ExtensionSpec("my_feature", activate, api_version=3)
 ```
