@@ -164,11 +164,29 @@ class TranscriptControl(UIControl):
         def version_fragments(compact):
             if not has_versions:
                 return []
-            values = (
-                ("version_prev", "‹", version_index > 1),
-                (None, version_label, False),
-                ("version_next", "›", version_index < version_count),
-            )
+            previous = ("version_prev", "‹", version_index > 1)
+            following = ("version_next", "›", version_index < version_count)
+            current = (None, version_label, False)
+            if compact:
+                # Keep navigation available as width shrinks: full count,
+                # current index, both arrows, then one usable direction.
+                single = following if following[2] else previous
+                candidates = (
+                    (previous, current, following),
+                    (previous, (None, str(version_index), False), following),
+                    (previous, following),
+                    (single,),
+                )
+                values = next(
+                    (
+                        candidate
+                        for candidate in candidates
+                        if sum(get_cwidth(item[1]) for item in candidate) <= message_width
+                    ),
+                    (),
+                )
+            else:
+                values = (previous, current, following)
             result = []
             for action, label, enabled in values:
                 text = label if compact else f" {label} "
@@ -216,26 +234,17 @@ class TranscriptControl(UIControl):
             compact = True
             fragments = action_fragments(visible_actions, compact)
             versions = version_fragments(compact)
-        while line_width(fragments + versions) > message_width and len(visible_actions) > 1:
+        while line_width(fragments + versions) > message_width and visible_actions:
             removable = next(
                 (
                     index
-                    for index in range(len(visible_actions) - 1, 0, -1)
-                    if visible_actions[index][0] not in ("copy", "sources")
+                    for index in range(len(visible_actions) - 1, -1, -1)
+                    if visible_actions[index][0] != "copy"
                 ),
                 None,
             )
             if removable is None:
-                removable = next(
-                    (
-                        index
-                        for index in range(len(visible_actions) - 1, 0, -1)
-                        if visible_actions[index][0] != "copy"
-                    ),
-                    None,
-                )
-            if removable is None:
-                break
+                removable = len(visible_actions) - 1
             visible_actions.pop(removable)
             fragments = action_fragments(visible_actions, compact)
 
@@ -253,7 +262,7 @@ class TranscriptControl(UIControl):
         fragments.append((toolbar_style, " " * padding))
         if settings_text:
             fragments.append(("class:message.toolbar.metadata", settings_text))
-        if used_width + version_width <= message_width:
+        if version_width <= message_width:
             fragments.extend(versions)
         trailing_width = max(0, paint_width - line_width(fragments))
         if trailing_width:

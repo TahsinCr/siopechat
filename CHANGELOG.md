@@ -10,7 +10,7 @@ Python distributions use the corresponding PEP 440 version (`1.5b0` for `v1.5-be
 
 ### Fixed
 
-- Keep reply-version controls at the right edge of the rendered message column; clamp that width to the current pane so controls stay inside the box as the terminal is resized.
+- Keep reply-version controls anchored inside the rendered message column as the terminal is resized; compact or drop other toolbar actions first when space is tight.
 
 ## [1.5-beta] - 2026-10-28
 
