@@ -10,7 +10,7 @@ Python distributions use the corresponding PEP 440 version (`1.5b0` for `v1.5-be
 
 ### Fixed
 
-- Align reply-version controls with the active transcript pane's actual right edge, including split panes.
+- Keep reply-version controls at the right edge of the rendered message column; clamp that width to the current pane so controls stay inside the box as the terminal is resized.
 
 ## [1.5-beta] - 2026-10-28
 

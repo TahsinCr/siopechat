@@ -144,9 +144,10 @@ class TranscriptControl(UIControl):
         tab_id = tab.get("tab_id")
         has_versions = version_count > 1 and role == "assistant"
         version_label = f"{version_index}/{version_count}"
-        # Window supplies the usable content width after subtracting margins.
-        # Use it directly: main_width() is only an estimate in split panes.
-        paint_width = max(1, width)
+        # Transcript rows stop at this message-column width even when the pane
+        # is wider. Clamp it to the actual content area so narrow panes resize
+        # cleanly without letting controls escape the message box.
+        paint_width = max(1, min(width, self.view.transcript_width()))
         message_width = paint_width
         prefix = " " if message_width >= 2 else ""
         toolbar_style = f"class:message.toolbar.{role}"
