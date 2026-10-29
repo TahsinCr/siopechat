@@ -13,8 +13,9 @@ python -m pip install .
 ```
 
 Python 3.10+ supports ChatGPT and Claude. The Gemini transport requires Python
-3.11+. ChatGPT request signing also requires Node.js 22+ on PATH. Importing the
-library or configuring an account does not open a browser or access the network.
+3.11+. ChatGPT request signing requires Node.js 22+ on PATH. Browser page
+discovery and session capture run in Python. Importing the library or configuring
+an account does not open a browser or access the network.
 
 ## Using an account
 

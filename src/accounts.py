@@ -17,7 +17,7 @@ from concurrent.futures import CancelledError, Future
 from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import asdict, fields, replace
 from pathlib import Path
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlsplit
 
 from account_repository import AccountRepository
 from backend import BackendService
@@ -30,6 +30,7 @@ from providers import (
     SendRequest,
     TextDelta,
 )
+from providers.cdp import DevToolsError, open_provider_page, read_provider_cookies
 from providers.chatgpt import BrowserSession, ChatGPTClient, ChatGPTProvider, SessionPaths
 from providers.claude import ClaudeProvider
 from providers.errors import AccountPaused, ProviderError, RemoteNotFound
@@ -962,16 +963,10 @@ class Accounts:
             url = PROVIDERS[item["provider"]][1]
             result = session.launch(url)
             if result.get("browser") == "already_running":
-                helper = Path(__file__).parent / "providers" / "scripts" / "page.cjs"
-                opened = subprocess.run(
-                    ["node", str(helper)],
-                    input=json.dumps({"cdp_url": session.cdp_url, "origin": url}),
-                    capture_output=True,
-                    text=True,
-                    timeout=15,
-                )
-                if opened.returncode:
-                    raise RuntimeError("Bağlı tarayıcıda giriş sayfası açılamadı")
+                try:
+                    open_provider_page(session.cdp_url, url)
+                except DevToolsError as error:
+                    raise RuntimeError("Bağlı tarayıcıda giriş sayfası açılamadı") from error
                 result["opened"] = True
             return result
         provider = self.provider(key)
@@ -994,19 +989,35 @@ class Accounts:
         if action == "verify":
             if item["provider"] in ("gemini", "claude"):
                 session = self.session(key)
-                script = Path(__file__).parent / "providers" / "scripts" / "cookies.cjs"
-                result = subprocess.run(
-                    ["node", str(script)],
-                    input=json.dumps(
-                        {"cdp_url": session.cdp_url, "origin": PROVIDERS[item["provider"]][1]}
-                    ),
-                    capture_output=True,
-                    text=True,
-                    timeout=15,
-                )
-                if result.returncode:
-                    raise RuntimeError("Hesabın açık giriş tarayıcısı bulunamadı; önce giriş yapın")
-                cookies = json.loads(result.stdout)
+                provider_id = item["provider"]
+                provider_url = PROVIDERS[provider_id][1]
+                try:
+                    browser_cookies = read_provider_cookies(session.cdp_url, provider_url)
+                except DevToolsError as error:
+                    raise RuntimeError(
+                        "Hesabın açık giriş tarayıcısı bulunamadı; önce giriş yapın"
+                    ) from error
+                host = urlsplit(provider_url).hostname or ""
+                allowed_claude_cookies = {
+                    "sessionKey",
+                    "lastActiveOrg",
+                    "anthropic-device-id",
+                    "__cf_bm",
+                    "cf_clearance",
+                }
+                cookies = {}
+                for cookie in browser_cookies:
+                    name = cookie.get("name")
+                    value = cookie.get("value")
+                    domain = str(cookie.get("domain", "")).lstrip(".").lower()
+                    applies_to_provider = host == domain or host.endswith(f".{domain}")
+                    allowed = (
+                        applies_to_provider
+                        if provider_id == "gemini"
+                        else name in allowed_claude_cookies
+                    )
+                    if allowed and isinstance(name, str) and name and isinstance(value, str):
+                        cookies[name] = value
                 required = "__Secure-1PSID" if item["provider"] == "gemini" else "sessionKey"
                 if not cookies.get(required):
                     raise RuntimeError("Hesaba giriş tamamlanmamış")

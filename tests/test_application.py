@@ -1,4 +1,3 @@
-import json
 import os
 import subprocess
 import sys
@@ -33,30 +32,6 @@ class ApplicationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("workspace", result.stdout)
         self.assertIn("auth", result.stdout)
-
-    def test_auth_helper_path_survives_package_move(self):
-        from providers.chatgpt import BrowserSession, SessionPaths
-        from providers.chatgpt import session as module
-
-        completed = Mock(
-            returncode=0,
-            stdout=json.dumps(
-                {
-                    "url": "https://chatgpt.com/backend-api/me",
-                    "headers": {"Authorization": "test-token"},
-                }
-            ),
-        )
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            session = BrowserSession(
-                SessionPaths(root / "session.json", root / "cache", root / "profile")
-            )
-            with patch.object(module.subprocess, "run", return_value=completed) as run:
-                session.capture_auth()
-        self.assertEqual(
-            Path(run.call_args.args[0][1]), ROOT / "src/providers/chatgpt/scripts/browser/auth.cjs"
-        )
 
     def test_daemon_spawn_uses_module_and_preserves_foreground_diagnostic(self):
         process = Mock(returncode=1)

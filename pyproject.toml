@@ -23,6 +23,7 @@ classifiers = [
 ]
 dependencies = [
     "httpx>=0.27,<1",
+    "websocket-client>=1.8,<2",
     "browser-cookie3>=0.20.1,<0.21",
     "lz4>=4.4.5,<5",
     "curl-cffi>=0.16,<1",
@@ -54,12 +55,8 @@ packages = [
     "tui",
     "providers",
     "providers.chatgpt",
-    "providers.chatgpt.scripts",
-    "providers.chatgpt.scripts.browser",
-    "providers.chatgpt.scripts.sentinel",
     "providers.gemini",
     "providers.claude",
-    "providers.scripts",
     "utils",
     "utils.events",
     "lang",
@@ -70,8 +67,7 @@ packages = [
 ]
 
 [tool.setuptools.package-data]
-"providers" = ["scripts/*.cjs"]
-"providers.chatgpt" = ["scripts/*.cjs", "scripts/browser/*.cjs", "scripts/sentinel/*.cjs"]
+"providers.chatgpt" = ["scripts/io.cjs", "scripts/sentinel/*.cjs"]
 "lang" = ["*.json"]
 "extensions.layout" = ["languages/*.json", "manifest.json"]
 "extensions.archive" = ["manifest.json"]

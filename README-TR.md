@@ -33,7 +33,7 @@ Sohbetlerinize devam edin, sağlayıcı projelerinizi düzenleyin ve yanıtları
 
 ### Gereksinimler
 
-SiopeChat için Python **3.11+** gerekir. Giriş yardımcıları ve ChatGPT istek imzalayıcısı Node.js **22+** kullanır; kurulum ve başlatma araçları iki sürümü de önceden denetler. Bağımsız sağlayıcı paketi ayrı olarak Python 3.10+ desteğini korur. Chrome/Chromium yalnızca açıkça başlatılan giriş işlemi için gerekir. Unicode destekli bir terminal kullanın; gerçek renk ve fare raporlama desteği önerilir.
+SiopeChat için Python **3.11+** gerekir. Node.js **22+**, ChatGPT isteklerini imzalamak için kullanılır; tarayıcı girişi ve oturum bilgisi Python sağlayıcı paketi üzerinden yürür. Kurulum ve başlatma araçları gereken sürümleri önceden denetler. Bağımsız sağlayıcı paketi ayrı olarak Python 3.10+ desteğini korur. Chrome/Chromium yalnızca açıkça başlatılan giriş işlemi için gerekir. Unicode destekli bir terminal kullanın; gerçek renk ve fare raporlama desteği önerilir.
 
 ### Kurulum ve başlatma
 

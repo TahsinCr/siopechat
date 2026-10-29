@@ -33,7 +33,7 @@ Keep conversations moving, organize provider projects and compare replies side b
 
 ### Requirements
 
-You need Python **3.11+** for SiopeChat and Node.js **22+** for login helpers and the ChatGPT request signer. The included installers and launchers check both versions before continuing. The standalone provider package keeps a separate Python 3.10+ contract. Chrome/Chromium is needed only for the explicit sign-in step. Use a Unicode terminal. True color and mouse reporting are recommended.
+You need Python **3.11+** for SiopeChat and Node.js **22+** for ChatGPT request signing. Browser login and session capture run through the Python provider package. The included installers and launchers check both required versions before continuing. The standalone provider package keeps a separate Python 3.10+ contract. Chrome/Chromium is needed only for the explicit sign-in step. Use a Unicode terminal. True color and mouse reporting are recommended.
 
 ### Install and launch
 

@@ -5,7 +5,6 @@ from pathlib import Path
 
 
 class Script(str, Enum):
-    AUTH = "browser/auth.cjs"
     SIGN = "sentinel/sign.cjs"
 
 

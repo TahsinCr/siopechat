@@ -17,11 +17,11 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from ..cdp import DevToolsError, capture_chatgpt_auth
 from ..errors import AccountPaused
 from ..session import CredentialStore, read_session, save_session
 from .constants import DEFAULT_CDP_URL, FORBIDDEN_REPLAY_HEADERS
 from .errors import ChatGPTWebError
-from .resources import Script, script_path
 
 
 @dataclass(frozen=True)
@@ -164,40 +164,17 @@ class BrowserSession:
         return url, {key.lower(): value for key, value in headers.items()}
 
     def capture_auth(self) -> tuple[str, dict[str, str]]:
-        helper = script_path(Script.AUTH)
-        environment = self.environment()
-        environment["CHATGPT_WEB_CDP_URL"] = self.cdp_url.rstrip("/")
         try:
-            result = subprocess.run(
-                ["node", str(helper)],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=20,
-                check=False,
-                env=environment,
-            )
-        except FileNotFoundError as error:
-            raise ChatGPTWebError(
-                "Node.js 22 or newer is required for Chrome authentication"
-            ) from error
-        except subprocess.TimeoutExpired as error:
-            raise ChatGPTWebError("Chrome authentication capture timed out") from error
-
-        if result.returncode != 0:
-            detail = result.stderr.strip() or "Chrome authentication capture failed"
-            raise ChatGPTWebError(detail)
-        try:
-            captured = json.loads(result.stdout)
-            url = captured["url"]
-            headers = {
-                key.lower(): value
-                for key, value in captured["headers"].items()
-                if key.lower() not in FORBIDDEN_REPLAY_HEADERS
-            }
-        except (KeyError, TypeError, json.JSONDecodeError) as error:
-            raise ChatGPTWebError("Chrome returned an invalid authentication snapshot") from error
+            url, captured_headers = capture_chatgpt_auth(self.cdp_url)
+        except DevToolsError as error:
+            raise ChatGPTWebError(str(error)) from error
+        headers = {
+            key.lower(): value
+            for key, value in captured_headers.items()
+            if isinstance(key, str)
+            and isinstance(value, str)
+            and key.lower() not in FORBIDDEN_REPLAY_HEADERS
+        }
         return url, headers
 
     def is_ready(self) -> bool:
