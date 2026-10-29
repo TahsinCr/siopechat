@@ -30,7 +30,12 @@ from ..markdown import (
 from ..projects import ProjectPanel
 from ..session import SessionDialog
 from ..settings import SettingsDialog
-from ..styles import DEFAULT_TERMINAL_STYLE, Icon
+from ..styles import (
+    DEFAULT_ROLE_ICON_STYLES,
+    DEFAULT_TERMINAL_STYLES,
+    Icon,
+    prompt_toolkit_style_map,
+)
 from ..widgets import (
     BoundedTextControl,
     ComposerPlaceholderProcessor,
@@ -363,7 +368,9 @@ class ChatView(
             mouse_support=Condition(lambda: self.mouse_enabled),
             min_redraw_interval=0.05,
             max_render_postpone_time=0.1,
-            style=Style.from_dict(DEFAULT_TERMINAL_STYLE),
+            style=Style.from_dict(
+                prompt_toolkit_style_map(DEFAULT_TERMINAL_STYLES, DEFAULT_ROLE_ICON_STYLES)
+            ),
         )
 
         install_keyboard_protocol(self.app)

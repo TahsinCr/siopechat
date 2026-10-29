@@ -29,12 +29,12 @@ from rich.text import Text
 from rich.theme import Theme
 
 from .styles import (
-    DEFAULT_MARKDOWN_STYLE,
-    DEFAULT_MESSAGE_FOREGROUND,
-    DEFAULT_REASONING_MARKER,
-    DEFAULT_ROLE_BACKGROUNDS,
-    DEFAULT_ROLE_TEXT_FOREGROUNDS,
+    DEFAULT_MARKDOWN_STYLES,
+    DEFAULT_MESSAGE_STYLE,
+    DEFAULT_REASONING_LABEL_STYLE,
+    DEFAULT_ROLE_STYLES,
     Icon,
+    rich_style_map,
 )
 
 ANNOTATION_PATTERN = re.compile(r"\ue200([^\ue201\ue202]+)(?:\ue202(.*?))?\ue201")
@@ -43,13 +43,17 @@ WRITING_DIRECTIVE_PATTERN = re.compile(
     r"(?m)^[\ue200]?\s*:::writing\{(?P<attributes>[^}\n]*)\}\s*$"
 )
 
-DEFAULT_MARKDOWN_THEME = Theme(DEFAULT_MARKDOWN_STYLE)
+_DEFAULT_MARKDOWN_RICH_STYLES = rich_style_map(DEFAULT_MARKDOWN_STYLES)
+DEFAULT_MARKDOWN_THEME = Theme(_DEFAULT_MARKDOWN_RICH_STYLES)
 DEFAULT_ROLE_MARKDOWN_THEMES = {
     role: Theme(
-        DEFAULT_MARKDOWN_STYLE
-        | {"markdown.text": foreground, "markdown.paragraph": foreground}
+        _DEFAULT_MARKDOWN_RICH_STYLES
+        | {
+            "markdown.text": role_style.color or DEFAULT_MESSAGE_STYLE.color or "#dedede",
+            "markdown.paragraph": role_style.color or DEFAULT_MESSAGE_STYLE.color or "#dedede",
+        }
     )
-    for role, foreground in DEFAULT_ROLE_TEXT_FOREGROUNDS.items()
+    for role, role_style in DEFAULT_ROLE_STYLES.items()
 }
 MAX_CODE_HIGHLIGHT_CHARS = 64 * 1024
 
@@ -770,12 +774,12 @@ class MessageRenderer:
             theme=DEFAULT_ROLE_MARKDOWN_THEMES.get(role, DEFAULT_MARKDOWN_THEME),
             legacy_windows=False,
         )
-        background = DEFAULT_ROLE_BACKGROUNDS.get(role, "#181818")
+        role_style = DEFAULT_ROLE_STYLES.get(role, DEFAULT_MESSAGE_STYLE)
         if include_label and role == "reasoning":
             console.print(
                 Text(
                     self.labels["reasoning_label"],
-                    style=f"{DEFAULT_REASONING_MARKER} on {background}",
+                    style=DEFAULT_REASONING_LABEL_STYLE.to_rich(),
                 )
             )
         rows = block.rows(start, stop)
@@ -785,10 +789,7 @@ class MessageRenderer:
                 Padding(
                     content,
                     (0, 1),
-                    style=(
-                        f"{DEFAULT_ROLE_TEXT_FOREGROUNDS.get(role, DEFAULT_MESSAGE_FOREGROUND)} "
-                        f"on {background}"
-                    ),
+                    style=role_style.to_rich(),
                     expand=True,
                 )
             )
@@ -884,12 +885,12 @@ class MessageRenderer:
             # legacy console detection otherwise strips clickable link data.
             legacy_windows=False,
         )
-        background = DEFAULT_ROLE_BACKGROUNDS.get(role, "#181818")
+        role_style = DEFAULT_ROLE_STYLES.get(role, DEFAULT_MESSAGE_STYLE)
         if role == "reasoning":
             console.print(
                 Text(
                     self.labels["reasoning_label"],
-                    style=f"{DEFAULT_REASONING_MARKER} on {background}",
+                    style=DEFAULT_REASONING_LABEL_STYLE.to_rich(),
                 )
             )
         if text:
@@ -903,10 +904,7 @@ class MessageRenderer:
                 Padding(
                     content,
                     (0, 1),
-                    style=(
-                        f"{DEFAULT_ROLE_TEXT_FOREGROUNDS.get(role, DEFAULT_MESSAGE_FOREGROUND)} "
-                        f"on {background}"
-                    ),
+                    style=role_style.to_rich(),
                     expand=True,
                 )
             )
@@ -915,7 +913,7 @@ class MessageRenderer:
                 Padding(
                     Text(self.labels["waiting_label"], style="dim italic"),
                     (0, 1),
-                    style=f"on {background}",
+                    style=f"on {role_style.bgcolor}",
                 )
             )
         console.print()

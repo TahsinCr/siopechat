@@ -12,7 +12,7 @@ from prompt_toolkit.layout.processors import Processor, Transformation
 from prompt_toolkit.mouse_events import MouseButton, MouseEventType
 from prompt_toolkit.utils import get_cwidth
 
-from .styles import DEFAULT_TRANSCRIPT_GUTTER_WIDTH, Icon, ROLE_MARKERS
+from .styles import DEFAULT_ROLE_ICON_STYLES, DEFAULT_TRANSCRIPT_GUTTER_WIDTH, Icon
 
 
 class TranscriptControl(UIControl):
@@ -641,12 +641,13 @@ class TranscriptGutter:
 
     def __call__(self, line_number, wrap_count):
         role = self._starts.get(line_number) if wrap_count == 0 else None
-        marker = ROLE_MARKERS.get(role, "")
+        role_style = DEFAULT_ROLE_ICON_STYLES.get(role)
+        marker = role_style.icon if role_style else ""
         marker_width = get_cwidth(marker)
         left = max(0, (DEFAULT_TRANSCRIPT_GUTTER_WIDTH - marker_width) // 2)
         right = max(0, DEFAULT_TRANSCRIPT_GUTTER_WIDTH - marker_width - left)
         text = " " * left + marker + " " * right
-        style = "class:role." + role if role else "class:transcript"
+        style = f"class:{role_style.name}" if role_style else "class:transcript"
         return [(style, text)]
 
 
