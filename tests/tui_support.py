@@ -25,7 +25,10 @@ def terminal(output=None, **callbacks):
         ),
     ):
         view = ChatView(lambda: [], lambda _: {}, lambda *_: {}, **callbacks)
-        yield view, pipe
+        try:
+            yield view, pipe
+        finally:
+            view.close_background_work(wait=True)
 
 
 def immediate(read, success, failure, **kwargs):

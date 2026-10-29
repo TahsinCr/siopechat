@@ -33,8 +33,8 @@ class ProjectComposerTests(unittest.IsolatedAsyncioTestCase):
                 await self.settle(lambda: v.input.text == "project prompt")
                 await asyncio.sleep(0.08)
                 self.assertIn("Gönder", screen_text(v))
-                self.assertIn("Model:", screen_text(v))
-                self.assertIn("Efor:", screen_text(v))
+                self.assertIn("Seçilmedi", screen_text(v))
+                self.assertIn("Sağlayıcı varsayılanı", screen_text(v))
                 v.forms.open(
                     "Projeyi düzenle",
                     [("name", "Proje adı", "Example", None)],
@@ -43,7 +43,7 @@ class ProjectComposerTests(unittest.IsolatedAsyncioTestCase):
                 )
                 await asyncio.sleep(0.08)
                 self.assertNotIn("Gönder", screen_text(v))
-                self.assertNotIn("Model:", screen_text(v))
+                self.assertNotIn("Seçilmedi", screen_text(v))
                 self.assertEqual(list(v.render_chat_header()), [])
                 v.forms.close()
                 await asyncio.sleep(0.08)

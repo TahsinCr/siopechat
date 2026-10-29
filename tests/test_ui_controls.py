@@ -66,6 +66,9 @@ class UiControlsTests(unittest.TestCase):
                 self.pending.append(work)
                 return True
 
+            def close(self, *, wait=False):
+                self.pending.clear()
+
         class ResponseVersions:
             def __init__(self):
                 self.requested = []
@@ -654,7 +657,7 @@ class DialogInputTests(unittest.IsolatedAsyncioTestCase):
                     metadata = "\n".join(line(y) for y in range(20, 23))
                     self.assertIn("Example", metadata)
                     self.assertIn("Orta", metadata)
-                    self.assertIn("Geçici:", metadata)
+                    self.assertIn("Desteklenmiyor", metadata)
                     rendered = "\n".join(line(y) for y in range(24))
                     self.assertIn("Question", rendered)
                     self.assertIn("Answer", rendered)

@@ -119,7 +119,7 @@ class CliComponentTests(unittest.TestCase):
                     effort_preference="medium",
                 )
                 self.assertIsNone(view.effort)
-                self.assertIn("Efor:", str(view.render_chat_header()))
+                self.assertIn("Sağlayıcı varsayılanı", str(view.render_chat_header()))
 
     def test_transcript_keeps_entire_conversation_in_fullscreen_ui(self):
         with create_pipe_input() as pipe:

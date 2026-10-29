@@ -98,7 +98,12 @@ class RussianTerminalTests(unittest.IsolatedAsyncioTestCase):
                 await self.settle(lambda: view.app.is_running)
                 await asyncio.sleep(0.08)
                 text = screen_text(view)
-                for word in ("Модель:", "Усилие:", "Аккаунты", "Напишите сообщение"):
+                for word in (
+                    "Не выбрано",
+                    "По умолчанию у провайдера",
+                    "Аккаунты",
+                    "Напишите сообщение",
+                ):
                     self.assertIn(word, text)
                 view.forms.confirm(view.tr("Sohbeti sil"), Mock())
                 await asyncio.sleep(0.06)

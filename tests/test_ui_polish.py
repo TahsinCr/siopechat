@@ -137,10 +137,10 @@ class PolishTests(unittest.TestCase):
                 i for i, f in enumerate(fragments) if f[0] == "class:metadata.project"
             )
             temporary_index = next(
-                i for i, f in enumerate(fragments) if f[0] == "class:metadata.temporary"
+                i for i, f in enumerate(fragments) if f[0].startswith("class:metadata.temporary")
             )
             self.assertGreater(temporary_index, project_index)
-            self.assertIn("Geçici: Kapalı", fragments[temporary_index][1])
+            self.assertIn("Kapalı", fragments[temporary_index][1])
             count = len(v.tabs)
             v.input.text = "Draft stays here"
             v.current_project = {"id": "project", "name": "Work"}
@@ -149,7 +149,7 @@ class PolishTests(unittest.TestCase):
             self.assertEqual(len(v.tabs), count)
             self.assertEqual(v.input.text, "Draft stays here")
             self.assertEqual(v.current_project, {})
-            self.assertIn("Geçici: Açık", str(v.render_chat_header()))
+            self.assertIn("Açık", str(v.render_chat_header()))
             v.toggle_temporary_chat()
             self.assertFalse(v.temporary)
 
@@ -159,7 +159,7 @@ class PolishTests(unittest.TestCase):
             self.assertIn("ilk mesajdan önce", v.status)
 
             v.provider_features = frozenset({Capability.PROJECTS})
-            self.assertIn("Geçici: Desteklenmiyor", str(v.render_chat_header()))
+            self.assertIn("Desteklenmiyor", str(v.render_chat_header()))
             v.toggle_temporary_chat()
             self.assertFalse(v.temporary)
             self.assertIn("desteklemiyor", v.status)
