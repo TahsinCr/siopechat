@@ -23,7 +23,8 @@ class BackgroundReads:
             future.add_done_callback(lambda _: self._slots.release())
             return True
 
-    def close(self):
+    def close(self, *, wait=False):
+        """Stop accepting work and optionally drain operations already running."""
         with self._lock:
             self._closed = True
-        self._pool.shutdown(wait=False, cancel_futures=True)
+        self._pool.shutdown(wait=wait, cancel_futures=True)

@@ -438,9 +438,7 @@ class ChatView(
             with patch_stdout(raw=True):
                 self.app.run(pre_run=started)
         finally:
-            self._reads.close()
-            self._render_reads.close()
-            self._operations.close()
+            self.close_background_work(wait=True)
             self._persist_session()
             if self.forget_temporary and not self.busy:
                 for tab in self.tabs:
@@ -451,6 +449,12 @@ class ChatView(
                             pass
             if self.action_cleanup:
                 self.action_cleanup()
+
+    def close_background_work(self, *, wait=False) -> None:
+        """Stop TUI-owned work before its application services are closed."""
+        self._reads.close(wait=wait)
+        self._render_reads.close(wait=wait)
+        self._operations.close(wait=wait)
 
 
 def run_tui(

@@ -70,6 +70,7 @@ class OpeningPerformanceTests(unittest.IsolatedAsyncioTestCase):
                         release.set()
                         v.app.exit()
                         await run
+                        await asyncio.to_thread(v.close_background_work, wait=True)
             finally:
                 release.set()
                 await api.runtime.aclose()

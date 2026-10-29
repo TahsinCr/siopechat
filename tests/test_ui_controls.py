@@ -496,39 +496,41 @@ class ToolbarMouseIntegrationTests(unittest.IsolatedAsyncioTestCase):
             view.messages = tab["messages"]
             view.account_service = ResponseVersions()
             app_task = asyncio.create_task(view.app.run_async())
-            await asyncio.sleep(0.05)
+            await wait_until(lambda: view.app.is_running, timeout=3)
+            view.app.invalidate()
 
             async def wait_for_version(index):
-                for _ in range(100):
-                    if tab["messages"][0].get("_response_version_index") == index:
-                        return
-                    await asyncio.sleep(0.01)
-                self.fail(f"reply version did not change to {index}")
+                await wait_until(
+                    lambda: tab["messages"][0].get("_response_version_index") == index,
+                    timeout=3,
+                )
 
             def screen_rows():
-                return sorted(view.app.renderer._last_screen.data_buffer.items())
+                screen = view.app.renderer._last_screen
+                return sorted(screen.data_buffer.items()) if screen is not None else []
+
+            def screen_contains(label):
+                return any(
+                    label
+                    in "".join(
+                        row[x].char if x in row else " " for x in range(max(row, default=-1) + 1)
+                    )
+                    for _, row in screen_rows()
+                )
 
             async def wait_for_rendered_version(index):
                 label = f"{index}/2"
-                for _ in range(100):
-                    if any(
-                        label
-                        in "".join(
-                            row[x].char if x in row else " "
-                            for x in range(max(row, default=-1) + 1)
-                        )
-                        for _, row in screen_rows()
-                    ):
-                        return
-                    await asyncio.sleep(0.01)
-                self.fail(f"reply version {label} was not painted")
+                await wait_until(lambda: screen_contains(label), timeout=3)
 
             try:
                 await wait_for_rendered_version(1)
                 for columns in (120, 48, 40, 34):
+                    previous_screen = screen_rows()
+                    previous_columns = output.columns
                     output.columns = columns
                     view.app.invalidate()
-                    await asyncio.sleep(0.04)
+                    if columns != previous_columns:
+                        await wait_until(lambda: screen_rows() != previous_screen, timeout=3)
                     for _ in range(5):
                         current = tab["messages"][0]["_response_version_index"]
                         arrow, expected = ("›", 2) if current == 1 else ("‹", 1)
@@ -566,6 +568,7 @@ class ToolbarMouseIntegrationTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 view.app.exit()
                 await asyncio.wait_for(app_task, 2)
+                await asyncio.to_thread(view.close_background_work, wait=True)
 
 
 class DialogInputTests(unittest.IsolatedAsyncioTestCase):

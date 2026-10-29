@@ -34,6 +34,7 @@ Python distributions use the corresponding PEP 440 version (`1.5b0` for `v1.5-be
 
 ### Fixed
 
+- Drain TUI-owned background reads before application services and temporary data are closed; wait for actual prompt-toolkit rendering in the Windows mouse-navigation test instead of relying on short fixed sleeps.
 - Keep the project information icon inset from the sidebar divider, including when the sidebar is narrow.
 - Close the active provider connection correctly when a user stops a response.
 - Format elapsed time as a static helper so the running footer redraw does not crash.
