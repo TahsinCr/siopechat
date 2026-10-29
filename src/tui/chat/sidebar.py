@@ -131,7 +131,13 @@ class SidebarComponent:
         action_suffix = (f" {ICONS['edit'].icon}" if can_rename else "") + (
             f" {ICONS['delete'].icon}" if can_delete else ""
         )
-        reserve_suffix = suffix + action_suffix + ("  +" if section_action is not None else "")
+        trailing_gutter = " " if kind == "project" else ""
+        reserve_suffix = (
+            suffix
+            + action_suffix
+            + ("  +" if section_action is not None else "")
+            + trailing_gutter
+        )
         width = self.sidebar_width() - prefix_width - get_cwidth(reserve_suffix)
         title = fit_text(row["title"], max(1, width))
         fragments.append(
@@ -145,10 +151,11 @@ class SidebarComponent:
             fragments.append(
                 (
                     "class:sidebar.muted",
-                    suffix + "\n",
+                    suffix,
                     on_click(lambda project_id=row["id"]: self.show_project_details(project_id)),
                 )
             )
+            fragments.append((style, trailing_gutter + "\n"))
         elif section_action is not None:
             padding = max(0, width - get_cwidth(title))
             if padding:
