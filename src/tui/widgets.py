@@ -8,7 +8,6 @@ from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.layout import Window
 from prompt_toolkit.layout.controls import FormattedTextControl, UIContent, UIControl
-from prompt_toolkit.layout.margins import Margin
 from prompt_toolkit.layout.processors import Processor, Transformation
 from prompt_toolkit.mouse_events import MouseButton, MouseEventType
 from prompt_toolkit.utils import get_cwidth
@@ -67,6 +66,9 @@ class TranscriptControl(UIControl):
         self.rows = self.view.transcript_rows(viewport_height=height)
         rows = self.rows
         self._content_width = width
+        gutter = getattr(self.view, "transcript_gutter", None)
+        if gutter is not None:
+            gutter.refresh()
         self._toolbar_rows = {}
         for start, end, index in getattr(self.view, "message_ranges", ()):
             if not 0 <= index < len(self.view.messages):
@@ -147,7 +149,13 @@ class TranscriptControl(UIControl):
         # Transcript rows stop at this message-column width even when the pane
         # is wider. Clamp it to the actual content area so narrow panes resize
         # cleanly without letting controls escape the message box.
-        paint_width = max(1, min(width, self.view.transcript_width()))
+        paint_width = max(
+            1,
+            min(
+                max(1, width - DEFAULT_TRANSCRIPT_GUTTER_WIDTH),
+                self.view.transcript_width(),
+            ),
+        )
         message_width = paint_width
         prefix = " " if message_width >= 2 else ""
         toolbar_style = f"class:message.toolbar.{role}"
@@ -161,32 +169,39 @@ class TranscriptControl(UIControl):
             effort = next((choice.title for choice in model.efforts if choice.id == effort), effort)
         settings_label = " · ".join(value for value in (model_label, effort) if value)
 
-        def version_fragments(compact):
+        def version_fragments(compact, available_width):
             if not has_versions:
                 return []
             previous = ("version_prev", "‹", version_index > 1)
             following = ("version_next", "›", version_index < version_count)
             current = (None, version_label, False)
             if compact:
-                # Keep navigation available as width shrinks: full count,
-                # current index, both arrows, then one usable direction.
                 single = following if following[2] else previous
                 candidates = (
+                    (
+                        previous,
+                        (None, " ", False),
+                        current,
+                        (None, " ", False),
+                        following,
+                    ),
                     (previous, current, following),
-                    (previous, (None, str(version_index), False), following),
-                    (previous, following),
+                    (current, (None, " ", False), single),
+                    (current, single),
                     (single,),
                 )
                 values = next(
                     (
                         candidate
                         for candidate in candidates
-                        if sum(get_cwidth(item[1]) for item in candidate) <= message_width
+                        if sum(get_cwidth(item[1]) for item in candidate) <= available_width
                     ),
                     (),
                 )
             else:
                 values = (previous, current, following)
+                if sum(get_cwidth(item[1]) + 2 for item in values) > available_width:
+                    return []
             result = []
             for action, label, enabled in values:
                 text = label if compact else f" {label} "
@@ -226,15 +241,25 @@ class TranscriptControl(UIControl):
         def line_width(fragments):
             return sum(get_cwidth(fragment[1]) for fragment in fragments)
 
+        def choose_versions(compact, selected_actions):
+            action_width = line_width(action_fragments(selected_actions, compact))
+            gap_width = 1 if compact and selected_actions and has_versions else 0
+            return version_fragments(compact, message_width - action_width - gap_width)
+
         compact = False
         visible_actions = list(actions)
         fragments = action_fragments(visible_actions, compact)
-        versions = version_fragments(compact)
-        if line_width(fragments + versions) > message_width:
+        versions = choose_versions(compact, visible_actions)
+        if (has_versions and not versions) or line_width(fragments + versions) > message_width:
             compact = True
             fragments = action_fragments(visible_actions, compact)
-            versions = version_fragments(compact)
-        while line_width(fragments + versions) > message_width and visible_actions:
+            versions = choose_versions(compact, visible_actions)
+        while (
+            (has_versions and not versions)
+            or line_width(fragments + versions)
+            + (1 if compact and visible_actions and versions else 0)
+            > message_width
+        ) and visible_actions:
             removable = next(
                 (
                     index
@@ -247,10 +272,12 @@ class TranscriptControl(UIControl):
                 removable = len(visible_actions) - 1
             visible_actions.pop(removable)
             fragments = action_fragments(visible_actions, compact)
+            versions = choose_versions(compact, visible_actions)
 
         used_width = line_width(fragments)
         version_width = line_width(versions)
-        available = max(0, message_width - used_width - version_width)
+        gap_width = 1 if compact and visible_actions and versions else 0
+        available = max(0, message_width - used_width - version_width - gap_width)
         settings_text = (
             fit_text(settings_label, max(0, available - 2))
             if settings_label and available > 2
@@ -263,6 +290,8 @@ class TranscriptControl(UIControl):
         if settings_text:
             fragments.append(("class:message.toolbar.metadata", settings_text))
         if version_width <= message_width:
+            if gap_width:
+                fragments.append((toolbar_style, " "))
             fragments.extend(versions)
         trailing_width = max(0, paint_width - line_width(fragments))
         if trailing_width:
@@ -593,41 +622,33 @@ class TranscriptWindow(Window):
         self.vertical_scroll = min(last_scroll, self.vertical_scroll + 4)
 
 
-class TranscriptGutter(Margin):
-    """Compact pictograms identify the first row of each rendered message."""
+class TranscriptGutter:
+    """Render speaker markers as a line prefix inside the transcript window."""
 
     def __init__(self, view):
         self.view = view
+        self._starts = {}
 
-    def get_width(self, get_ui_content):
-        return DEFAULT_TRANSCRIPT_GUTTER_WIDTH
-
-    def create_margin(self, window_render_info, width, height):
+    def refresh(self):
         roles = getattr(self.view, "_transcript_roles", None)
         if roles is None:
             roles = tuple(message.get("role") for message in self.view.messages)
-        starts = {
+        self._starts = {
             start: roles[index]
             for start, _, index in getattr(self.view, "message_ranges", [])
             if 0 <= index < len(roles)
         }
+
+    def __call__(self, line_number, wrap_count):
+        role = self._starts.get(line_number) if wrap_count == 0 else None
         markers = {"user": "👤", "assistant": "🤖", "reasoning": "🧠"}
-        rows = []
-        for row in range(height):
-            position = window_render_info.visible_line_to_row_col.get(row)
-            role = starts.get(position[0]) if position and position[1] == 0 else None
-            marker = markers.get(role, "")
-            marker_width = get_cwidth(marker)
-            left = max(0, (width - marker_width) // 2)
-            right = max(0, width - marker_width - left)
-            marker = " " * left + marker + " " * right
-            rows.append(
-                (
-                    "class:role." + role if role else "class:transcript",
-                    marker + "\n",
-                )
-            )
-        return rows
+        marker = markers.get(role, "")
+        marker_width = get_cwidth(marker)
+        left = max(0, (DEFAULT_TRANSCRIPT_GUTTER_WIDTH - marker_width) // 2)
+        right = max(0, DEFAULT_TRANSCRIPT_GUTTER_WIDTH - marker_width - left)
+        text = " " * left + marker + " " * right
+        style = "class:role." + role if role else "class:transcript"
+        return [(style, text)]
 
 
 def register_modified_enter():

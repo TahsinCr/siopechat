@@ -11,7 +11,7 @@ from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Frame
 
 from .styles import DEFAULT_TAB_WIDTH
-from .widgets import TranscriptGutter, fit_text, on_click
+from .widgets import fit_text, on_click
 
 
 def workspace_layout(view):
@@ -26,7 +26,6 @@ def workspace_layout(view):
         )
 
     view.transcript_window.right_margins = [ScrollbarMargin(display_arrows=True)]
-    view.transcript_window.left_margins = [TranscriptGutter(view)]
     view.transcript_window.style = "class:transcript"
     view.transcript_window.char = " "
 

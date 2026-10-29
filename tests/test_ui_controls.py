@@ -465,7 +465,8 @@ class ToolbarMouseIntegrationTests(unittest.IsolatedAsyncioTestCase):
             "_response_version_count": 2,
             "_response_version_current_index": 2,
         }
-        with terminal(output=ResizableOutput(), initial_messages=[message]) as (view, pipe):
+        output = ResizableOutput()
+        with terminal(output=output, initial_messages=[message]) as (view, pipe):
             tab = view.tabs[view.active_tab]
             tab.update(conversation_id="chat", account_key="chatgpt/default")
             view.messages = tab["messages"]
@@ -500,34 +501,44 @@ class ToolbarMouseIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
             try:
                 await wait_for_rendered_version(1)
-                for arrow, expected in (("›", 2), ("‹", 1), ("›", 2), ("‹", 1), ("›", 2)):
-                    target = None
-                    for y, row in screen_rows():
-                        line = "".join(
-                            row[x].char if x in row else " "
-                            for x in range(max(row, default=-1) + 1)
+                for columns in (120, 48, 40, 34):
+                    output.columns = columns
+                    view.app.invalidate()
+                    await asyncio.sleep(0.04)
+                    for _ in range(5):
+                        current = tab["messages"][0]["_response_version_index"]
+                        arrow, expected = ("›", 2) if current == 1 else ("‹", 1)
+                        target = None
+                        for y, row in screen_rows():
+                            line = "".join(
+                                row[x].char if x in row else " "
+                                for x in range(max(row, default=-1) + 1)
+                            )
+                            if f"{current}/2" not in line:
+                                continue
+                            target = next(
+                                (
+                                    (x, y)
+                                    for x, cell in row.items()
+                                    if cell.char == arrow
+                                    and x
+                                    in view.app.renderer.mouse_handlers.mouse_handlers.get(y, {})
+                                ),
+                                None,
+                            )
+                            if target is not None:
+                                break
+                        self.assertIsNotNone(
+                            target,
+                            f"version arrow {arrow} at {current}/2 has no mouse hit area "
+                            f"at {columns} terminal columns",
                         )
-                        if "1/2" not in line and "2/2" not in line:
-                            continue
-                        target = next(
-                            (
-                                (x, y)
-                                for x, cell in row.items()
-                                if cell.char == arrow
-                                and x in view.app.renderer.mouse_handlers.mouse_handlers.get(y, {})
-                            ),
-                            None,
+                        x, y = target
+                        pipe.send_bytes(
+                            f"\x1b[<0;{x + 1};{y + 1}M\x1b[<0;{x + 1};{y + 1}m".encode()
                         )
-                        if target is not None:
-                            break
-                    self.assertIsNotNone(
-                        target,
-                        f"version arrow {arrow} for {expected}/2 has no mouse hit area",
-                    )
-                    x, y = target
-                    pipe.send_bytes(f"\x1b[<0;{x + 1};{y + 1}M\x1b[<0;{x + 1};{y + 1}m".encode())
-                    await wait_for_version(expected)
-                    await wait_for_rendered_version(expected)
+                        await wait_for_version(expected)
+                        await wait_for_rendered_version(expected)
             finally:
                 view.app.exit()
                 await asyncio.wait_for(app_task, 2)

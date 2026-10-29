@@ -39,16 +39,18 @@ class PolishTests(unittest.TestCase):
         self.assertEqual(content.line_count, 1)
         self.assertEqual(content.get_line(0), [("class:transcript", "Message")])
 
-    def test_gutter_uses_rendered_roles_and_ignores_stale_out_of_bounds_ranges(self):
-        info = SimpleNamespace(visible_line_to_row_col={0: (0, 0), 1: (1, 0)})
+    def test_gutter_prefix_uses_rendered_roles_and_ignores_stale_ranges(self):
         view = SimpleNamespace(
             messages=[], message_ranges=[(0, 1, 0), (1, 2, 3)], _transcript_roles=("assistant",)
         )
-        margin = TranscriptGutter(view).create_margin(info, 3, 2)
-        self.assertIn("🤖", margin[0][1])
-        self.assertNotIn("🤖", margin[1][1])
+        gutter = TranscriptGutter(view)
+        gutter.refresh()
+        self.assertIn("🤖", gutter(0, 0)[0][1])
+        self.assertNotIn("🤖", gutter(1, 0)[0][1])
+        self.assertNotIn("🤖", gutter(0, 1)[0][1])
         del view._transcript_roles
-        self.assertEqual(len(TranscriptGutter(view).create_margin(info, 3, 2)), 2)
+        gutter.refresh()
+        self.assertNotIn("🤖", gutter(0, 0)[0][1])
 
     def test_palette_and_keyboard_share_canonical_actions(self):
         from settings import DEFAULT_KEYBINDINGS
@@ -170,16 +172,15 @@ class PolishTests(unittest.TestCase):
             self.assertLess(rendered.index("Summary"), rendered.index("Answer"))
             starts = {v.messages[i]["role"]: line for line, _, i in v.message_ranges}
             gutter = TranscriptGutter(v)
-            info = SimpleNamespace(
-                visible_line_to_row_col={
-                    0: (starts["user"], 0),
-                    1: (starts["user"], 5),
-                    2: (starts["reasoning"], 0),
-                    3: (starts["assistant"], 0),
-                }
-            )
-            rows = gutter.create_margin(info, 3, 5)
-            self.assertEqual([r[1].strip() for r in rows], ["👤", "", "🧠", "🤖", ""])
+            gutter.refresh()
+            rows = [
+                gutter(starts["user"], 0),
+                gutter(starts["user"] + 1, 0),
+                gutter(starts["reasoning"], 0),
+                gutter(starts["assistant"], 0),
+                gutter(starts["assistant"], 1),
+            ]
+            self.assertEqual([r[0][1].strip() for r in rows], ["👤", "", "🧠", "🤖", ""])
             self.assertIn(
                 "48;2;48;48;48", v.renderer.render("reasoning", "Summary", 60, True, False)
             )
@@ -341,8 +342,14 @@ class FocusTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.sleep(0.06)
                 self.assertEqual(w.vertical_scroll, before)
                 info = w.render_info
-                rows = TranscriptGutter(v).create_margin(info, 3, info.window_height)
-                self.assertTrue(any(">" in f[1] or "🤖" in f[1] for f in rows))
+                gutter = TranscriptGutter(v)
+                gutter.refresh()
+                rows = [
+                    gutter(info.visible_line_to_row_col[row][0], 0)
+                    for row in range(info.window_height)
+                    if row in info.visible_line_to_row_col
+                ]
+                self.assertTrue(any("🤖" in fragment[1] for row in rows for fragment in row))
             finally:
                 v.app.exit()
                 await run

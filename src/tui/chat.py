@@ -71,6 +71,7 @@ from .widgets import (
     SidebarControl,
     SlashCommandCompleter,
     TranscriptControl,
+    TranscriptGutter,
     TranscriptWindow,
     fit_text,
     on_click,
@@ -412,12 +413,14 @@ class ChatView:
         self.active_tab = 0
 
         self.transcript_control = TranscriptControl(self)
+        self.transcript_gutter = TranscriptGutter(self)
         self.transcript_window = TranscriptWindow(
             get_content_height=lambda: getattr(
                 getattr(self, "_virtual_transcript", None), "line_count", None
             ),
             content=self.transcript_control,
             wrap_lines=False,
+            get_line_prefix=self.transcript_gutter,
             right_margins=[],
             allow_scroll_beyond_bottom=False,
             on_manual_scroll=self.pause_following,

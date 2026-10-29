@@ -344,12 +344,12 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
                         lambda: (
                             view.transcript_window.render_info is not None
                             and view.transcript_window.render_info.window_width
-                            == expected - DEFAULT_TRANSCRIPT_GUTTER_WIDTH - 1
+                            == expected - 1
                         )
                     )
                     self.assertEqual(
                         view.transcript_width(),
-                        min(100, expected - DEFAULT_TRANSCRIPT_GUTTER_WIDTH - 2),
+                        min(100, expected - DEFAULT_TRANSCRIPT_GUTTER_WIDTH - 1),
                     )
                     self.assertLessEqual(
                         sum(get_cwidth(fragment[1]) for fragment in view.render_tabs()), columns
@@ -359,7 +359,7 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
                     lambda: (
                         view.transcript_window.render_info is not None
                         and view.transcript_window.render_info.window_width
-                        == 120 - DEFAULT_TRANSCRIPT_GUTTER_WIDTH - 1
+                        == 120 - 1
                     )
                 )
                 self.assertEqual(view.transcript_width(), 100)

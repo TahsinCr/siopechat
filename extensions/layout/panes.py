@@ -344,13 +344,14 @@ class _Pane:
         )
         self.header = BoundedTextControl(self.render_header)
         self.control = TranscriptControl(self)
+        self.transcript_gutter = TranscriptGutter(self)
         self.body = TranscriptWindow(
             get_content_height=lambda: self.layout.line_count if self.layout is not None else None,
             content=self.control,
             wrap_lines=True,
+            get_line_prefix=self.transcript_gutter,
             style="class:transcript",
             char=" ",
-            left_margins=[TranscriptGutter(self)],
             right_margins=[ScrollbarMargin(display_arrows=True)],
             on_manual_scroll=self.pause,
         )

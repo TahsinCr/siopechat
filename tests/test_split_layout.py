@@ -6,7 +6,6 @@ from unittest.mock import patch
 
 from extensions.layout.panes import SplitLayout, _Pane
 from tests import tui_support as interaction
-from tui.styles import DEFAULT_TRANSCRIPT_GUTTER_WIDTH
 
 
 class SplitTests(unittest.IsolatedAsyncioTestCase):
@@ -30,9 +29,8 @@ class SplitTests(unittest.IsolatedAsyncioTestCase):
                 pane = next(iter(v.layout_controller._panes.values()))
                 pane.transcript_rows(1)
                 self.assertTrue(pane.message_ranges)
-                self.assertEqual(
-                    pane.body.left_margins[0].get_width(None), DEFAULT_TRANSCRIPT_GUTTER_WIDTH
-                )
+                self.assertEqual(pane.body.left_margins, [])
+                self.assertIs(pane.body.get_line_prefix, pane.transcript_gutter)
                 self.assertLess(v.main_width(), v.workspace_width())
                 v.select_tab(1)
                 v.app.invalidate()

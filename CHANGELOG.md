@@ -10,7 +10,7 @@ Python distributions use the corresponding PEP 440 version (`1.5b0` for `v1.5-be
 
 ### Fixed
 
-- Keep reply-version controls anchored inside the rendered message column as the terminal is resized; compact or drop other toolbar actions first when space is tight.
+- Keep transcript role markers in the content coordinate space so reply-version arrow hit targets remain aligned; compact the toolbar and preserve navigation as the terminal narrows.
 
 ## [1.5-beta] - 2026-10-28
 
