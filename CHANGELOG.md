@@ -20,6 +20,7 @@ Python distributions use the corresponding PEP 440 version (`1.5b0` for `v1.5-be
 - Replace emoji and full-width UI glyphs with monochrome, single-cell symbols and an ASCII spinner to reduce platform-dependent rendering and terminal-width drift.
 - Keep application and provider glyphs together in the typed `ICONS` dictionary in `src/tui/styles.py`; each `IconStyleItem` owns its symbol and colors, while provider registry entries contain only provider metadata.
 - Distinguish transcript roles with a prompt-style `>` for user messages, a filled `◆` for assistant replies, and an outlined `◇` for reasoning.
+- Let transcript gutter markers inherit their matching message background instead of forcing a separate fixed background.
 - Store terminal and Markdown styles as typed records with separate foreground, background, and text-attribute fields.
 - Require named fields in TUI style records and require a glyph on every icon-style entry.
 - Give user, assistant, and thinking messages distinct dark surfaces, with separately configurable text and role-icon colors.

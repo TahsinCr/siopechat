@@ -31,6 +31,7 @@ from ..projects import ProjectPanel
 from ..session import SessionDialog
 from ..settings import SettingsDialog
 from ..styles import (
+    DEFAULT_ROLE_STYLES,
     DEFAULT_TERMINAL_STYLES,
     ICONS,
     prompt_toolkit_style_map,
@@ -368,7 +369,7 @@ class ChatView(
             min_redraw_interval=0.05,
             max_render_postpone_time=0.1,
             style=Style.from_dict(
-                prompt_toolkit_style_map(DEFAULT_TERMINAL_STYLES, ICONS)
+                prompt_toolkit_style_map(DEFAULT_TERMINAL_STYLES, DEFAULT_ROLE_STYLES, ICONS)
             ),
         )
 
