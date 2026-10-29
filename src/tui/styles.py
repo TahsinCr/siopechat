@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class StyleItem:
     """A named style with color properties kept separate from text attributes."""
 
@@ -38,11 +38,11 @@ class StyleItem:
         return " ".join(parts)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class IconStyleItem(StyleItem):
     """A named role style that also carries its terminal glyph."""
 
-    icon: str = ""
+    icon: str
 
 
 def prompt_toolkit_style_map(*groups: Mapping[str, StyleItem]) -> dict[str, str]:
@@ -133,12 +133,12 @@ DEFAULT_ROLE_STYLES: dict[str, StyleItem] = {
     "reasoning": StyleItem(name="message.reasoning", color="#d2d8e4", bgcolor="#292e37"),
 }
 
-DEFAULT_MESSAGE_STYLE = StyleItem(name='message.default', color='#dedede', bgcolor='#181818')
+DEFAULT_MESSAGE_STYLE = StyleItem(name="message.default", color="#dedede", bgcolor="#181818")
 DEFAULT_REASONING_LABEL_STYLE = StyleItem(
-    name='reasoning.label',
-    color=DEFAULT_ROLE_STYLES['reasoning'].color,
-    bgcolor=DEFAULT_ROLE_STYLES['reasoning'].bgcolor,
-    style='bold',
+    name="reasoning.label",
+    color=DEFAULT_ROLE_STYLES["reasoning"].color,
+    bgcolor=DEFAULT_ROLE_STYLES["reasoning"].bgcolor,
+    style="bold",
 )
 
 DEFAULT_ROLE_ICON_STYLES: dict[str, IconStyleItem] = {
