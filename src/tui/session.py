@@ -181,9 +181,7 @@ class SessionDialog:
 
     def account_line(self, item, active_keys):
         width = max(1, self.view.settings_dialog.content_width() - 5)
-        provider_icon = ICONS.get(
-            f"provider.{item['provider']}", ICONS["provider.generic"]
-        ).icon
+        provider_icon = ICONS.get(f"provider.{item['provider']}", ICONS["provider.generic"]).icon
         label = (
             (f"{ICONS['forward'].icon} " if item["key"] == self.view.account_key else "  ")
             + f"{provider_icon} {item['label']} · {item['provider']}"

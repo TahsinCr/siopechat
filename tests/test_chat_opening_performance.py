@@ -210,6 +210,8 @@ class SidebarRenderingPerformanceTests(unittest.TestCase):
         from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
         from prompt_toolkit.utils import get_cwidth
 
+        from tui.styles import ICONS
+
         with terminal() as (view, _):
             project_id = "@chatgpt/default/project"
             view.project_items = {project_id: {"id": project_id, "name": "Project"}}
@@ -224,7 +226,12 @@ class SidebarRenderingPerformanceTests(unittest.TestCase):
             if fragments is None:
                 content.get_line(project_row)
                 fragments = view.sidebar_control._fragments[project_row]
-            project_info_x = sum(get_cwidth(part[1]) for part in fragments[:-1])
+            project_info_x = 0
+            for fragment in fragments:
+                if len(fragment) > 2 and ICONS["info"].icon in fragment[1]:
+                    project_info_x += get_cwidth(fragment[1]) - 1
+                    break
+                project_info_x += get_cwidth(fragment[1])
             event = MouseEvent(
                 position=Point(x=project_info_x, y=project_row),
                 event_type=MouseEventType.MOUSE_UP,

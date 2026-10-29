@@ -61,15 +61,9 @@ DEFAULT_TRANSCRIPT_GUTTER_WIDTH = 4
 DEFAULT_COMPOSER_MAX_LINES = 6
 
 ICONS: dict[str, IconStyleItem] = {
-    "role.user": IconStyleItem(
-        name="role.user", color="#69aef2", style="bold", icon=">"
-    ),
-    "role.assistant": IconStyleItem(
-        name="role.assistant", color="#78c9a6", style="bold", icon="◆"
-    ),
-    "role.reasoning": IconStyleItem(
-        name="role.reasoning", color="#b6a2e5", style="bold", icon="◇"
-    ),
+    "role.user": IconStyleItem(name="role.user", color="#69aef2", style="bold", icon=">"),
+    "role.assistant": IconStyleItem(name="role.assistant", color="#78c9a6", style="bold", icon="◆"),
+    "role.reasoning": IconStyleItem(name="role.reasoning", color="#b6a2e5", style="bold", icon="◇"),
     "provider.chatgpt": IconStyleItem(
         name="provider.chatgpt", color="#ffffff", style="bold", icon="◎"
     ),
@@ -79,9 +73,7 @@ ICONS: dict[str, IconStyleItem] = {
     "provider.claude": IconStyleItem(
         name="provider.claude", color="#d99977", style="bold", icon="✳"
     ),
-    "provider.generic": IconStyleItem(
-        name="provider.generic", color="#b7c8db", icon="◈"
-    ),
+    "provider.generic": IconStyleItem(name="provider.generic", color="#b7c8db", icon="◈"),
     "copy": IconStyleItem(name="icon.copy", color="#aeb9c4", icon="⧉"),
     "edit": IconStyleItem(name="icon.edit", color="#aeb9c4", icon="✎"),
     "retry": IconStyleItem(name="icon.retry", color="#8ecfff", icon="↻"),

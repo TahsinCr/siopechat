@@ -15,6 +15,7 @@ from bootstrap import create_application
 from providers.chatgpt.formats import normalize_message
 from tests.tui_support import immediate, terminal
 from tui.markdown import visible_chat_message
+from tui.styles import ICONS
 
 
 class WorkspaceTests(unittest.TestCase):
@@ -23,7 +24,7 @@ class WorkspaceTests(unittest.TestCase):
             v.title = "Demo"
             fragments = v.render_tabs()
             self.assertEqual(sum(get_cwidth(f[1]) for f in fragments), v.terminal_width())
-            self.assertEqual(fragments[0][1], " ☰ SiopeChat ")
+            self.assertEqual(fragments[0][1], f" {ICONS['menu'].icon} SiopeChat ")
             self.assertEqual(fragments[1][1], "│")
             label = fragments[2][1]
             self.assertLessEqual(

@@ -23,6 +23,18 @@ from tui.widgets import TranscriptControl
 
 
 class UiControlsTests(unittest.TestCase):
+    def test_stopping_active_response_closes_its_provider_connection(self):
+        with terminal() as (view, _):
+            tab = view.tabs[view.active_tab]
+            tab["busy"] = True
+            tab["connection"] = Mock()
+
+            self.assertTrue(view.stop_active_response())
+
+            self.assertTrue(tab["cancel_requested"])
+            tab["connection"].shutdown.assert_called_once_with(2)
+            tab["connection"].close.assert_called_once_with()
+
     def test_repeated_next_clicks_with_pointer_drift_load_the_newest_reply_once(self):
         message = {
             "id": "answer",
@@ -367,9 +379,9 @@ class UiControlsTests(unittest.TestCase):
         with terminal() as (view, _):
             user = view.renderer.render("user", "A question", 60, False, False)
             assistant = view.renderer.render("assistant", "An answer", 60, True, False)
-            self.assertIn("48;2;56;56;56", user)
+            self.assertIn("48;2;45;52;60", user)
             self.assertNotIn("ASİSTAN", user)
-            self.assertIn("48;2;48;48;48", assistant)
+            self.assertIn("48;2;45;51;48", assistant)
             self.assertNotIn("48;2;75;75;75", user)
             self.assertNotIn("─" * 10, user)
 

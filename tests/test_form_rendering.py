@@ -10,6 +10,7 @@ from providers import Capability
 from tests import tui_support as interaction
 from tests.fakes import Accounts
 from tests.tui_support import ResizableOutput, immediate, screen_text, terminal
+from tui.styles import ICONS
 
 
 class FormsRenderTests(unittest.IsolatedAsyncioTestCase):
@@ -214,7 +215,7 @@ class FormsRenderTests(unittest.IsolatedAsyncioTestCase):
 
             click = MouseEvent(Point(0, 0), MouseEventType.MOUSE_UP, MouseButton.LEFT, frozenset())
             controls = v.render_conversation_actions()
-            self.assertEqual(controls[1][1], " 🗑 Sil ")
+            self.assertEqual(controls[1][1], f" {ICONS['delete'].icon} Sil ")
             self.assertNotIn(" Sil ", [part[1] for part in v.render_composer_actions()])
             controls[1][2](click)
             v.delete_record.assert_called_once_with(value=v.conversation_id)

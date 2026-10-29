@@ -7,8 +7,8 @@ from providers import Capability
 from providers.models import FeatureState, ModelCatalog
 from providers.registry import PROVIDERS
 
-from ..styles import ICONS
 from ..library import SORT_OPTIONS
+from ..styles import ICONS
 
 
 class AccountComponent:

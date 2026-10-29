@@ -12,10 +12,10 @@ from prompt_toolkit.formatted_text import FormattedText
 from accounts import origin
 from providers.history import merge_conversation
 
-from ..styles import ICONS
 from ..markdown import (
     visible_chat_messages,
 )
+from ..styles import ICONS
 from ..widgets import (
     fit_text,
     on_click,

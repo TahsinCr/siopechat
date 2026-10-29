@@ -20,6 +20,7 @@ from providers.chatgpt import BrowserSession, ChatGPTClient, ChatGPTProvider, Se
 from providers.chatgpt.errors import ChatGPTWebError
 from tests import tui_support as interaction
 from tests.tui_support import click, immediate, terminal
+from tui.styles import ICONS
 from tui.widgets import TranscriptControl, TranscriptGutter
 
 
@@ -45,12 +46,13 @@ class PolishTests(unittest.TestCase):
         )
         gutter = TranscriptGutter(view)
         gutter.refresh()
-        self.assertIn("🤖", gutter(0, 0)[0][1])
-        self.assertNotIn("🤖", gutter(1, 0)[0][1])
-        self.assertNotIn("🤖", gutter(0, 1)[0][1])
+        assistant_marker = ICONS["role.assistant"].icon
+        self.assertIn(assistant_marker, gutter(0, 0)[0][1])
+        self.assertNotIn(assistant_marker, gutter(1, 0)[0][1])
+        self.assertNotIn(assistant_marker, gutter(0, 1)[0][1])
         del view._transcript_roles
         gutter.refresh()
-        self.assertNotIn("🤖", gutter(0, 0)[0][1])
+        self.assertNotIn(assistant_marker, gutter(0, 0)[0][1])
 
     def test_palette_and_keyboard_share_canonical_actions(self):
         from settings import DEFAULT_KEYBINDINGS
@@ -182,9 +184,18 @@ class PolishTests(unittest.TestCase):
                 gutter(starts["assistant"], 0),
                 gutter(starts["assistant"], 1),
             ]
-            self.assertEqual([r[0][1].strip() for r in rows], ["👤", "", "🧠", "🤖", ""])
+            self.assertEqual(
+                [r[0][1].strip() for r in rows],
+                [
+                    ICONS["role.user"].icon,
+                    "",
+                    ICONS["role.reasoning"].icon,
+                    ICONS["role.assistant"].icon,
+                    "",
+                ],
+            )
             self.assertIn(
-                "48;2;48;48;48", v.renderer.render("reasoning", "Summary", 60, True, False)
+                "48;2;41;46;55", v.renderer.render("reasoning", "Summary", 60, True, False)
             )
 
     def test_wheel_burst_accumulates_without_waiting_for_render(self):
@@ -351,7 +362,13 @@ class FocusTests(unittest.IsolatedAsyncioTestCase):
                     for row in range(info.window_height)
                     if row in info.visible_line_to_row_col
                 ]
-                self.assertTrue(any("🤖" in fragment[1] for row in rows for fragment in row))
+                self.assertTrue(
+                    any(
+                        ICONS["role.assistant"].icon in fragment[1]
+                        for row in rows
+                        for fragment in row
+                    )
+                )
             finally:
                 v.app.exit()
                 await run

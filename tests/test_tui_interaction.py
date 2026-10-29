@@ -411,7 +411,7 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
                     lambda: (
                         view.app.renderer._last_screen is not None
                         and any(
-                            "Ara" in line and "⌕" in line and "☷" in line
+                            "Ara" in line and "⌕" in line and "≡" in line
                             for line in screen_text(view).splitlines()
                         )
                     )

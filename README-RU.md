@@ -181,12 +181,14 @@ Firefox и Zen используют общий механизм чтения coo
 ```python
 from extension import Action, ExtensionSpec, SettingField
 
+
 def activate(context):
     context.settings(SettingField("enabled", bool, True, "my_feature.enabled"))
     context.translations("en", {"enabled": "Enable my feature"})
     context.translations("tr", {"enabled": "Özelliğimi etkinleştir"})
     context.translations("ru", {"enabled": "Включить расширение"})
     context.action(Action("my_feature.hello", "Hello", lambda: "Hello"))
+
 
 SPEC = ExtensionSpec("my_feature", activate, api_version=3)
 ```

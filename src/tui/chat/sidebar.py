@@ -10,8 +10,8 @@ from prompt_toolkit.utils import get_cwidth
 from accounts import origin
 from providers import Capability
 
-from ..styles import ICONS
 from ..library import build_sidebar_rows, merge_chat_listing
+from ..styles import ICONS
 from ..widgets import (
     fit_text,
     on_click,
@@ -89,9 +89,7 @@ class SidebarComponent:
         prefix_width = get_cwidth(indent + marker + " ")
         if kind in ("chat", "project"):
             provider = row.get("provider_id", "chatgpt")
-            provider_style = ICONS.get(
-                f"provider.{provider}", ICONS["provider.generic"]
-            )
+            provider_style = ICONS.get(f"provider.{provider}", ICONS["provider.generic"])
             provider_icon = provider_style.icon
             fragments.append(
                 (
@@ -133,10 +131,7 @@ class SidebarComponent:
         )
         trailing_gutter = " " if kind == "project" else ""
         reserve_suffix = (
-            suffix
-            + action_suffix
-            + ("  +" if section_action is not None else "")
-            + trailing_gutter
+            suffix + action_suffix + ("  +" if section_action is not None else "") + trailing_gutter
         )
         width = self.sidebar_width() - prefix_width - get_cwidth(reserve_suffix)
         title = fit_text(row["title"], max(1, width))

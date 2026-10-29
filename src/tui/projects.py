@@ -50,9 +50,7 @@ class ProjectPanel:
     def label(self, key):
         account = next(i for i in self.view.account_service.items() if i["key"] == key)
         provider = PROVIDERS[account["provider"]]
-        icon = ICONS.get(
-            f"provider.{account['provider']}", ICONS["provider.generic"]
-        ).icon
+        icon = ICONS.get(f"provider.{account['provider']}", ICONS["provider.generic"]).icon
         return icon + " " + provider[0] + " · " + account["label"]
 
     def create(self):

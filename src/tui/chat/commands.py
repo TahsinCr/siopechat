@@ -481,6 +481,7 @@ class CommandComponent:
             (tabs and tabs[index].get("busy")) or (self.busy and self.busy_tab_index == index)
         )
 
+    @staticmethod
     def _cancel_connection(connection: Any) -> None:
         if connection is None:
             return

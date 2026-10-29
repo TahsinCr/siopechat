@@ -8,8 +8,8 @@ from prompt_toolkit.utils import get_cwidth
 from accounts import origin
 from providers import Capability
 
-from ..styles import ICONS
 from ..layout import render_tab_bar
+from ..styles import ICONS
 from ..widgets import (
     fit_text,
     on_click,
