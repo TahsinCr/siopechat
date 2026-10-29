@@ -27,7 +27,7 @@ from ..styles import (
     DEFAULT_COMPOSER_MAX_LINES,
     DEFAULT_MESSAGE_WIDTH,
     DEFAULT_TRANSCRIPT_GUTTER_WIDTH,
-    Icon,
+    ICONS,
 )
 
 
@@ -55,7 +55,7 @@ class TranscriptComponent:
                 [
                     (
                         "",
-                        f" {Icon.RUNNING} "
+                        f" {ICONS['running'].icon} "
                         + self.tr(
                             "Yanıt {0}. sekmede sürüyor · diğer sekmelere geçebilirsiniz"
                         ).format(running)
@@ -71,7 +71,7 @@ class TranscriptComponent:
             else self.upload_started
         )
         if started is not None:
-            frames = Icon.SPINNER
+            frames = ICONS["spinner"].icon
             frame = frames[int((time.monotonic() - started) * 10) % len(frames)]
             elapsed = self.format_elapsed(time.monotonic() - started)
             phase = (
@@ -93,7 +93,7 @@ class TranscriptComponent:
                     [
                         (
                             "class:sync",
-                            f" {Icon.RETRY} "
+                            f" {ICONS['retry'].icon} "
                             + self.tr("Senkronizasyon · {0} kayıt · {1}").format(
                                 len(pending_sync), self.status
                             )
@@ -145,7 +145,7 @@ class TranscriptComponent:
                 [
                     (
                         "",
-                        f" {Icon.ATTACHMENT} "
+                        f" {ICONS['attachment'].icon} "
                         + self.tr("{0} dosya hazır").format(len(self.pending_attachments))
                         + " ",
                     )

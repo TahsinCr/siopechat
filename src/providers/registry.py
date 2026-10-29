@@ -7,9 +7,9 @@ from .api import Capability, Provider
 from .contracts import Backend
 
 PROVIDERS = {
-    "chatgpt": ("ChatGPT", "◎", "https://chatgpt.com/"),
-    "gemini": ("Gemini", "✦", "https://gemini.google.com/"),
-    "claude": ("Claude", "✳", "https://claude.ai/"),
+    "chatgpt": ("ChatGPT", "https://chatgpt.com/"),
+    "gemini": ("Gemini", "https://gemini.google.com/"),
+    "claude": ("Claude", "https://claude.ai/"),
 }
 
 

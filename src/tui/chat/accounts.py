@@ -7,7 +7,7 @@ from providers import Capability
 from providers.models import FeatureState, ModelCatalog
 from providers.registry import PROVIDERS
 
-from ..styles import Icon
+from ..styles import ICONS
 from ..library import SORT_OPTIONS
 
 
@@ -75,7 +75,7 @@ class AccountComponent:
         ):
             self.status = (
                 self.tr("Sağlayıcı devre dışı · Ayarlar")
-                + f" {Icon.RIGHT} "
+                + f" {ICONS['right'].icon} "
                 + self.tr("Sağlayıcılar")
             )
             self.app.invalidate()

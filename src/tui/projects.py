@@ -5,6 +5,7 @@ from providers import Capability
 from providers.registry import PROVIDERS
 
 from .file_selection import browse_form_field
+from .styles import ICONS
 
 
 class ProjectPanel:
@@ -49,7 +50,10 @@ class ProjectPanel:
     def label(self, key):
         account = next(i for i in self.view.account_service.items() if i["key"] == key)
         provider = PROVIDERS[account["provider"]]
-        return provider[1] + " " + provider[0] + " · " + account["label"]
+        icon = ICONS.get(
+            f"provider.{account['provider']}", ICONS["provider.generic"]
+        ).icon
+        return icon + " " + provider[0] + " · " + account["label"]
 
     def create(self):
         accounts = self.accounts()

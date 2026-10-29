@@ -8,7 +8,7 @@ from prompt_toolkit.utils import get_cwidth
 from accounts import origin
 from providers import Capability
 
-from ..styles import Icon
+from ..styles import ICONS
 from ..layout import render_tab_bar
 from ..widgets import (
     fit_text,
@@ -40,17 +40,17 @@ class ControlsComponent:
             [
                 (
                     "class:button",
-                    f" {Icon.EDIT} {self.tr('Düzenle')} ",
+                    f" {ICONS['edit'].icon} {self.tr('Düzenle')} ",
                     on_click(lambda: self.project_panel.edit(self.current_project.get("id"))),
                 ),
                 (
                     "class:button",
-                    f" {Icon.ADD} {self.tr('Kaynak')} ",
+                    f" {ICONS['add'].icon} {self.tr('Kaynak')} ",
                     on_click(self.project_panel.add_source),
                 ),
                 (
                     "class:button",
-                    f" {Icon.MINUS} {self.tr('Kaynak')} ",
+                    f" {ICONS['minus'].icon} {self.tr('Kaynak')} ",
                     on_click(self.project_panel.remove_source),
                 ),
                 (
@@ -62,7 +62,7 @@ class ControlsComponent:
                 ),
                 (
                     "class:button",
-                    f" {Icon.RETRY} {self.tr('Eşitle')} ",
+                    f" {ICONS['retry'].icon} {self.tr('Eşitle')} ",
                     on_click(self.show_project_details),
                 ),
             ]
@@ -94,21 +94,21 @@ class ControlsComponent:
                 if selected.metadata.get("effort_error")
                 else self.tr("Desteklenmiyor")
             )
-        model_text = self.tr(" Model: {0}").format(model) + f" {Icon.DROPDOWN} "
-        effort_text = self.tr(" Efor: {0}").format(effort) + f" {Icon.DROPDOWN} "
+        model_text = self.tr(" Model: {0}").format(model) + f" {ICONS['dropdown'].icon} "
+        effort_text = self.tr(" Efor: {0}").format(effort) + f" {ICONS['dropdown'].icon} "
         project_text = (
             self.tr(" Proje: ")
             + fit_text(self.current_project.get("name") or self.tr("Projesiz"), 22)
-            + f" {Icon.DROPDOWN} "
+            + f" {ICONS['dropdown'].icon} "
         )
         temporary_supported = Capability.TEMPORARY in self.provider_features
         temporary_text = (
             self.tr(" Geçici: ")
             + (
                 (
-                    self.tr("Açık") + f" {Icon.RUNNING}"
+                    self.tr("Açık") + f" {ICONS['running'].icon}"
                     if self.temporary
-                    else self.tr("Kapalı") + f" {Icon.DISABLED}"
+                    else self.tr("Kapalı") + f" {ICONS['disabled'].icon}"
                 )
                 if temporary_supported
                 else self.tr("Desteklenmiyor")
@@ -347,7 +347,7 @@ class ControlsComponent:
         controls = [
             (
                 "class:button",
-                f" {Icon.RETRY} {self.tr('Eşitle')} ",
+                f" {ICONS['retry'].icon} {self.tr('Eşitle')} ",
                 on_click(lambda: self.synchronize("conversation")),
             )
         ]
@@ -356,7 +356,7 @@ class ControlsComponent:
                 controls.append(
                     (
                         "class:button",
-                        f" {Icon.EDIT} " + self.tr("Yeniden Adlandır") + " ",
+                        f" {ICONS['edit'].icon} " + self.tr("Yeniden Adlandır") + " ",
                         on_click(
                             lambda: self.open_conversation_rename(self.conversation_id, self.title)
                         ),
@@ -365,13 +365,17 @@ class ControlsComponent:
             controls.append(
                 (
                     "class:button",
-                    f" {Icon.DELETE}" + self.tr(" Sil "),
+                    f" {ICONS['delete'].icon}" + self.tr(" Sil "),
                     on_click(lambda: self.delete_record(value=self.conversation_id)),
                 )
             )
         if self.layout_enabled:
             controls.append(
-                ("class:button", f" {Icon.SPLIT} {self.tr('Böl')} ", on_click(self.begin_split))
+                (
+                    "class:button",
+                    f" {ICONS['split'].icon} {self.tr('Böl')} ",
+                    on_click(self.begin_split),
+                )
             )
         return controls
 
@@ -382,21 +386,25 @@ class ControlsComponent:
             controls.append(
                 (
                     "class:button",
-                    f" {len(self.pending_attachments)} {Icon.ATTACHMENT} "
+                    f" {len(self.pending_attachments)} {ICONS['attachment'].icon} "
                     if self.pending_attachments
-                    else f" {Icon.ADD} "
+                    else f" {ICONS['add'].icon} "
                     if compact
-                    else f" {Icon.ADD} {self.tr('Dosya')} ",
+                    else f" {ICONS['add'].icon} {self.tr('Dosya')} ",
                     on_click(self.open_attachment),
                 )
             )
         if not self.follow_output:
-            controls.append(("class:button", f" {Icon.DOWN} ", on_click(self.scroll_bottom)))
+            controls.append(
+                ("class:button", f" {ICONS['down'].icon} ", on_click(self.scroll_bottom))
+            )
         if self.active_busy():
             controls.append(
                 (
                     "class:button",
-                    f" {Icon.STOP} " if compact else f" {Icon.STOP} " + self.tr("Durdur") + " ",
+                    f" {ICONS['stop'].icon} "
+                    if compact
+                    else f" {ICONS['stop'].icon} " + self.tr("Durdur") + " ",
                     on_click(self.stop_active_response),
                 )
             )
@@ -404,7 +412,9 @@ class ControlsComponent:
             controls.append(
                 (
                     "class:button",
-                    f" {Icon.UP} " if compact else self.tr(" Gönder") + f" {Icon.UP} ",
+                    f" {ICONS['up'].icon} "
+                    if compact
+                    else self.tr(" Gönder") + f" {ICONS['up'].icon} ",
                     on_click(self.submit_prompt),
                 )
             )
@@ -419,13 +429,13 @@ class ControlsComponent:
             ),
             (self.downloads_panel.footer_label(), self.downloads_panel.open),
             (
-                f" {Icon.SETTINGS} " + self.text("settings", self.tr("Ayarlar")) + " ",
+                f" {ICONS['settings'].icon} " + self.text("settings", self.tr("Ayarlar")) + " ",
                 self.settings_dialog.open,
             ),
             (
-                f" {Icon.RUNNING} " + self.tr("Hesaplar") + " "
+                f" {ICONS['running'].icon} " + self.tr("Hesaplar") + " "
                 if self.session_state.get("authenticated")
-                else f" {Icon.DISABLED} " + self.tr("Hesaplar") + " ",
+                else f" {ICONS['disabled'].icon} " + self.tr("Hesaplar") + " ",
                 self.session_dialog.open,
             ),
         ]

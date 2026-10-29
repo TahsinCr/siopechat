@@ -33,7 +33,7 @@ from .styles import (
     DEFAULT_MESSAGE_STYLE,
     DEFAULT_REASONING_LABEL_STYLE,
     DEFAULT_ROLE_STYLES,
-    Icon,
+    ICONS,
     rich_style_map,
 )
 
@@ -506,7 +506,8 @@ def visible_chat_message(message: dict[str, Any]) -> dict[str, Any] | None:
                     info.append(f"{size / 1024:.1f} KiB" if size >= 1024 else f"{size} B")
                 suffix = " · " + " · ".join(info) if info else ""
                 cards.append(
-                    f"[{Icon.DOWN} {name}](siope-file:{quote(file['url'], safe='')}){suffix}"
+                    f"[{ICONS['down'].icon} {name}]"
+                    f"(siope-file:{quote(file['url'], safe='')}){suffix}"
                 )
             file_list = "  ·  ".join(cards)
             visible["text"] = f"{text}\n\n{file_list}" if text else file_list

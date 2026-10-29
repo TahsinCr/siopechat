@@ -10,7 +10,7 @@ import uuid
 from providers import Capability
 from providers.models import FeatureState
 
-from ..styles import Icon
+from ..styles import ICONS
 
 
 class ComposerComponent:
@@ -31,7 +31,7 @@ class ComposerComponent:
         ):
             self.status = (
                 self.tr("Sağlayıcı devre dışı · taslak korundu · Ayarlar")
-                + f" {Icon.RIGHT} "
+                + f" {ICONS['right'].icon} "
                 + self.tr("Sağlayıcılar")
             )
             self.app.invalidate()
@@ -142,7 +142,9 @@ class ComposerComponent:
         prompt = prompt or self.tr("Please review the attached files.")
         display_prompt = prompt
         if attachments:
-            labels = " ".join(f"[{Icon.ATTACHMENT} {item['name']}]" for item in attachments)
+            labels = " ".join(
+                f"[{ICONS['attachment'].icon} {item['name']}]" for item in attachments
+            )
             display_prompt = f"{display_prompt}\n\n{labels}"
         tab = self.tabs[self.active_tab]
         window = tab.get("history_window")
@@ -394,8 +396,8 @@ class ComposerComponent:
                 self.shortcut("chat.previous_tab"),
                 self.shortcut("chat.next_tab"),
                 self.shortcut("chat.close_tab"),
-                Icon.RUNNING,
-                Icon.COMPLETE,
+                ICONS["running"].icon,
+                ICONS["complete"].icon,
             )
             self.append_system(
                 self.text(

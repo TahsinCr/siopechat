@@ -118,7 +118,6 @@ class Accounts:
             dict(
                 item,
                 key=item["provider"] + "/" + item["id"],
-                icon=PROVIDERS[item["provider"]][1],
                 enabled=config["providers"].get(item["provider"], {}).get("enabled", False),
             )
             for item in config["accounts"]["items"]
@@ -947,7 +946,7 @@ class Accounts:
             # terminal UI's alternate screen.
             options = {"creationflags": 0x208} if os.name == "nt" else {"start_new_session": True}
             result = subprocess.run(
-                [sys.executable, "-m", "webbrowser", "-t", PROVIDERS[item["provider"]][2]],
+                [sys.executable, "-m", "webbrowser", "-t", PROVIDERS[item["provider"]][1]],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -960,7 +959,7 @@ class Accounts:
             return {"opened": True}
         if action == "connect_browser":
             session = self.session(key)
-            url = PROVIDERS[item["provider"]][2]
+            url = PROVIDERS[item["provider"]][1]
             result = session.launch(url)
             if result.get("browser") == "already_running":
                 helper = Path(__file__).parent / "providers" / "scripts" / "page.cjs"
@@ -999,7 +998,7 @@ class Accounts:
                 result = subprocess.run(
                     ["node", str(script)],
                     input=json.dumps(
-                        {"cdp_url": session.cdp_url, "origin": PROVIDERS[item["provider"]][2]}
+                        {"cdp_url": session.cdp_url, "origin": PROVIDERS[item["provider"]][1]}
                     ),
                     capture_output=True,
                     text=True,

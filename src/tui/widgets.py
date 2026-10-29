@@ -12,7 +12,7 @@ from prompt_toolkit.layout.processors import Processor, Transformation
 from prompt_toolkit.mouse_events import MouseButton, MouseEventType
 from prompt_toolkit.utils import get_cwidth
 
-from .styles import DEFAULT_ROLE_ICON_STYLES, DEFAULT_TRANSCRIPT_GUTTER_WIDTH, Icon
+from .styles import DEFAULT_TRANSCRIPT_GUTTER_WIDTH, ICONS
 
 
 class TranscriptControl(UIControl):
@@ -124,7 +124,7 @@ class TranscriptControl(UIControl):
         message = self.view.messages[index]
         role = message.get("role")
         if role in ("user", "assistant"):
-            actions = [("copy", Icon.COPY, self.view.tr("Copy"))]
+            actions = [("copy", ICONS["copy"].icon, self.view.tr("Copy"))]
         else:
             return []
         tab = self.view.tabs[self.view.active_tab]
@@ -135,14 +135,14 @@ class TranscriptControl(UIControl):
         if not viewing_previous and not tab.get("busy") and not tab.get("message_action_pending"):
             available = message.get("actions", ())
             for action, icon, label in (
-                ("edit", Icon.EDIT, "Edit message"),
-                ("retry", Icon.RETRY, "Retry response"),
-                ("branch", Icon.BRANCH, "Branch chat"),
+                ("edit", ICONS["edit"].icon, "Edit message"),
+                ("retry", ICONS["retry"].icon, "Retry response"),
+                ("branch", ICONS["branch"].icon, "Branch chat"),
             ):
                 if action in available:
                     actions.append((action, icon, self.view.tr(label)))
         if role == "assistant" and message.get("_thinking_sources"):
-            actions.append(("sources", Icon.SOURCES, self.view.tr("Sources")))
+            actions.append(("sources", ICONS["sources"].icon, self.view.tr("Sources")))
         tab_id = tab.get("tab_id")
         has_versions = version_count > 1 and role == "assistant"
         version_label = f"{version_index}/{version_count}"
@@ -172,8 +172,8 @@ class TranscriptControl(UIControl):
         def version_fragments(compact, available_width):
             if not has_versions:
                 return []
-            previous = ("version_prev", Icon.BACK, version_index > 1)
-            following = ("version_next", Icon.FORWARD, version_index < version_count)
+            previous = ("version_prev", ICONS["back"].icon, version_index > 1)
+            following = ("version_next", ICONS["forward"].icon, version_index < version_count)
             current = (None, version_label, False)
             if compact:
                 single = following if following[2] else previous
@@ -641,7 +641,7 @@ class TranscriptGutter:
 
     def __call__(self, line_number, wrap_count):
         role = self._starts.get(line_number) if wrap_count == 0 else None
-        role_style = DEFAULT_ROLE_ICON_STYLES.get(role)
+        role_style = ICONS.get(f"role.{role}")
         marker = role_style.icon if role_style else ""
         marker_width = get_cwidth(marker)
         left = max(0, (DEFAULT_TRANSCRIPT_GUTTER_WIDTH - marker_width) // 2)

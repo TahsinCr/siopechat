@@ -12,7 +12,7 @@ from prompt_toolkit.formatted_text import FormattedText
 from accounts import origin
 from providers.history import merge_conversation
 
-from ..styles import Icon
+from ..styles import ICONS
 from ..markdown import (
     visible_chat_messages,
 )
@@ -85,7 +85,7 @@ class HistoryComponent:
                     stamp = datetime.fromtimestamp(updated).strftime("%Y-%m-%d %H:%M")
                 except (OSError, OverflowError, ValueError):
                     pass
-            marker = Icon.FORWARD if index == self.resume_index else " "
+            marker = ICONS["forward"].icon if index == self.resume_index else " "
             style = "class:resume.selected" if index == self.resume_index else "class:resume.item"
             width = max(8, self.terminal_width() - 10)
             value = fit_text(f" {marker} {title}  {stamp}", width)

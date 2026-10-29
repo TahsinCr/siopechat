@@ -10,7 +10,7 @@ from prompt_toolkit.layout.menus import CompletionsMenu
 from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Frame
 
-from .styles import DEFAULT_TAB_WIDTH, Icon
+from .styles import DEFAULT_TAB_WIDTH, ICONS
 from .widgets import fit_text, on_click
 
 
@@ -37,7 +37,7 @@ def workspace_layout(view):
                         lambda: [
                             (
                                 "class:button",
-                                f" {Icon.RETRY} ",
+                                f" {ICONS['retry'].icon} ",
                                 on_click(lambda: view.synchronize("library")),
                             )
                         ],
@@ -60,7 +60,13 @@ def workspace_layout(view):
             VSplit(
                 [
                     text_window(
-                        lambda: [("class:button", f" {Icon.SEARCH} ", on_click(view.open_resume))],
+                        lambda: [
+                            (
+                                "class:button",
+                                f" {ICONS['search'].icon} ",
+                                on_click(view.open_resume),
+                            )
+                        ],
                         width=3,
                     ),
                     view.sidebar_search,
@@ -69,7 +75,7 @@ def workspace_layout(view):
                             lambda: [
                                 (
                                     "class:button",
-                                    f" {Icon.FILTER} ",
+                                    f" {ICONS['filter'].icon} ",
                                     on_click(view.open_filters),
                                 )
                             ],
@@ -252,7 +258,7 @@ def workspace_layout(view):
 
 def render_tab_bar(view):
     width = view.terminal_width()
-    prefix = fit_text(f" {Icon.MENU} SiopeChat ", max(0, width - 12))
+    prefix = fit_text(f" {ICONS['menu'].icon} SiopeChat ", max(0, width - 12))
     fragments = [("class:brand", prefix, on_click(view.toggle_sidebar))]
     available = max(0, width - get_cwidth(prefix) - 12)
     entries = [i for i, tab in enumerate(view.tabs) if not tab.get("empty_workspace")]
@@ -268,7 +274,7 @@ def render_tab_bar(view):
             representative = view.active_tab if view.active_tab in members else members[0]
             grouped_indices.update(members)
             representatives.add(representative)
-            group_titles[representative] = f" {Icon.SPLIT} ".join(
+            group_titles[representative] = f" {ICONS['split'].icon} ".join(
                 view.title if i == view.active_tab else view.tabs[i].get("title", view.tr("Sohbet"))
                 for i in members
             )
@@ -283,13 +289,13 @@ def render_tab_bar(view):
             view.title if i == view.active_tab else tab.get("title", view.tr("Sohbet"))
         )
         marker = (
-            f"{Icon.RUNNING} "
+            f"{ICONS['running'].icon} "
             if tab.get("busy")
-            else f"{Icon.COMPLETE} "
+            else f"{ICONS['complete'].icon} "
             if tab.get("completed_pending")
-            else f"{Icon.RETRY} "
+            else f"{ICONS['retry'].icon} "
             if tab.get("loading") or tab.get("syncing")
-            else f"{Icon.IDLE} "
+            else f"{ICONS['idle'].icon} "
             if tab.get("temporary")
             else ""
         )
@@ -310,7 +316,7 @@ def render_tab_bar(view):
         fragments.append(
             (
                 "class:tab.close " + style,
-                f" {Icon.CLOSE} ",
+                f" {ICONS['close'].icon} ",
                 on_click(lambda i=i: view.close_clicked_tab(i)),
             )
         )
@@ -318,10 +324,10 @@ def render_tab_bar(view):
     fragments.append(("class:tabs", " " * max(0, width - used - 12)))
     fragments.extend(
         [
-            ("class:button", f" {Icon.BACK} ", on_click(lambda: view.switch_tab(-1))),
-            ("class:button", f" {Icon.FORWARD} ", on_click(lambda: view.switch_tab(1))),
+            ("class:button", f" {ICONS['back'].icon} ", on_click(lambda: view.switch_tab(-1))),
+            ("class:button", f" {ICONS['forward'].icon} ", on_click(lambda: view.switch_tab(1))),
             ("class:button", " + ", on_click(view.new_tab)),
-            ("class:button", f" {Icon.CLOSE_ALL} ", on_click(view.close_all_tabs)),
+            ("class:button", f" {ICONS['close_all'].icon} ", on_click(view.close_all_tabs)),
         ]
     )
     return FormattedText(fragments)

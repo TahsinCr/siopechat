@@ -40,7 +40,7 @@ class StyleItem:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class IconStyleItem(StyleItem):
-    """A named role style that also carries its terminal glyph."""
+    """A named terminal icon that carries its glyph and colors together."""
 
     icon: str
 
@@ -55,56 +55,67 @@ def rich_style_map(*groups: Mapping[str, StyleItem]) -> dict[str, str]:
     return {item.name: item.to_rich() for group in groups for item in group.values()}
 
 
-class Icon:
-    """Monochrome text glyphs used across the terminal interface."""
-
-    # Message roles and actions
-    USER = "●"
-    ASSISTANT = "◆"
-    THINKING = "◇"
-    COPY = "⧉"
-    EDIT = "✎"
-    RETRY = "↻"
-    BRANCH = "⎇"
-    SOURCES = "↗"
-    DELETE = "⌫"
-    ATTACHMENT = "▤"
-
-    # Navigation and controls
-    ADD = "+"
-    MINUS = "-"
-    DROPDOWN = "▾"
-    COLLAPSED = "▸"
-    CLOSE = "×"
-    CLOSE_ALL = "⊗"
-    SEARCH = "⌕"
-    FILTER = "≡"
-    MENU = "≣"
-    SPLIT = "◫"
-    SETTINGS = "⚙"
-    POWER = "⏻"
-    STOP = "■"
-    UP = "↑"
-    DOWN = "↓"
-    LEFT = "←"
-    RIGHT = "→"
-    BACK = "‹"
-    FORWARD = "›"
-    NEXT = "↳"
-    INFO = "ⓘ"
-
-    # State markers and activity
-    RUNNING = "●"
-    COMPLETE = "✓"
-    IDLE = "◌"
-    DISABLED = "○"
-    PROVIDER = "◈"
-    SPINNER = "|/-\\"
-
 DEFAULT_TAB_WIDTH = 26
 DEFAULT_MESSAGE_WIDTH = 100
 DEFAULT_TRANSCRIPT_GUTTER_WIDTH = 4
 DEFAULT_COMPOSER_MAX_LINES = 6
+
+ICONS: dict[str, IconStyleItem] = {
+    "role.user": IconStyleItem(
+        name="role.user", color="#69aef2", bgcolor="#202020", style="bold", icon="●"
+    ),
+    "role.assistant": IconStyleItem(
+        name="role.assistant", color="#78c9a6", bgcolor="#202020", style="bold", icon="◆"
+    ),
+    "role.reasoning": IconStyleItem(
+        name="role.reasoning", color="#b6a2e5", bgcolor="#202020", style="bold", icon="◇"
+    ),
+    "provider.chatgpt": IconStyleItem(
+        name="provider.chatgpt", color="#ffffff", style="bold", icon="◎"
+    ),
+    "provider.gemini": IconStyleItem(
+        name="provider.gemini", color="#8ecfff", style="bold", icon="✦"
+    ),
+    "provider.claude": IconStyleItem(
+        name="provider.claude", color="#d99977", style="bold", icon="✳"
+    ),
+    "provider.generic": IconStyleItem(
+        name="provider.generic", color="#b7c8db", icon="◈"
+    ),
+    "copy": IconStyleItem(name="icon.copy", color="#aeb9c4", icon="⧉"),
+    "edit": IconStyleItem(name="icon.edit", color="#aeb9c4", icon="✎"),
+    "retry": IconStyleItem(name="icon.retry", color="#8ecfff", icon="↻"),
+    "branch": IconStyleItem(name="icon.branch", color="#c3a6ff", icon="⎇"),
+    "sources": IconStyleItem(name="icon.sources", color="#79c5d0", icon="↗"),
+    "delete": IconStyleItem(name="icon.delete", color="#e58f8f", icon="⌫"),
+    "attachment": IconStyleItem(name="icon.attachment", color="#c5cbd2", icon="▤"),
+    "add": IconStyleItem(name="icon.add", color="#86d49b", icon="+"),
+    "minus": IconStyleItem(name="icon.minus", color="#bcbcbc", icon="-"),
+    "dropdown": IconStyleItem(name="icon.dropdown", color="#a6a6a6", icon="▾"),
+    "collapsed": IconStyleItem(name="icon.collapsed", color="#a6a6a6", icon="▸"),
+    "close": IconStyleItem(name="icon.close", color="#a6a6a6", icon="×"),
+    "close_all": IconStyleItem(name="icon.close_all", color="#e58f8f", icon="⊗"),
+    "search": IconStyleItem(name="icon.search", color="#aeb9c4", icon="⌕"),
+    "filter": IconStyleItem(name="icon.filter", color="#aeb9c4", icon="≡"),
+    "menu": IconStyleItem(name="icon.menu", color="#c3a6ff", icon="≣"),
+    "split": IconStyleItem(name="icon.split", color="#aeb9c4", icon="◫"),
+    "settings": IconStyleItem(name="icon.settings", color="#c3a6ff", icon="⚙"),
+    "power": IconStyleItem(name="icon.power", color="#e58f8f", icon="⏻"),
+    "stop": IconStyleItem(name="icon.stop", color="#e58f8f", icon="■"),
+    "up": IconStyleItem(name="icon.up", color="#aeb9c4", icon="↑"),
+    "down": IconStyleItem(name="icon.down", color="#aeb9c4", icon="↓"),
+    "left": IconStyleItem(name="icon.left", color="#aeb9c4", icon="←"),
+    "right": IconStyleItem(name="icon.right", color="#aeb9c4", icon="→"),
+    "back": IconStyleItem(name="icon.back", color="#aeb9c4", icon="‹"),
+    "forward": IconStyleItem(name="icon.forward", color="#aeb9c4", icon="›"),
+    "next": IconStyleItem(name="icon.next", color="#aeb9c4", icon="↳"),
+    "info": IconStyleItem(name="icon.info", color="#8ecfff", icon="ⓘ"),
+    "running": IconStyleItem(name="icon.running", color="#f0ad66", icon="●"),
+    "complete": IconStyleItem(name="icon.complete", color="#86d49b", icon="✓"),
+    "idle": IconStyleItem(name="icon.idle", color="#9ca3af", icon="◌"),
+    "disabled": IconStyleItem(name="icon.disabled", color="#777777", icon="○"),
+    "spinner": IconStyleItem(name="icon.spinner", color="#8ecfff", icon="|/-\\"),
+}
 
 DEFAULT_MARKDOWN_STYLES: dict[str, StyleItem] = {
     "markdown.text": StyleItem(name="markdown.text", color="#dce3e8"),
@@ -141,34 +152,7 @@ DEFAULT_REASONING_LABEL_STYLE = StyleItem(
     style="bold",
 )
 
-DEFAULT_ROLE_ICON_STYLES: dict[str, IconStyleItem] = {
-    "user": IconStyleItem(
-        name="role.user",
-        color="#69aef2",
-        bgcolor="#202020",
-        style="bold",
-        icon=Icon.USER,
-    ),
-    "assistant": IconStyleItem(
-        name="role.assistant",
-        color="#78c9a6",
-        bgcolor="#202020",
-        style="bold",
-        icon=Icon.ASSISTANT,
-    ),
-    "reasoning": IconStyleItem(
-        name="role.reasoning",
-        color="#b6a2e5",
-        bgcolor="#202020",
-        style="bold",
-        icon=Icon.THINKING,
-    ),
-}
-
 DEFAULT_TERMINAL_STYLES: dict[str, StyleItem] = {
-    "provider.chatgpt": StyleItem(name="provider.chatgpt", color="#ffffff"),
-    "provider.gemini": StyleItem(name="provider.gemini", color="#8ecfff"),
-    "provider.claude": StyleItem(name="provider.claude", color="#d99977"),
     "sidebar.open": StyleItem(name="sidebar.open", color="#ffffff", style="bold"),
     "sidebar.running": StyleItem(name="sidebar.running", color="#86d49b", style="bold"),
     "tab.open": StyleItem(name="tab.open", color="#ffffff", style="bold"),

@@ -16,7 +16,7 @@ from providers import Capability
 from providers.models import FeatureState, ModelCatalog
 
 from ..actions import action_order, action_title
-from ..styles import Icon
+from ..styles import ICONS
 from ..widgets import (
     fit_text,
     on_click,
@@ -250,7 +250,7 @@ class CommandComponent:
                             else f"model.account:{key}:{model.id}",
                             "title": self.tr("Model · {0}").format(model.chat_title or model.title)
                             + (
-                                f" {Icon.COMPLETE}"
+                                f" {ICONS['complete'].icon}"
                                 if key == self.account_key and model.id == self.model
                                 else ""
                             ),
@@ -263,7 +263,7 @@ class CommandComponent:
                 {
                     "id": f"effort.select:{choice.id}",
                     "title": self.tr("Efor · {0}").format(choice.title)
-                    + (f" {Icon.COMPLETE}" if choice.id == self.effort else ""),
+                    + (f" {ICONS['complete'].icon}" if choice.id == self.effort else ""),
                     "detail": f"{choice.id} · {selected.chat_title or selected.title}",
                 }
                 for choice in selected.efforts

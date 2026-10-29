@@ -31,9 +31,8 @@ from ..projects import ProjectPanel
 from ..session import SessionDialog
 from ..settings import SettingsDialog
 from ..styles import (
-    DEFAULT_ROLE_ICON_STYLES,
     DEFAULT_TERMINAL_STYLES,
-    Icon,
+    ICONS,
     prompt_toolkit_style_map,
 )
 from ..widgets import (
@@ -327,7 +326,7 @@ class ChatView(
             content=self.sidebar_control, wrap_lines=False, always_hide_cursor=True
         )
         self.palette_search = TextArea(
-            height=1, prompt=f"{Icon.SEARCH} ", style="class:palette.search"
+            height=1, prompt=f"{ICONS['search'].icon} ", style="class:palette.search"
         )
         self.palette_search.buffer.on_text_changed += lambda _buffer: self.filter_palette()
         self.palette_control = BoundedTextControl(
@@ -369,7 +368,7 @@ class ChatView(
             min_redraw_interval=0.05,
             max_render_postpone_time=0.1,
             style=Style.from_dict(
-                prompt_toolkit_style_map(DEFAULT_TERMINAL_STYLES, DEFAULT_ROLE_ICON_STYLES)
+                prompt_toolkit_style_map(DEFAULT_TERMINAL_STYLES, ICONS)
             ),
         )
 

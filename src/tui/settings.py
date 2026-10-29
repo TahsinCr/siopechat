@@ -13,7 +13,7 @@ from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Button, TextArea
 
 from .actions import action_order, action_title
-from .styles import Icon
+from .styles import ICONS
 from .widgets import BoundedTextControl, SelectionWindow, fit_text, on_click
 
 
@@ -327,10 +327,10 @@ class SettingsDialog:
                         (
                             "class:settings.enabled" if row["value"] else "class:sidebar.muted",
                             (
-                                f" {Icon.RUNNING} "
+                                f" {ICONS['running'].icon} "
                                 + self.view.text("enabled", self.view.tr("Etkin"))
                                 if row["value"]
-                                else f" {Icon.DISABLED} "
+                                else f" {ICONS['disabled'].icon} "
                                 + self.view.text("disabled", self.view.tr("Kapalı"))
                             )
                             + "\n",

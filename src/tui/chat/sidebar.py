@@ -9,9 +9,8 @@ from prompt_toolkit.utils import get_cwidth
 
 from accounts import origin
 from providers import Capability
-from providers.registry import PROVIDERS
 
-from ..styles import Icon
+from ..styles import ICONS
 from ..library import build_sidebar_rows, merge_chat_listing
 from ..widgets import (
     fit_text,
@@ -81,19 +80,22 @@ class SidebarComponent:
         if row.get("id") in open_ids:
             style += " class:sidebar.open"
         marker = (
-            (Icon.COLLAPSED if row["collapsed"] else Icon.DROPDOWN)
+            (ICONS["collapsed"].icon if row["collapsed"] else ICONS["dropdown"].icon)
             if kind in ("section", "project")
-            else (Icon.FORWARD if selected else " ")
+            else (ICONS["forward"].icon if selected else " ")
         )
         indent = "   " if row.get("nested") else " "
         fragments = [(style, indent + marker + " ", click)]
         prefix_width = get_cwidth(indent + marker + " ")
         if kind in ("chat", "project"):
             provider = row.get("provider_id", "chatgpt")
-            provider_icon = PROVIDERS.get(provider, (provider, Icon.PROVIDER, ""))[1]
+            provider_style = ICONS.get(
+                f"provider.{provider}", ICONS["provider.generic"]
+            )
+            provider_icon = provider_style.icon
             fragments.append(
                 (
-                    "class:provider." + provider,
+                    f"class:{provider_style.name}",
                     provider_icon + " ",
                     click,
                 )
@@ -101,7 +103,7 @@ class SidebarComponent:
             prefix_width += get_cwidth(provider_icon + " ")
         suffix = " " + str(row.get("count", "")) if kind in ("section", "project") else ""
         if kind == "project":
-            suffix += f" {Icon.INFO}"
+            suffix += f" {ICONS['info'].icon}"
         section_action = None
         if kind == "section" and row.get("id") in ("projects", "chats"):
             section_action = self.open_project_create if row["id"] == "projects" else self.new_tab
@@ -109,12 +111,12 @@ class SidebarComponent:
         state = states.get((key, "conversation" if kind == "chat" else "container", remote))
         live_tab = row.get("live_tab")
         if kind == "chat" and live_tab is not None and live_tab.get("busy"):
-            suffix += f" {Icon.RUNNING}"
+            suffix += f" {ICONS['running'].icon}"
             style += " class:sidebar.running"
         elif kind == "chat" and live_tab is not None and live_tab.get("completed_pending"):
-            suffix += f" {Icon.COMPLETE}"
+            suffix += f" {ICONS['complete'].icon}"
         if state == "syncing":
-            suffix += f" {Icon.RETRY}"
+            suffix += f" {ICONS['retry'].icon}"
         elif state == "error":
             suffix += " !"
         provider_capabilities = self._sidebar_provider_capabilities(
@@ -126,8 +128,8 @@ class SidebarComponent:
             and Capability.RENAME in provider_capabilities
         )
         can_delete = kind == "chat" and Capability.DELETE in provider_capabilities
-        action_suffix = (f" {Icon.EDIT}" if can_rename else "") + (
-            f" {Icon.DELETE}" if can_delete else ""
+        action_suffix = (f" {ICONS['edit'].icon}" if can_rename else "") + (
+            f" {ICONS['delete'].icon}" if can_delete else ""
         )
         reserve_suffix = suffix + action_suffix + ("  +" if section_action is not None else "")
         width = self.sidebar_width() - prefix_width - get_cwidth(reserve_suffix)
@@ -165,7 +167,7 @@ class SidebarComponent:
                 fragments.append(
                     (
                         "class:button",
-                        f" {Icon.EDIT}",
+                        f" {ICONS['edit'].icon}",
                         on_click(
                             lambda identifier=chat_id, name=row["title"]: (
                                 self.open_conversation_rename(identifier, name)
@@ -177,7 +179,7 @@ class SidebarComponent:
                 fragments.append(
                     (
                         "class:button",
-                        f" {Icon.DELETE}",
+                        f" {ICONS['delete'].icon}",
                         on_click(lambda identifier=chat_id: self.delete_record(value=identifier)),
                     )
                 )
