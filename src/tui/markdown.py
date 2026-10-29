@@ -33,6 +33,7 @@ from .styles import (
     DEFAULT_MESSAGE_FOREGROUND,
     DEFAULT_REASONING_MARKER,
     DEFAULT_ROLE_BACKGROUNDS,
+    DEFAULT_ROLE_TEXT_FOREGROUNDS,
     Icon,
 )
 
@@ -43,6 +44,13 @@ WRITING_DIRECTIVE_PATTERN = re.compile(
 )
 
 DEFAULT_MARKDOWN_THEME = Theme(DEFAULT_MARKDOWN_STYLE)
+DEFAULT_ROLE_MARKDOWN_THEMES = {
+    role: Theme(
+        DEFAULT_MARKDOWN_STYLE
+        | {"markdown.text": foreground, "markdown.paragraph": foreground}
+    )
+    for role, foreground in DEFAULT_ROLE_TEXT_FOREGROUNDS.items()
+}
 MAX_CODE_HIGHLIGHT_CHARS = 64 * 1024
 
 
@@ -759,7 +767,7 @@ class MessageRenderer:
             no_color=False,
             width=width,
             soft_wrap=False,
-            theme=DEFAULT_MARKDOWN_THEME,
+            theme=DEFAULT_ROLE_MARKDOWN_THEMES.get(role, DEFAULT_MARKDOWN_THEME),
             legacy_windows=False,
         )
         background = DEFAULT_ROLE_BACKGROUNDS.get(role, "#181818")
@@ -777,7 +785,10 @@ class MessageRenderer:
                 Padding(
                     content,
                     (0, 1),
-                    style=f"{DEFAULT_MESSAGE_FOREGROUND} on {background}",
+                    style=(
+                        f"{DEFAULT_ROLE_TEXT_FOREGROUNDS.get(role, DEFAULT_MESSAGE_FOREGROUND)} "
+                        f"on {background}"
+                    ),
                     expand=True,
                 )
             )
@@ -868,7 +879,7 @@ class MessageRenderer:
             no_color=False,
             width=width,
             soft_wrap=False,
-            theme=DEFAULT_MARKDOWN_THEME,
+            theme=DEFAULT_ROLE_MARKDOWN_THEMES.get(role, DEFAULT_MARKDOWN_THEME),
             # Preserve OSC-8 targets in the ANSI transcript on Windows too;
             # legacy console detection otherwise strips clickable link data.
             legacy_windows=False,
@@ -892,7 +903,10 @@ class MessageRenderer:
                 Padding(
                     content,
                     (0, 1),
-                    style=f"{DEFAULT_MESSAGE_FOREGROUND} on {background}",
+                    style=(
+                        f"{DEFAULT_ROLE_TEXT_FOREGROUNDS.get(role, DEFAULT_MESSAGE_FOREGROUND)} "
+                        f"on {background}"
+                    ),
                     expand=True,
                 )
             )

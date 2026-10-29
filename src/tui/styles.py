@@ -78,11 +78,21 @@ DEFAULT_MARKDOWN_STYLE = {
 DEFAULT_MESSAGE_FOREGROUND = "#dedede"
 
 DEFAULT_ROLE_BACKGROUNDS = {
-    "user": "#383838",
-    "assistant": "#303030",
-    "reasoning": "#303030",
+    "user": "#2d343c",
+    "assistant": "#2d3330",
+    "reasoning": "#292e37",
 }
-DEFAULT_REASONING_MARKER = "bold #a6a6a6"
+DEFAULT_ROLE_TEXT_FOREGROUNDS = {
+    "user": "#dce6f2",
+    "assistant": "#e1e8e3",
+    "reasoning": "#d2d8e4",
+}
+DEFAULT_ROLE_ICON_FOREGROUNDS = {
+    "user": "#69aef2",
+    "assistant": "#78c9a6",
+    "reasoning": "#b6a2e5",
+}
+DEFAULT_REASONING_MARKER = f"bold {DEFAULT_ROLE_TEXT_FOREGROUNDS['reasoning']}"
 DEFAULT_TAB_WIDTH = 26
 DEFAULT_MESSAGE_WIDTH = 100
 DEFAULT_TRANSCRIPT_GUTTER_WIDTH = 4
@@ -144,9 +154,9 @@ DEFAULT_TERMINAL_STYLE = {
     "metadata.project": "bg:#242424 bold #679bd4",
     "metadata.temporary": "bg:#242424 bold #c3a6ff",
     "tab.divider": "bg:#202020 #454545",
-    "role.user": "bg:#202020 bold #d0d0d0",
-    "role.reasoning": "bg:#202020 bold #b0b0b0",
-    "role.assistant": "bg:#202020 bold #eeeeee",
+    "role.user": f"bg:#202020 bold {DEFAULT_ROLE_ICON_FOREGROUNDS['user']}",
+    "role.reasoning": f"bg:#202020 bold {DEFAULT_ROLE_ICON_FOREGROUNDS['reasoning']}",
+    "role.assistant": f"bg:#202020 bold {DEFAULT_ROLE_ICON_FOREGROUNDS['assistant']}",
     "metadata.effort": "bg:#242424 bold #86d49b",
     "tab.close": "#929292",
     "selection": "bold #e1e1e1",

@@ -19,6 +19,7 @@ Python distributions use the corresponding PEP 440 version (`1.5b0` for `v1.5-be
 
 - Replace emoji and full-width UI glyphs with monochrome, single-cell symbols and an ASCII spinner to reduce platform-dependent rendering and terminal-width drift.
 - Keep terminal UI glyphs beside the TUI style definitions in `src/tui/styles.py`, preserving their current appearance and providing one place to review them.
+- Give user, assistant, and thinking messages distinct dark surfaces, with separately configurable text and role-icon colors.
 - Permit duplicate shortcut assignments and mark every conflicting action in red in Settings.
 - Reduce the sidebar width on narrow terminals so the transcript and its controls retain usable space.
 - Resolve built-in action labels from the active locale and use the existing English catalog fallback for untranslated keys.
