@@ -94,27 +94,23 @@ class ControlsComponent:
                 if selected.metadata.get("effort_error")
                 else self.tr("Desteklenmiyor")
             )
-        model_text = self.tr(" Model: {0}").format(model) + f" {ICONS['dropdown'].icon} "
-        effort_text = self.tr(" Efor: {0}").format(effort) + f" {ICONS['dropdown'].icon} "
+        model_text = f" {model} {ICONS['dropdown'].icon} "
+        effort_text = f" {effort} {ICONS['dropdown'].icon} "
         project_text = (
-            self.tr(" Proje: ")
+            " "
             + fit_text(self.current_project.get("name") or self.tr("Projesiz"), 22)
             + f" {ICONS['dropdown'].icon} "
         )
         temporary_supported = Capability.TEMPORARY in self.provider_features
-        temporary_text = (
-            self.tr(" Geçici: ")
-            + (
-                (
-                    self.tr("Açık") + f" {ICONS['running'].icon}"
-                    if self.temporary
-                    else self.tr("Kapalı") + f" {ICONS['disabled'].icon}"
-                )
-                if temporary_supported
-                else self.tr("Desteklenmiyor")
-            )
-            + " "
-        )
+        if self.temporary:
+            temporary_style = "class:metadata.temporary"
+            temporary_text = f" {self.tr('Açık')} {ICONS['running'].icon} "
+        elif temporary_supported:
+            temporary_style = "class:metadata.temporary.disabled"
+            temporary_text = f" {self.tr('Kapalı')} {ICONS['disabled'].icon} "
+        else:
+            temporary_style = "class:metadata.temporary.disabled"
+            temporary_text = f" {self.tr('Desteklenmiyor')} "
         fragments = (
             list(self.render_project_actions()) + [("", "\n")] if self.tab_kind == "project" else []
         )
@@ -124,7 +120,7 @@ class ControlsComponent:
             ("class:metadata.model", model_text, lambda: self.handle_command("/model")),
             ("class:metadata.effort", effort_text, lambda: self.handle_command("/effort")),
             ("class:metadata.project", project_text, self.open_project_picker),
-            ("class:metadata.temporary", temporary_text, self.toggle_temporary_chat),
+            (temporary_style, temporary_text, self.toggle_temporary_chat),
         ):
             if self.tab_kind == "project" and style in (
                 "class:metadata.project",

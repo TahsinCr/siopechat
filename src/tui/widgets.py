@@ -188,7 +188,7 @@ class TranscriptControl(UIControl):
                     (previous, current, following),
                     (current, (None, " ", False), single),
                     (current, single),
-                    (single,),
+                    (current,),
                 )
                 values = next(
                     (

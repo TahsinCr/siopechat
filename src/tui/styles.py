@@ -250,6 +250,11 @@ DEFAULT_TERMINAL_STYLES: dict[str, StyleItem] = {
         bgcolor="#242424",
         style="bold",
     ),
+    "metadata.temporary.disabled": StyleItem(
+        name="metadata.temporary.disabled",
+        color="#929292",
+        bgcolor="#242424",
+    ),
     "tab.divider": StyleItem(name="tab.divider", color="#454545", bgcolor="#202020"),
     "metadata.effort": StyleItem(
         name="metadata.effort",
