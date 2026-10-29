@@ -105,13 +105,13 @@ class ControlsComponent:
         temporary_label = self.tr("Geçici")
         if self.temporary:
             temporary_style = "class:metadata.temporary"
-            temporary_text = f" {temporary_label} {self.tr('Açık')} {ICONS['running'].icon} "
+            temporary_text = f" {temporary_label} {ICONS['running'].icon} "
         elif temporary_supported:
             temporary_style = "class:metadata.temporary.disabled"
-            temporary_text = f" {temporary_label} {self.tr('Kapalı')} {ICONS['disabled'].icon} "
+            temporary_text = f" {temporary_label} {ICONS['disabled'].icon} "
         else:
             temporary_style = "class:metadata.temporary.disabled"
-            temporary_text = f" {temporary_label} {self.tr('Desteklenmiyor')} "
+            temporary_text = f" {temporary_label} "
         fragments = (
             list(self.render_project_actions()) + [("", "\n")] if self.tab_kind == "project" else []
         )

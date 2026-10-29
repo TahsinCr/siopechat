@@ -15,6 +15,7 @@ from providers import Capability
 from settings import DEFAULTS
 from tests import tui_support as interaction
 from tests.tui_support import ResizableOutput, screen_text
+from tui.styles import ICONS
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -94,9 +95,14 @@ class LocalizationTests(unittest.TestCase):
             view.provider_features = frozenset({Capability.TEMPORARY})
             for locale, (label, state) in expected.items():
                 view.translations = catalog().merged(locale)
-                header = "".join(fragment[1] for fragment in view.render_chat_header())
-                self.assertIn(label, header, locale)
-                self.assertIn(state, header, locale)
+                temporary_control = next(
+                    fragment
+                    for fragment in view.render_chat_header()
+                    if "metadata.temporary" in fragment[0]
+                )
+                self.assertIn(label, temporary_control[1], locale)
+                self.assertNotIn(state, temporary_control[1], locale)
+                self.assertIn(ICONS["disabled"].icon, temporary_control[1], locale)
 
 
 class RussianTerminalTests(unittest.IsolatedAsyncioTestCase):

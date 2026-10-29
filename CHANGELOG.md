@@ -11,6 +11,7 @@ Python distributions use the corresponding PEP 440 version (`1.5b0` for `v1.5-be
 ### Fixed
 
 - Use the transcript background behind role icons in the conversation gutter while preserving each role's icon color.
+- Show only the localized temporary-chat label in the composer bar while retaining its state icon and color.
 
 ### Added
 
