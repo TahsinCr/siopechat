@@ -8,7 +8,7 @@ from prompt_toolkit.utils import get_cwidth
 from accounts import origin
 from providers import Capability
 
-from ..icons import Icon
+from ..styles import Icon
 from ..layout import render_tab_bar
 from ..widgets import (
     fit_text,

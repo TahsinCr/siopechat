@@ -16,7 +16,7 @@ from providers import Capability
 from providers.models import FeatureState, ModelCatalog
 
 from ..actions import action_order, action_title
-from ..icons import Icon
+from ..styles import Icon
 from ..widgets import (
     fit_text,
     on_click,

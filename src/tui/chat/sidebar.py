@@ -11,7 +11,7 @@ from accounts import origin
 from providers import Capability
 from providers.registry import PROVIDERS
 
-from ..icons import Icon
+from ..styles import Icon
 from ..library import build_sidebar_rows, merge_chat_listing
 from ..widgets import (
     fit_text,

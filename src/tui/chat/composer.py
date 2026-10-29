@@ -10,7 +10,7 @@ import uuid
 from providers import Capability
 from providers.models import FeatureState
 
-from ..icons import Icon
+from ..styles import Icon
 
 
 class ComposerComponent:

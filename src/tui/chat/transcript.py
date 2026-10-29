@@ -18,7 +18,6 @@ from ..history import (
     prepare_transcript,
     prepare_virtual_transcript,
 )
-from ..icons import Icon
 from ..markdown import (
     DEFAULT_MARKDOWN_THEME,
     index_transcript,
@@ -28,6 +27,7 @@ from ..styles import (
     DEFAULT_COMPOSER_MAX_LINES,
     DEFAULT_MESSAGE_WIDTH,
     DEFAULT_TRANSCRIPT_GUTTER_WIDTH,
+    Icon,
 )
 
 

@@ -1,4 +1,58 @@
-"""Fixed terminal and Markdown styles used by the CLI."""
+"""Fixed terminal styles and shared glyphs used by the TUI."""
+
+
+class Icon:
+    """Monochrome text glyphs used across the terminal interface."""
+
+    # Message roles and actions
+    USER = "●"
+    ASSISTANT = "◆"
+    THINKING = "◇"
+    COPY = "⧉"
+    EDIT = "✎"
+    RETRY = "↻"
+    BRANCH = "⎇"
+    SOURCES = "↗"
+    DELETE = "⌫"
+    ATTACHMENT = "▤"
+
+    # Navigation and controls
+    ADD = "+"
+    MINUS = "-"
+    DROPDOWN = "▾"
+    COLLAPSED = "▸"
+    CLOSE = "×"
+    CLOSE_ALL = "⊗"
+    SEARCH = "⌕"
+    FILTER = "≡"
+    MENU = "≣"
+    SPLIT = "◫"
+    SETTINGS = "⚙"
+    POWER = "⏻"
+    STOP = "■"
+    UP = "↑"
+    DOWN = "↓"
+    LEFT = "←"
+    RIGHT = "→"
+    BACK = "‹"
+    FORWARD = "›"
+    NEXT = "↳"
+    INFO = "ⓘ"
+
+    # State markers and activity
+    RUNNING = "●"
+    COMPLETE = "✓"
+    IDLE = "◌"
+    DISABLED = "○"
+    PROVIDER = "◈"
+    SPINNER = "|/-\\"
+
+
+ROLE_MARKERS = {
+    "user": Icon.USER,
+    "assistant": Icon.ASSISTANT,
+    "reasoning": Icon.THINKING,
+}
 
 DEFAULT_MARKDOWN_STYLE = {
     "markdown.text": "#dce3e8",

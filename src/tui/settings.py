@@ -13,7 +13,7 @@ from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Button, TextArea
 
 from .actions import action_order, action_title
-from .icons import Icon
+from .styles import Icon
 from .widgets import BoundedTextControl, SelectionWindow, fit_text, on_click
 
 

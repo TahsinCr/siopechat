@@ -10,7 +10,7 @@ from prompt_toolkit.layout.margins import ScrollbarMargin
 from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Button, Frame
 
-from .icons import Icon
+from .styles import Icon
 from .widgets import BoundedTextControl, fit_text, on_click
 
 

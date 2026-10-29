@@ -22,7 +22,6 @@ from providers.models import FeatureState, ModelCatalog
 from settings import DEFAULT_KEYBINDINGS
 
 from ..bindings import key_bindings
-from ..icons import Icon
 from ..layout import render_tab_bar, workspace_layout
 from ..markdown import (
     MessageRenderer,
@@ -31,9 +30,7 @@ from ..markdown import (
 from ..projects import ProjectPanel
 from ..session import SessionDialog
 from ..settings import SettingsDialog
-from ..styles import (
-    DEFAULT_TERMINAL_STYLE,
-)
+from ..styles import DEFAULT_TERMINAL_STYLE, Icon
 from ..widgets import (
     BoundedTextControl,
     ComposerPlaceholderProcessor,

@@ -12,8 +12,7 @@ from prompt_toolkit.layout.processors import Processor, Transformation
 from prompt_toolkit.mouse_events import MouseButton, MouseEventType
 from prompt_toolkit.utils import get_cwidth
 
-from .icons import ROLE_MARKERS, Icon
-from .styles import DEFAULT_TRANSCRIPT_GUTTER_WIDTH
+from .styles import DEFAULT_TRANSCRIPT_GUTTER_WIDTH, Icon, ROLE_MARKERS
 
 
 class TranscriptControl(UIControl):

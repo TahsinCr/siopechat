@@ -28,12 +28,12 @@ from rich.syntax import Syntax
 from rich.text import Text
 from rich.theme import Theme
 
-from .icons import Icon
 from .styles import (
     DEFAULT_MARKDOWN_STYLE,
     DEFAULT_MESSAGE_FOREGROUND,
     DEFAULT_REASONING_MARKER,
     DEFAULT_ROLE_BACKGROUNDS,
+    Icon,
 )
 
 ANNOTATION_PATTERN = re.compile(r"\ue200([^\ue201\ue202]+)(?:\ue202(.*?))?\ue201")

@@ -10,8 +10,7 @@ from prompt_toolkit.layout.menus import CompletionsMenu
 from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Frame
 
-from .icons import Icon
-from .styles import DEFAULT_TAB_WIDTH
+from .styles import DEFAULT_TAB_WIDTH, Icon
 from .widgets import fit_text, on_click
 
 
