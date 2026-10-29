@@ -226,7 +226,7 @@ class TranscriptControl(UIControl):
         def action_fragments(selected_actions, compact):
             result = [(toolbar_style, "" if compact else prefix)]
             for position, (action, icon, label) in enumerate(selected_actions):
-                text = icon if compact else f"{icon} {label}"
+                text = f"{icon} " if compact else f"{icon} {label}"
                 if not compact:
                     text = f" {text} "
 

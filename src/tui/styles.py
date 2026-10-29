@@ -52,6 +52,7 @@ DEFAULT_TERMINAL_STYLE = {
     "settings.search": "bg:#292d32 #d8e3ee",
     "settings.editor": "bg:#30363d #ffffff",
     "settings.value": "#90b6d4",
+    "settings.conflict": "bold #ff6868",
     "settings": "bg:#202020 #dedede",
     "settings.title": "bold #c3a6ff",
     "downloads.header": "bg:#292929",

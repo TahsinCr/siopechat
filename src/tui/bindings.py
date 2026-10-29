@@ -13,32 +13,31 @@ def key_bindings(view) -> KeyBindings:
     configured = view.keybindings
     view.action_handlers = {}
 
-    def bind(action_id: str, callback: Callable[[Any], None], condition=None) -> None:
-        view.action_handlers.setdefault(action_id, callback)
-        keys = configured.get(action_id)
-        if not keys:
-            return
-        available = Condition(
+    always_available = frozenset(
+        {
+            "app.quit",
+            "app.quit_eof",
+            "command.help",
+            "command.session",
+            "command.settings",
+            "command.downloads",
+            "chat.new",
+            "chat.next_tab",
+            "chat.previous_tab",
+            "chat.close_tab",
+            "chat.close_all_tabs",
+            "chat.temporary",
+            "ui.command_palette",
+            "accounts.add",
+            "accounts.edit",
+            "accounts.remove",
+        }
+    )
+
+    def action_context_available(action_id: str) -> Condition:
+        return Condition(
             lambda: (
-                action_id
-                in (
-                    "app.quit",
-                    "app.quit_eof",
-                    "command.help",
-                    "command.session",
-                    "command.settings",
-                    "command.downloads",
-                    "chat.new",
-                    "chat.next_tab",
-                    "chat.previous_tab",
-                    "chat.close_tab",
-                    "chat.close_all_tabs",
-                    "chat.temporary",
-                    "ui.command_palette",
-                    "accounts.add",
-                    "accounts.edit",
-                    "accounts.remove",
-                )
+                action_id in always_available
                 or view.palette_visible
                 or view.resume_visible
                 or (
@@ -48,6 +47,13 @@ def key_bindings(view) -> KeyBindings:
                 )
             )
         )
+
+    def bind(action_id: str, callback: Callable[[Any], None], condition=None) -> None:
+        view.action_handlers.setdefault(action_id, callback)
+        keys = configured.get(action_id)
+        if not keys:
+            return
+        available = action_context_available(action_id)
         bindings.add(
             *keys.lower().split(),
             is_global=True,
@@ -129,9 +135,6 @@ def key_bindings(view) -> KeyBindings:
     def newline(event: Any) -> None:
         if event.app.layout.current_control is view.input.control:
             view.input.buffer.insert_text("\n")
-
-    def paste(_event: Any) -> None:
-        view.paste_clipboard_image()
 
     def interrupt(_event: Any) -> None:
         if copy_selection(view):
@@ -280,7 +283,6 @@ def key_bindings(view) -> KeyBindings:
         ("chat.resume", resume),
         ("chat.send", send),
         ("chat.newline", newline),
-        ("chat.paste_image", paste),
         ("chat.interrupt", interrupt),
         ("app.quit", quit_app),
         ("command.help", help_action),
@@ -359,4 +361,19 @@ def key_bindings(view) -> KeyBindings:
     )
     bind("navigation.close_overlay", dismiss_completion, completion_visible)
     bind_editing(bindings, view)
+    for action in view.list_shortcut_actions():
+        action_id = action.get("id")
+        if not action_id or action_id in view.action_handlers:
+            continue
+        keys = configured.get(action_id, action.get("keybinding", ""))
+        if not keys:
+            continue
+        action_available = action.get("available", lambda: True)
+        bindings.add(
+            *keys.lower().split(),
+            is_global=True,
+            filter=action_context_available(action_id)
+            & Condition(lambda: not view.forms.visible)
+            & Condition(action_available),
+        )(lambda _event, selected=action_id: view.run_action(selected))
     return bindings

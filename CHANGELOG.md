@@ -8,9 +8,20 @@ Python distributions use the corresponding PEP 440 version (`1.5b0` for `v1.5-be
 
 ## [Unreleased]
 
+### Added
+
+- List every built-in and registered extension action in Settings → Shortcuts, including actions without a default shortcut; allow users to leave a shortcut unassigned.
+- Add copy and paste to the shared action handlers, and bind shortcuts for registered extension actions.
+
+### Changed
+
+- Permit duplicate shortcut assignments and mark every conflicting action in red in Settings.
+- Reduce the sidebar width on narrow terminals so the transcript and its controls retain usable space.
+
 ### Fixed
 
 - Keep transcript role markers in the content coordinate space so reply-version arrow hit targets remain aligned; compact the toolbar and preserve navigation as the terminal narrows.
+- Keep compact message-toolbar controls visually separated without displacing reply-version navigation at narrow widths.
 
 ## [1.5-beta] - 2026-10-28
 

@@ -257,6 +257,7 @@ class ChatView:
         layout_factory=None,
         account_service=None,
         action_host=None,
+        list_shortcut_actions=None,
     ) -> None:
         from .widgets import install_keyboard_protocol, register_modified_enter
 
@@ -305,6 +306,7 @@ class ChatView:
         self.keybindings = dict(DEFAULT_KEYBINDINGS) | (keybindings or {})
         self.list_workspaces = list_workspaces or (lambda: [])
         self.list_actions = list_actions or (lambda: [])
+        self.list_shortcut_actions = list_shortcut_actions or self.list_actions
         self.invoke_action = invoke_action
         self.conversation_id = conversation_id
         self.title = title
@@ -4143,7 +4145,9 @@ class ChatView:
             return shutil.get_terminal_size((100, 24)).columns
 
     def sidebar_width(self) -> int:
-        return max(22, min(30, self.terminal_width() // 4))
+        terminal_width = self.terminal_width()
+        preferred = max(22, min(30, terminal_width // 4))
+        return min(preferred, max(10, terminal_width - 22))
 
     def workspace_width(self) -> int:
         return max(
@@ -4958,7 +4962,8 @@ class ChatView:
                 "chat.resume": self.tr("Son sohbetleri ara ve aç"),
                 "chat.send": self.tr("Mesajı gönder"),
                 "chat.newline": self.tr("Mesaja yeni satır ekle"),
-                "chat.paste_image": self.tr("Metin veya görsel yapıştır"),
+                "edit.copy": self.tr("Seçimi kopyala"),
+                "edit.paste": self.tr("Panodan yapıştır"),
                 "edit.select_all": self.tr("Metnin veya odaktaki mesajın tümünü seç"),
                 "edit.cut": self.tr("Seçili metni kes"),
                 "chat.temporary": self.tr("Yeni geçici sohbet"),

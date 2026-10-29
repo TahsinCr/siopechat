@@ -61,7 +61,7 @@ def run_fullscreen(
         from .actions import action_title
 
         api.actions.unregister("terminal")
-        existing = {action.id for action in api.actions.search()}
+        existing = {action.id for action in api.actions.catalog()}
         for action_id in view.action_handlers:
             if action_id not in existing:
                 api.actions.register(
@@ -105,9 +105,18 @@ def run_fullscreen(
                 "id": action.id,
                 "title": action.title,
                 "detail": action.keybinding or "",
+                "keybinding": action.keybinding or "",
                 "parameters": action.parameters,
             }
             for action in api.actions.search()
+        ],
+        list_shortcut_actions=lambda: [
+            {
+                "id": action.id,
+                "keybinding": action.keybinding or "",
+                "available": lambda action_id=action.id: api.actions.is_available(action_id),
+            }
+            for action in api.actions.catalog()
         ],
         invoke_action=lambda action_id, arguments=None: asyncio.run(
             api.actions.invoke(action_id, **(arguments or {}))

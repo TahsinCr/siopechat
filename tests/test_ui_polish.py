@@ -57,6 +57,8 @@ class PolishTests(unittest.TestCase):
 
         with terminal() as (v, _):
             self.assertEqual(set(DEFAULT_KEYBINDINGS), set(v.action_handlers))
+            self.assertIn("edit.copy", v.action_handlers)
+            self.assertIn("edit.paste", v.action_handlers)
             v.open_palette()
             ids = [item["id"] for item in v.palette_items]
             self.assertEqual(len(ids), len(set(ids)))

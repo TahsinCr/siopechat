@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from prompt_toolkit.key_binding import KeyBindings
+
 from providers.registry import PROVIDERS
 from utils.events import EventBus
 from utils.files import atomic_json_write
@@ -40,7 +42,8 @@ DEFAULT_KEYBINDINGS = {
     "chat.newline": "escape enter",
     "chat.newline_shift": "escape c-j",
     "chat.newline_lf": "c-j",
-    "chat.paste_image": "c-v",
+    "edit.paste": "c-v",
+    "edit.copy": "",
     "chat.interrupt": "c-c",
     "chat.stop": "escape escape",
     "chat.clear_transcript": "c-l",
@@ -78,6 +81,31 @@ DEFAULT_KEYBINDINGS = {
     "navigation.transcript_start": "home",
     "navigation.transcript_end": "end",
 }
+
+
+def keybinding_conflicts(keybindings: dict[str, str]) -> frozenset[str]:
+    """Validate key sequences and return every action participating in a collision."""
+    by_sequence: dict[tuple, list[str]] = {}
+    for action_id, value in keybindings.items():
+        if not isinstance(action_id, str) or not action_id.strip() or not isinstance(value, str):
+            raise ValueError("keybindings must map action IDs to key strings")
+        tokens = value.strip().lower().split()
+        if not tokens:
+            continue
+        registry = KeyBindings()
+        try:
+            registry.add(*tokens)(lambda _: None)
+        except (AssertionError, TypeError, ValueError) as error:
+            raise ValueError(f"invalid keybinding for {action_id}") from error
+        sequence = registry.bindings[0].keys
+        by_sequence.setdefault(sequence, []).append(action_id)
+    return frozenset(
+        action_id
+        for action_ids in by_sequence.values()
+        if len(action_ids) > 1
+        for action_id in action_ids
+    )
+
 
 DEFAULTS = {
     "version": 1,
@@ -241,19 +269,11 @@ class Settings:
             if not isinstance(value, dict) or type(value.get("enabled", True)) is not bool:
                 raise ValueError("invalid extension settings")
         if not all(
-            isinstance(k, str) and isinstance(v, str) and v.strip()
-            for k, v in data["keybindings"].items()
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in data["keybindings"].items()
         ):
             raise ValueError("keybindings must map action IDs to key strings")
-        from prompt_toolkit.key_binding import KeyBindings
-
-        sequences = []
-        for value in data["keybindings"].values():
-            registry = KeyBindings()
-            registry.add(*value.lower().split())(lambda _: None)
-            sequences.append(registry.bindings[0].keys)
-        if len(sequences) != len(set(sequences)):
-            raise ValueError("keybinding sequences must be unique")
+        keybinding_conflicts(data["keybindings"])
         json.dumps(data, allow_nan=False)
 
     def snapshot(self) -> dict:
@@ -411,16 +431,30 @@ class SettingsCatalog:
             for key, value in config["application"].items()
             if key not in ("model", "effort")
         ]
+        action_records = {action.id: action for action in self.api.actions.catalog()}
+        action_ids = dict.fromkeys((*DEFAULT_KEYBINDINGS, *action_records))
+
+        def default_keybinding(action_id):
+            action = action_records.get(action_id)
+            return action.keybinding if action else ""
+
+        keybindings = {
+            action_id: config["keybindings"].get(action_id, default_keybinding(action_id)) or ""
+            for action_id in action_ids
+        }
+        conflicts = keybinding_conflicts(keybindings)
         rows.extend(
             {
                 "section": "keybindings",
                 "key": key,
-                "title": messages.get("application.ui." + self.title(key), self.title(key)),
+                "title": messages.get(
+                    "application.ui." + self.title(key),
+                    action_records[key].title if key in action_records else self.title(key),
+                ),
                 "value": value,
+                "conflict": key in conflicts,
             }
-            for key, value in sorted(
-                config["keybindings"].items(), key=lambda item: self.order(item[0])
-            )
+            for key, value in sorted(keybindings.items(), key=lambda item: self.order(item[0]))
         )
         for row in rows:
             if row["key"] == "language":

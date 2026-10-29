@@ -155,10 +155,13 @@ class FoundationTests(unittest.TestCase):
             "sample", Action("sample.run", "Run", callback, "f2", lambda: enabled)
         )
         self.assertFalse(self.api.actions.search("run"))
+        self.assertEqual([action.id for action in self.api.actions.catalog()], ["sample.run"])
+        self.assertFalse(self.api.actions.is_available("sample.run"))
         with self.assertRaises(ValueError):
             asyncio.run(self.api.actions.invoke("sample.run"))
         callback.assert_not_called()
         enabled = True
+        self.assertTrue(self.api.actions.is_available("sample.run"))
         self.assertEqual(asyncio.run(self.api.actions.invoke("sample.run", value=1)), 42)
         callback.assert_called_once_with(value=1)
         self.assertEqual(self.api.actions.keymap({"sample.run": "f3"}), {"f3": "sample.run"})

@@ -8,8 +8,9 @@ import time
 import unittest
 from pathlib import Path
 
+from actions import Action
 from providers.models import Choice, FeatureState, Model, ModelCatalog
-from settings import SettingsCatalog
+from settings import DEFAULT_KEYBINDINGS, SettingsCatalog
 from tests import tui_support as interaction
 from tests.account_fixture import configured_application as create_application
 from tests.tui_support import immediate
@@ -43,6 +44,39 @@ class ProductServicesTests(unittest.TestCase):
             {"providers.chatgpt", "providers.gemini", "providers.claude"},
         )
         self.assertNotIn("default", self.api.settings.snapshot()["providers"])
+
+    def test_shortcut_catalog_includes_unassigned_actions_and_marks_collisions(self):
+        self.api.actions.register(
+            "extension",
+            Action("extension.export", "Export current item", lambda: None),
+        )
+        initial_rows = {
+            row["key"]: row
+            for row in SettingsCatalog(self.api).rows()
+            if row["section"] == "keybindings"
+        }
+        self.assertEqual(initial_rows["edit.copy"]["value"], "")
+        self.assertEqual(initial_rows["extension.export"]["value"], "")
+        self.api.settings.update(
+            "keybindings",
+            {
+                "edit.copy": "c-z",
+                "edit.paste": "c-z",
+                "extension.export": "c-z",
+            },
+        )
+        rows = {
+            row["key"]: row
+            for row in SettingsCatalog(self.api).rows()
+            if row["section"] == "keybindings"
+        }
+        self.assertTrue(set(DEFAULT_KEYBINDINGS) <= rows.keys())
+        self.assertEqual(rows["edit.copy"]["value"], "c-z")
+        self.assertEqual(rows["edit.paste"]["value"], "c-z")
+        self.assertEqual(rows["extension.export"]["value"], "c-z")
+        self.assertTrue(rows["edit.copy"]["conflict"])
+        self.assertTrue(rows["edit.paste"]["conflict"])
+        self.assertTrue(rows["extension.export"]["conflict"])
 
     def test_account_preferences_survive_restart_and_ui_updates(self):
         self.accounts.select(self.gemini)

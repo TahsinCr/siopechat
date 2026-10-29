@@ -122,6 +122,7 @@ def bind_editing(bindings, view):
     for action, callback in [
         ("edit.select_all", lambda: select_all(view)),
         ("edit.cut", lambda: copy_selection(view, cut=True)),
+        ("edit.copy", lambda: copy_selection(view)),
     ]:
         view.action_handlers[action] = lambda event, callback=callback: callback()
         keys = view.keybindings.get(action)
@@ -135,12 +136,15 @@ def bind_editing(bindings, view):
                     )
                 ),
             )(lambda event, callback=callback: callback())
+    view.action_handlers["edit.paste"] = lambda event: paste(view)
+    paste_keys = view.keybindings.get("edit.paste")
+    if paste_keys:
+        bindings.add(
+            *paste_keys.split(),
+            filter=Condition(lambda: active_buffer(view) is not None),
+        )(lambda event: paste(view))
     bindings.add(
         *view.keybindings["chat.interrupt"].split(),
         filter=Condition(lambda: has_selection(view)),
         eager=True,
     )(lambda event: copy_selection(view))
-    bindings.add(
-        *view.keybindings["chat.paste_image"].split(),
-        filter=Condition(lambda: active_buffer(view) is not None),
-    )(lambda event: paste(view))

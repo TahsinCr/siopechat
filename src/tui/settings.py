@@ -339,12 +339,26 @@ class SettingsDialog:
                 label_width = max(8, width * 3 // 5)
                 label = fit_text(" " + title, label_width)
                 label += " " * max(1, label_width - get_cwidth(label))
-                value = fit_text(str(row["value"]), max(1, width - label_width - 2))
+                unassigned = row["section"] == "keybindings" and not row["value"]
+                value = str(row["value"])
+                if unassigned:
+                    value = self.view.text("unassigned", self.view.tr("Atanmadı"))
+                value = fit_text(value, max(1, width - label_width - 2))
+                value_style = (
+                    style + " class:sidebar.muted"
+                    if unassigned
+                    else style
+                    + (
+                        " class:settings.conflict"
+                        if row.get("conflict")
+                        else " class:settings.value"
+                    )
+                )
                 rows.extend(
                     [
                         (style, label, on_click(lambda i=i: self.select(i))),
                         (
-                            style + " class:settings.value",
+                            value_style,
                             "  " + value + "\n",
                             on_click(lambda i=i: self.select(i)),
                         ),
@@ -367,14 +381,26 @@ class SettingsDialog:
             "enabled": self.view.tr("Eklentinin özelliklerini etkinleştir veya kapat."),
         }
         description = (
-            self.view.tr("Tuş dizisini düzenleyin.")
+            self.view.tr("Bu eylem için bir tuş dizisi belirleyin; boş bırakabilirsiniz.")
             if row["section"] == "keybindings"
             else descriptions.get(row["key"], "")
         )
-        return [
+        details = [
             ("class:settings.title", str(row.get("title") or row["key"]) + "\n"),
+            ("class:sidebar.muted", row["key"] + "\n" if row["section"] == "keybindings" else ""),
             ("class:sidebar.muted", description),
         ]
+        if row["section"] == "keybindings" and row.get("conflict"):
+            details.append(
+                (
+                    "class:settings.conflict",
+                    self.view.text(
+                        "shortcut_conflict",
+                        self.view.tr("Bu tuş dizisi birden fazla eyleme atanmış."),
+                    ),
+                )
+            )
+        return details
 
     def render_choices(self):
         row = self.current

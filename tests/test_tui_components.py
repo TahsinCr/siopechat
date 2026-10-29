@@ -8,7 +8,7 @@ from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
 from providers.models import Choice, FeatureState, Model, ModelCatalog
-from settings import DEFAULTS, Settings
+from settings import DEFAULTS, Settings, keybinding_conflicts
 from tui.chat import ChatView
 from tui.markdown import MessageRenderer, detect_code_language, visible_chat_message
 from utils import clipboard
@@ -221,11 +221,14 @@ class CliComponentTests(unittest.TestCase):
                 self.assertEqual(view.messages, [])
                 self.assertIn("tamamlandı", view.status)
 
-    def test_keybinding_collisions_are_rejected(self):
+    def test_duplicate_shortcuts_are_valid_and_report_every_conflicting_action(self):
         collided = json.loads(json.dumps(DEFAULTS))
         collided["keybindings"]["extra.action"] = DEFAULTS["keybindings"]["ui.command_palette"]
-        with self.assertRaisesRegex(ValueError, "must be unique"):
-            Settings._validate_document(collided)
+        Settings._validate_document(collided)
+        self.assertEqual(
+            keybinding_conflicts(collided["keybindings"]),
+            frozenset(("ui.command_palette", "extra.action")),
+        )
 
     def test_sidebar_groups_projects_unassigned_chats_and_layout_workspaces(self):
         with create_pipe_input() as pipe:

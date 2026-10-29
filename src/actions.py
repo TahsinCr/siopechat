@@ -36,6 +36,15 @@ class ActionService:
     def unregister(self, owner: str) -> None:
         self._actions = {key: value for key, value in self._actions.items() if value[0] != owner}
 
+    def catalog(self) -> tuple[Action, ...]:
+        """Return registered actions, including ones currently unavailable."""
+        return tuple(action for _, action in self._actions.values())
+
+    def is_available(self, action_id: str) -> bool:
+        """Check an action's current availability without invoking it."""
+        registered = self._actions.get(action_id)
+        return registered is not None and self._available(registered[1])
+
     @staticmethod
     def _available(action: Action) -> bool:
         try:
@@ -47,7 +56,7 @@ class ActionService:
         query = query.casefold()
         return tuple(
             action
-            for _, action in self._actions.values()
+            for action in self.catalog()
             if query in f"{action.id} {action.title}".casefold() and self._available(action)
         )
 

@@ -209,6 +209,28 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
                 view.app.exit()
                 await run
 
+    async def test_registered_extension_action_uses_its_settings_shortcut(self):
+        invoke = Mock(return_value=None)
+
+        def actions():
+            return [{"id": "extension.export", "keybinding": "", "available": lambda: True}]
+
+        with terminal(
+            list_actions=lambda: [{"id": "extension.export", "title": "Export"}],
+            list_shortcut_actions=actions,
+            invoke_action=invoke,
+        ) as (view, pipe):
+            run = asyncio.create_task(view.app.run_async())
+            try:
+                await self.settle(lambda: view.app.is_running)
+                view.apply_preferences({"keybindings": {"extension.export": "c-z"}})
+                pipe.send_bytes(b"\x1a")  # Ctrl+Z
+                await self.settle(lambda: invoke.called and not view.background_jobs)
+                invoke.assert_called_once_with("extension.export", {})
+            finally:
+                view.app.exit()
+                await run
+
     async def test_search_editing_backspace_delete_space_home_end_and_ctrl_d(self):
         with terminal() as (view, pipe):
             run = asyncio.create_task(view.app.run_async())
@@ -343,8 +365,7 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
                     await self.settle(
                         lambda: (
                             view.transcript_window.render_info is not None
-                            and view.transcript_window.render_info.window_width
-                            == expected - 1
+                            and view.transcript_window.render_info.window_width == expected - 1
                         )
                     )
                     self.assertEqual(
@@ -358,8 +379,7 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
                 await self.settle(
                     lambda: (
                         view.transcript_window.render_info is not None
-                        and view.transcript_window.render_info.window_width
-                        == 120 - 1
+                        and view.transcript_window.render_info.window_width == 120 - 1
                     )
                 )
                 self.assertEqual(view.transcript_width(), 100)
