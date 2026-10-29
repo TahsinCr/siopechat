@@ -1,31 +1,31 @@
-"""Canonical glyphs used by the terminal interface."""
+"""Canonical, single-cell text glyphs used by the terminal interface."""
 
 
 class Icon:
-    """Keep interface glyphs in one place so sets can be reviewed consistently."""
+    """Use monochrome text symbols to avoid emoji presentation and width drift."""
 
     # Message roles and actions
-    USER = "👤"
-    ASSISTANT = "🤖"
-    THINKING = "🧠"
+    USER = "●"
+    ASSISTANT = "◆"
+    THINKING = "◇"
     COPY = "⧉"
     EDIT = "✎"
     RETRY = "↻"
-    BRANCH = "⑂"
+    BRANCH = "⎇"
     SOURCES = "↗"
-    DELETE = "🗑"
-    ATTACHMENT = "📎"
+    DELETE = "⌫"
+    ATTACHMENT = "▤"
 
     # Navigation and controls
-    ADD = "＋"
-    MINUS = "−"
+    ADD = "+"
+    MINUS = "-"
     DROPDOWN = "▾"
     COLLAPSED = "▸"
     CLOSE = "×"
     CLOSE_ALL = "⊗"
     SEARCH = "⌕"
-    FILTER = "☷"
-    MENU = "☰"
+    FILTER = "≡"
+    MENU = "≣"
     SPLIT = "◫"
     SETTINGS = "⚙"
     POWER = "⏻"
@@ -45,7 +45,7 @@ class Icon:
     IDLE = "◌"
     DISABLED = "○"
     PROVIDER = "◈"
-    SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+    SPINNER = "|/-\\"
 
 
 ROLE_MARKERS = {
