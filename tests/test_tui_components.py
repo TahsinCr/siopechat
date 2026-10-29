@@ -21,7 +21,7 @@ class CliComponentTests(unittest.TestCase):
             def application(**kwargs):
                 return Application(input=pipe, output=DummyOutput(), **kwargs)
 
-            with patch("tui.chat.Application", side_effect=application):
+            with patch("tui.chat.view.Application", side_effect=application):
                 view = ChatView(lambda: [], lambda _: {}, lambda *_: {})
                 rendered = view.renderer.render("assistant", "**hello**", 60, False, False)
                 self.assertIn("hello", rendered)
@@ -31,7 +31,7 @@ class CliComponentTests(unittest.TestCase):
     def test_chat_tabs_preserve_conversations_and_allow_switch_during_send(self):
         with create_pipe_input() as pipe:
             with patch(
-                "tui.chat.Application",
+                "tui.chat.view.Application",
                 side_effect=lambda **kwargs: Application(
                     input=pipe, output=DummyOutput(), **kwargs
                 ),
@@ -59,7 +59,7 @@ class CliComponentTests(unittest.TestCase):
     def test_tab_strip_keeps_active_chat_visible_without_overflow(self):
         with create_pipe_input() as pipe:
             with patch(
-                "tui.chat.Application",
+                "tui.chat.view.Application",
                 side_effect=lambda **kwargs: Application(
                     input=pipe, output=DummyOutput(), **kwargs
                 ),
@@ -79,7 +79,7 @@ class CliComponentTests(unittest.TestCase):
     def test_sidebar_keyboard_shortcuts_focus_search_and_navigate(self):
         with create_pipe_input() as pipe:
             with patch(
-                "tui.chat.Application",
+                "tui.chat.view.Application",
                 side_effect=lambda **kwargs: Application(
                     input=pipe, output=DummyOutput(), **kwargs
                 ),
@@ -107,7 +107,7 @@ class CliComponentTests(unittest.TestCase):
     def test_no_effort_is_invented_before_catalog_discovery(self):
         with create_pipe_input() as pipe:
             with patch(
-                "tui.chat.Application",
+                "tui.chat.view.Application",
                 side_effect=lambda **kwargs: Application(
                     input=pipe, output=DummyOutput(), **kwargs
                 ),
@@ -124,7 +124,7 @@ class CliComponentTests(unittest.TestCase):
     def test_transcript_keeps_entire_conversation_in_fullscreen_ui(self):
         with create_pipe_input() as pipe:
             with patch(
-                "tui.chat.Application",
+                "tui.chat.view.Application",
                 side_effect=lambda **kwargs: Application(
                     input=pipe, output=DummyOutput(), **kwargs
                 ),
@@ -142,7 +142,7 @@ class CliComponentTests(unittest.TestCase):
     def test_sidebar_refresh_keeps_last_good_rows_on_provider_failure(self):
         with create_pipe_input() as pipe:
             with patch(
-                "tui.chat.Application",
+                "tui.chat.view.Application",
                 side_effect=lambda **kwargs: Application(
                     input=pipe, output=DummyOutput(), **kwargs
                 ),
@@ -166,7 +166,7 @@ class CliComponentTests(unittest.TestCase):
     def test_response_continues_in_its_origin_tab_after_switch(self):
         with create_pipe_input() as pipe:
             with patch(
-                "tui.chat.Application",
+                "tui.chat.view.Application",
                 side_effect=lambda **kwargs: Application(
                     input=pipe, output=DummyOutput(), **kwargs
                 ),
@@ -233,7 +233,7 @@ class CliComponentTests(unittest.TestCase):
     def test_sidebar_groups_projects_unassigned_chats_and_layout_workspaces(self):
         with create_pipe_input() as pipe:
             with patch(
-                "tui.chat.Application",
+                "tui.chat.view.Application",
                 side_effect=lambda **kwargs: Application(
                     input=pipe, output=DummyOutput(), **kwargs
                 ),

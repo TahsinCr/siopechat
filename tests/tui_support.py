@@ -18,7 +18,7 @@ def terminal(output=None, **callbacks):
     with (
         create_pipe_input() as pipe,
         patch(
-            "tui.chat.Application",
+            "tui.chat.view.Application",
             side_effect=lambda **kw: Application(
                 input=pipe, output=output if output is not None else DummyOutput(), **kw
             ),

@@ -411,7 +411,13 @@ class Settings:
 
 
 class SettingsCatalog:
-    def __init__(self, api, *, title=lambda key: key, order=lambda key: key):
+    def __init__(
+        self,
+        api,
+        *,
+        title=lambda key, _messages, fallback=None: fallback or key,
+        order=lambda key: key,
+    ):
         self.title, self.order = title, order
         self.api = api
         self.settings = api.settings
@@ -447,9 +453,10 @@ class SettingsCatalog:
             {
                 "section": "keybindings",
                 "key": key,
-                "title": messages.get(
-                    "application.ui." + self.title(key),
-                    action_records[key].title if key in action_records else self.title(key),
+                "title": self.title(
+                    key,
+                    messages,
+                    action_records[key].title if key in action_records else None,
                 ),
                 "value": value,
                 "conflict": key in conflicts,

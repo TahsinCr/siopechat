@@ -849,7 +849,7 @@ class MessageToolbarTests(unittest.TestCase):
             )
 
     def test_completion_metadata_adds_sources_and_file_to_the_owning_answer_once(self):
-        from tui.chat import _SendStream
+        from tui.chat.stream import _SendStream
 
         with terminal(initial_messages=[{"id": "draft", "role": "assistant", "text": "Done"}]) as (
             view,

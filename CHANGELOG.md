@@ -12,11 +12,18 @@ Python distributions use the corresponding PEP 440 version (`1.5b0` for `v1.5-be
 
 - List every built-in and registered extension action in Settings → Shortcuts, including actions without a default shortcut; allow users to leave a shortcut unassigned.
 - Add copy and paste to the shared action handlers, and bind shortcuts for registered extension actions.
+- Split the terminal chat view into focused sync, account, tab, sidebar, project, transcript, message-action, history, and send components composed by `ChatView`.
+- Move built-in action titles and group labels into the English, Turkish, and Russian locale bundles.
 
 ### Changed
 
 - Permit duplicate shortcut assignments and mark every conflicting action in red in Settings.
 - Reduce the sidebar width on narrow terminals so the transcript and its controls retain usable space.
+- Resolve built-in action labels from the active locale and use the existing English catalog fallback for untranslated keys.
+
+### Removed
+
+- Remove obsolete UI-literal translations for built-in action labels after moving them to stable action keys in each locale bundle.
 
 ### Fixed
 

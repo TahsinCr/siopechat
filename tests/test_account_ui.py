@@ -132,7 +132,7 @@ class AccountUiTests(unittest.IsolatedAsyncioTestCase):
             view.resume_conversation(conversation_id)
             self.assertFalse(view.loading_conversation)
             view.input.text = "Continue while syncing"
-            with patch("tui.chat.threading.Thread") as thread:
+            with patch("tui.chat.composer.threading.Thread") as thread:
                 view.submit_prompt()
             thread.return_value.start.assert_called_once_with()
             self.assertTrue(view.tabs[view.active_tab]["busy"])

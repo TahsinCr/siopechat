@@ -356,7 +356,8 @@ class RenderReuseTests(unittest.TestCase):
             view.new_tab()
             view._virtual_transcript_rows(20)
             with patch(
-                "tui.chat.prepare_virtual_transcript", side_effect=AssertionError("rerender")
+                "tui.chat.transcript.prepare_virtual_transcript",
+                side_effect=AssertionError("rerender"),
             ):
                 view.select_tab(0)
                 view._virtual_transcript_rows(20)

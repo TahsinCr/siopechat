@@ -62,13 +62,15 @@ def run_fullscreen(
 
         api.actions.unregister("terminal")
         existing = {action.id for action in api.actions.catalog()}
+        locale = api.settings.snapshot()["application"]["language"]
+        messages = api.languages.merged(locale)
         for action_id in view.action_handlers:
             if action_id not in existing:
                 api.actions.register(
                     "terminal",
                     Action(
                         action_id,
-                        action_title(action_id),
+                        action_title(action_id, messages),
                         lambda action_id=action_id: view._dispatch_ui(
                             lambda: view.dispatch_action(action_id)
                         ),

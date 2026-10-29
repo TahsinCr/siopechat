@@ -195,7 +195,7 @@ class SidebarRenderingPerformanceTests(unittest.TestCase):
                 self.assertEqual(render_calls, [0, 1])
 
             rows = view.sidebar_rows
-            with patch("tui.chat.build_sidebar_rows", wraps=build_sidebar_rows) as build:
+            with patch("tui.chat.sidebar.build_sidebar_rows", wraps=build_sidebar_rows) as build:
                 view.sidebar_control.create_content(80, 24)
                 self.assertIs(view.sidebar_rows, rows)
                 build.assert_not_called()

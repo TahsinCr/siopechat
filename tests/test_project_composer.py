@@ -59,7 +59,7 @@ class ProjectComposerTests(unittest.IsolatedAsyncioTestCase):
             project = dict(v.current_project)
             v.input.text = "Tell me about this project"
             model, effort = v.model, v.effort
-            with patch("tui.chat.threading.Thread") as thread:
+            with patch("tui.chat.composer.threading.Thread") as thread:
                 v.submit_prompt()
             self.assertEqual(len(v.tabs), 2)
             self.assertEqual(v.tabs[0]["kind"], "project")

@@ -238,7 +238,7 @@ class ArchiveIntegrationTests(unittest.TestCase):
             sent = Mock(return_value={"conversation_id": "new"})
             view.send_prompt = sent
             with patch(
-                "tui.chat.threading.Thread",
+                "tui.chat.composer.threading.Thread",
                 side_effect=lambda **kw: Mock(
                     start=lambda: kw["target"](*kw.get("args", ()), **kw.get("kwargs", {}))
                 ),
