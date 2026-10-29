@@ -29,6 +29,7 @@ Python distributions use the corresponding PEP 440 version (`1.5b0` for `v1.5-be
 
 ### Fixed
 
+- Mark the transcript message-key helper static so initial rendering does not fail on an unexpected bound `self` argument.
 - Keep transcript role markers in the content coordinate space so reply-version arrow hit targets remain aligned; compact the toolbar and preserve navigation as the terminal narrows.
 - Keep compact message-toolbar controls visually separated without displacing reply-version navigation at narrow widths.
 

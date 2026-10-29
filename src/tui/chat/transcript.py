@@ -422,6 +422,7 @@ class TranscriptComponent:
             self._line_render_key = rendered
         return self._transcript_lines
 
+    @staticmethod
     def _virtual_message_key(messages):
         """Track the transcript's supported mutation paths without scanning it."""
         if not messages:
