@@ -16,6 +16,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import uuid
 from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,7 +46,13 @@ def _failure_code(error):
         return 5
     message = str(error).lower()
     if any(
-        token in message for token in ("unable to read database", "not a chromium", "not a firefox")
+        token in message
+        for token in (
+            "unable to read database",
+            "not a chromium",
+            "not a firefox",
+            "not a safari",
+        )
     ):
         return 5
     if type(error).__module__.startswith(("jeepney", "dbus", "secretstorage")) or any(
@@ -132,13 +139,83 @@ def _default_id():
     return result.stdout.strip().lower()
 
 
+def _safari_cookie_file(home):
+    """Resolve Safari's last active profile without falling back across accounts."""
+    library = home / "Library/Containers/com.apple.Safari/Data/Library"
+    try:
+        result = subprocess.run(
+            ["defaults", "read", "com.apple.Safari", "SafariProfilesLastActiveProfileUUIDString"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        result = None
+
+    active_profile = result.stdout.strip() if result and result.returncode == 0 else ""
+    if active_profile and active_profile.casefold() != "defaultprofile":
+        try:
+            profile_id = str(uuid.UUID(active_profile)).lower()
+        except ValueError:
+            raise ProfileError("Son kullanılan Safari profili belirlenemedi") from None
+        cookies = library / "WebKit/WebsiteDataStore" / profile_id / "Cookies/Cookies.binarycookies"
+        if cookies.is_file():
+            return cookies
+        raise ProfileError("Son kullanılan Safari profilinin çerez dosyası bulunamadı")
+
+    if not active_profile:
+        profile_store = library / "WebKit/WebsiteDataStore"
+        try:
+            has_named_profiles = any(
+                path.is_dir()
+                for path in profile_store.glob("*")
+                if _is_safari_profile_id(path.name)
+            )
+        except OSError:
+            raise ProfileError(
+                "Safari profili belirlenemedi; Safari'de kullanacağınız profili açın"
+            ) from None
+        if has_named_profiles:
+            raise ProfileError(
+                "Safari profili belirlenemedi; Safari'de kullanacağınız profili açın"
+            )
+
+    cookie_files = (
+        library / "Cookies/Cookies.binarycookies",
+        home / "Library/Cookies/Cookies.binarycookies",
+    )
+    cookies = next((path for path in cookie_files if path.is_file()), None)
+    if cookies is None:
+        raise ProfileError("Varsayılan tarayıcı profili bulunamadı")
+    return cookies
+
+
+def _is_safari_profile_id(value):
+    try:
+        uuid.UUID(value)
+    except (AttributeError, ValueError):
+        return False
+    return True
+
+
 def default_profile():
     """Resolve one browser and one profile; never merge or probe other accounts."""
     try:
         name = _default_id().lower()
     except (OSError, ValueError, subprocess.SubprocessError):
         raise ProfileError("Varsayılan tarayıcı belirlenemedi") from None
-    if any(channel in name for channel in ("-beta", "-nightly", "-dev", ".beta", ".nightly")):
+    if any(
+        channel in name
+        for channel in (
+            "-beta",
+            "-nightly",
+            "-dev",
+            ".beta",
+            ".nightly",
+            "technologypreview",
+        )
+    ):
         raise ProfileError("Varsayılan tarayıcının profili desteklenmiyor")
     if "brave" in name and "origin" in name:
         name = "brave-origin"
@@ -158,6 +235,7 @@ def default_profile():
                 ("chromium", "chromium"),
                 ("chrome", "chrome"),
                 ("vivaldi", "vivaldi"),
+                ("safari", "safari"),
             )
             if token in name
         ),
@@ -166,6 +244,10 @@ def default_profile():
     if browser is None:
         raise ProfileError("Varsayılan tarayıcının profili desteklenmiyor")
     home = Path.home()
+    if browser == "safari":
+        if sys.platform != "darwin":
+            raise ProfileError("Safari profilleri yalnızca macOS üzerinde destekleniyor")
+        return BrowserProfile(browser, _safari_cookie_file(home))
     if sys.platform == "win32":
         local = Path(os.environ.get("LOCALAPPDATA", home / "AppData/Local"))
         paths = {

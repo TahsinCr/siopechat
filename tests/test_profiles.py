@@ -66,10 +66,97 @@ class ProfileTests(unittest.TestCase):
                 self.assertEqual(default_profile().cookies, path)
                 self.assertEqual(default_profile().browser, browser)
 
-    def test_unsupported_default_does_not_try_other_installed_browsers(self):
-        with patch("providers.profiles._default_id", return_value="safari"):
-            with self.assertRaisesRegex(ProfileError, "desteklenmiyor"):
+    def test_safari_profile_is_rejected_outside_macos(self):
+        with (
+            patch("providers.profiles._default_id", return_value="safari"),
+            patch("providers.profiles.sys.platform", "linux"),
+        ):
+            with self.assertRaisesRegex(ProfileError, "macOS"):
                 default_profile()
+
+    def test_macos_safari_reads_only_its_binary_cookie_profile(self):
+        roots = (
+            "Library/Containers/com.apple.Safari/Data/Library/Cookies/Cookies.binarycookies",
+            "Library/Cookies/Cookies.binarycookies",
+        )
+        for root in roots:
+            with self.subTest(root=root), tempfile.TemporaryDirectory() as folder:
+                home = Path(folder)
+                cookie_file = home / root
+                cookie_file.parent.mkdir(parents=True)
+                cookie_file.touch()
+                with (
+                    patch("providers.profiles._default_id", return_value="com.apple.safari"),
+                    patch("providers.profiles.sys.platform", "darwin"),
+                    patch("providers.profiles.Path.home", return_value=home),
+                ):
+                    profile = default_profile()
+                self.assertEqual(profile, BrowserProfile("safari", cookie_file))
+
+    def test_macos_safari_uses_last_active_named_profile_cookie_file(self):
+        profile_id = "13EC6641-7983-4826-99EE-1D6D57AE3388"
+        cookie_file = (
+            self.home
+            / "Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore"
+            / profile_id.lower()
+            / "Cookies/Cookies.binarycookies"
+        )
+        cookie_file.parent.mkdir(parents=True)
+        cookie_file.touch()
+        active_profile = subprocess.CompletedProcess(["defaults"], 0, profile_id + "\n", "")
+        with (
+            patch("providers.profiles._default_id", return_value="com.apple.safari"),
+            patch("providers.profiles.sys.platform", "darwin"),
+            patch("providers.profiles.Path.home", return_value=self.home),
+            patch("providers.profiles.subprocess.run", return_value=active_profile),
+        ):
+            profile = default_profile()
+        self.assertEqual(profile, BrowserProfile("safari", cookie_file))
+
+    def test_macos_safari_never_falls_back_from_missing_active_profile(self):
+        profile_id = "13EC6641-7983-4826-99EE-1D6D57AE3388"
+        default_cookie = (
+            self.home
+            / "Library/Containers/com.apple.Safari/Data/Library/Cookies/Cookies.binarycookies"
+        )
+        default_cookie.parent.mkdir(parents=True)
+        default_cookie.touch()
+        active_profile = subprocess.CompletedProcess(["defaults"], 0, profile_id + "\n", "")
+        with (
+            patch("providers.profiles._default_id", return_value="com.apple.safari"),
+            patch("providers.profiles.sys.platform", "darwin"),
+            patch("providers.profiles.Path.home", return_value=self.home),
+            patch("providers.profiles.subprocess.run", return_value=active_profile),
+        ):
+            with self.assertRaisesRegex(ProfileError, "Son kullanılan Safari profilinin"):
+                default_profile()
+
+    def test_profile_worker_uses_safari_reader_and_provider_cookie_filter(self):
+        from providers.profiles import _main
+
+        cookie_file = self.home / "Cookies.binarycookies"
+        cookie_file.touch()
+        data = {
+            "provider": "claude",
+            "browser": "safari",
+            "cookies": str(cookie_file),
+            "key_file": None,
+        }
+        output = io.StringIO()
+        with (
+            patch("sys.stdin", io.StringIO(json.dumps(data))),
+            contextlib.redirect_stdout(output),
+            patch(
+                "browser_cookie3.safari",
+                return_value=[cookie("sessionKey", domain=".claude.ai")],
+            ) as safari,
+        ):
+            self.assertEqual(_main(), 0)
+
+        safari.assert_called_once_with(
+            cookie_file=str(cookie_file), key_file=None, domain_name="claude.ai"
+        )
+        self.assertEqual(json.loads(output.getvalue()), {"sessionKey": "secret"})
 
     def test_expired_unrelated_and_similar_domains_are_rejected(self):
         jar = [

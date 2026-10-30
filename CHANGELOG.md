@@ -8,6 +8,10 @@ Python distributions use the corresponding PEP 440 version (`1.5.1b0` for `v1.5.
 
 ## [Unreleased]
 
+### Added
+
+- Support profile-based session import from the last active Safari profile on macOS; Firefox and Zen profile readers remain available on their supported platforms.
+
 ### Changed
 
 - Move local browser CDP page discovery, provider-tab opening, Gemini/Claude cookie capture, and ChatGPT session-header capture into the Python provider package. Keep Node.js only for ChatGPT Sentinel request signing.
