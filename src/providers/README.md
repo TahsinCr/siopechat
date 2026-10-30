@@ -13,9 +13,10 @@ python -m pip install .
 ```
 
 Python 3.10+ supports ChatGPT and Claude. The Gemini transport requires Python
-3.11+. Node.js 22+ is required only for ChatGPT Sentinel request signing. Browser
-page discovery, local CDP access and session capture run in Python. Importing the
-library or configuring an account does not open a browser or access the network.
+3.11+. Node.js 22+ runs the published ChatGPT Sentinel SDK for initial context
+generation and dynamic challenges such as Turnstile; proof-of-work is computed
+in Python. Browser page discovery, local CDP access and session capture run in
+Python. Importing the library or configuring an account does not open a browser or access the network.
 
 ## Using an account
 

@@ -33,7 +33,7 @@ Sohbetlerinize devam edin, sağlayıcı projelerinizi düzenleyin ve yanıtları
 
 ### Gereksinimler
 
-SiopeChat için Python **3.11+** gerekir. Node.js **22+**, ChatGPT isteklerini imzalamak için kullanılır; tarayıcı girişi ve oturum bilgisi Python sağlayıcı paketi üzerinden yürür. Kurulum ve başlatma araçları gereken sürümleri önceden denetler. Bağımsız sağlayıcı paketi ayrı olarak Python 3.10+ desteğini korur. Chrome/Chromium yalnızca açıkça başlatılan giriş işlemi için gerekir. Unicode destekli bir terminal kullanın; gerçek renk ve fare raporlama desteği önerilir.
+SiopeChat için Python **3.11+** gerekir. Node.js **22+**, ChatGPT'nin yayımladığı Sentinel SDK ile ilk doğrulama bağlamını üretmek ve Turnstile gibi dinamik doğrulamaları yürütmek için kullanılır. Sunucunun verdiği proof-of-work hesabı Python'da yapılır. Tarayıcı girişi ve oturum bilgisi Python sağlayıcı paketi üzerinden yürür. Kurulum ve başlatma araçları gereken sürümleri önceden denetler. Bağımsız sağlayıcı paketi ayrı olarak Python 3.10+ desteğini korur. Chrome/Chromium yalnızca açıkça başlatılan giriş işlemi için gerekir. Unicode destekli bir terminal kullanın; gerçek renk ve fare raporlama desteği önerilir.
 
 ### Kurulum ve başlatma
 
@@ -215,7 +215,7 @@ Arşiv listeleri uzak kimliğe göre kararlı sıradadır; arayüz sıralaması 
 
 Hesap oturumları, model katalogları, doğrulama kayıtları ve arşiv kapalıyken kullanılan sohbet önbelleği `data/accounts.sqlite3` içinde sağlayıcı/hesap ayrımıyla tutulur. Önbellek sohbet kayıtlarını, etkin sohbet işaretçisini ve silme işaretlerini kapsar; arşiv açıkken sohbet geçmişinin asıl deposu `data/archive.sqlite3` olmaya devam eder. Hesap veritabanı şeması eklemeli olarak yükseltilir; mevcut oturum/katalog tablosu korunur. Sağlayıcıya özel alanlar JSON olarak saklanır. Unix üzerinde dosya yalnız sahibine açıktır; veritabanı şifreli değildir. Hesap adları, seçimler ve tercihler uygulama yapılandırmasında kalır. Sağlayıcı kütüphanesi dışarıdan kimlik bilgisi deposu alır; uygulamanın SQLite kodunu bilmez. Gemini yerel HTTPS taşıyıcısını kullanır ve Gemini SDK bağımlılığı gerektirmez. Eski hesap dosyaları ancak veritabanı/arşiv karşılığı doğrulandıktan sonra kaldırılır.
 
-Yerleşik sağlayıcılar sohbet ve proje işlemlerinde Python HTTPS taşıyıcılarını kullanır. Tarayıcı bulma, oturum alma ve yerel Chrome DevTools Protocol (CDP) erişimi de Python ile yürür. Node.js yalnızca ChatGPT Sentinel isteklerini imzalamak için kullanılır.
+Yerleşik sağlayıcılar sohbet ve proje işlemlerinde Python HTTPS taşıyıcılarını kullanır. Tarayıcı bulma, oturum alma ve yerel Chrome DevTools Protocol (CDP) erişimi de Python ile yürür. ChatGPT Sentinel'de sunucunun verdiği proof-of-work Python ile hesaplanır; Node.js yayımlanmış SDK ile ilk doğrulama bağlamını üretir ve Turnstile gibi dinamik doğrulamaları yürütür.
 
 Sağlayıcı kütüphanesi terminalden, arşivden ve uygulama çalışma zamanından bağımsızdır. `accounts.py` sağlayıcı/hesap işlerini yönlendirir; `runtime.py`, `actions.py` ve `extension.py` ortak servis ve katkıları yönetir. Komut satırı girişi `src/cli.py`, terminal arayüzünün uygulaması ise `src/tui/` altındadır. Yerleşik eklentiler genel eklenti sözleşmesini `extension.py` üzerinden, terminal arayüzüne katkı gerektiğinde yalnız açık `tui.api` arayüzü üzerinden kullanır; TUI iç modüllerine doğrudan bağlanmaz. İsteğe bağlı özellikler `extensions/`, ortak yardımcılar `src/utils/` altındadır. Aynı uygulama servisleri bir GUI tarafından da kullanılabilir; bu betada GUI bulunmuyor.
 

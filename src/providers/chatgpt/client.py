@@ -33,6 +33,7 @@ from .discovery import (
 from .errors import ChatGPTWebError, SentinelCompatibilityError
 from .formats import message_parts, text_from_parts
 from .resources import Script, script_path
+from .sentinel import generate_enforcement_proof
 from .session import BrowserSession
 
 
@@ -733,7 +734,7 @@ class ChatGPTClient:
             )
         except FileNotFoundError as error:
             raise SentinelCompatibilityError(
-                "Node.js 22 or newer is required for signing"
+                "Node.js 22 or newer is required to initialize ChatGPT Sentinel"
             ) from error
         except subprocess.TimeoutExpired as error:
             raise SentinelCompatibilityError("Sentinel signing timed out") from error
@@ -758,13 +759,31 @@ class ChatGPTClient:
         ).json()
         if not isinstance(requirements, dict):
             raise ChatGPTWebError("Sentinel prepare returned an invalid response")
-        enforcement = self.run_sentinel_node(
-            ["--requirements-stdin", "--emit-enforcement-json"], requirements
-        )
         prepare_token = requirements.get("prepare_token")
-        proof = enforcement.get("proof")
-        turnstile = enforcement.get("turnstile")
-        if not isinstance(prepare_token, str) or not isinstance(proof, str):
+        if not isinstance(prepare_token, str) or not prepare_token:
+            raise SentinelCompatibilityError("Sentinel did not return required enforcement tokens")
+
+        proof_of_work = requirements.get("proofofwork")
+        turnstile_challenge = requirements.get("turnstile")
+        turnstile_not_required = "turnstile" not in requirements or (
+            isinstance(turnstile_challenge, dict) and turnstile_challenge.get("required") is False
+        )
+        if (
+            isinstance(proof_of_work, dict)
+            and proof_of_work.get("required") is True
+            and turnstile_not_required
+            and set(requirements).issubset({"prepare_token", "proofofwork", "turnstile", "token"})
+        ):
+            proof = generate_enforcement_proof(initial, requirements)
+            turnstile = None
+        else:
+            enforcement = self.run_sentinel_node(
+                ["--requirements-stdin", "--emit-enforcement-json"], requirements
+            )
+            proof = enforcement.get("proof")
+            turnstile = enforcement.get("turnstile")
+
+        if not isinstance(proof, str) or not proof:
             raise SentinelCompatibilityError("Sentinel did not return required enforcement tokens")
         result = {
             "openai-sentinel-chat-requirements-prepare-token": prepare_token,

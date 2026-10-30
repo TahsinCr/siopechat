@@ -141,7 +141,7 @@ class ProfileUiTests(unittest.IsolatedAsyncioTestCase):
             success(read())
             self.assertFalse(view.session_dialog.loading)
             self.assertTrue(view.session_state["authenticated"])
-            self.assertIn("brave-origin", view.session_dialog.message)
+            self.assertIn("chromium", view.session_dialog.message)
             view.refresh_sidebar.assert_called_once()
             view.refresh_provider_catalog.assert_called_once()
 
