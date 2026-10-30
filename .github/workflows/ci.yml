@@ -15,32 +15,27 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python: ['3.11', '3.14']
-        node: ['22', '24']
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python }}
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: ${{ matrix.node }}
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          save-cache: ${{ matrix.node == '22' }}
+          save-cache: true
       - run: uv sync --locked --all-groups
       - run: uv run --locked python -m ruff check .
       - run: uv run --locked python -m ruff format --check .
       - run: uv run --locked python -m unittest discover -s tests -q
         env:
           PYTHONPATH: src
-      - run: node --test tests/js/sentinel.test.cjs
       - run: uv run --locked python -m build
       - run: uv run --locked python -m twine check dist/*
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
-          name: diagnostics-${{ matrix.os }}-${{ matrix.python }}-${{ matrix.node }}
+          name: diagnostics-${{ matrix.os }}-${{ matrix.python }}
           path: dist/
   providers-package:
     runs-on: ubuntu-latest
@@ -53,9 +48,6 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python }}
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '22'
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           cache-suffix: providers-package
@@ -82,9 +74,6 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.14'
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '24'
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           cache-suffix: latest-dependencies
@@ -94,4 +83,3 @@ jobs:
       - run: uv run --locked python -m unittest discover -s tests -q
         env:
           PYTHONPATH: src
-      - run: node --test tests/js/sentinel.test.cjs

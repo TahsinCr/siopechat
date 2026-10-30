@@ -20,9 +20,10 @@ from providers.chatgpt import BrowserSession, ChatGPTClient, SessionPaths
 from providers.chatgpt.constants import DEFAULT_CDP_URL
 from providers.chatgpt.errors import ChatGPTWebError
 from providers.chatgpt.formats import normalize_conversation
+from providers.chatgpt.resources import CHATGPT_ROOT
 from providers.errors import ProviderError
 from utils.files import atomic_json_write
-from utils.paths import application_root, cache_dir, runtime_dir, state_dir, user_data_dir
+from utils.paths import application_root, runtime_dir, state_dir, user_data_dir
 from utils.process import acquire_exclusive, detached_process_options, set_private_permissions
 
 MAX_DAEMON_MESSAGE = 64 * 1024 * 1024
@@ -57,9 +58,7 @@ class BackendService:
         return BrowserSession(
             SessionPaths(
                 store,
-                cache_dir()
-                if self.root.resolve() == application_root().resolve()
-                else self.root / "data" / "session" / "cache",
+                CHATGPT_ROOT,
                 (
                     user_data_dir()
                     if self.root.resolve() == application_root().resolve()
@@ -386,7 +385,6 @@ class BackendService:
                     "daemon": "running",
                     "session_saved": self.auth_store_path().is_file(),
                     "chrome": "running" if client.session.is_ready() else "stopped",
-                    "send_mode": os.environ.get("CHATGPT_WEB_SEND_MODE", "node"),
                     "sentinel_cache": client.session.cache_status(),
                 },
                 False,

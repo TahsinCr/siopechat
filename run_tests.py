@@ -35,12 +35,6 @@ def python_command() -> list[str]:
 
 
 def main() -> int:
-    js_tests = sorted((ROOT / "tests" / "js").glob("*.test.cjs"))
-    node = shutil.which("node")
-    if js_tests and not node:
-        print("Node.js is required to run tests/js/*.test.cjs.", file=sys.stderr)
-        return 2
-
     env = os.environ.copy()
     python_paths = [str(ROOT / "src"), str(ROOT)]
     if env.get("PYTHONPATH"):
@@ -84,13 +78,6 @@ def main() -> int:
             result = subprocess.run(command, cwd=isolated_root, env=provider_env, check=False)
             if result.returncode:
                 return result.returncode
-
-    if js_tests:
-        result = subprocess.run(
-            [node, "--test", *(str(path) for path in js_tests)], cwd=ROOT, check=False
-        )
-        if result.returncode:
-            return result.returncode
 
     return 0
 

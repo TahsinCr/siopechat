@@ -1,16 +1,23 @@
-"""Python implementation of ChatGPT Sentinel's server-issued proof of work."""
+"""ChatGPT Sentinel QuickJS-NG runtime and server-issued proof-of-work solver."""
 
 from __future__ import annotations
 
 import base64
+import functools
+import hashlib
 import json
 import math
+import platform
 import re
+import secrets
 import time
 from decimal import Decimal
 from typing import Any
 
+import quickjs
+
 from .errors import SentinelCompatibilityError
+from .resources import SIGN_SCRIPT, SentinelSDK
 
 INITIAL_TOKEN_PREFIX = "gAAAAAC"
 ENFORCEMENT_TOKEN_PREFIX = "gAAAAAB"
@@ -19,6 +26,238 @@ _MAX_CONTEXT_ITEMS = 64
 _MAX_ATTEMPTS = 500_000
 _MAX_SEED_LENGTH = 4_096
 _HEX_DIFFICULTY = re.compile(r"[0-9a-fA-F]{1,8}\Z")
+_RUNTIME_MEMORY_LIMIT_BYTES = 32 * 1024 * 1024
+_RUNTIME_STACK_SIZE_BYTES = 1024 * 1024
+_RUNTIME_TIMEOUT_SECONDS = 8.0
+_MAX_SDK_BYTES = 8 * 1024 * 1024
+_INITIAL_RANDOM_BYTES = 1024
+
+
+@functools.lru_cache(maxsize=1)
+def _load_sign_source() -> str:
+    return SIGN_SCRIPT.read_text(encoding="utf-8")
+
+
+def _platform_label() -> str:
+    system = platform.system()
+    machine = platform.machine()
+    return f"{system} {machine}".strip() or "Linux x86_64"
+
+
+def _random_hex(byte_length: int = 2048) -> str:
+    size = max(16, min(int(byte_length), 65_536))
+    return secrets.token_hex(size)
+
+
+def _configure_quickjs_context(context: quickjs.Context) -> None:
+    context.set_memory_limit(_RUNTIME_MEMORY_LIMIT_BYTES)
+    context.set_max_stack_size(_RUNTIME_STACK_SIZE_BYTES)
+    context.set_time_limit(_RUNTIME_TIMEOUT_SECONDS)
+    context.add_callable("__siopechatRandomHex", _random_hex)
+    context.set("__siopechatRandomPool", secrets.token_hex(_INITIAL_RANDOM_BYTES))
+
+
+def _wait_for_completion(
+    context: quickjs.Context,
+    timeout_seconds: float = _RUNTIME_TIMEOUT_SECONDS,
+) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    while context.execute_pending_job():
+        if time.monotonic() >= deadline:
+            raise SentinelCompatibilityError("Sentinel JavaScript execution timed out")
+
+    while True:
+        step = int(context.eval("__siopechatStep()"))
+        while context.execute_pending_job():
+            if time.monotonic() >= deadline:
+                raise SentinelCompatibilityError("Sentinel JavaScript execution timed out")
+        if step == 0:
+            break
+        if time.monotonic() >= deadline:
+            raise SentinelCompatibilityError("Sentinel JavaScript execution timed out")
+        if step < 0:
+            if not context.execute_pending_job():
+                raise SentinelCompatibilityError(
+                    "Sentinel SDK stopped before completing proof generation"
+                )
+            continue
+        if step > 1:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise SentinelCompatibilityError("Sentinel JavaScript execution timed out")
+            time.sleep(min((step - 2) / 1000.0, remaining, 0.02))
+
+    error = context.get("__siopechatError")
+    if isinstance(error, str) and error:
+        raise SentinelCompatibilityError(f"Sentinel JavaScript error: {error}")
+
+
+class SentinelRuntime:
+    """Isolated QuickJS-NG context that executes the verified Sentinel SDK."""
+
+    def __init__(self, sdk: SentinelSDK, *, user_agent: str = "Mozilla/5.0") -> None:
+        if not isinstance(sdk, SentinelSDK) or not sdk.implementation or not sdk.source:
+            raise SentinelCompatibilityError("Sentinel SDK resource is invalid")
+        source_bytes = sdk.source.encode("utf-8")
+        if len(source_bytes) > _MAX_SDK_BYTES:
+            raise SentinelCompatibilityError("Sentinel SDK exceeds size limit")
+        if hashlib.sha256(source_bytes).hexdigest() != sdk.sha256:
+            raise SentinelCompatibilityError("Sentinel SDK integrity check failed")
+
+        self._sdk = sdk
+        self._closed = False
+        self._initial: str | None = None
+        context = quickjs.Context()
+        try:
+            _configure_quickjs_context(context)
+            config = {
+                "implementation": sdk.implementation,
+                "scripts": list(sdk.scripts) or [sdk.implementation],
+                "userAgent": user_agent or "Mozilla/5.0",
+                "platform": _platform_label(),
+            }
+            context.set(
+                "__siopechatConfigJson",
+                json.dumps(config, ensure_ascii=False, separators=(",", ":")),
+            )
+            context.eval(_load_sign_source())
+            context.eval(sdk.source)
+            while context.execute_pending_job():
+                pass
+        except SentinelCompatibilityError:
+            del context
+            raise
+        except Exception as error:
+            del context
+            raise SentinelCompatibilityError(
+                f"Failed to initialize Sentinel QuickJS runtime: {error}"
+            ) from error
+        self._context: quickjs.Context | None = context
+
+    def close(self) -> None:
+        if self._closed or self._context is None:
+            return
+        self._closed = True
+        try:
+            self._context.eval("__siopechatDispose()")
+        except Exception:
+            pass
+        self._context = None
+
+    def __enter__(self) -> SentinelRuntime:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.close()
+
+    def _require_context(self) -> quickjs.Context:
+        if self._closed or self._context is None:
+            raise SentinelCompatibilityError("Sentinel QuickJS runtime is closed")
+        return self._context
+
+    def create_initial_proof(self) -> str:
+        """Execute ``SentinelSDK.init`` and return the initial ``gAAAAAC...~S`` proof."""
+        context = self._require_context()
+        try:
+            context.set_time_limit(_RUNTIME_TIMEOUT_SECONDS)
+            context.eval("__siopechatStartInitial()")
+            _wait_for_completion(context)
+            initial = context.get("__siopechatInitial")
+        except SentinelCompatibilityError:
+            raise
+        except Exception as error:
+            raise SentinelCompatibilityError(
+                f"Sentinel initial proof generation failed: {error}"
+            ) from error
+
+        if not isinstance(initial, str) or not initial.startswith(INITIAL_TOKEN_PREFIX):
+            raise SentinelCompatibilityError("Sentinel returned an invalid initial proof")
+        self._initial = initial
+        return initial
+
+    def create_enforcement_tokens(
+        self,
+        requirements: dict[str, Any],
+    ) -> tuple[str, str, str | None]:
+        """Execute ``SentinelSDK.token`` against server chat-requirements."""
+        if not isinstance(requirements, dict):
+            raise SentinelCompatibilityError("Sentinel returned invalid requirements")
+        context = self._require_context()
+        try:
+            context.set_time_limit(_RUNTIME_TIMEOUT_SECONDS)
+            context.set(
+                "__siopechatRequirementsJson",
+                json.dumps(requirements, ensure_ascii=False, separators=(",", ":")),
+            )
+            context.eval("__siopechatStartToken()")
+            _wait_for_completion(context)
+            initial = context.get("__siopechatInitial") or self._initial
+            raw_token = context.get("__siopechatToken")
+        except SentinelCompatibilityError:
+            raise
+        except Exception as error:
+            raise SentinelCompatibilityError(
+                f"Sentinel enforcement token generation failed: {error}"
+            ) from error
+
+        if not isinstance(initial, str) or not initial.startswith(INITIAL_TOKEN_PREFIX):
+            raise SentinelCompatibilityError("Sentinel returned an invalid initial proof")
+        if not isinstance(raw_token, str) or not raw_token:
+            raise SentinelCompatibilityError("Sentinel returned an invalid enforcement token")
+
+        try:
+            parsed = json.loads(raw_token)
+        except json.JSONDecodeError as error:
+            raise SentinelCompatibilityError(
+                "Sentinel returned malformed enforcement token JSON"
+            ) from error
+
+        proof = parsed.get("p") if isinstance(parsed, dict) else None
+        if not isinstance(proof, str) or not proof.startswith(ENFORCEMENT_TOKEN_PREFIX):
+            raise SentinelCompatibilityError("Sentinel returned an invalid enforcement proof")
+        turnstile = parsed.get("t") if isinstance(parsed, dict) else None
+        if not isinstance(turnstile, str) or not turnstile:
+            turnstile = None
+        return initial, proof, turnstile
+
+
+def run_sentinel_signer(
+    *args: str,
+    payload: dict[str, Any] | str,
+    timeout_seconds: float = _RUNTIME_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    """Execute ``sign.js`` in a one-shot QuickJS-NG context with JSON input."""
+    raw_input = (
+        payload
+        if isinstance(payload, str)
+        else json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    )
+    context = quickjs.Context()
+    try:
+        _configure_quickjs_context(context)
+        context.set_time_limit(timeout_seconds)
+        context.set("__siopechatInputJson", raw_input)
+        context.eval(f"globalThis.__siopechatArgs = {json.dumps(list(args))};")
+        context.eval(_load_sign_source())
+        context.eval("__siopechatStartCommand()")
+        _wait_for_completion(context, timeout_seconds=timeout_seconds)
+        result_json = context.get("__siopechatResultJson")
+        if not isinstance(result_json, str) or not result_json:
+            raise SentinelCompatibilityError("Sentinel signer returned an empty result")
+        parsed = json.loads(result_json)
+        if not isinstance(parsed, dict):
+            raise SentinelCompatibilityError("Sentinel signer returned a non-object result")
+        return parsed
+    except SentinelCompatibilityError:
+        raise
+    except Exception as error:
+        raise SentinelCompatibilityError(f"Sentinel signer failed: {error}") from error
+    finally:
+        try:
+            context.eval("__siopechatDispose()")
+        except Exception:
+            pass
+        del context
 
 
 def _js_number(value: int | float) -> str:

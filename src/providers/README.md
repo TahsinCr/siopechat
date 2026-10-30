@@ -13,17 +13,18 @@ python -m pip install .
 ```
 
 Python 3.10+ supports ChatGPT and Claude. The Gemini transport requires Python
-3.11+. Python discovers and downloads the current ChatGPT Sentinel SDK with
-size and SHA-256 checks. Node.js 22+ runs that published SDK to create the initial
-context and handle Turnstile or other requirements outside the validated
-Python proof-of-work path. Python computes proof-of-work from the current server
+3.11+. Python discovers and downloads the current ChatGPT Sentinel SDK files into
+`providers/chatgpt/` with size and SHA-256 checks. QuickJS-NG (`quickjs-ng`) runs
+that published SDK with `providers/chatgpt/sign.js` to create the initial context
+and handle Turnstile or other requirements outside the validated Python
+proof-of-work path. Python computes proof-of-work from the current server
 challenge when its shape is supported. Browser page discovery, local CDP access
 and session capture run in Python. Importing the library or configuring an
 account does not open a browser or access the network.
 
-The SDK is cached locally. On the next use after six hours, the provider checks
-for updates and conditionally revalidates an unchanged SDK when supported by the
-server. Set `CHATGPT_WEB_SENTINEL_CACHE_TTL_MS` to change the interval in milliseconds.
+The SDK files are cached in `providers/chatgpt/`. On the next use after six hours,
+the provider checks for updates and reuses unchanged SDK files without downloading
+them again. Set `CHATGPT_WEB_SENTINEL_CACHE_TTL_MS` to change the interval in milliseconds.
 
 ## Using an account
 

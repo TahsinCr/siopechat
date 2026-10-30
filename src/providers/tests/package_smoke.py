@@ -1,27 +1,23 @@
 """Smoke the standalone provider wheel from its clean site-packages install."""
 
 import asyncio
-import subprocess
 import tempfile
 from importlib.resources import files
 from pathlib import Path
 
+import quickjs
+
 from providers import ProviderClient, SendRequest
 
 
-def descendants(root):
-    for item in root.iterdir():
-        if item.is_dir():
-            yield from descendants(item)
-        else:
-            yield item
-
-
 def main():
-    root = files("providers")
-    scripts = [item for item in descendants(root) if item.name.endswith(".cjs")]
-    for script in scripts:
-        subprocess.run(["node", "--check", str(script)], check=True)
+    sign_js = files("providers.chatgpt").joinpath("sign.js")
+    if not sign_js.is_file():
+        raise SystemExit("sign.js was not packaged in providers.chatgpt")
+    context = quickjs.Context()
+    context.eval(sign_js.read_text(encoding="utf-8"))
+    if int(context.eval("typeof readJsonInput === 'function' ? 1 : 0")) != 1:
+        raise SystemExit("sign.js did not expose readJsonInput in QuickJS-NG")
 
     async def verify_lazy_account_factory():
         with tempfile.TemporaryDirectory() as folder:

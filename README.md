@@ -33,13 +33,13 @@ Keep conversations moving, organize provider projects and compare replies side b
 
 ### Requirements
 
-You need Python **3.11+** and Node.js **22+** for SiopeChat. Python discovers and downloads the current ChatGPT Sentinel SDK with size and SHA-256 checks; Node runs that published SDK to generate the initial request context and handle dynamic server challenges such as Turnstile. Python computes proof-of-work only for the validated challenge shape it supports. Browser login and session capture run through the Python provider package. The included installers and launchers check both runtime versions before continuing. The standalone provider package keeps a separate Python 3.10+ contract. Chrome/Chromium is needed only for the explicit sign-in step. Use a Unicode terminal. True color and mouse reporting are recommended.
+You need Python **3.11+** for SiopeChat. Python discovers and downloads the current ChatGPT Sentinel SDK files into `src/providers/chatgpt/` with size and SHA-256 checks, reusing the downloaded files without re-downloading when unchanged; an isolated QuickJS-NG (`quickjs-ng`) runtime executes that published SDK with `src/providers/chatgpt/sign.js` to generate the initial request context and handle dynamic server challenges such as Turnstile. Python computes proof-of-work only for the validated challenge shape it supports. Browser login and session capture run through the Python provider package. The included installers and launchers check the Python runtime version before continuing. The standalone provider package keeps a separate Python 3.10+ contract. Chrome/Chromium is needed only for the explicit sign-in step. Use a Unicode terminal. True color and mouse reporting are recommended.
 
-The SDK is stored in the provider cache. By default, the next use after six hours checks for updates; when supported by the server, an unchanged SDK is revalidated without downloading it again. `CHATGPT_WEB_SENTINEL_CACHE_TTL_MS` changes the interval in milliseconds.
+The SDK files are stored in the ChatGPT provider root (`src/providers/chatgpt/`). By default, the next use after six hours checks for updates; when unchanged, the downloaded SDK files are reused without downloading them again. `CHATGPT_WEB_SENTINEL_CACHE_TTL_MS` changes the interval in milliseconds.
 
 ### Install and launch
 
-Run the one-time installer from the checkout. It checks Python 3.11+ and Node.js 22+, reuses a supported virtual environment if it finds one, and installs SiopeChat plus its Python dependencies there. If no environment exists, it creates `python/` without replacing an existing directory.
+Run the one-time installer from the checkout. It checks Python 3.11+, reuses a supported virtual environment if it finds one, and installs SiopeChat plus its Python dependencies there. If no environment exists, it creates `python/` without replacing an existing directory.
 
 | Platform | Installer |
 | --- | --- |
@@ -234,7 +234,6 @@ The script runs application tests, standalone provider API and credential tests,
 
 ```sh
 PYTHONPATH=src:. uv run --locked python -m unittest discover -s tests
-node --test tests/js/sentinel.test.cjs
 uv run --locked python -m ruff check .
 uv run --locked python -m ruff format --check .
 uv run --locked python -m build
@@ -247,7 +246,7 @@ Before reporting an issue, note the provider, operation, terminal, operating sys
 
 `Accounts` sends use the shared `TaskService`, with an account resolver, response limits and persistence inside the account queue. Cancellation releases the account after transport cleanup and accepted-response writes finish. Provider registration accepts an `account_factory` for isolated adapter instances. Terminal reads, mutations and Markdown preparation use separate bounded worker pools; closing a tab does not cancel its response.
 
-The GitHub Actions workflow runs the locked application Python 3.11/3.14 and Node.js 22/24 matrix on Linux, Windows and macOS. The standalone provider package keeps its separate Python 3.10+ contract. Passing unit tests or CI does not establish live provider compatibility or native terminal interaction. Session files still use private file permissions rather than an operating-system credential vault. Sentinel behavior for server challenges not represented in offline tests requires live-provider verification.
+The GitHub Actions workflow runs the locked application Python 3.11/3.14 matrix on Linux, Windows and macOS. The standalone provider package keeps its separate Python 3.10+ contract. Passing unit tests or CI does not establish live provider compatibility or native terminal interaction. Session files still use private file permissions rather than an operating-system credential vault. Sentinel behavior for server challenges not represented in offline tests requires live-provider verification.
 
 ## License
 

@@ -32,6 +32,7 @@ from providers import (
 )
 from providers.cdp import DevToolsError, open_provider_page, read_provider_cookies
 from providers.chatgpt import BrowserSession, ChatGPTClient, ChatGPTProvider, SessionPaths
+from providers.chatgpt.resources import CHATGPT_ROOT
 from providers.claude import ClaudeProvider
 from providers.errors import AccountPaused, ProviderError, RemoteNotFound
 from providers.gemini import GeminiProvider
@@ -302,7 +303,7 @@ class Accounts:
                 replace(session.paths, session_file=self.credentials(key)), session.cdp_url
             )
         return BrowserSession(
-            SessionPaths(self.credentials(key), directory / "cache", directory / "chrome-profile"),
+            SessionPaths(self.credentials(key), CHATGPT_ROOT, directory / "chrome-profile"),
             f"http://127.0.0.1:{item['port']}",
         )
 

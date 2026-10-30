@@ -79,9 +79,7 @@ class DiscoveryTests(unittest.TestCase):
                 "metadata": {"gizmo": {"memory_scope": "project_v2"}},
             }
         )
-        with patch(
-            "providers.chatgpt.client.subprocess.run", side_effect=AssertionError("browser")
-        ):
+        with patch("subprocess.run", side_effect=AssertionError("browser")):
             value = self.client.create_project("Demo", memory="project_only")
         self.assertEqual(value["id"], "g-p-created")
         self.assertEqual(self.client.request.call_args.kwargs["json"]["memory_scope"], "project_v2")

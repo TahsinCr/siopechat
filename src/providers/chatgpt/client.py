@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import time
 import uuid
 from collections import OrderedDict
@@ -32,8 +31,8 @@ from .discovery import (
 )
 from .errors import ChatGPTWebError, SentinelCompatibilityError
 from .formats import message_parts, text_from_parts
-from .resources import Script, load_sentinel_sdk, script_path
-from .sentinel import generate_enforcement_proof
+from .resources import load_sentinel_sdk
+from .sentinel import SentinelRuntime, generate_enforcement_proof
 from .session import BrowserSession
 
 
@@ -700,93 +699,42 @@ class ChatGPTClient:
             raise ChatGPTWebError("ChatGPT did not return a conversation ID")
         return resolved_id, submitted_message_id
 
-    def run_sentinel_node(self, arguments: list[str], payload: dict[str, Any]) -> dict[str, Any]:
-        helper = script_path(Script.SIGN)
-        environment = {
-            key: value
-            for key, value in self.session.environment().items()
-            if key
-            in {
-                "PATH",
-                "HOME",
-                "USERPROFILE",
-                "SYSTEMROOT",
-                "WINDIR",
-                "TEMP",
-                "TMP",
-                "TMPDIR",
-            }
-        }
-        try:
-            result = subprocess.run(
-                ["node", str(helper), *arguments],
-                input=json.dumps(payload, separators=(",", ":"), ensure_ascii=False),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                text=True,
-                encoding="utf-8",
-                timeout=30,
-                check=False,
-                env=environment,
-            )
-        except FileNotFoundError as error:
-            raise SentinelCompatibilityError(
-                "Node.js 22 or newer is required to initialize ChatGPT Sentinel"
-            ) from error
-        except subprocess.TimeoutExpired as error:
-            raise SentinelCompatibilityError("Sentinel signing timed out") from error
-        if result.returncode != 0:
-            raise SentinelCompatibilityError("ChatGPT web verification could not be prepared")
-        try:
-            value = json.loads(result.stdout)
-        except json.JSONDecodeError as error:
-            raise SentinelCompatibilityError("Sentinel signer returned invalid JSON") from error
-        if not isinstance(value, dict):
-            raise SentinelCompatibilityError("Sentinel signer returned an invalid result")
-        return value
-
     def create_sentinel_headers(self) -> dict[str, str]:
         sdk = load_sentinel_sdk(self.session.paths.cache)
-        sdk_payload = {
-            "implementation": sdk.implementation,
-            "source": sdk.source,
-            "sha256": sdk.sha256,
-            "cache_status": sdk.cache_status,
-        }
-        initial = self.run_sentinel_node(["--emit-initial"], {"sdk": sdk_payload}).get("initial")
-        if not isinstance(initial, str) or not initial:
-            raise SentinelCompatibilityError("Sentinel signer did not generate an initial proof")
-        requirements = self.request(
-            "POST",
-            urljoin(CHATGPT_ORIGIN, "/backend-api/sentinel/chat-requirements/prepare"),
-            json={"p": initial},
-        ).json()
-        if not isinstance(requirements, dict):
-            raise ChatGPTWebError("Sentinel prepare returned an invalid response")
-        prepare_token = requirements.get("prepare_token")
-        if not isinstance(prepare_token, str) or not prepare_token:
-            raise SentinelCompatibilityError("Sentinel did not return required enforcement tokens")
+        user_agent = self.headers.get("user-agent") or "Mozilla/5.0"
+        with SentinelRuntime(sdk, user_agent=user_agent) as runtime:
+            initial = runtime.create_initial_proof()
+            requirements = self.request(
+                "POST",
+                urljoin(CHATGPT_ORIGIN, "/backend-api/sentinel/chat-requirements/prepare"),
+                json={"p": initial},
+            ).json()
+            if not isinstance(requirements, dict):
+                raise ChatGPTWebError("Sentinel prepare returned an invalid response")
+            prepare_token = requirements.get("prepare_token")
+            if not isinstance(prepare_token, str) or not prepare_token:
+                raise SentinelCompatibilityError(
+                    "Sentinel did not return required enforcement tokens"
+                )
 
-        proof_of_work = requirements.get("proofofwork")
-        turnstile_challenge = requirements.get("turnstile")
-        turnstile_not_required = "turnstile" not in requirements or (
-            isinstance(turnstile_challenge, dict) and turnstile_challenge.get("required") is False
-        )
-        if (
-            isinstance(proof_of_work, dict)
-            and proof_of_work.get("required") is True
-            and turnstile_not_required
-            and set(requirements).issubset({"prepare_token", "proofofwork", "turnstile", "token"})
-        ):
-            proof = generate_enforcement_proof(initial, requirements)
-            turnstile = None
-        else:
-            enforcement = self.run_sentinel_node(
-                ["--emit-enforcement-json"],
-                {"sdk": sdk_payload, "requirements": requirements},
+            proof_of_work = requirements.get("proofofwork")
+            turnstile_challenge = requirements.get("turnstile")
+            turnstile_not_required = "turnstile" not in requirements or (
+                isinstance(turnstile_challenge, dict)
+                and turnstile_challenge.get("required") is False
             )
-            proof = enforcement.get("proof")
-            turnstile = enforcement.get("turnstile")
+            if (
+                isinstance(proof_of_work, dict)
+                and proof_of_work.get("required") is True
+                and turnstile_not_required
+                and set(requirements).issubset(
+                    {"prepare_token", "proofofwork", "turnstile", "token"}
+                )
+            ):
+                proof = generate_enforcement_proof(initial, requirements)
+                turnstile = None
+            else:
+                _, proof, turnstile = runtime.create_enforcement_tokens(requirements)
 
         if not isinstance(proof, str) or not proof:
             raise SentinelCompatibilityError("Sentinel did not return required enforcement tokens")

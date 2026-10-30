@@ -65,11 +65,10 @@ class SendOptionsTests(unittest.TestCase):
     def test_temporary_multiturn_has_no_history_get(self):
         self.client.get_conversation = Mock(side_effect=AssertionError("no temporary GET"))
         events = []
-        with patch.dict("os.environ", {"CHATGPT_WEB_SEND_MODE": "node"}):
-            remote, conv, _ = self.client.send_prompt(
-                None, "First", model="account-thinking", temporary=True, on_event=events.append
-            )
-            self.client.send_prompt(remote, "Second", model="account-thinking", temporary=True)
+        remote, conv, _ = self.client.send_prompt(
+            None, "First", model="account-thinking", temporary=True, on_event=events.append
+        )
+        self.client.send_prompt(remote, "Second", model="account-thinking", temporary=True)
         self.assertTrue(conv["temporary"])
         self.assertTrue(all(b["history_and_training_disabled"] for b in self.requests))
         self.assertEqual(self.requests[1]["parent_message_id"], "a-1")
@@ -95,10 +94,7 @@ class SendOptionsTests(unittest.TestCase):
                 "messages": self.requests[-1]["messages"] + self.messages,
             }
         )
-        with patch.dict("os.environ", {"CHATGPT_WEB_SEND_MODE": "node"}):
-            self.client.send_prompt(
-                None, "Project", project_id="g-p-work", model="account-thinking"
-            )
+        self.client.send_prompt(None, "Project", project_id="g-p-work", model="account-thinking")
         self.assertEqual(self.requests[0]["gizmo_id"], "g-p-work")
 
     def test_missing_temporary_context_never_falls_back_to_saved_chat(self):
@@ -115,9 +111,8 @@ class SendOptionsTests(unittest.TestCase):
         self.client.capture_send_recipe = Mock(
             side_effect=AssertionError("no private browser draft")
         )
-        with patch.dict("os.environ", {"CHATGPT_WEB_SEND_MODE": "node"}):
-            with self.assertRaises(ChatGPTWebError):
-                self.client.send_prompt(None, "Private", model="account-thinking", temporary=True)
+        with self.assertRaises(ChatGPTWebError):
+            self.client.send_prompt(None, "Private", model="account-thinking", temporary=True)
         self.client.capture_send_recipe.assert_not_called()
         self.assertEqual(self.requests, [])
 

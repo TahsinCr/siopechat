@@ -17,6 +17,7 @@ dependencies = [
     "browser-cookie3>=0.20.1,<0.21",
     "lz4>=4.4.5,<5",
     "curl-cffi>=0.16,<1",
+    "quickjs-ng>=0.17.0.2,<0.18",
 ]
 
 [tool.setuptools]
@@ -24,4 +25,4 @@ package-dir = {"providers" = "."}
 packages = ["providers", "providers.chatgpt", "providers.gemini", "providers.claude"]
 
 [tool.setuptools.package-data]
-"providers.chatgpt" = ["scripts/io.cjs", "scripts/sentinel/*.cjs"]
+"providers.chatgpt" = ["sign.js"]

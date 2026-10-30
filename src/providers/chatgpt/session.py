@@ -20,13 +20,14 @@ from ..errors import AccountPaused
 from ..session import CredentialStore, read_session, save_session
 from .constants import DEFAULT_CDP_URL, FORBIDDEN_REPLAY_HEADERS
 from .errors import ChatGPTWebError
+from .resources import CHATGPT_ROOT
 
 
 @dataclass(frozen=True)
 class SessionPaths:
     session_file: Path
-    cache: Path
-    profile: Path
+    cache: Path = CHATGPT_ROOT
+    profile: Path = CHATGPT_ROOT / "login-profile"
 
 
 def _private(path: Path, mode: int) -> None:
@@ -71,9 +72,6 @@ class BrowserSession:
     def __init__(self, paths: SessionPaths, cdp_url: str = DEFAULT_CDP_URL):
         self.paths = paths
         self.cdp_url = cdp_url
-
-    def environment(self) -> dict[str, str]:
-        return os.environ.copy()
 
     def save(self, url: str, headers: dict[str, str]) -> None:
         path = self.paths.session_file
@@ -232,7 +230,7 @@ class BrowserSession:
         }
 
     def cache_status(self) -> dict[str, Any] | None:
-        manifest = self.paths.cache / "sentinel" / "current.json"
+        manifest = self.paths.cache / "current.json"
         try:
             value = json.loads(manifest.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):

@@ -2,18 +2,6 @@ $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
 $Script = Join-Path $Root 'siopechat.py'
 
-$NodeCommand = Get-Command node -ErrorAction SilentlyContinue
-if (-not $NodeCommand) {
-    throw 'SiopeChat requires Node.js 22 or newer. Install Node.js and try again.'
-}
-$NodeVersion = (& $NodeCommand.Source --version 2>$null | Out-String).Trim()
-if ($LASTEXITCODE -ne 0 -or $NodeVersion -notmatch '^v?(\d+)\.') {
-    throw "Could not read the Node.js version (reported: $NodeVersion)."
-}
-if ([int]$Matches[1] -lt 22) {
-    throw "SiopeChat requires Node.js 22 or newer; found $NodeVersion."
-}
-
 function Get-PythonVersion {
     param([string]$Interpreter)
     $Output = & $Interpreter -c 'import sys; print(".".join(map(str, sys.version_info[:3])))' 2>$null

@@ -8,17 +8,6 @@ fail() {
     exit 1
 }
 
-check_node() {
-    command -v node >/dev/null 2>&1 || fail "Node.js 22 or newer is required. Install Node.js and try again."
-    NODE_VERSION=$(node --version 2>/dev/null) || fail "Could not run node --version."
-    NODE_MAJOR=${NODE_VERSION#v}
-    NODE_MAJOR=${NODE_MAJOR%%.*}
-    case "$NODE_MAJOR" in
-        ''|*[!0-9]*) fail "Could not read the Node.js version (reported: $NODE_VERSION)." ;;
-    esac
-    [ "$NODE_MAJOR" -ge 22 ] || fail "Node.js 22 or newer is required; found $NODE_VERSION."
-}
-
 python_supported() {
     "$1" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1
 }
@@ -26,8 +15,6 @@ python_supported() {
 venv_supported() {
     "$1" -c 'import sys; raise SystemExit(0 if sys.prefix != sys.base_prefix and sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1
 }
-
-check_node
 
 SYSTEM_PYTHON=
 for PYTHON_COMMAND in python3 python; do

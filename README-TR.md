@@ -33,13 +33,13 @@ Sohbetlerinize devam edin, sağlayıcı projelerinizi düzenleyin ve yanıtları
 
 ### Gereksinimler
 
-SiopeChat için Python **3.11+** ve Node.js **22+** gerekir. Python, ChatGPT Sentinel'in güncel SDK kaynağını keşfeder, indirir ve boyut/SHA-256 denetiminden geçirir; Node yayımlanmış SDK'yı çalıştırarak başlangıç bağlamını ve Turnstile gibi dinamik sunucu doğrulamalarını üretir. Python yalnızca desteklenen doğrulama biçimindeki sunucu kaynaklı proof-of-work hesabını yapar. Tarayıcı girişi ve oturum bilgisi Python sağlayıcı paketi üzerinden yürür. Kurulum ve başlatma araçları iki çalışma zamanı sürümünü de denetler. Bağımsız sağlayıcı paketi ayrı olarak Python 3.10+ desteğini korur. Chrome/Chromium yalnızca açıkça başlatılan giriş işlemi için gerekir. Unicode destekli bir terminal kullanın; gerçek renk ve fare raporlama desteği önerilir.
+SiopeChat için Python **3.11+** gerekir. Python, ChatGPT Sentinel'in güncel SDK dosyalarını `src/providers/chatgpt/` köküne indirir, boyut/SHA-256 denetiminden geçirir ve değişmediği sürece yeniden indirmeden buradan kullanır; yalıtılmış QuickJS-NG (`quickjs-ng`) çalışma zamanı `src/providers/chatgpt/sign.js` ile yayımlanmış SDK'yı çalıştırarak başlangıç bağlamını ve Turnstile gibi dinamik sunucu doğrulamalarını üretir. Python yalnızca desteklenen doğrulama biçimindeki sunucu kaynaklı proof-of-work hesabını yapar. Tarayıcı girişi ve oturum bilgisi Python sağlayıcı paketi üzerinden yürür. Kurulum ve başlatma araçları Python çalışma zamanı sürümünü denetler. Bağımsız sağlayıcı paketi ayrı olarak Python 3.10+ desteğini korur. Chrome/Chromium yalnızca açıkça başlatılan giriş işlemi için gerekir. Unicode destekli bir terminal kullanın; gerçek renk ve fare raporlama desteği önerilir.
 
-SDK sağlayıcı önbelleğinde saklanır. Varsayılan olarak altı saatten sonraki ilk kullanımda güncellik kontrol edilir; sunucu destekliyorsa değişmeyen SDK yeniden indirilmeden doğrulanır. `CHATGPT_WEB_SENTINEL_CACHE_TTL_MS` kontrol aralığını milisaniye cinsinden değiştirir.
+SDK dosyaları ChatGPT sağlayıcı kökünde (`src/providers/chatgpt/`) saklanır. Varsayılan olarak altı saatten sonraki ilk kullanımda güncellik kontrol edilir; değişmeyen SDK yeniden indirilmeden mevcut dosyadan kullanılır. `CHATGPT_WEB_SENTINEL_CACHE_TTL_MS` kontrol aralığını milisaniye cinsinden değiştirir.
 
 ### Kurulum ve başlatma
 
-Depoyu indirdiğiniz dizinde tek seferlik kurulum aracını çalıştırın. Python 3.11+ ve Node.js 22+ sürümlerini denetler, bulduğu uyumlu sanal ortamı kullanır ve SiopeChat ile Python bağımlılıklarını o ortama kurar. Ortam bulamazsa `python/` oluşturur; mevcut bir dizini silmez veya üzerine yazmaz.
+Depoyu indirdiğiniz dizinde tek seferlik kurulum aracını çalıştırın. Python 3.11+ sürümünü denetler, bulduğu uyumlu sanal ortamı kullanır ve SiopeChat ile Python bağımlılıklarını o ortama kurar. Ortam bulamazsa `python/` oluşturur; mevcut bir dizini silmez veya üzerine yazmaz.
 
 | Sistem | Kurulum aracı |
 | --- | --- |
@@ -228,7 +228,6 @@ Testler kişisel hesap oturumlarınızı gerektirmez. Önce [uv](https://docs.as
 ```sh
 uv sync --locked --all-groups
 PYTHONPATH=src:. uv run --locked python -m unittest discover -s tests
-node --test tests/js/sentinel.test.cjs
 uv run --locked python -m ruff check .
 uv run --locked python -m ruff format --check .
 uv run --locked python -m build
@@ -241,7 +240,7 @@ Hata bildirirken sağlayıcıyı, işlemi, terminali, işletim sistemini ve hata
 
 `Accounts` gönderimleri hesap çözümleyicisi, yanıt sınırı ve hesap kuyruğu içindeki kayıt işlemiyle ortak `TaskService` üzerinden çalışır. İptal, taşıyıcı temizliği ve kabul edilmiş yanıtın yazımı bittikten sonra hesabı serbest bırakır. Sağlayıcı kaydındaki `account_factory`, hesaplara bağımsız adaptör örnekleri oluşturur. Terminal okumaları, değişiklik işlemleri ve Markdown hazırlığı ayrı, sınırlı iş havuzları kullanır; sekmeyi kapatmak yanıtı iptal etmez.
 
-GitHub Actions, Linux, Windows ve macOS üzerinde uygulama için Python 3.11/3.14 ve Node.js 22/24 matrisini çalıştırır. Bağımsız sağlayıcı paketi kendi Python 3.10+ desteğini korur. Birim testleri veya CI başarısı, canlı sağlayıcı uyumluluğunu ve gerçek terminal etkileşimini tek başına doğrulamaz. Oturumlar işletim sistemi kasası yerine özel dosya izinleriyle saklanır. Çevrimdışı testlerde bulunmayan Sentinel gereksinimleri canlı sağlayıcı doğrulaması gerektirir.
+GitHub Actions, Linux, Windows ve macOS üzerinde uygulama için Python 3.11/3.14 matrisini çalıştırır. Bağımsız sağlayıcı paketi kendi Python 3.10+ desteğini korur. Birim testleri veya CI başarısı, canlı sağlayıcı uyumluluğunu ve gerçek terminal etkileşimini tek başına doğrulamaz. Oturumlar işletim sistemi kasası yerine özel dosya izinleriyle saklanır. Çevrimdışı testlerde bulunmayan Sentinel gereksinimleri canlı sağlayıcı doğrulaması gerektirir.
 
 ## Lisans
 

@@ -3,29 +3,6 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
-check_node() {
-    if ! command -v node >/dev/null 2>&1; then
-        echo "SiopeChat requires Node.js 22 or newer. Install Node.js and try again." >&2
-        exit 1
-    fi
-
-    NODE_VERSION=$(node --version 2>/dev/null || true)
-    NODE_MAJOR=${NODE_VERSION#v}
-    NODE_MAJOR=${NODE_MAJOR%%.*}
-    case "$NODE_MAJOR" in
-        ''|*[!0-9]*)
-            echo "Could not read the Node.js version (reported: ${NODE_VERSION:-unknown})." >&2
-            exit 1
-            ;;
-    esac
-    if [ "$NODE_MAJOR" -lt 22 ]; then
-        echo "SiopeChat requires Node.js 22 or newer; found $NODE_VERSION." >&2
-        exit 1
-    fi
-}
-
-check_node
-
 resolve_venv() {
     if [ "${SIOPECHAT_VENV+x}" = x ]; then
         if [ -z "$SIOPECHAT_VENV" ]; then
