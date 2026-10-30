@@ -1,14 +1,57 @@
 import base64
 import json
+import os
+import shutil
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from providers.chatgpt.client import ChatGPTClient
 from providers.chatgpt.errors import SentinelCompatibilityError
+from providers.chatgpt.resources import SentinelSDK
 from providers.chatgpt.sentinel import _js_number, _json_string, generate_enforcement_proof
 
 
+def client_with_sentinel_cache():
+    client = ChatGPTClient.__new__(ChatGPTClient)
+    client.session = SimpleNamespace(
+        paths=SimpleNamespace(cache=Path("sentinel-cache")),
+        environment=lambda: os.environ.copy(),
+    )
+    return client
+
+
 class ChatGPTSentinelProofTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required by the application")
+    def test_node_runner_executes_the_python_supplied_sdk_payload(self):
+        client = client_with_sentinel_cache()
+        sdk = {
+            "implementation": "https://chatgpt.com/sentinel/test/sdk.js",
+            "source": (
+                "window.SentinelSDK = {"
+                "init: async () => {"
+                'const frame = document.createElement("iframe");'
+                'frame.contentWindow.postMessage({p: "initial"});'
+                "},"
+                'token: async () => JSON.stringify({p: "proof", t: "turnstile"})'
+                "};"
+            ),
+            "sha256": "test-only",
+            "cache_status": "test",
+        }
+
+        initial = client.run_sentinel_node(["--emit-initial"], {"sdk": sdk})
+        enforcement = client.run_sentinel_node(
+            ["--emit-enforcement-json"],
+            {"sdk": sdk, "requirements": {"turnstile": {"required": True}}},
+        )
+
+        self.assertEqual(initial["initial"], "initial")
+        self.assertEqual(enforcement["initial"], "initial")
+        self.assertEqual(enforcement["proof"], "proof")
+        self.assertEqual(enforcement["turnstile"], "turnstile")
+
     def test_proof_matches_the_published_sdk_calculation(self):
         context = [
             3000,
@@ -112,13 +155,15 @@ class ChatGPTSentinelProofTests(unittest.TestCase):
             },
             "turnstile": {"required": False},
         }
-        client = ChatGPTClient.__new__(ChatGPTClient)
+        client = client_with_sentinel_cache()
         client.run_sentinel_node = Mock(return_value={"initial": initial})
         response = Mock()
         response.json.return_value = requirements
         client.request = Mock(return_value=response)
 
-        headers = client.create_sentinel_headers()
+        sdk = SentinelSDK("https://chatgpt.com/sentinel/test/sdk.js", "source", "digest", "hit")
+        with patch("providers.chatgpt.client.load_sentinel_sdk", return_value=sdk) as load_sdk:
+            headers = client.create_sentinel_headers()
 
         self.assertEqual(
             headers["openai-sentinel-chat-requirements-prepare-token"],
@@ -126,6 +171,8 @@ class ChatGPTSentinelProofTests(unittest.TestCase):
         )
         self.assertTrue(headers["openai-sentinel-proof-token"].startswith("gAAAAAB"))
         self.assertEqual(client.run_sentinel_node.call_count, 1)
+        load_sdk.assert_called_once_with(Path("sentinel-cache"))
+        self.assertIn("sdk", client.run_sentinel_node.call_args.args[1])
 
     def test_keeps_sdk_for_turnstile_or_new_requirement_fields(self):
         initial = "gAAAAAC" + base64.b64encode(b"[0,0,null,0,0,0,0,0,0,0]").decode() + "~S"
@@ -138,7 +185,7 @@ class ChatGPTSentinelProofTests(unittest.TestCase):
             },
             "turnstile": {"required": True, "dx": "dynamic-server-challenge"},
         }
-        client = ChatGPTClient.__new__(ChatGPTClient)
+        client = client_with_sentinel_cache()
         client.run_sentinel_node = Mock(
             side_effect=[
                 {"initial": initial},
@@ -149,7 +196,9 @@ class ChatGPTSentinelProofTests(unittest.TestCase):
         response.json.return_value = requirements
         client.request = Mock(return_value=response)
 
-        headers = client.create_sentinel_headers()
+        sdk = SentinelSDK("https://chatgpt.com/sentinel/test/sdk.js", "source", "digest", "hit")
+        with patch("providers.chatgpt.client.load_sentinel_sdk", return_value=sdk):
+            headers = client.create_sentinel_headers()
 
         self.assertEqual(headers["openai-sentinel-proof-token"], "sdk-proof")
         self.assertEqual(headers["openai-sentinel-turnstile-token"], "sdk-turnstile")
@@ -160,10 +209,13 @@ class ChatGPTSentinelProofTests(unittest.TestCase):
         client.run_sentinel_node = Mock(
             side_effect=[{"initial": initial}, {"proof": "sdk-proof", "turnstile": None}]
         )
-        with patch(
-            "providers.chatgpt.client.generate_enforcement_proof",
-            return_value="python-proof",
-        ) as proof_generator:
+        with (
+            patch("providers.chatgpt.client.load_sentinel_sdk", return_value=sdk),
+            patch(
+                "providers.chatgpt.client.generate_enforcement_proof",
+                return_value="python-proof",
+            ) as proof_generator,
+        ):
             client.create_sentinel_headers()
         proof_generator.assert_not_called()
         self.assertEqual(client.run_sentinel_node.call_count, 2)

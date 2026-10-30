@@ -73,9 +73,7 @@ class BrowserSession:
         self.cdp_url = cdp_url
 
     def environment(self) -> dict[str, str]:
-        environment = os.environ.copy()
-        environment["SIOPECHAT_CACHE_HOME"] = str(self.paths.cache)
-        return environment
+        return os.environ.copy()
 
     def save(self, url: str, headers: dict[str, str]) -> None:
         path = self.paths.session_file

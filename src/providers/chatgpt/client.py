@@ -32,7 +32,7 @@ from .discovery import (
 )
 from .errors import ChatGPTWebError, SentinelCompatibilityError
 from .formats import message_parts, text_from_parts
-from .resources import Script, script_path
+from .resources import Script, load_sentinel_sdk, script_path
 from .sentinel import generate_enforcement_proof
 from .session import BrowserSession
 
@@ -700,9 +700,7 @@ class ChatGPTClient:
             raise ChatGPTWebError("ChatGPT did not return a conversation ID")
         return resolved_id, submitted_message_id
 
-    def run_sentinel_node(
-        self, arguments: list[str], payload: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+    def run_sentinel_node(self, arguments: list[str], payload: dict[str, Any]) -> dict[str, Any]:
         helper = script_path(Script.SIGN)
         environment = {
             key: value
@@ -717,17 +715,16 @@ class ChatGPTClient:
                 "TEMP",
                 "TMP",
                 "TMPDIR",
-                "SIOPECHAT_CACHE_HOME",
-                "CHATGPT_WEB_SENTINEL_CACHE_TTL_MS",
             }
         }
         try:
             result = subprocess.run(
                 ["node", str(helper), *arguments],
-                input=json.dumps(payload) if payload is not None else None,
+                input=json.dumps(payload, separators=(",", ":"), ensure_ascii=False),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 text=True,
+                encoding="utf-8",
                 timeout=30,
                 check=False,
                 env=environment,
@@ -749,7 +746,14 @@ class ChatGPTClient:
         return value
 
     def create_sentinel_headers(self) -> dict[str, str]:
-        initial = self.run_sentinel_node(["--emit-initial"]).get("initial")
+        sdk = load_sentinel_sdk(self.session.paths.cache)
+        sdk_payload = {
+            "implementation": sdk.implementation,
+            "source": sdk.source,
+            "sha256": sdk.sha256,
+            "cache_status": sdk.cache_status,
+        }
+        initial = self.run_sentinel_node(["--emit-initial"], {"sdk": sdk_payload}).get("initial")
         if not isinstance(initial, str) or not initial:
             raise SentinelCompatibilityError("Sentinel signer did not generate an initial proof")
         requirements = self.request(
@@ -778,7 +782,8 @@ class ChatGPTClient:
             turnstile = None
         else:
             enforcement = self.run_sentinel_node(
-                ["--requirements-stdin", "--emit-enforcement-json"], requirements
+                ["--emit-enforcement-json"],
+                {"sdk": sdk_payload, "requirements": requirements},
             )
             proof = enforcement.get("proof")
             turnstile = enforcement.get("turnstile")

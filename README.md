@@ -33,7 +33,7 @@ Keep conversations moving, organize provider projects and compare replies side b
 
 ### Requirements
 
-You need Python **3.11+** for SiopeChat and Node.js **22+** to run ChatGPT's published Sentinel SDK for initial context generation and challenge types such as Turnstile. The server-issued proof-of-work calculation runs in Python. Browser login and session capture run through the Python provider package. The included installers and launchers check both required versions before continuing. The standalone provider package keeps a separate Python 3.10+ contract. Chrome/Chromium is needed only for the explicit sign-in step. Use a Unicode terminal. True color and mouse reporting are recommended.
+You need Python **3.11+** and Node.js **22+** for SiopeChat. Python discovers and downloads the current ChatGPT Sentinel SDK with size and SHA-256 checks; Node runs that published SDK to generate the initial request context and handle dynamic server challenges such as Turnstile. Python computes proof-of-work only for the validated challenge shape it supports. Browser login and session capture run through the Python provider package. The included installers and launchers check both runtime versions before continuing. The standalone provider package keeps a separate Python 3.10+ contract. Chrome/Chromium is needed only for the explicit sign-in step. Use a Unicode terminal. True color and mouse reporting are recommended.
 
 ### Install and launch
 
@@ -215,7 +215,7 @@ Archive lists have a stable remote-ID order; UI sorting is applied separately. `
 
 Account sessions, model catalogs, verification records and the archive-disabled conversation-cache fallback are stored in `data/accounts.sqlite3`, separated by provider and account. The cache fallback includes conversation snapshots, active-chat pointers and deletion markers; with the archive enabled, conversation history remains in `data/archive.sqlite3`. The account schema upgrade is additive and leaves the existing session/catalog table intact. Provider-specific fields remain JSON inside the database. On Unix the database is restricted to its owner; it is not encrypted. Account labels, selection and preferences remain application configuration. The independent provider library accepts a credential file or an injected credential store and never imports the application database. Gemini uses a native HTTPS transport with no Gemini SDK or browser process. Legacy account files are removed only after their database/archive replacement is confirmed.
 
-Bundled providers use their Python HTTPS transports for conversations and projects. Browser discovery, session capture and local Chrome DevTools Protocol (CDP) access also run in Python. For ChatGPT Sentinel, Python solves the server-issued proof-of-work challenge; Node.js runs the published SDK to create its initial context and handle dynamic challenge types such as Turnstile.
+Bundled providers use their Python HTTPS transports for conversations and projects. Browser discovery, session capture and local Chrome DevTools Protocol (CDP) access also run in Python. ChatGPT Sentinel uses the published SDK for its initial context and for Turnstile or other requirement shapes outside the validated Python proof-of-work path. The Python path uses the server's current seed and difficulty; it does not substitute or skip server requirements.
 
 The provider library is independent of the terminal, archive and application runtime. `accounts.py` routes provider/account work; `runtime.py`, `actions.py` and `extension.py` manage shared services and contributions. The command-line entry point is `src/cli.py`; terminal UI implementation lives in `src/tui/`. Bundled extensions use the generic extension contract in `extension.py` and, when they contribute terminal UI, the explicit `tui.api` surface rather than TUI internals. Optional features live in `extensions/`, common helpers in `src/utils/`. A GUI can consume the same application services; no GUI is included in this beta.
 
@@ -228,11 +228,11 @@ uv sync --locked --all-groups
 python run_tests.py
 ```
 
-The script runs application tests, standalone provider API and credential tests, the provider smoke script against the current checkout, and JavaScript tests. It uses an active Python virtual environment first, then the locked `uv` environment, a project virtual environment, and finally the interpreter used to start the script. Python tests appear in the standard verbose `unittest` format. Node.js is required for JavaScript tests and the provider smoke check. Clean wheel/source-archive installation checks, lint/format, and package-build checks remain separate CI checks. To run the checks individually:
+The script runs application tests, standalone provider API and credential tests, and the provider smoke script against the current checkout. It uses an active Python virtual environment first, then the locked `uv` environment, a project virtual environment, and finally the interpreter used to start the script. Tests appear in the standard verbose `unittest` format. Clean wheel/source-archive installation checks, lint/format, and package-build checks remain separate CI checks. To run the checks individually:
 
 ```sh
 PYTHONPATH=src:. uv run --locked python -m unittest discover -s tests
-node --test tests/js/*.test.cjs
+node --test tests/js/sentinel.test.cjs
 uv run --locked python -m ruff check .
 uv run --locked python -m ruff format --check .
 uv run --locked python -m build
@@ -245,7 +245,7 @@ Before reporting an issue, note the provider, operation, terminal, operating sys
 
 `Accounts` sends use the shared `TaskService`, with an account resolver, response limits and persistence inside the account queue. Cancellation releases the account after transport cleanup and accepted-response writes finish. Provider registration accepts an `account_factory` for isolated adapter instances. Terminal reads, mutations and Markdown preparation use separate bounded worker pools; closing a tab does not cancel its response.
 
-The GitHub Actions workflow runs the locked application Python 3.11/3.14 and Node 22/24 matrix on Linux, Windows and macOS. The standalone provider package keeps its separate Python 3.10+ contract. Passing unit tests or CI does not establish live provider compatibility or native terminal interaction. Session files still use private file permissions rather than an operating-system credential vault; the signing helper is a separate process with restricted inputs and environment, and Node VM execution is not an OS security sandbox.
+The GitHub Actions workflow runs the locked application Python 3.11/3.14 and Node.js 22/24 matrix on Linux, Windows and macOS. The standalone provider package keeps its separate Python 3.10+ contract. Passing unit tests or CI does not establish live provider compatibility or native terminal interaction. Session files still use private file permissions rather than an operating-system credential vault. Sentinel behavior for server challenges not represented in offline tests requires live-provider verification.
 
 ## License
 

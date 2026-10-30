@@ -33,7 +33,7 @@ Sohbetlerinize devam edin, sağlayıcı projelerinizi düzenleyin ve yanıtları
 
 ### Gereksinimler
 
-SiopeChat için Python **3.11+** gerekir. Node.js **22+**, ChatGPT'nin yayımladığı Sentinel SDK ile ilk doğrulama bağlamını üretmek ve Turnstile gibi dinamik doğrulamaları yürütmek için kullanılır. Sunucunun verdiği proof-of-work hesabı Python'da yapılır. Tarayıcı girişi ve oturum bilgisi Python sağlayıcı paketi üzerinden yürür. Kurulum ve başlatma araçları gereken sürümleri önceden denetler. Bağımsız sağlayıcı paketi ayrı olarak Python 3.10+ desteğini korur. Chrome/Chromium yalnızca açıkça başlatılan giriş işlemi için gerekir. Unicode destekli bir terminal kullanın; gerçek renk ve fare raporlama desteği önerilir.
+SiopeChat için Python **3.11+** ve Node.js **22+** gerekir. Python, ChatGPT Sentinel'in güncel SDK kaynağını keşfeder, indirir ve boyut/SHA-256 denetiminden geçirir; Node yayımlanmış SDK'yı çalıştırarak başlangıç bağlamını ve Turnstile gibi dinamik sunucu doğrulamalarını üretir. Python yalnızca desteklenen doğrulama biçimindeki sunucu kaynaklı proof-of-work hesabını yapar. Tarayıcı girişi ve oturum bilgisi Python sağlayıcı paketi üzerinden yürür. Kurulum ve başlatma araçları iki çalışma zamanı sürümünü de denetler. Bağımsız sağlayıcı paketi ayrı olarak Python 3.10+ desteğini korur. Chrome/Chromium yalnızca açıkça başlatılan giriş işlemi için gerekir. Unicode destekli bir terminal kullanın; gerçek renk ve fare raporlama desteği önerilir.
 
 ### Kurulum ve başlatma
 
@@ -215,7 +215,7 @@ Arşiv listeleri uzak kimliğe göre kararlı sıradadır; arayüz sıralaması 
 
 Hesap oturumları, model katalogları, doğrulama kayıtları ve arşiv kapalıyken kullanılan sohbet önbelleği `data/accounts.sqlite3` içinde sağlayıcı/hesap ayrımıyla tutulur. Önbellek sohbet kayıtlarını, etkin sohbet işaretçisini ve silme işaretlerini kapsar; arşiv açıkken sohbet geçmişinin asıl deposu `data/archive.sqlite3` olmaya devam eder. Hesap veritabanı şeması eklemeli olarak yükseltilir; mevcut oturum/katalog tablosu korunur. Sağlayıcıya özel alanlar JSON olarak saklanır. Unix üzerinde dosya yalnız sahibine açıktır; veritabanı şifreli değildir. Hesap adları, seçimler ve tercihler uygulama yapılandırmasında kalır. Sağlayıcı kütüphanesi dışarıdan kimlik bilgisi deposu alır; uygulamanın SQLite kodunu bilmez. Gemini yerel HTTPS taşıyıcısını kullanır ve Gemini SDK bağımlılığı gerektirmez. Eski hesap dosyaları ancak veritabanı/arşiv karşılığı doğrulandıktan sonra kaldırılır.
 
-Yerleşik sağlayıcılar sohbet ve proje işlemlerinde Python HTTPS taşıyıcılarını kullanır. Tarayıcı bulma, oturum alma ve yerel Chrome DevTools Protocol (CDP) erişimi de Python ile yürür. ChatGPT Sentinel'de sunucunun verdiği proof-of-work Python ile hesaplanır; Node.js yayımlanmış SDK ile ilk doğrulama bağlamını üretir ve Turnstile gibi dinamik doğrulamaları yürütür.
+Yerleşik sağlayıcılar sohbet ve proje işlemlerinde Python HTTPS taşıyıcılarını kullanır. Tarayıcı bulma, oturum alma ve yerel Chrome DevTools Protocol (CDP) erişimi de Python ile yürür. ChatGPT Sentinel başlangıç bağlamını ve Turnstile gibi desteklenmeyen doğrulama şekillerini yayımlanmış SDK ile işler; Python, doğrulanmış proof-of-work biçiminde sunucunun güncel seed ve difficulty değerlerini kullanır. Sunucu gereksinimleri atlanmaz veya sabit token ile karşılanmaz.
 
 Sağlayıcı kütüphanesi terminalden, arşivden ve uygulama çalışma zamanından bağımsızdır. `accounts.py` sağlayıcı/hesap işlerini yönlendirir; `runtime.py`, `actions.py` ve `extension.py` ortak servis ve katkıları yönetir. Komut satırı girişi `src/cli.py`, terminal arayüzünün uygulaması ise `src/tui/` altındadır. Yerleşik eklentiler genel eklenti sözleşmesini `extension.py` üzerinden, terminal arayüzüne katkı gerektiğinde yalnız açık `tui.api` arayüzü üzerinden kullanır; TUI iç modüllerine doğrudan bağlanmaz. İsteğe bağlı özellikler `extensions/`, ortak yardımcılar `src/utils/` altındadır. Aynı uygulama servisleri bir GUI tarafından da kullanılabilir; bu betada GUI bulunmuyor.
 
@@ -226,7 +226,7 @@ Testler kişisel hesap oturumlarınızı gerektirmez. Önce [uv](https://docs.as
 ```sh
 uv sync --locked --all-groups
 PYTHONPATH=src:. uv run --locked python -m unittest discover -s tests
-node --test tests/js/*.test.cjs
+node --test tests/js/sentinel.test.cjs
 uv run --locked python -m ruff check .
 uv run --locked python -m ruff format --check .
 uv run --locked python -m build
@@ -239,7 +239,7 @@ Hata bildirirken sağlayıcıyı, işlemi, terminali, işletim sistemini ve hata
 
 `Accounts` gönderimleri hesap çözümleyicisi, yanıt sınırı ve hesap kuyruğu içindeki kayıt işlemiyle ortak `TaskService` üzerinden çalışır. İptal, taşıyıcı temizliği ve kabul edilmiş yanıtın yazımı bittikten sonra hesabı serbest bırakır. Sağlayıcı kaydındaki `account_factory`, hesaplara bağımsız adaptör örnekleri oluşturur. Terminal okumaları, değişiklik işlemleri ve Markdown hazırlığı ayrı, sınırlı iş havuzları kullanır; sekmeyi kapatmak yanıtı iptal etmez.
 
-GitHub Actions, Linux, Windows ve macOS üzerinde uygulama için Python 3.11/3.14 ve Node 22/24 matrisini çalıştırır. Bağımsız sağlayıcı paketi kendi Python 3.10+ desteğini korur. Birim testleri veya CI başarısı, canlı sağlayıcı uyumluluğunu ve gerçek terminal etkileşimini tek başına doğrulamaz. Oturumlar işletim sistemi kasası yerine özel dosya izinleriyle saklanır. İmzalama yardımcısı sınırlı girdi ve ortamla ayrı süreçte çalışır; Node VM bir işletim sistemi güvenlik sandbox’ı değildir.
+GitHub Actions, Linux, Windows ve macOS üzerinde uygulama için Python 3.11/3.14 ve Node.js 22/24 matrisini çalıştırır. Bağımsız sağlayıcı paketi kendi Python 3.10+ desteğini korur. Birim testleri veya CI başarısı, canlı sağlayıcı uyumluluğunu ve gerçek terminal etkileşimini tek başına doğrulamaz. Oturumlar işletim sistemi kasası yerine özel dosya izinleriyle saklanır. Çevrimdışı testlerde bulunmayan Sentinel gereksinimleri canlı sağlayıcı doğrulaması gerektirir.
 
 ## Lisans
 

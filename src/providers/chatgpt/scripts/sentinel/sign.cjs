@@ -1,18 +1,10 @@
 #!/usr/bin/env node
 
-// Run ChatGPT's published Sentinel SDK in a bounded Node VM. Network access is
-// limited to fetching the SDK; its verification handshake uses a local bridge.
+// Run Python-verified published Sentinel SDK source in a bounded Node VM.
+// Its verification handshake uses a local bridge; the helper makes no requests.
 
 const vm = require("vm");
 const { readJsonInput: readStdinJson } = require("../io.cjs");
-const cryptoModule = require("crypto");
-const fs = require("fs");
-const path = require("path");
-
-const bootstrapUrl = "https://chatgpt.com/backend-api/sentinel/sdk.js";
-const cacheTtlMs = Number(
-  process.env.CHATGPT_WEB_SENTINEL_CACHE_TTL_MS || "21600000");
-
 const maxSdkBytes = 8 * 1024 * 1024;
 function writeResult(value) {
   // Sentinel can leave a fallback timeout pending after token() has resolved.
@@ -20,96 +12,17 @@ function writeResult(value) {
   process.stdout.write(`${JSON.stringify(value)}\n`, (error) => process.exit(error ? 1 : 0));
 }
 
-function sdkUrl(value) {
-  const url = new URL(value);
-  if (url.protocol !== "https:" || url.username || url.password ||
-      !["chatgpt.com", "sentinel.openai.com"].includes(url.hostname) || (url.port && url.port !== "443")) {
-    throw new Error("untrusted Sentinel SDK origin");
-  }
-  return url;
-}
-async function sdkText(value) {
-  const response = await fetch(sdkUrl(value), {redirect: "error", signal: AbortSignal.timeout(15000)});
-  if (!response.ok) throw new Error(`SDK HTTP ${response.status}`);
-  let size = 0;
-  const parts = [];
-  for await (const chunk of response.body) {
-    size += chunk.length;
-    if (size > maxSdkBytes) throw new Error("Sentinel SDK too large");
-    parts.push(chunk);
-  }
-  return Buffer.concat(parts).toString("utf8");
-}
-
-function sha256(value) {
-  return cryptoModule.createHash("sha256").update(value).digest("hex");
-}
-
-function cacheDirectory() {
-  const root = process.env.SIOPECHAT_CACHE_HOME;
-  if (!root) throw new Error("SIOPECHAT_CACHE_HOME is required");
-  return path.join(root, "sentinel");
-}
-
-function readCachedSdk() {
-  const directory = cacheDirectory();
-  const manifestPath = path.join(directory, "current.json");
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-  if (!/^sdk-[a-f0-9]{16}\.js$/.test(manifest.file)) throw new Error("invalid SDK cache path");
-  sdkUrl(manifest.implementation);
-  const sourcePath = path.join(directory, manifest.file);
-  if (fs.statSync(sourcePath).size > maxSdkBytes) throw new Error("SDK cache too large");
-  const source = fs.readFileSync(sourcePath, "utf8");
-  if (sha256(source) !== manifest.sha256) {
-    throw new Error("cached Sentinel SDK failed its SHA-256 check");
-  }
-  return { ...manifest, source, manifestPath };
-}
-
-function writeAtomic(file, value) {
-  const temporary = `${file}.tmp-${process.pid}`;
-  fs.writeFileSync(temporary, value, { mode: 0o600, flag: "wx" });
-  fs.renameSync(temporary, file);
-  if (process.platform !== "win32") fs.chmodSync(file, 0o600);
-}
-
-async function loadSdk() {
-  let cached = null;
-  try { cached = readCachedSdk(); }
-  catch (_error) { cached = null; }
-  if (cached && Date.now() - cached.checked_at < cacheTtlMs) {
-    return { ...cached, cacheStatus: "hit" };
-  }
-  try {
-    const bootstrap = await sdkText(bootstrapUrl);
-    const implementation = bootstrap.match(/script\.src = '([^']+)'/)?.[1];
-    if (!implementation) throw new Error("Sentinel implementation URL not found");
-    const source = await sdkText(implementation);
-    const digest = sha256(source);
-    const directory = cacheDirectory();
-    fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
-    if (process.platform !== "win32") fs.chmodSync(directory, 0o700);
-    const file = `sdk-${digest.slice(0, 16)}.js`;
-    const sourcePath = path.join(directory, file);
-    if (!fs.existsSync(sourcePath)) writeAtomic(sourcePath, source);
-    const manifest = { version: 1, implementation, file, sha256: digest,
-      checked_at: Date.now() };
-    writeAtomic(path.join(directory, "current.json"), `${JSON.stringify(manifest)}\n`);
-    return { ...manifest, source, cacheStatus: cached ? "updated" : "miss" };
-  } catch (error) {
-    if (cached) return { ...cached, cacheStatus: "stale-offline" };
-    throw error;
-  }
-}
-
-
 async function main() {
-  const suppliedRequirements = process.argv.includes("--requirements-stdin")
-    ? await readStdinJson()
-    : null;
-  const loadedSdk = await loadSdk();
+  const input = await readStdinJson();
+  const loadedSdk = input?.sdk;
+  if (typeof loadedSdk?.implementation !== "string" ||
+      typeof loadedSdk?.source !== "string" ||
+      Buffer.byteLength(loadedSdk.source, "utf8") > maxSdkBytes) {
+    throw new Error("invalid Sentinel SDK resource input");
+  }
   const implementation = loadedSdk.implementation;
-  let source = loadedSdk.source;
+  const source = loadedSdk.source;
+  const suppliedRequirements = input.requirements ?? null;
   let capturedInitial;
   const requestedElements = [];
   const appendedElements = [];
@@ -263,7 +176,7 @@ async function main() {
   const result = {
     sdk_url: implementation,
     sdk_sha256: loadedSdk.sha256,
-    cache_status: loadedSdk.cacheStatus,
+    cache_status: loadedSdk.cache_status,
     public_api: Object.keys(sandbox.SentinelSDK || {}).sort(),
     proof_generated: typeof proof === "string" && proof.startsWith("gAAAAAB"),
     proof_length: typeof proof === "string" ? proof.length : 0,

@@ -1,30 +1,46 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const vm = require("node:vm");
-const fs = require("node:fs");
+const {spawnSync} = require("node:child_process");
 const path = require("node:path");
-const {createRequire} = require("node:module");
+
 const helper = path.resolve(__dirname, "../../src/providers/chatgpt/scripts/sentinel/sign.cjs");
-function functions(fetch) {
-  const source = fs.readFileSync(helper, "utf8").split("async function main()")[0];
-  const context = {require: createRequire(helper), module: {exports: {}}, process, URL, Buffer, AbortSignal, fetch};
-  vm.runInNewContext(source + "\nmodule.exports = {sdkUrl, sdkText};", context);
-  return context.module.exports;
-}
-test("Sentinel source rejects untrusted origins, credentials and ports", () => {
-  const {sdkUrl} = functions();
-  for (const url of ["http://chatgpt.com/sdk.js", "https://chatgpt.com.evil.test/sdk.js", "https://user@chatgpt.com/sdk.js", "https://chatgpt.com:444/sdk.js"]) {
-    assert.throws(() => sdkUrl(url));
-  }
-  assert.equal(sdkUrl("https://sentinel.openai.com/sdk.js").hostname, "sentinel.openai.com");
-});
-test("Sentinel fetch bounds source size and rejects redirects", async () => {
-  let options;
-  const {sdkText} = functions(async (_, value) => {
-    options = value;
-    return {ok: true, body: (async function* () {yield Buffer.alloc(8 * 1024 * 1024 + 1);})()};
+const sdk = {
+  implementation: "https://chatgpt.com/sentinel/test/sdk.js",
+  sha256: "test-only",
+  cache_status: "test",
+  source: `window.SentinelSDK = {
+    init: async () => {
+      const frame = document.createElement("iframe");
+      frame.contentWindow.postMessage({p: "test-initial-context"});
+    },
+    token: async () => JSON.stringify({p: "test-enforcement-proof", t: "test-turnstile-token"})
+  };`,
+};
+
+function run(args, payload) {
+  const result = spawnSync(process.execPath, [helper, ...args], {
+    input: JSON.stringify(payload),
+    encoding: "utf8",
+    timeout: 10_000,
   });
-  await assert.rejects(sdkText("https://chatgpt.com/sdk.js"), /too large/);
-  assert.equal(options.redirect, "error");
-  assert.ok(options.signal instanceof AbortSignal);
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout);
+}
+
+test("Sentinel runner executes the supplied SDK context without loading resources itself", () => {
+  assert.deepEqual(run(["--emit-initial"], {sdk}), {initial: "test-initial-context"});
+});
+
+test("Sentinel runner preserves SDK enforcement and Turnstile outputs", () => {
+  assert.deepEqual(
+    run(["--emit-enforcement-json"], {
+      sdk,
+      requirements: {turnstile: {required: true}},
+    }),
+    {
+      initial: "test-initial-context",
+      proof: "test-enforcement-proof",
+      turnstile: "test-turnstile-token",
+    },
+  );
 });

@@ -14,18 +14,15 @@ Python distributions use the corresponding PEP 440 version (`1.5.1b0` for `v1.5.
 
 ### Changed
 
-- Move local browser CDP page discovery, provider-tab opening, Gemini/Claude cookie capture, and ChatGPT session-header capture into the Python provider package. Keep Node.js only for ChatGPT Sentinel request signing.
-- Read bounded CDP metadata into one byte buffer and discard unused stderr output from browser-profile and Sentinel helper subprocesses.
-- Compute the server-issued Sentinel proof-of-work in Python from the SDK-generated context and live challenge seed/difficulty, removing the second Node startup for explicitly supported PoW-only requirements. Keep the published SDK path for Turnstile and unrecognized requirement shapes.
-
-### Removed
-
-- Remove the retired Node.js browser and cookie helpers and their obsolete JavaScript tests; retain the Sentinel signer and its JSON input helper.
+- Keep the published ChatGPT Sentinel SDK responsible for its initial request context and dynamic challenge shapes, including Turnstile. Retain Python proof-of-work only for the validated server challenge shape.
+- Move Sentinel bootstrap discovery, bounded downloads, SHA-256 cache validation and atomic cache writes into the Python provider package; Node now receives the verified SDK source over its bounded JSON input and only runs the SDK.
+- Keep browser discovery, session capture and local CDP access in the Python provider package.
 
 ### Fixed
 
 - Bound individual CDP messages and the queued event buffer; fail explicitly on queue overflow instead of silently discarding session-capture events.
 - Reuse the validated local DevTools endpoint check for ChatGPT browser readiness and reject malformed provider cookies before filtering.
+- Restore the SDK fallback for Turnstile and unrecognized Sentinel requirement shapes; keep the SDK-generated initial context instead of substituting an unverified Python context.
 
 ## [1.5.1-beta] - 2026-10-29
 

@@ -13,10 +13,13 @@ python -m pip install .
 ```
 
 Python 3.10+ supports ChatGPT and Claude. The Gemini transport requires Python
-3.11+. Node.js 22+ runs the published ChatGPT Sentinel SDK for initial context
-generation and dynamic challenges such as Turnstile; proof-of-work is computed
-in Python. Browser page discovery, local CDP access and session capture run in
-Python. Importing the library or configuring an account does not open a browser or access the network.
+3.11+. Python discovers and downloads the current ChatGPT Sentinel SDK with
+size and SHA-256 checks. Node.js 22+ runs that published SDK to create the initial
+context and handle Turnstile or other requirements outside the validated
+Python proof-of-work path. Python computes proof-of-work from the current server
+challenge when its shape is supported. Browser page discovery, local CDP access
+and session capture run in Python. Importing the library or configuring an
+account does not open a browser or access the network.
 
 ## Using an account
 
@@ -135,4 +138,4 @@ Offline API tests run after installation with:
 python -m unittest discover -s tests
 ```
 
-Gemini uses the bundled native HTTPS implementation. All three backends accept caller-owned credential storage through `providers.session.CredentialStore` (`load`, `save`, `exists`, `delete`); file paths remain supported. When creating ChatGPT with a credential store, supply `cache_directory` for its request-signing resources. Database implementations belong to the host application.
+Gemini uses the bundled native HTTPS implementation. All three backends accept caller-owned credential storage through `providers.session.CredentialStore` (`load`, `save`, `exists`, `delete`); file paths remain supported. ChatGPT also needs a cache directory for Sentinel SDK resources when using an injected credential store. Database implementations belong to the host application.
