@@ -148,6 +148,8 @@ async function main() {
   }
   let tokenResult;
   let tokenError;
+  let proofGenerated = false;
+  let proofLength = 0;
   try {
     tokenResult = await Promise.race([
       sandbox.SentinelSDK.token("chatgpt-web-node-probe"),
@@ -163,6 +165,9 @@ async function main() {
     try {
       const parsedToken = JSON.parse(tokenResult);
       tokenKeys = Object.keys(parsedToken).sort();
+      const proof = parsedToken?.p;
+      proofGenerated = typeof proof === "string" && proof.startsWith("gAAAAAB");
+      proofLength = typeof proof === "string" ? proof.length : 0;
       tokenShape = Object.fromEntries(tokenKeys.map((key) => {
         const value = parsedToken[key];
         return [key, {
@@ -178,8 +183,8 @@ async function main() {
     sdk_sha256: loadedSdk.sha256,
     cache_status: loadedSdk.cache_status,
     public_api: Object.keys(sandbox.SentinelSDK || {}).sort(),
-    proof_generated: typeof proof === "string" && proof.startsWith("gAAAAAB"),
-    proof_length: typeof proof === "string" ? proof.length : 0,
+    proof_generated: proofGenerated,
+    proof_length: proofLength,
     requested_elements: [...new Set(requestedElements)],
     appended_elements: [...new Set(appendedElements)],
     message_bridge_installed: listeners.has("message"),

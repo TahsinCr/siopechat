@@ -22,6 +22,7 @@ _TRUSTED_HOSTS = {"chatgpt.com", "sentinel.openai.com"}
 _MAX_SDK_BYTES = 8 * 1024 * 1024
 _MAX_MANIFEST_BYTES = 64 * 1024
 _DEFAULT_CACHE_TTL_MS = 6 * 60 * 60 * 1000
+_TEMPORARY_HTTP_STATUSES = {408, 425, 429, 500, 502, 503, 504}
 _SDK_FILE = re.compile(r"sdk-[a-f0-9]{16}\.js\Z")
 _SDK_REFERENCE = re.compile(r"script\.src\s*=\s*(['\"])(.*?)\1")
 
@@ -139,7 +140,8 @@ def _fetch_text(
         if response.status_code == 304 and headers:
             return None, etag, last_modified
         if response.status_code != 200:
-            raise SentinelCompatibilityError("Sentinel SDK request was not successful")
+            response.raise_for_status()
+            raise SentinelCompatibilityError("Sentinel SDK returned an unexpected HTTP status")
         for chunk in response.iter_bytes():
             if len(chunk) > _MAX_SDK_BYTES - len(data):
                 raise SentinelCompatibilityError("Sentinel SDK exceeds its size limit")
@@ -188,7 +190,8 @@ def load_sentinel_sdk(cache_root: Path, *, client: httpx.Client | None = None) -
     if not os.environ.get("CHATGPT_WEB_SENTINEL_CACHE_TTL_MS"):
         cache_ttl_ms = _DEFAULT_CACHE_TTL_MS
     now_ms = time.time_ns() // 1_000_000
-    if cached is not None and now_ms - checked_at < cache_ttl_ms:
+    age_ms = now_ms - checked_at
+    if cached is not None and 0 <= age_ms < cache_ttl_ms:
         return cached
 
     owned_client = client is None
@@ -253,11 +256,22 @@ def load_sentinel_sdk(cache_root: Path, *, client: httpx.Client | None = None) -
             etag,
             last_modified,
         )
-    except Exception as error:
+    except httpx.TransportError as error:
         if cached is not None:
             return replace(cached, cache_status="stale-offline")
-        if isinstance(error, SentinelCompatibilityError):
-            raise
+        raise SentinelCompatibilityError(
+            "Sentinel SDK request failed due to a network error"
+        ) from error
+    except httpx.HTTPStatusError as error:
+        status_code = error.response.status_code
+        if cached is not None and status_code in _TEMPORARY_HTTP_STATUSES:
+            return replace(cached, cache_status="stale-offline")
+        raise SentinelCompatibilityError(
+            f"Sentinel SDK request returned HTTP {status_code}"
+        ) from error
+    except SentinelCompatibilityError:
+        raise
+    except Exception as error:
         raise SentinelCompatibilityError("Sentinel SDK could not be loaded") from error
     finally:
         if owned_client:

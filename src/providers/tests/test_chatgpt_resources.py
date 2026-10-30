@@ -34,6 +34,15 @@ class SentinelResourceTests(unittest.TestCase):
 
         return httpx.Client(transport=httpx.MockTransport(handle), follow_redirects=False)
 
+    def populate_cache(self, source=SOURCE):
+        responses = {
+            BOOTSTRAP: httpx.Response(200, text=f"script.src = '{IMPLEMENTATION}'"),
+            IMPLEMENTATION: httpx.Response(200, text=source),
+        }
+        with patch.dict("os.environ", {"CHATGPT_WEB_SENTINEL_CACHE_TTL_MS": "0"}):
+            with self.client_for(responses) as client:
+                return load_sentinel_sdk(self.cache_root, client=client)
+
     def test_download_validates_bootstrap_source_and_reuses_verified_cache(self):
         responses = {
             BOOTSTRAP: httpx.Response(
@@ -56,6 +65,21 @@ class SentinelResourceTests(unittest.TestCase):
         self.assertEqual(cached.implementation, loaded.implementation)
         self.assertEqual(cached.source, loaded.source)
         self.assertEqual(cached.sha256, loaded.sha256)
+
+    def test_future_cache_timestamp_forces_refresh(self):
+        self.populate_cache()
+        refreshed_source = "window.SentinelSDK = { version: 2 };"
+        responses = {
+            BOOTSTRAP: httpx.Response(200, text=f"script.src = '{IMPLEMENTATION}'"),
+            IMPLEMENTATION: httpx.Response(200, text=refreshed_source),
+        }
+        with patch.dict("os.environ", {"CHATGPT_WEB_SENTINEL_CACHE_TTL_MS": "60000"}):
+            with patch("providers.chatgpt.resources.time.time_ns", return_value=1_000_000_000):
+                with self.client_for(responses) as client:
+                    refreshed = load_sentinel_sdk(self.cache_root, client=client)
+
+        self.assertEqual(refreshed.source, refreshed_source)
+        self.assertEqual(refreshed.cache_status, "updated")
 
     def test_corrupt_cached_sdk_is_replaced_after_a_successful_refresh(self):
         responses = {
@@ -142,6 +166,33 @@ class SentinelResourceTests(unittest.TestCase):
         self.assertEqual(stale.source, loaded.source)
         self.assertEqual(stale.cache_status, "stale-offline")
 
+    def test_verified_stale_cache_is_used_when_refresh_has_a_network_error(self):
+        loaded = self.populate_cache()
+        with patch.dict("os.environ", {"CHATGPT_WEB_SENTINEL_CACHE_TTL_MS": "0"}):
+            with self.client_for({BOOTSTRAP: httpx.ConnectError("offline")}) as client:
+                stale = load_sentinel_sdk(self.cache_root, client=client)
+
+        self.assertEqual(stale.source, loaded.source)
+        self.assertEqual(stale.cache_status, "stale-offline")
+
+    def test_permanent_http_error_is_reported_instead_of_using_stale_cache(self):
+        self.populate_cache()
+        with patch.dict("os.environ", {"CHATGPT_WEB_SENTINEL_CACHE_TTL_MS": "0"}):
+            with self.client_for({BOOTSTRAP: httpx.Response(403)}) as client:
+                with self.assertRaisesRegex(SentinelCompatibilityError, "HTTP 403"):
+                    load_sentinel_sdk(self.cache_root, client=client)
+
+    def test_changed_bootstrap_shape_is_not_hidden_by_a_stale_cache(self):
+        self.populate_cache()
+        with patch.dict("os.environ", {"CHATGPT_WEB_SENTINEL_CACHE_TTL_MS": "0"}):
+            with self.client_for(
+                {BOOTSTRAP: httpx.Response(200, text="new bootstrap format")}
+            ) as client:
+                with self.assertRaisesRegex(
+                    SentinelCompatibilityError, "implementation URL was not found"
+                ):
+                    load_sentinel_sdk(self.cache_root, client=client)
+
     def test_expired_verified_cache_revalidates_without_downloading_sdk(self):
         for response_header, request_header, validator in (
             ("ETag", "If-None-Match", 'W/"sdk-1"'),
@@ -222,15 +273,17 @@ class SentinelResourceTests(unittest.TestCase):
             with self.assertRaises(SentinelCompatibilityError):
                 load_sentinel_sdk(self.cache_root, client=client)
 
-    def test_untrusted_bootstrap_url_is_rejected_before_fetch(self):
+    def test_untrusted_bootstrap_url_is_rejected_even_with_stale_cache(self):
+        self.populate_cache()
         responses = {
             BOOTSTRAP: httpx.Response(
                 200, text="script.src = 'https://chatgpt.com.attacker.invalid/sdk.js'"
             )
         }
-        with self.client_for(responses) as client:
-            with self.assertRaises(SentinelCompatibilityError):
-                load_sentinel_sdk(self.cache_root, client=client)
+        with patch.dict("os.environ", {"CHATGPT_WEB_SENTINEL_CACHE_TTL_MS": "0"}):
+            with self.client_for(responses) as client:
+                with self.assertRaisesRegex(SentinelCompatibilityError, "not trusted"):
+                    load_sentinel_sdk(self.cache_root, client=client)
 
     def test_redirect_is_not_followed(self):
         responses = {

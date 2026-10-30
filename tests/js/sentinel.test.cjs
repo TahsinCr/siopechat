@@ -13,7 +13,7 @@ const sdk = {
       const frame = document.createElement("iframe");
       frame.contentWindow.postMessage({p: "test-initial-context"});
     },
-    token: async () => JSON.stringify({p: "test-enforcement-proof", t: "test-turnstile-token"})
+    token: async () => JSON.stringify({p: "gAAAAABtest-enforcement-proof", t: "test-turnstile-token"})
   };`,
 };
 
@@ -39,8 +39,20 @@ test("Sentinel runner preserves SDK enforcement and Turnstile outputs", () => {
     }),
     {
       initial: "test-initial-context",
-      proof: "test-enforcement-proof",
+      proof: "gAAAAABtest-enforcement-proof",
       turnstile: "test-turnstile-token",
     },
   );
+});
+
+test("Sentinel diagnostics report the parsed proof without exposing its value", () => {
+  const result = run([], {sdk});
+
+  assert.equal(result.proof_generated, true);
+  assert.equal(result.proof_length, "gAAAAABtest-enforcement-proof".length);
+  assert.deepEqual(result.full_token_shape.p, {
+    type: "string",
+    length: "gAAAAABtest-enforcement-proof".length,
+  });
+  assert.equal(JSON.stringify(result).includes("gAAAAAB"), false);
 });
