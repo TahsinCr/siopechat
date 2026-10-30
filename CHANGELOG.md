@@ -15,6 +15,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.1b0` for `v1.5.
 ### Changed
 
 - Move local browser CDP page discovery, provider-tab opening, Gemini/Claude cookie capture, and ChatGPT session-header capture into the Python provider package. Keep Node.js only for ChatGPT Sentinel request signing.
+- Read bounded CDP metadata into one byte buffer and discard unused stderr output from browser-profile and Sentinel helper subprocesses.
 
 ### Removed
 

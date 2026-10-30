@@ -135,17 +135,15 @@ def _get_json(base: str, path: str, timeout: float = _DEFAULT_TIMEOUT):
                     raise DevToolsError(
                         f"Connected browser debugging endpoint returned HTTP {response.status_code}"
                     )
-                chunks = []
-                size = 0
+                body = bytearray()
                 for chunk in response.iter_bytes():
-                    size += len(chunk)
-                    if size > _MAX_METADATA_BYTES:
+                    if len(body) + len(chunk) > _MAX_METADATA_BYTES:
                         raise DevToolsError("Browser debugging metadata exceeds the size limit")
-                    chunks.append(chunk)
+                    body.extend(chunk)
     except httpx.HTTPError as error:
         raise DevToolsError("Connected browser debugging endpoint is unavailable") from error
     try:
-        return json.loads(b"".join(chunks))
+        return json.loads(body)
     except (json.JSONDecodeError, ValueError) as error:
         raise DevToolsError("Browser returned invalid debugging metadata") from error
 

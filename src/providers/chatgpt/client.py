@@ -725,7 +725,7 @@ class ChatGPTClient:
                 ["node", str(helper), *arguments],
                 input=json.dumps(payload) if payload is not None else None,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
                 text=True,
                 timeout=30,
                 check=False,

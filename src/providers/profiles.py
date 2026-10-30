@@ -180,7 +180,8 @@ def _default_id():
     if sys.platform == "darwin":
         result = subprocess.run(
             ["defaults", "export", "com.apple.LaunchServices/com.apple.launchservices.secure", "-"],
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             timeout=5,
             check=True,
         )
