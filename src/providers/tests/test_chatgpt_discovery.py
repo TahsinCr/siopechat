@@ -177,7 +177,9 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(body["gizmo_id"], "g-p-work")
         with (
             patch.object(
-                self.client, "send_prompt_direct", return_value=("chat", "user-msg")
+                self.client,
+                "send_prompt_direct",
+                return_value=("chat", "user-msg", {"id": "user-msg"}),
             ) as send,
             patch.object(
                 self.client,

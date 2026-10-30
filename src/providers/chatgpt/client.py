@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 import uuid
 from collections import OrderedDict
@@ -99,6 +100,9 @@ class ChatGPTClient:
         self.headers: dict[str, str] = {}
         self.temporary_conversations: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._last_stream_messages: list[dict[str, Any]] = []
+        self._sentinel_lock = threading.Lock()
+        self._sentinel_runtime: SentinelRuntime | None = None
+        self._sentinel_runtime_key: tuple[str, str, str] | None = None
         self.http = httpx.Client(
             follow_redirects=False,
             timeout=httpx.Timeout(30.0),
@@ -112,7 +116,12 @@ class ChatGPTClient:
                 raise
 
     def close(self) -> None:
-        self.http.close()
+        with self._sentinel_lock:
+            if self._sentinel_runtime is not None:
+                self._sentinel_runtime.close()
+                self._sentinel_runtime = None
+                self._sentinel_runtime_key = None
+            self.http.close()
 
     def __enter__(self) -> "ChatGPTClient":
         return self
@@ -454,7 +463,7 @@ class ChatGPTClient:
         if effort is not None and effort not in {item.id for item in selected.efforts}:
             raise ChatGPTWebError(f"Effort '{effort}' is not offered for model '{model}'")
 
-        resolved_id, submitted_message_id = self.send_prompt_direct(
+        resolved_id, submitted_message_id, submitted_message = self.send_prompt_direct(
             previous,
             prompt,
             attachments or [],
@@ -466,6 +475,17 @@ class ChatGPTClient:
             **({"branch": branch} if branch else {}),
         )
         if temporary:
+            submitted_messages = (
+                [submitted_message]
+                if isinstance(submitted_message, dict)
+                else [
+                    {
+                        "id": submitted_message_id,
+                        "author": {"role": "user"},
+                        "content": {"content_type": "text", "parts": [prompt]},
+                    }
+                ]
+            )
             conversation = {
                 "id": resolved_id,
                 "conversation_id": resolved_id,
@@ -475,13 +495,7 @@ class ChatGPTClient:
                 if self._last_stream_messages
                 else None,
                 "messages": list((previous or {}).get("messages", []))
-                + [
-                    {
-                        "id": submitted_message_id,
-                        "author": {"role": "user"},
-                        "content": {"content_type": "text", "parts": [prompt]},
-                    }
-                ]
+                + submitted_messages
                 + self._last_stream_messages,
                 "temporary": True,
             }
@@ -500,7 +514,41 @@ class ChatGPTClient:
             while len(self.temporary_conversations) > 32:
                 self.temporary_conversations.popitem(last=False)
         else:
-            conversation = self.get_conversation(resolved_id)
+            previous_messages = (previous or {}).get("messages")
+            streamed_messages = self._last_stream_messages
+            last_message = streamed_messages[-1] if streamed_messages else None
+            first_message = streamed_messages[0] if streamed_messages else None
+            streamed_parent = (
+                first_message.get("parent") or first_message.get("parent_message_id")
+                if isinstance(first_message, dict)
+                else None
+            )
+            current_node = last_message.get("id") if isinstance(last_message, dict) else None
+            can_build_from_stream = (
+                conversation_id is not None
+                and resolved_id == conversation_id
+                and branch is None
+                and action is None
+                and isinstance(previous_messages, list)
+                and isinstance(submitted_message, dict)
+                and submitted_message.get("id") == submitted_message_id
+                and streamed_parent == submitted_message_id
+                and isinstance(current_node, str)
+                and bool(current_node)
+            )
+            if can_build_from_stream:
+                conversation = dict(previous or {})
+                conversation.update(
+                    {
+                        "id": resolved_id,
+                        "conversation_id": resolved_id,
+                        "default_model_slug": model,
+                        "current_node": current_node,
+                        "messages": previous_messages + [submitted_message] + streamed_messages,
+                    }
+                )
+            else:
+                conversation = self.get_conversation(resolved_id)
         messages = conversation.get("messages", [])
         attached = isinstance(messages, list) and any(
             isinstance(message, dict) and message.get("id") == submitted_message_id
@@ -530,7 +578,7 @@ class ChatGPTClient:
         action=None,
         message_id: str | None = None,
         branch=None,
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str, dict[str, Any] | None]:
         conversation_id = None
         if conversation:
             candidate = conversation.get("conversation_id") or conversation.get("id")
@@ -613,6 +661,11 @@ class ChatGPTClient:
         body["supports_buffering"] = False
         if not isinstance(submitted_message_id, str) or not submitted_message_id:
             raise ChatGPTWebError("conversation request has no user message ID")
+        submitted_message = (
+            body["messages"][0]
+            if body.get("messages") and isinstance(body["messages"][0], dict)
+            else None
+        )
         headers.update(self.create_sentinel_headers())
         resolved_id: str | None = conversation_id
         rendered_by_channel = {}
@@ -697,12 +750,22 @@ class ChatGPTClient:
             )
         if not isinstance(resolved_id, str) or not resolved_id:
             raise ChatGPTWebError("ChatGPT did not return a conversation ID")
-        return resolved_id, submitted_message_id
+        return resolved_id, submitted_message_id, submitted_message
 
     def create_sentinel_headers(self) -> dict[str, str]:
         sdk = load_sentinel_sdk(self.session.paths.cache)
         user_agent = self.headers.get("user-agent") or "Mozilla/5.0"
-        with SentinelRuntime(sdk, user_agent=user_agent) as runtime:
+        runtime_key = (sdk.sha256, sdk.implementation, user_agent)
+        with self._sentinel_lock:
+            runtime = self._sentinel_runtime
+            if runtime is None or self._sentinel_runtime_key != runtime_key:
+                replacement = SentinelRuntime(sdk, user_agent=user_agent)
+                previous_runtime = runtime
+                self._sentinel_runtime = replacement
+                self._sentinel_runtime_key = runtime_key
+                runtime = replacement
+                if previous_runtime is not None:
+                    previous_runtime.close()
             initial = runtime.create_initial_proof()
             requirements = self.request(
                 "POST",

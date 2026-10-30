@@ -34,12 +34,14 @@ class SendOptionsTests(unittest.TestCase):
             self.messages = [
                 {
                     "id": f"r-{n}",
+                    "parent": body["messages"][0]["id"] if body.get("messages") else None,
                     "author": {"role": "assistant"},
                     "channel": "analysis",
                     "content": {"parts": ["Summary"]},
                 },
                 {
                     "id": f"a-{n}",
+                    "parent": f"r-{n}",
                     "author": {"role": "assistant"},
                     "channel": "final",
                     "content": {"parts": ["Answer"]},
@@ -96,6 +98,33 @@ class SendOptionsTests(unittest.TestCase):
         )
         self.client.send_prompt(None, "Project", project_id="g-p-work", model="account-thinking")
         self.assertEqual(self.requests[0]["gizmo_id"], "g-p-work")
+
+    def test_existing_continuation_uses_complete_stream_without_post_send_get(self):
+        previous = {
+            "id": "remote",
+            "conversation_id": "remote",
+            "title": "Existing chat",
+            "current_node": "old-assistant",
+            "messages": [
+                {"id": "old-user", "author": {"role": "user"}},
+                {"id": "old-assistant", "author": {"role": "assistant"}},
+            ],
+        }
+        self.client.get_conversation = Mock(return_value=previous)
+
+        remote, conversation, previous_ids = self.client.send_prompt(
+            "remote", "Continue", model="account-thinking"
+        )
+
+        self.assertEqual(remote, "remote")
+        self.assertEqual(self.client.get_conversation.call_count, 1)
+        self.assertEqual(previous_ids, {"old-user", "old-assistant"})
+        self.assertEqual(conversation["title"], "Existing chat")
+        self.assertEqual(conversation["current_node"], "a-1")
+        self.assertEqual(
+            [item["id"] for item in conversation["messages"]],
+            ["old-user", "old-assistant", self.requests[0]["messages"][0]["id"], "r-1", "a-1"],
+        )
 
     def test_missing_temporary_context_never_falls_back_to_saved_chat(self):
         self.client.get_conversation = Mock(side_effect=AssertionError("no fallback GET"))

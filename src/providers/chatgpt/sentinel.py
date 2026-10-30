@@ -30,7 +30,7 @@ _RUNTIME_MEMORY_LIMIT_BYTES = 32 * 1024 * 1024
 _RUNTIME_STACK_SIZE_BYTES = 1024 * 1024
 _RUNTIME_TIMEOUT_SECONDS = 8.0
 _MAX_SDK_BYTES = 8 * 1024 * 1024
-_INITIAL_RANDOM_BYTES = 1024
+_INITIAL_RANDOM_BYTES = 65_536
 
 
 @functools.lru_cache(maxsize=1)
@@ -107,6 +107,7 @@ class SentinelRuntime:
         self._sdk = sdk
         self._closed = False
         self._initial: str | None = None
+        self._requests_started = False
         context = quickjs.Context()
         try:
             _configure_quickjs_context(context)
@@ -160,6 +161,16 @@ class SentinelRuntime:
         context = self._require_context()
         try:
             context.set_time_limit(_RUNTIME_TIMEOUT_SECONDS)
+            if self._requests_started:
+                context.eval("__siopechatDispose()")
+                context.set("__siopechatRandomPool", secrets.token_hex(_INITIAL_RANDOM_BYTES))
+                context.eval("__siopechatConfigure(JSON.parse(globalThis.__siopechatConfigJson))")
+                context.eval("__siopechatResetRequest(false)")
+                context.eval(self._sdk.source)
+                while context.execute_pending_job():
+                    pass
+            self._requests_started = True
+            self._initial = None
             context.eval("__siopechatStartInitial()")
             _wait_for_completion(context)
             initial = context.get("__siopechatInitial")

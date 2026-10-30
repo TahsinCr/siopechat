@@ -56,6 +56,7 @@ packages = [
     "tui",
     "providers",
     "providers.chatgpt",
+    "providers.chatgpt.scripts",
     "providers.gemini",
     "providers.claude",
     "utils",
@@ -68,7 +69,7 @@ packages = [
 ]
 
 [tool.setuptools.package-data]
-"providers.chatgpt" = ["sign.js"]
+"providers.chatgpt" = ["scripts/sign.js"]
 "lang" = ["*.json"]
 "extensions.layout" = ["languages/*.json", "manifest.json"]
 "extensions.archive" = ["manifest.json"]

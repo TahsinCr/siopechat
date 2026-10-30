@@ -16,5 +16,5 @@ MEMORY.md
 
 /downloads/
 /performance/
-/src/providers/chatgpt/sdk-*.js
-/src/providers/chatgpt/current.json
+/src/providers/chatgpt/scripts/sentinel-*.js
+/src/providers/chatgpt/scripts/sentinel-*.validators

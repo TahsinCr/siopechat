@@ -583,6 +583,24 @@ function __siopechatDispose() {
   listeners.clear();
 }
 
+function __siopechatResetRequest(resetRandom = true) {
+  timers.clear();
+  capturedInitial = null;
+  suppliedRequirements = null;
+  if (resetRandom) {
+    randomPool = typeof globalThis.__siopechatRandomPool === "string"
+      ? globalThis.__siopechatRandomPool
+      : "";
+    randomOffset = 0;
+  }
+  requestedElements.length = 0;
+  appendedElements.length = 0;
+  globalThis.__siopechatInitial = null;
+  globalThis.__siopechatToken = null;
+  globalThis.__siopechatDone = false;
+  globalThis.__siopechatError = null;
+}
+
 function __siopechatConfigure(config = {}) {
   if (typeof config.userAgent === "string" && config.userAgent) {
     currentUserAgent = config.userAgent;
@@ -608,6 +626,7 @@ function __siopechatConfigure(config = {}) {
 }
 
 function __siopechatStartInitial() {
+  __siopechatResetRequest(false);
   globalThis.__siopechatDone = false;
   globalThis.__siopechatError = null;
   Promise.resolve()
@@ -816,6 +835,7 @@ Object.assign(globalThis, {
   __siopechatNextTimerDelay,
   __siopechatStep,
   __siopechatDispose,
+  __siopechatResetRequest,
 });
 
 if (typeof globalThis.__siopechatConfigJson === "string") {

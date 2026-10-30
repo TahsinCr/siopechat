@@ -133,7 +133,7 @@ class ChatGPTActionsTests(unittest.TestCase):
         self.assertEqual(sent[0]["parent_message_id"], "user")
         self.assertEqual(sent[0]["messages"], [])
         self.assertEqual(sent[0]["model"], "account-model")
-        self.assertEqual(result, ("chat", "user"))
+        self.assertEqual(result, ("chat", "user", None))
 
     def test_edit_replaces_the_prompt_but_keeps_native_image_and_attachment_references(self):
         sent, result = self.run_request(MessageAction.EDIT, "user")

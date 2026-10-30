@@ -22,7 +22,13 @@ dependencies = [
 
 [tool.setuptools]
 package-dir = {"providers" = "."}
-packages = ["providers", "providers.chatgpt", "providers.gemini", "providers.claude"]
+packages = [
+    "providers",
+    "providers.chatgpt",
+    "providers.chatgpt.scripts",
+    "providers.gemini",
+    "providers.claude",
+]
 
 [tool.setuptools.package-data]
-"providers.chatgpt" = ["sign.js"]
+"providers.chatgpt" = ["scripts/sign.js"]

@@ -1,5 +1,4 @@
 import hashlib
-import json
 import tempfile
 import tracemalloc
 import unittest
@@ -9,7 +8,12 @@ from unittest.mock import patch
 import httpx
 
 from providers.chatgpt.errors import SentinelCompatibilityError
-from providers.chatgpt.resources import _MEMORY_CACHE, load_sentinel_sdk
+from providers.chatgpt.resources import (
+    _MEMORY_CACHE,
+    SIGN_SCRIPT,
+    load_sentinel_sdk,
+    sentinel_cache_status,
+)
 
 BOOTSTRAP = "https://chatgpt.com/backend-api/sentinel/sdk.js"
 IMPLEMENTATION = "https://chatgpt.com/sentinel/test/sdk.js"
@@ -23,6 +27,7 @@ class SentinelResourceTests(unittest.TestCase):
         self.tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(self.tempdir.cleanup)
         self.cache_root = Path(self.tempdir.name) / "chatgpt"
+        self.cache_dir = self.cache_root / "scripts"
 
     @staticmethod
     def client_for(responses):
@@ -45,6 +50,11 @@ class SentinelResourceTests(unittest.TestCase):
             with self.client_for(responses) as client:
                 return load_sentinel_sdk(self.cache_root, client=client)
 
+    def sdk_file(self, implementation, digest):
+        url_hash = hashlib.sha256(implementation.encode()).hexdigest()[:16]
+        version = "20260810913b" if implementation == VERSIONED_IMPLEMENTATION else "dynamic"
+        return self.cache_dir / f"sentinel-sdk-{version}-{url_hash}-{digest}.js"
+
     def test_download_validates_bootstrap_source_and_reuses_verified_cache(self):
         bootstrap_text = (
             f"var script = document.createElement('script'); script.src = '{IMPLEMENTATION}';"
@@ -65,8 +75,9 @@ class SentinelResourceTests(unittest.TestCase):
         self.assertEqual(loaded.implementation, IMPLEMENTATION)
         self.assertEqual(loaded.source, SOURCE)
         self.assertEqual(loaded.sha256, hashlib.sha256(SOURCE.encode()).hexdigest())
-        self.assertTrue((self.cache_root / f"sdk-{bootstrap_sha[:16]}.js").is_file())
-        self.assertTrue((self.cache_root / f"sdk-{loaded.sha256[:16]}.js").is_file())
+        self.assertTrue((self.cache_dir / f"sentinel-bootstrap-{bootstrap_sha}.js").is_file())
+        self.assertTrue(self.sdk_file(IMPLEMENTATION, loaded.sha256).is_file())
+        self.assertFalse((self.cache_dir / "current.json").exists())
         self.assertEqual(cached.cache_status, "hit")
         self.assertEqual(cached.implementation, loaded.implementation)
         self.assertEqual(cached.source, loaded.source)
@@ -95,6 +106,37 @@ class SentinelResourceTests(unittest.TestCase):
         self.assertEqual(second.cache_status, "revalidated")
         self.assertEqual(sdk_requests, 1)
 
+    def test_cache_reload_uses_latest_content_for_a_changed_sdk_url(self):
+        old_source = "window.SentinelSDK = { version: 1 };"
+        new_source = "window.SentinelSDK = { version: 2 };"
+        sdk_requests = 0
+
+        def handle(request):
+            nonlocal sdk_requests
+            if str(request.url) == BOOTSTRAP:
+                return httpx.Response(200, text=f"script.src = '{IMPLEMENTATION}'")
+            sdk_requests += 1
+            etag = request.headers.get("If-None-Match")
+            if etag == '"version-2"':
+                return httpx.Response(304, headers={"ETag": '"version-2"'})
+            if etag == '"version-1"':
+                return httpx.Response(200, text=new_source, headers={"ETag": '"version-2"'})
+            return httpx.Response(200, text=old_source, headers={"ETag": '"version-1"'})
+
+        with patch.dict("os.environ", {"CHATGPT_WEB_SENTINEL_CACHE_TTL_MS": "0"}):
+            with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+                first = load_sentinel_sdk(self.cache_root, client=client)
+                self.assertEqual(first.source, old_source)
+                _MEMORY_CACHE.clear()
+                refreshed = load_sentinel_sdk(self.cache_root, client=client)
+                self.assertEqual(refreshed.source, new_source)
+                _MEMORY_CACHE.clear()
+                reloaded = load_sentinel_sdk(self.cache_root, client=client)
+
+        self.assertEqual(reloaded.source, new_source)
+        self.assertEqual(reloaded.cache_status, "revalidated")
+        self.assertEqual(sdk_requests, 3)
+
     def test_future_cache_timestamp_forces_refresh(self):
         self.populate_cache()
         refreshed_source = "window.SentinelSDK = { version: 2 };"
@@ -119,7 +161,7 @@ class SentinelResourceTests(unittest.TestCase):
         with patch.dict("os.environ", {"CHATGPT_WEB_SENTINEL_CACHE_TTL_MS": "0"}):
             with self.client_for(responses) as client:
                 loaded = load_sentinel_sdk(self.cache_root, client=client)
-            cached_file = self.cache_root / f"sdk-{loaded.sha256[:16]}.js"
+            cached_file = self.sdk_file(IMPLEMENTATION, loaded.sha256)
             cached_file.write_text("tampered", encoding="utf-8")
 
             def refresh(request):
@@ -139,7 +181,7 @@ class SentinelResourceTests(unittest.TestCase):
         }
         with self.client_for(responses) as client:
             loaded = load_sentinel_sdk(self.cache_root, client=client)
-        cached_file = self.cache_root / f"sdk-{loaded.sha256[:16]}.js"
+        cached_file = self.sdk_file(IMPLEMENTATION, loaded.sha256)
         with cached_file.open("wb") as stream:
             stream.truncate(16 * 1024 * 1024)
         _MEMORY_CACHE.clear()
@@ -162,23 +204,16 @@ class SentinelResourceTests(unittest.TestCase):
         self.assertEqual(cached_file.read_text(encoding="utf-8"), SOURCE)
         self.assertLess(peak - baseline, 2 * 1024 * 1024)
 
-    def test_oversized_cache_manifest_is_refreshed(self):
-        responses = {
-            BOOTSTRAP: httpx.Response(200, text=f"script.src = '{IMPLEMENTATION}'"),
-            IMPLEMENTATION: httpx.Response(200, text=SOURCE),
-        }
-        with self.client_for(responses) as client:
-            loaded = load_sentinel_sdk(self.cache_root, client=client)
-        manifest = self.cache_root / "current.json"
-        manifest.write_bytes(b"x" * 1025)
-        _MEMORY_CACHE.clear()
+    def test_verified_cache_status_is_read_without_network_or_manifest(self):
+        loaded = self.populate_cache()
 
-        with patch("providers.chatgpt.resources._MAX_MANIFEST_BYTES", 1024):
-            with self.client_for(responses) as client:
-                refreshed = load_sentinel_sdk(self.cache_root, client=client)
+        status = sentinel_cache_status(self.cache_root)
 
-        self.assertEqual(refreshed.source, loaded.source)
-        self.assertEqual(json.loads(manifest.read_text(encoding="utf-8"))["sha256"], loaded.sha256)
+        self.assertIsNotNone(status)
+        self.assertEqual(status["implementation"], loaded.implementation)
+        self.assertEqual(status["sha256"], loaded.sha256)
+        self.assertIsInstance(status["checked_at"], int)
+        self.assertFalse((self.cache_dir / "current.json").exists())
 
     def test_verified_stale_cache_is_used_when_refresh_fails(self):
         responses = {
@@ -335,17 +370,64 @@ class SentinelResourceTests(unittest.TestCase):
                 with self.assertRaises(SentinelCompatibilityError):
                     load_sentinel_sdk(self.cache_root, client=client)
 
-    def test_cache_manifest_contains_verified_resource_identity_and_all_files(self):
+    def test_sdk_bundle_caches_each_verified_file_by_url_and_content(self):
+        secondary = "https://chatgpt.com/sentinel/test/shared.js"
+        secondary_source = "window.SentinelBase = true;"
         responses = {
-            BOOTSTRAP: httpx.Response(200, text=f"script.src = '{IMPLEMENTATION}'"),
+            BOOTSTRAP: httpx.Response(
+                200, text=f"script.src = '{secondary}'; window.script.src = '{IMPLEMENTATION}'"
+            ),
+            secondary: httpx.Response(200, text=secondary_source),
             IMPLEMENTATION: httpx.Response(200, text=SOURCE),
         }
         with self.client_for(responses) as client:
             loaded = load_sentinel_sdk(self.cache_root, client=client)
-        manifest = json.loads((self.cache_root / "current.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["implementation"], loaded.implementation)
-        self.assertEqual(manifest["sha256"], loaded.sha256)
-        self.assertEqual(manifest["file"], f"sdk-{loaded.sha256[:16]}.js")
-        self.assertIn("bootstrap_file", manifest)
-        self.assertIn("bootstrap_sha256", manifest)
-        self.assertEqual(len(manifest["files"]), 1)
+        combined_source = f"{secondary_source}\n{SOURCE}"
+        self.assertEqual(loaded.source, combined_source)
+        self.assertEqual(loaded.sha256, hashlib.sha256(combined_source.encode()).hexdigest())
+        self.assertTrue(
+            self.sdk_file(
+                secondary, hashlib.sha256(secondary_source.encode()).hexdigest()
+            ).is_file()
+        )
+        self.assertTrue(
+            self.sdk_file(IMPLEMENTATION, hashlib.sha256(SOURCE.encode()).hexdigest()).is_file()
+        )
+        self.assertEqual(SIGN_SCRIPT, Path(__file__).parents[1] / "chatgpt" / "scripts" / "sign.js")
+        self.assertTrue(SIGN_SCRIPT.is_file())
+
+    def test_sdk_bundle_size_limit_applies_across_included_files(self):
+        secondary = "https://chatgpt.com/sentinel/test/shared.js"
+        bootstrap_text = f"script.src = '{secondary}'; window.script.src = '{IMPLEMENTATION}'"
+        requests = []
+
+        def handle(request):
+            requests.append(str(request.url))
+            if str(request.url) == BOOTSTRAP:
+                return httpx.Response(200, text=bootstrap_text)
+            return httpx.Response(200, content=b"x" * 80)
+
+        with patch("providers.chatgpt.resources._MAX_SDK_BYTES", 128):
+            with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+                with self.assertRaisesRegex(SentinelCompatibilityError, "bundle exceeds"):
+                    load_sentinel_sdk(self.cache_root, client=client)
+
+        self.assertEqual(requests, [BOOTSTRAP, secondary, IMPLEMENTATION])
+
+    def test_sdk_bundle_reference_count_is_bounded_before_child_downloads(self):
+        first = "https://chatgpt.com/sentinel/test/first.js"
+        second = "https://chatgpt.com/sentinel/test/second.js"
+        requests = []
+
+        def handle(request):
+            requests.append(str(request.url))
+            return httpx.Response(
+                200, text=f"script.src = '{first}'; window.script.src = '{second}'"
+            )
+
+        with patch("providers.chatgpt.resources._MAX_SDK_FILES", 1):
+            with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+                with self.assertRaisesRegex(SentinelCompatibilityError, "too many script files"):
+                    load_sentinel_sdk(self.cache_root, client=client)
+
+        self.assertEqual(requests, [BOOTSTRAP])

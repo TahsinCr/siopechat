@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import re
 import secrets
+import stat
 import threading
 import time
 from dataclasses import dataclass, replace
@@ -18,22 +18,27 @@ import httpx
 from .errors import SentinelCompatibilityError
 
 CHATGPT_ROOT = Path(__file__).resolve().parent
-SIGN_SCRIPT = CHATGPT_ROOT / "sign.js"
+SCRIPT_ROOT = CHATGPT_ROOT / "scripts"
+SIGN_SCRIPT = SCRIPT_ROOT / "sign.js"
 
 _BOOTSTRAP_URL = "https://chatgpt.com/backend-api/sentinel/sdk.js"
 _TRUSTED_HOSTS = {"chatgpt.com", "sentinel.openai.com"}
 _MAX_SDK_BYTES = 8 * 1024 * 1024
-_MAX_MANIFEST_BYTES = 64 * 1024
+_MAX_SDK_FILES = 32
 _DEFAULT_CACHE_TTL_MS = 6 * 60 * 60 * 1000
 _TEMPORARY_HTTP_STATUSES = {408, 425, 429, 500, 502, 503, 504}
-_SDK_FILE = re.compile(r"sdk-[a-f0-9]{16}\.js\Z")
+_BOOTSTRAP_FILE = re.compile(r"sentinel-bootstrap-([a-f0-9]{64})\.js\Z")
+_SDK_FILE = re.compile(r"sentinel-sdk-[A-Za-z0-9._-]+-[a-f0-9]{16}-([a-f0-9]{64})\.js\Z")
+_CACHE_ARTIFACT = re.compile(
+    r"sentinel-(?:bootstrap-[a-f0-9]{64}\.js|sdk-[A-Za-z0-9._-]+-[a-f0-9]{16}-[a-f0-9]{64}\.js|sdk-[a-f0-9]{16}\.validators)\Z"
+)
 _SDK_REFERENCE = re.compile(r"script\.src\s*=\s*(['\"])(.*?)\1")
 _VERSIONED_SDK_URL = re.compile(
     r"^https://(?:chatgpt\.com|sentinel\.openai\.com)/sentinel/(?!test/)[A-Za-z0-9._-]+/sdk\.js\Z"
 )
 
 _CACHE_LOCK = threading.Lock()
-_MEMORY_CACHE: dict[Path, tuple[int, int, int, SentinelSDK]] = {}
+_MEMORY_CACHE: dict[Path, tuple[tuple[tuple[str, int, int], ...], int, SentinelSDK]] = {}
 
 
 @dataclass(frozen=True)
@@ -77,6 +82,22 @@ def _validate_sdk_url(value: str) -> str:
     return value
 
 
+def _sdk_cache_prefix(url: str) -> str:
+    version_match = _VERSIONED_SDK_URL.fullmatch(url)
+    version = urlsplit(url).path.split("/")[-2] if version_match else "dynamic"
+    url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
+    return f"sentinel-sdk-{version}-{url_hash}"
+
+
+def _sdk_references(source: str) -> list[str]:
+    references = [_validate_sdk_url(match.group(2)) for match in _SDK_REFERENCE.finditer(source)]
+    if not references:
+        raise SentinelCompatibilityError("Sentinel SDK implementation URL was not found")
+    if len(references) > _MAX_SDK_FILES:
+        raise SentinelCompatibilityError("Sentinel SDK references too many script files")
+    return references
+
+
 def _read_bounded_file(path: Path, limit: int) -> bytes:
     with path.open("rb") as stream:
         size = os.fstat(stream.fileno()).st_size
@@ -88,101 +109,97 @@ def _read_bounded_file(path: Path, limit: int) -> bytes:
     return data
 
 
-def _manifest_stat(directory: Path) -> tuple[int, int] | None:
+def _cache_stat(directory: Path) -> tuple[tuple[str, int, int], ...] | None:
     try:
-        info = (directory / "current.json").stat()
+        entries = []
+        for entry in directory.iterdir():
+            if not _CACHE_ARTIFACT.fullmatch(entry.name):
+                continue
+            info = entry.stat(follow_symlinks=False)
+            if stat.S_ISREG(info.st_mode):
+                entries.append((entry.name, info.st_mtime_ns, info.st_size))
     except OSError:
         return None
-    return info.st_mtime_ns, info.st_size
+    return tuple(sorted(entries)) or None
 
 
 def _read_cached_sdk(
     directory: Path,
 ) -> tuple[SentinelSDK, int, dict[str, tuple[str, str, str]], str | None]:
-    manifest = json.loads(
-        _read_bounded_file(directory / "current.json", _MAX_MANIFEST_BYTES).decode("utf-8")
+    bootstrap_files = sorted(
+        (path for path in directory.iterdir() if _BOOTSTRAP_FILE.fullmatch(path.name)),
+        key=lambda path: path.stat().st_mtime_ns,
+        reverse=True,
     )
-    if (
-        not isinstance(manifest, dict)
-        or type(manifest.get("version")) is not int
-        or manifest["version"] != 1
-    ):
-        raise ValueError("invalid Sentinel SDK cache manifest")
-    filename = manifest.get("file")
-    digest = manifest.get("sha256")
-    checked_at = manifest.get("checked_at")
-    implementation = manifest.get("implementation")
-    if (
-        not isinstance(filename, str)
-        or not _SDK_FILE.fullmatch(filename)
-        or not isinstance(digest, str)
-        or not re.fullmatch(r"[a-f0-9]{64}", digest)
-        or type(checked_at) is not int
-    ):
-        raise ValueError("invalid Sentinel SDK cache manifest fields")
-    implementation = _validate_sdk_url(implementation)
+    last_error: Exception | None = None
+    for bootstrap_path in bootstrap_files:
+        match = _BOOTSTRAP_FILE.fullmatch(bootstrap_path.name)
+        assert match is not None
+        bootstrap_digest = match.group(1)
+        try:
+            bootstrap_bytes = _read_bounded_file(bootstrap_path, _MAX_SDK_BYTES)
+            if hashlib.sha256(bootstrap_bytes).hexdigest() != bootstrap_digest:
+                raise ValueError("cached Sentinel bootstrap failed its SHA-256 check")
+            bootstrap = bootstrap_bytes.decode("utf-8")
+            references = _sdk_references(bootstrap)
 
-    bootstrap_file = manifest.get("bootstrap_file")
-    bootstrap_sha256 = manifest.get("bootstrap_sha256")
-    if bootstrap_file is not None or bootstrap_sha256 is not None:
-        if (
-            not isinstance(bootstrap_file, str)
-            or not _SDK_FILE.fullmatch(bootstrap_file)
-            or not isinstance(bootstrap_sha256, str)
-            or not re.fullmatch(r"[a-f0-9]{64}", bootstrap_sha256)
-        ):
-            raise ValueError("invalid Sentinel bootstrap cache fields")
-        bootstrap_bytes = _read_bounded_file(directory / bootstrap_file, _MAX_SDK_BYTES)
-        if hashlib.sha256(bootstrap_bytes).hexdigest() != bootstrap_sha256:
-            raise ValueError("cached Sentinel bootstrap failed its SHA-256 check")
+            by_url: dict[str, tuple[str, str, str]] = {}
+            sources: list[str] = []
+            scripts = [_BOOTSTRAP_URL]
+            source_size = 0
+            for implementation in references:
+                filename_prefix = _sdk_cache_prefix(implementation)
+                candidates = sorted(
+                    directory.glob(f"{filename_prefix}-*.js"),
+                    key=lambda path: path.stat().st_mtime_ns,
+                    reverse=True,
+                )
+                if not candidates:
+                    raise FileNotFoundError("cached Sentinel implementation is missing")
+                source_path = candidates[0]
+                source_match = _SDK_FILE.fullmatch(source_path.name)
+                assert source_match is not None
+                digest = source_match.group(1)
+                source_bytes = _read_bounded_file(source_path, _MAX_SDK_BYTES)
+                if hashlib.sha256(source_bytes).hexdigest() != digest:
+                    raise ValueError("cached Sentinel SDK failed its SHA-256 check")
+                if source_size + len(source_bytes) + len(sources) > _MAX_SDK_BYTES:
+                    raise ValueError("cached Sentinel SDK bundle exceeds its size limit")
+                source_size += len(source_bytes)
+                source = source_bytes.decode("utf-8")
+                by_url[implementation] = (source_path.name, digest, source)
+                sources.append(source)
+                scripts.append(implementation)
 
-    by_url: dict[str, tuple[str, str, str]] = {}
-    raw_files = manifest.get("files")
-    if isinstance(raw_files, list) and raw_files:
-        sources: list[str] = []
-        scripts: list[str] = [_BOOTSTRAP_URL]
-        for entry in raw_files:
-            if not isinstance(entry, dict):
-                raise ValueError("invalid Sentinel SDK file entry")
-            entry_url = _validate_sdk_url(entry.get("url"))
-            entry_file = entry.get("file")
-            entry_sha = entry.get("sha256")
-            if (
-                not isinstance(entry_file, str)
-                or not _SDK_FILE.fullmatch(entry_file)
-                or not isinstance(entry_sha, str)
-                or not re.fullmatch(r"[a-f0-9]{64}", entry_sha)
-            ):
-                raise ValueError("invalid Sentinel SDK file entry fields")
-            entry_bytes = _read_bounded_file(directory / entry_file, _MAX_SDK_BYTES)
-            if hashlib.sha256(entry_bytes).hexdigest() != entry_sha:
-                raise ValueError("cached Sentinel SDK failed its SHA-256 check")
-            text = entry_bytes.decode("utf-8")
-            by_url[entry_url] = (entry_file, entry_sha, text)
-            sources.append(text)
-            scripts.append(entry_url)
-        if implementation not in by_url or by_url[implementation][1] != digest:
-            raise ValueError("cached Sentinel SDK primary entry mismatch")
-        source = "\n".join(sources)
-        script_tuple = tuple(scripts)
-    else:
-        source_bytes = _read_bounded_file(directory / filename, _MAX_SDK_BYTES)
-        if hashlib.sha256(source_bytes).hexdigest() != digest:
-            raise ValueError("cached Sentinel SDK failed its SHA-256 check")
-        source = source_bytes.decode("utf-8")
-        by_url[implementation] = (filename, digest, source)
-        script_tuple = (_BOOTSTRAP_URL, implementation)
-
-    sdk = SentinelSDK(
-        implementation,
-        source,
-        digest,
-        "hit",
-        _http_validator(manifest.get("etag")),
-        _http_validator(manifest.get("last_modified")),
-        script_tuple,
-    )
-    return sdk, checked_at, by_url, bootstrap_sha256 if isinstance(bootstrap_sha256, str) else None
+            implementation = references[-1]
+            validator_name = f"sentinel-sdk-{hashlib.sha256(implementation.encode()).hexdigest()[:16]}.validators"
+            try:
+                validators = (
+                    _read_bounded_file(directory / validator_name, 2048)
+                    .decode("ascii")
+                    .splitlines()
+                )
+            except (OSError, UnicodeError, ValueError):
+                validators = []
+            etag = _http_validator(validators[0]) if validators else None
+            last_modified = _http_validator(validators[1]) if len(validators) > 1 else None
+            checked_at = bootstrap_path.stat().st_mtime_ns // 1_000_000
+            combined_source = "\n".join(sources)
+            sdk = SentinelSDK(
+                implementation,
+                combined_source,
+                hashlib.sha256(combined_source.encode("utf-8")).hexdigest(),
+                "hit",
+                etag,
+                last_modified,
+                tuple(scripts),
+            )
+            return sdk, checked_at, by_url, bootstrap_digest
+        except (OSError, UnicodeError, ValueError, SentinelCompatibilityError) as error:
+            last_error = error
+    if last_error is not None:
+        raise last_error
+    raise FileNotFoundError("Sentinel SDK cache is empty")
 
 
 def _fetch_text(
@@ -229,8 +246,7 @@ def _write_atomic(path: Path, content: bytes) -> None:
         path.chmod(0o600)
 
 
-def _ensure_sdk_file(directory: Path, digest: str, source_bytes: bytes) -> str:
-    filename = f"sdk-{digest[:16]}.js"
+def _ensure_sdk_file(directory: Path, filename: str, digest: str, source_bytes: bytes) -> str:
     source_path = directory / filename
     try:
         existing = _read_bounded_file(source_path, _MAX_SDK_BYTES)
@@ -247,8 +263,38 @@ def _cleanup_stale_sdk_files(directory: Path, keep_files: set[str]) -> None:
     except OSError:
         return
     for entry in entries:
-        if _SDK_FILE.fullmatch(entry.name) and entry.name not in keep_files:
+        if _CACHE_ARTIFACT.fullmatch(entry.name) and entry.name not in keep_files:
             entry.unlink(missing_ok=True)
+
+
+def _validator_filename(url: str) -> str:
+    url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
+    return f"sentinel-sdk-{url_hash}.validators"
+
+
+def _write_validators(
+    directory: Path, url: str, etag: str | None, last_modified: str | None
+) -> None:
+    path = directory / _validator_filename(url)
+    if etag is None and last_modified is None:
+        path.unlink(missing_ok=True)
+        return
+    _write_atomic(path, f"{etag or ''}\n{last_modified or ''}\n".encode("ascii"))
+
+
+def _read_validators(directory: Path, url: str) -> tuple[str | None, str | None]:
+    try:
+        values = (
+            _read_bounded_file(directory / _validator_filename(url), 2048)
+            .decode("ascii")
+            .splitlines()
+        )
+    except (OSError, UnicodeError, ValueError):
+        return None, None
+    return (
+        _http_validator(values[0]) if values else None,
+        _http_validator(values[1]) if len(values) > 1 else None,
+    )
 
 
 def _cache_ttl_ms() -> int:
@@ -264,21 +310,21 @@ def _cache_ttl_ms() -> int:
 def load_sentinel_sdk(
     directory: Path = CHATGPT_ROOT, *, client: httpx.Client | None = None
 ) -> SentinelSDK:
-    """Download and verify Sentinel SDK files in the ChatGPT root, reusing unchanged files."""
-    target_dir = Path(directory).resolve()
+    """Download verified Sentinel SDK files into ``scripts/`` under the ChatGPT root."""
+    target_dir = Path(directory).resolve() / "scripts"
     ttl_ms = _cache_ttl_ms()
     now_ms = time.time_ns() // 1_000_000
 
     with _CACHE_LOCK:
         mem_entry = _MEMORY_CACHE.get(target_dir)
-        stat_key = _manifest_stat(target_dir)
+        stat_key = _cache_stat(target_dir)
         if (
             mem_entry is not None
             and stat_key is not None
-            and (mem_entry[0], mem_entry[1]) == stat_key
-            and 0 <= now_ms - mem_entry[2] < ttl_ms
+            and mem_entry[0] == stat_key
+            and 0 <= now_ms - mem_entry[1] < ttl_ms
         ):
-            return mem_entry[3]
+            return mem_entry[2]
 
     cached: SentinelSDK | None = None
     checked_at = 0
@@ -298,10 +344,10 @@ def load_sentinel_sdk(
     now_ms = time.time_ns() // 1_000_000
     age_ms = now_ms - checked_at
     if cached is not None and 0 <= age_ms < ttl_ms:
-        stat_key = _manifest_stat(target_dir)
+        stat_key = _cache_stat(target_dir)
         if stat_key is not None:
             with _CACHE_LOCK:
-                _MEMORY_CACHE[target_dir] = (stat_key[0], stat_key[1], checked_at, cached)
+                _MEMORY_CACHE[target_dir] = (stat_key, checked_at, cached)
         return cached
 
     owned_client = client is None
@@ -311,34 +357,41 @@ def load_sentinel_sdk(
         bootstrap, _, _ = _fetch_text(client, _BOOTSTRAP_URL)
         if bootstrap is None:
             raise SentinelCompatibilityError("Sentinel SDK bootstrap was not returned")
-        references = [
-            _validate_sdk_url(match.group(2)) for match in _SDK_REFERENCE.finditer(bootstrap)
-        ]
-        if not references:
-            raise SentinelCompatibilityError("Sentinel SDK implementation URL was not found")
+        references = _sdk_references(bootstrap)
 
         target_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         bootstrap_bytes = bootstrap.encode("utf-8")
         bootstrap_digest = hashlib.sha256(bootstrap_bytes).hexdigest()
-        bootstrap_filename = _ensure_sdk_file(target_dir, bootstrap_digest, bootstrap_bytes)
+        bootstrap_filename = f"sentinel-bootstrap-{bootstrap_digest}.js"
+        _ensure_sdk_file(target_dir, bootstrap_filename, bootstrap_digest, bootstrap_bytes)
         bootstrap_unchanged = (
             cached_bootstrap_sha256 is not None and bootstrap_digest == cached_bootstrap_sha256
         )
 
         keep_files = {bootstrap_filename}
-        file_entries: list[dict[str, str]] = []
         sources: list[str] = []
         scripts: list[str] = [_BOOTSTRAP_URL]
-        all_revalidated = cached is not None
+        all_revalidated = cached is not None and bootstrap_unchanged
         primary_etag: str | None = None
         primary_last_modified: str | None = None
+        primary_digest: str | None = None
+        source_size = 0
 
         for index, url in enumerate(references):
             previous_entry = cached_by_url.get(url)
             is_primary = index == len(references) - 1
-            previous_sdk = (
-                cached if (is_primary and cached and cached.implementation == url) else None
-            )
+            source_bytes_to_cache: bytes | None = None
+            previous_etag, previous_last_modified = _read_validators(target_dir, url)
+            previous_sdk = None
+            if previous_entry is not None:
+                previous_sdk = SentinelSDK(
+                    url,
+                    previous_entry[2],
+                    previous_entry[1],
+                    "hit",
+                    previous_etag,
+                    previous_last_modified,
+                )
 
             if (
                 bootstrap_unchanged
@@ -361,63 +414,61 @@ def load_sentinel_sdk(
                 else:
                     entry_bytes = fetched_source.encode("utf-8")
                     entry_digest = hashlib.sha256(entry_bytes).hexdigest()
+                    entry_file = f"{_sdk_cache_prefix(url)}-{entry_digest}.js"
+                    source_bytes_to_cache = entry_bytes
                     if previous_entry is not None and previous_entry[1] == entry_digest:
-                        entry_file, _, entry_source = previous_entry
+                        entry_source = previous_entry[2]
                     else:
                         all_revalidated = False
-                        entry_file = _ensure_sdk_file(target_dir, entry_digest, entry_bytes)
                         entry_source = fetched_source
 
+            entry_source_size = len(entry_source.encode("utf-8"))
+            if source_size + entry_source_size + len(sources) > _MAX_SDK_BYTES:
+                raise SentinelCompatibilityError("Sentinel SDK bundle exceeds its size limit")
+            source_size += entry_source_size
+            if source_bytes_to_cache is not None:
+                _ensure_sdk_file(target_dir, entry_file, entry_digest, source_bytes_to_cache)
+
+            _write_validators(target_dir, url, etag, last_modified)
+
             keep_files.add(entry_file)
-            file_entries.append({"url": url, "file": entry_file, "sha256": entry_digest})
+            if _read_validators(target_dir, url) != (None, None):
+                keep_files.add(_validator_filename(url))
+            if previous_entry is None:
+                all_revalidated = False
             sources.append(entry_source)
             scripts.append(url)
             if is_primary:
                 primary_etag = etag
                 primary_last_modified = last_modified
+                primary_digest = entry_digest
 
-        primary = file_entries[-1]
-        implementation = primary["url"]
-        filename = primary["file"]
-        digest = primary["sha256"]
+        implementation = references[-1]
+        if primary_digest is None:
+            raise SentinelCompatibilityError("Sentinel SDK primary file was not loaded")
         combined_source = "\n".join(sources)
+        digest = hashlib.sha256(combined_source.encode("utf-8")).hexdigest()
 
         checked_at = time.time_ns() // 1_000_000
-        manifest: dict[str, object] = {
-            "version": 1,
-            "implementation": implementation,
-            "file": filename,
-            "sha256": digest,
-            "bootstrap_file": bootstrap_filename,
-            "bootstrap_sha256": bootstrap_digest,
-            "files": file_entries,
-            "checked_at": checked_at,
-        }
-        if primary_etag:
-            manifest["etag"] = primary_etag
-        if primary_last_modified:
-            manifest["last_modified"] = primary_last_modified
-        _write_atomic(
-            target_dir / "current.json",
-            (json.dumps(manifest, separators=(",", ":")) + "\n").encode("utf-8"),
-        )
+        bootstrap_path = target_dir / bootstrap_filename
+        os.utime(bootstrap_path, ns=(checked_at * 1_000_000, checked_at * 1_000_000))
         _cleanup_stale_sdk_files(target_dir, keep_files)
 
         status = "revalidated" if all_revalidated else "updated" if cached is not None else "miss"
         result = SentinelSDK(
-            implementation,
-            combined_source,
-            digest,
-            status,
-            primary_etag,
-            primary_last_modified,
-            tuple(scripts),
+            implementation=implementation,
+            source=combined_source,
+            sha256=digest,
+            cache_status=status,
+            etag=primary_etag,
+            last_modified=primary_last_modified,
+            scripts=tuple(scripts),
         )
-        stat_key = _manifest_stat(target_dir)
+        stat_key = _cache_stat(target_dir)
         if stat_key is not None:
             cached_hit = replace(result, cache_status="hit")
             with _CACHE_LOCK:
-                _MEMORY_CACHE[target_dir] = (stat_key[0], stat_key[1], checked_at, cached_hit)
+                _MEMORY_CACHE[target_dir] = (stat_key, checked_at, cached_hit)
         return result
     except httpx.TransportError as error:
         if cached is not None:
@@ -439,3 +490,17 @@ def load_sentinel_sdk(
     finally:
         if owned_client:
             client.close()
+
+
+def sentinel_cache_status(directory: Path = CHATGPT_ROOT) -> dict[str, str | int] | None:
+    """Return verified SDK identity and its last check time without network access."""
+    target_dir = Path(directory).resolve() / "scripts"
+    try:
+        sdk, checked_at, _, _ = _read_cached_sdk(target_dir)
+    except (OSError, UnicodeError, ValueError, SentinelCompatibilityError):
+        return None
+    return {
+        "implementation": sdk.implementation,
+        "sha256": sdk.sha256,
+        "checked_at": checked_at,
+    }

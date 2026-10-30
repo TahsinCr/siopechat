@@ -20,7 +20,7 @@ from ..errors import AccountPaused
 from ..session import CredentialStore, read_session, save_session
 from .constants import DEFAULT_CDP_URL, FORBIDDEN_REPLAY_HEADERS
 from .errors import ChatGPTWebError
-from .resources import CHATGPT_ROOT
+from .resources import CHATGPT_ROOT, sentinel_cache_status
 
 
 @dataclass(frozen=True)
@@ -230,18 +230,4 @@ class BrowserSession:
         }
 
     def cache_status(self) -> dict[str, Any] | None:
-        manifest = self.paths.cache / "current.json"
-        try:
-            value = json.loads(manifest.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return None
-        digest = value.get("sha256")
-        implementation = value.get("implementation")
-        checked_at = value.get("checked_at")
-        if not isinstance(digest, str) or not isinstance(implementation, str):
-            return None
-        return {
-            "implementation": implementation,
-            "sha256": digest,
-            "checked_at": checked_at if isinstance(checked_at, int) else None,
-        }
+        return sentinel_cache_status(self.paths.cache)

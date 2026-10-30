@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import json
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -69,6 +70,9 @@ def make_sdk(source: str = FAKE_SDK_SOURCE) -> SentinelSDK:
 def client_with_sentinel_cache() -> ChatGPTClient:
     client = ChatGPTClient.__new__(ChatGPTClient)
     client.headers = {"user-agent": "Mozilla/5.0 (X11; Linux x86_64)"}
+    client._sentinel_lock = threading.Lock()
+    client._sentinel_runtime = None
+    client._sentinel_runtime_key = None
     client.session = SimpleNamespace(
         paths=SimpleNamespace(cache=Path("sentinel-cache")),
     )
@@ -100,6 +104,61 @@ class ChatGPTSentinelProofTests(unittest.TestCase):
         self.assertEqual(init_again, initial)
         self.assertEqual(proof, "gAAAAABdGVzdC1wcm9vZg==~S")
         self.assertEqual(turnstile, "sdk-turnstile")
+
+    def test_sentinel_runtime_resets_request_state_for_fresh_initial_proof(self):
+        source = """
+globalThis.__siopechatTestInitCounter = (globalThis.__siopechatTestInitCounter || 0) + 1;
+window.SentinelSDK = {
+  init: async () => {
+    const frame = document.createElement("iframe");
+    frame.contentWindow.postMessage({ p: `gAAAAAC${globalThis.__siopechatTestInitCounter}~S` });
+  },
+  token: async () => JSON.stringify({ p: "gAAAAABcHJvb2Y~S", t: "turnstile-token" })
+};
+"""
+        with SentinelRuntime(make_sdk(source)) as runtime:
+            first = runtime.create_initial_proof()
+            first_tokens = runtime.create_enforcement_tokens({"turnstile": {"required": True}})
+            second = runtime.create_initial_proof()
+            second_tokens = runtime.create_enforcement_tokens({"turnstile": {"required": True}})
+
+        self.assertEqual(first, "gAAAAAC1~S")
+        self.assertEqual(second, "gAAAAAC2~S")
+        self.assertEqual(first_tokens, (first, "gAAAAABcHJvb2Y~S", "turnstile-token"))
+        self.assertEqual(second_tokens, (second, "gAAAAABcHJvb2Y~S", "turnstile-token"))
+
+    def test_client_reuses_one_quickjs_runtime_until_sdk_or_session_changes(self):
+        client = client_with_sentinel_cache()
+        response = Mock()
+        response.json.return_value = {
+            "prepare_token": "server-issued",
+            "turnstile": {"required": True, "dx": "dynamic-challenge"},
+        }
+        client.request = Mock(return_value=response)
+        sdk = make_sdk()
+        runtime = Mock()
+        runtime.create_initial_proof.side_effect = ["gAAAAACfirst~S", "gAAAAACsecond~S"]
+        runtime.create_enforcement_tokens.side_effect = [
+            ("gAAAAACfirst~S", "gAAAAABfirst~S", "turnstile-first"),
+            ("gAAAAACsecond~S", "gAAAAABsecond~S", "turnstile-second"),
+        ]
+
+        with (
+            patch("providers.chatgpt.client.load_sentinel_sdk", return_value=sdk),
+            patch("providers.chatgpt.client.SentinelRuntime", return_value=runtime) as factory,
+        ):
+            first = client.create_sentinel_headers()
+            second = client.create_sentinel_headers()
+
+        self.assertEqual(factory.call_count, 1)
+        self.assertEqual(runtime.create_initial_proof.call_count, 2)
+        self.assertEqual(runtime.create_enforcement_tokens.call_count, 2)
+        self.assertEqual(first["openai-sentinel-proof-token"], "gAAAAABfirst~S")
+        self.assertEqual(second["openai-sentinel-proof-token"], "gAAAAABsecond~S")
+
+        client.http = Mock()
+        client.close()
+        runtime.close.assert_called_once_with()
 
     def test_sentinel_runtime_rejects_proof_after_close(self):
         runtime = SentinelRuntime(make_sdk())

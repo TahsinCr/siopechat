@@ -11,9 +11,9 @@ from providers import ProviderClient, SendRequest
 
 
 def main():
-    sign_js = files("providers.chatgpt").joinpath("sign.js")
+    sign_js = files("providers.chatgpt").joinpath("scripts", "sign.js")
     if not sign_js.is_file():
-        raise SystemExit("sign.js was not packaged in providers.chatgpt")
+        raise SystemExit("scripts/sign.js was not packaged in providers.chatgpt")
     context = quickjs.Context()
     context.eval(sign_js.read_text(encoding="utf-8"))
     if int(context.eval("typeof readJsonInput === 'function' ? 1 : 0")) != 1:
