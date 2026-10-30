@@ -221,45 +221,6 @@ class SentinelRuntime:
         return initial, proof, turnstile
 
 
-def run_sentinel_signer(
-    *args: str,
-    payload: dict[str, Any] | str,
-    timeout_seconds: float = _RUNTIME_TIMEOUT_SECONDS,
-) -> dict[str, Any]:
-    """Execute ``sign.js`` in a one-shot QuickJS-NG context with JSON input."""
-    raw_input = (
-        payload
-        if isinstance(payload, str)
-        else json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-    )
-    context = quickjs.Context()
-    try:
-        _configure_quickjs_context(context)
-        context.set_time_limit(timeout_seconds)
-        context.set("__siopechatInputJson", raw_input)
-        context.eval(f"globalThis.__siopechatArgs = {json.dumps(list(args))};")
-        context.eval(_load_sign_source())
-        context.eval("__siopechatStartCommand()")
-        _wait_for_completion(context, timeout_seconds=timeout_seconds)
-        result_json = context.get("__siopechatResultJson")
-        if not isinstance(result_json, str) or not result_json:
-            raise SentinelCompatibilityError("Sentinel signer returned an empty result")
-        parsed = json.loads(result_json)
-        if not isinstance(parsed, dict):
-            raise SentinelCompatibilityError("Sentinel signer returned a non-object result")
-        return parsed
-    except SentinelCompatibilityError:
-        raise
-    except Exception as error:
-        raise SentinelCompatibilityError(f"Sentinel signer failed: {error}") from error
-    finally:
-        try:
-            context.eval("__siopechatDispose()")
-        except Exception:
-            pass
-        del context
-
-
 def _js_number(value: int | float) -> str:
     if isinstance(value, int):
         return str(value)

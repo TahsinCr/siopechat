@@ -9,7 +9,7 @@ from unittest.mock import patch
 import httpx
 
 from providers.chatgpt.errors import SentinelCompatibilityError
-from providers.chatgpt.resources import _MEMORY_CACHE, CHATGPT_ROOT, SIGN_SCRIPT, load_sentinel_sdk
+from providers.chatgpt.resources import _MEMORY_CACHE, load_sentinel_sdk
 
 BOOTSTRAP = "https://chatgpt.com/backend-api/sentinel/sdk.js"
 IMPLEMENTATION = "https://chatgpt.com/sentinel/test/sdk.js"
@@ -44,12 +44,6 @@ class SentinelResourceTests(unittest.TestCase):
         with patch.dict("os.environ", {"CHATGPT_WEB_SENTINEL_CACHE_TTL_MS": "0"}):
             with self.client_for(responses) as client:
                 return load_sentinel_sdk(self.cache_root, client=client)
-
-    def test_chatgpt_root_and_merged_sign_script_are_located_in_provider_root(self):
-        self.assertTrue(CHATGPT_ROOT.is_dir())
-        self.assertEqual(SIGN_SCRIPT, CHATGPT_ROOT / "sign.js")
-        self.assertTrue(SIGN_SCRIPT.is_file())
-        self.assertFalse((CHATGPT_ROOT / "scripts").exists())
 
     def test_download_validates_bootstrap_source_and_reuses_verified_cache(self):
         bootstrap_text = (
