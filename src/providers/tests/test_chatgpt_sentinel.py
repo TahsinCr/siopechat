@@ -107,14 +107,16 @@ class ChatGPTSentinelProofTests(unittest.TestCase):
 
     def test_sentinel_runtime_resets_request_state_for_fresh_initial_proof(self):
         source = """
-globalThis.__siopechatTestInitCounter = (globalThis.__siopechatTestInitCounter || 0) + 1;
-window.SentinelSDK = {
-  init: async () => {
-    const frame = document.createElement("iframe");
-    frame.contentWindow.postMessage({ p: `gAAAAAC${globalThis.__siopechatTestInitCounter}~S` });
-  },
-  token: async () => JSON.stringify({ p: "gAAAAABcHJvb2Y~S", t: "turnstile-token" })
-};
+var SentinelSDK = (() => {
+  globalThis.__siopechatTestInitCounter = (globalThis.__siopechatTestInitCounter || 0) + 1;
+  return {
+    init: async () => {
+      const frame = document.createElement("iframe");
+      frame.contentWindow.postMessage({ p: `gAAAAAC${globalThis.__siopechatTestInitCounter}~S` });
+    },
+    token: async () => JSON.stringify({ p: "gAAAAABcHJvb2Y~S", t: "turnstile-token" })
+  };
+})();
 """
         with SentinelRuntime(make_sdk(source)) as runtime:
             first = runtime.create_initial_proof()

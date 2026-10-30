@@ -16,6 +16,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.1b0` for `v1.5.
 
 - Replace the external Node.js runtime with `quickjs-ng` (`>=0.17.0.2,<0.18`) for ChatGPT Sentinel SDK execution, merge the bounded JSON I/O helper and Sentinel signer into `src/providers/chatgpt/scripts/sign.js`, and keep Sentinel runtime tests in the standalone provider test suite.
 - Cache verified ChatGPT Sentinel SDK files in `src/providers/chatgpt/scripts/` under content-derived names; reuse unchanged versioned SDK files and the QuickJS context.
+- Compile the verified Sentinel SDK once per reused QuickJS context and create fresh per-request SDK state without reparsing its source.
 - For existing ordinary conversation continuations, reuse the completed SSE messages when their parent confirms the submitted message, avoiding the extra post-send conversation request.
 - Keep the published ChatGPT Sentinel SDK responsible for its initial request context and dynamic challenge shapes, including Turnstile. Retain Python proof-of-work only for the validated server challenge shape.
 - Keep browser discovery, session capture and local CDP access in the Python provider package.

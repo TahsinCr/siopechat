@@ -108,6 +108,7 @@ class SentinelRuntime:
         self._closed = False
         self._initial: str | None = None
         self._requests_started = False
+        self._sdk_factory_enabled = False
         context = quickjs.Context()
         try:
             _configure_quickjs_context(context)
@@ -122,7 +123,29 @@ class SentinelRuntime:
                 json.dumps(config, ensure_ascii=False, separators=(",", ":")),
             )
             context.eval(_load_sign_source())
-            context.eval(sdk.source)
+            # Compile this pinned SDK once; later requests get a fresh SDK closure
+            # without reparsing the full source in this reused context.
+            if sdk.source.lstrip().startswith("var SentinelSDK="):
+                context.set("__siopechatSdkSource", sdk.source)
+                try:
+                    context.eval(
+                        "globalThis.__siopechatSdkFactory = new Function("
+                        'globalThis.__siopechatSdkSource + "\\nreturn SentinelSDK;");'
+                        "delete globalThis.__siopechatSdkSource;"
+                        "const sdk = globalThis.__siopechatSdkFactory.call(globalThis);"
+                        'if (!sdk || typeof sdk.init !== "function" || '
+                        'typeof sdk.token !== "function") throw new Error("invalid SDK factory result");'
+                        "globalThis.SentinelSDK = sdk;"
+                    )
+                    self._sdk_factory_enabled = True
+                except Exception:
+                    context.eval(
+                        "delete globalThis.__siopechatSdkSource;"
+                        "delete globalThis.__siopechatSdkFactory;"
+                    )
+                    context.eval(sdk.source)
+            else:
+                context.eval(sdk.source)
             while context.execute_pending_job():
                 pass
         except SentinelCompatibilityError:
@@ -166,7 +189,13 @@ class SentinelRuntime:
                 context.set("__siopechatRandomPool", secrets.token_hex(_INITIAL_RANDOM_BYTES))
                 context.eval("__siopechatConfigure(JSON.parse(globalThis.__siopechatConfigJson))")
                 context.eval("__siopechatResetRequest(false)")
-                context.eval(self._sdk.source)
+                if self._sdk_factory_enabled:
+                    context.eval(
+                        "globalThis.SentinelSDK = "
+                        "globalThis.__siopechatSdkFactory.call(globalThis);"
+                    )
+                else:
+                    context.eval(self._sdk.source)
                 while context.execute_pending_job():
                     pass
             self._requests_started = True
