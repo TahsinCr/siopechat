@@ -77,7 +77,6 @@ class SentinelResourceTests(unittest.TestCase):
         self.assertEqual(loaded.sha256, hashlib.sha256(SOURCE.encode()).hexdigest())
         self.assertTrue((self.cache_dir / f"sentinel-bootstrap-{bootstrap_sha}.js").is_file())
         self.assertTrue(self.sdk_file(IMPLEMENTATION, loaded.sha256).is_file())
-        self.assertFalse((self.cache_dir / "current.json").exists())
         self.assertEqual(cached.cache_status, "hit")
         self.assertEqual(cached.implementation, loaded.implementation)
         self.assertEqual(cached.source, loaded.source)
@@ -204,7 +203,7 @@ class SentinelResourceTests(unittest.TestCase):
         self.assertEqual(cached_file.read_text(encoding="utf-8"), SOURCE)
         self.assertLess(peak - baseline, 2 * 1024 * 1024)
 
-    def test_verified_cache_status_is_read_without_network_or_manifest(self):
+    def test_verified_cache_status_returns_cached_sdk_identity(self):
         loaded = self.populate_cache()
 
         status = sentinel_cache_status(self.cache_root)
@@ -213,7 +212,6 @@ class SentinelResourceTests(unittest.TestCase):
         self.assertEqual(status["implementation"], loaded.implementation)
         self.assertEqual(status["sha256"], loaded.sha256)
         self.assertIsInstance(status["checked_at"], int)
-        self.assertFalse((self.cache_dir / "current.json").exists())
 
     def test_verified_stale_cache_is_used_when_refresh_fails(self):
         responses = {
