@@ -19,6 +19,9 @@ _PROVIDER_ORIGINS = frozenset(
     }
 )
 _MAX_METADATA_BYTES = 2 * 1024 * 1024
+_MAX_MESSAGE_BYTES = 2 * 1024 * 1024
+_MAX_EVENT_QUEUE_BYTES = 8 * 1024 * 1024
+_MAX_EVENT_QUEUE_ITEMS = 1024
 _DEFAULT_TIMEOUT = 5.0
 
 
@@ -147,6 +150,20 @@ def _get_json(base: str, path: str, timeout: float = _DEFAULT_TIMEOUT):
         raise DevToolsError("Browser returned invalid debugging metadata") from error
 
 
+def is_devtools_available(cdp_url: str, timeout: float = 1.0) -> bool:
+    """Check for a responsive local DevTools endpoint and a valid socket URL."""
+    try:
+        base = _local_http_base(cdp_url)
+        version = _get_json(base, "/json/version", timeout)
+        socket_url = version.get("webSocketDebuggerUrl") if isinstance(version, dict) else None
+        if not isinstance(socket_url, str):
+            return False
+        _debugger_websocket(socket_url)
+    except DevToolsError:
+        return False
+    return True
+
+
 def _find_page(pages, origin: str) -> dict | None:
     if not isinstance(pages, list):
         raise DevToolsError("Browser returned an invalid page list")
@@ -175,7 +192,8 @@ class DevToolsConnection:
         socket_url, origin = _debugger_websocket(socket_url)
         self._timeout = timeout
         self._next_id = 0
-        self._events = deque(maxlen=1024)
+        self._events: deque[tuple[dict, int]] = deque()
+        self._event_bytes = 0
         try:
             self._socket = websocket.create_connection(
                 socket_url,
@@ -187,7 +205,7 @@ class DevToolsConnection:
         except (websocket.WebSocketException, OSError, ValueError) as error:
             raise DevToolsError("Could not connect to the local browser debugger") from error
 
-    def _receive(self, timeout: float) -> dict:
+    def _receive(self, timeout: float) -> tuple[dict, int]:
         try:
             self._socket.settimeout(max(timeout, 0.001))
             message = self._socket.recv()
@@ -195,13 +213,32 @@ class DevToolsConnection:
             raise DevToolsError("Browser debugging request timed out") from error
         except (websocket.WebSocketException, OSError) as error:
             raise DevToolsError("Browser debugging connection was interrupted") from error
+        if not isinstance(message, (str, bytes, bytearray)):
+            raise DevToolsError("Browser returned an invalid debugging message")
+        size = len(message.encode("utf-8")) if isinstance(message, str) else len(message)
+        if size > _MAX_MESSAGE_BYTES:
+            raise DevToolsError("Browser debugging message exceeds the size limit")
         try:
             value = json.loads(message)
-        except (TypeError, json.JSONDecodeError) as error:
+        except (TypeError, UnicodeDecodeError, json.JSONDecodeError) as error:
             raise DevToolsError("Browser returned an invalid debugging message") from error
         if not isinstance(value, dict):
             raise DevToolsError("Browser returned an invalid debugging message")
-        return value
+        return value, size
+
+    def _queue_event(self, message: dict, size: int) -> None:
+        if (
+            len(self._events) >= _MAX_EVENT_QUEUE_ITEMS
+            or self._event_bytes + size > _MAX_EVENT_QUEUE_BYTES
+        ):
+            raise DevToolsError("Browser debugging event buffer exceeded its size limit")
+        self._events.append((message, size))
+        self._event_bytes += size
+
+    def _dequeue_event(self) -> dict:
+        message, size = self._events.popleft()
+        self._event_bytes -= size
+        return message
 
     def call(self, method: str, params: dict | None = None, timeout: float | None = None) -> dict:
         self._next_id += 1
@@ -222,27 +259,26 @@ class DevToolsConnection:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise DevToolsError(f"Browser debugging command timed out: {method}")
-            message = self._receive(remaining)
+            message, size = self._receive(remaining)
             if message.get("id") == command_id:
                 if "error" in message:
-                    detail = message["error"].get("message", "unknown error")
-                    raise DevToolsError(f"Browser debugging command failed: {detail}")
+                    raise DevToolsError(f"Browser debugging command failed: {method}")
                 result = message.get("result", {})
                 if not isinstance(result, dict):
                     raise DevToolsError("Browser returned an invalid command result")
                 return result
-            self._events.append(message)
+            self._queue_event(message, size)
 
     def next_event(self, timeout: float) -> dict:
         deadline = time.monotonic() + timeout
         while True:
             if self._events:
-                message = self._events.popleft()
+                message = self._dequeue_event()
             else:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise DevToolsError("Browser debugging request timed out")
-                message = self._receive(remaining)
+                message, _ = self._receive(remaining)
             if isinstance(message.get("method"), str):
                 return message
 

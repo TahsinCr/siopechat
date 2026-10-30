@@ -15,9 +15,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-import httpx
-
-from ..cdp import DevToolsError, capture_chatgpt_auth
+from ..cdp import DevToolsError, capture_chatgpt_auth, is_devtools_available
 from ..errors import AccountPaused
 from ..session import CredentialStore, read_session, save_session
 from .constants import DEFAULT_CDP_URL, FORBIDDEN_REPLAY_HEADERS
@@ -178,11 +176,7 @@ class BrowserSession:
         return url, headers
 
     def is_ready(self) -> bool:
-        try:
-            response = httpx.get(f"{self.cdp_url.rstrip('/')}/json/version", timeout=1.0)
-            return response.status_code == 200
-        except httpx.HTTPError:
-            return False
+        return is_devtools_available(self.cdp_url)
 
     def launch(self, url: str = "https://chatgpt.com/") -> dict[str, Any]:
         if url not in ("https://chatgpt.com/", "https://gemini.google.com/", "https://claude.ai/"):

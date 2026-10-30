@@ -65,7 +65,6 @@ class ClaudeRecordsTests(unittest.TestCase):
 
 class ClaudeAccountsTests(unittest.TestCase):
     def test_connect_opens_requested_login_page_in_existing_browser(self):
-        from types import SimpleNamespace
         from unittest.mock import Mock
 
         with tempfile.TemporaryDirectory() as folder:
@@ -77,12 +76,10 @@ class ClaudeAccountsTests(unittest.TestCase):
                 session.launch.return_value = {"browser": "already_running"}
                 with (
                     patch.object(accounts, "session", return_value=session),
-                    patch(
-                        "accounts.subprocess.run", return_value=SimpleNamespace(returncode=0)
-                    ) as run,
+                    patch("accounts.open_provider_page") as open_page,
                 ):
                     self.assertTrue(accounts.session_action(key, "connect_browser")["opened"])
-                    self.assertIn("https://claude.ai/", run.call_args.kwargs["input"])
+                    open_page.assert_called_once_with(session.cdp_url, "https://claude.ai/")
             finally:
                 api.runtime.close()
 

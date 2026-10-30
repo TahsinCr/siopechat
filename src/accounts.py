@@ -1009,14 +1009,13 @@ class Accounts:
                 for cookie in browser_cookies:
                     name = cookie.get("name")
                     value = cookie.get("value")
+                    if not isinstance(name, str) or not name or not isinstance(value, str):
+                        continue
                     domain = str(cookie.get("domain", "")).lstrip(".").lower()
                     applies_to_provider = host == domain or host.endswith(f".{domain}")
-                    allowed = (
-                        applies_to_provider
-                        if provider_id == "gemini"
-                        else name in allowed_claude_cookies
-                    )
-                    if allowed and isinstance(name, str) and name and isinstance(value, str):
+                    if applies_to_provider and (
+                        provider_id == "gemini" or name in allowed_claude_cookies
+                    ):
                         cookies[name] = value
                 required = "__Secure-1PSID" if item["provider"] == "gemini" else "sessionKey"
                 if not cookies.get(required):

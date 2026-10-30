@@ -68,6 +68,50 @@ class ProfileAccountTests(unittest.TestCase):
             self.assertEqual(self.accounts.repository.path.stat().st_mode & 0o777, 0o600)
         old.close.assert_awaited_once()
 
+    def test_browser_verification_persists_only_provider_scoped_allowed_cookies(self):
+        claude = self.accounts.add("claude", "Personal Claude")
+        provider = Mock(
+            close=AsyncMock(),
+            authenticate=AsyncMock(return_value=SessionStatus(SessionState.AUTHENTICATED, True)),
+        )
+        self.accounts._providers[claude] = provider
+        self.accounts.status = lambda _: {"authenticated": True}
+        browser_cookies = [
+            {"name": "sessionKey", "value": "valid-session", "domain": ".claude.ai"},
+            {"name": "anthropic-device-id", "value": "device", "domain": "claude.ai"},
+            {"name": "analytics", "value": "ignored", "domain": ".claude.ai"},
+            {"name": "sessionKey", "value": "foreign", "domain": ".example.com"},
+            {"name": ["invalid"], "value": "ignored", "domain": ".claude.ai"},
+            {"name": "broken", "value": None, "domain": ".claude.ai"},
+        ]
+
+        with patch("accounts.read_provider_cookies", return_value=browser_cookies):
+            self.accounts.session_action(claude, "verify")
+
+        self.assertEqual(
+            self.accounts.credentials(claude).load(),
+            {"sessionKey": "valid-session", "anthropic-device-id": "device"},
+        )
+        provider.authenticate.assert_awaited_once()
+
+    def test_browser_verification_rejects_foreign_session_cookie_without_replacing_saved_data(self):
+        previous = {"__Secure-1PSID": "saved-session"}
+        self.accounts.credentials(self.gemini).save(previous)
+        browser_cookies = [
+            {"name": "__Secure-1PSID", "value": "foreign", "domain": ".example.com"},
+            {"name": "__Secure-1PSID", "value": "", "domain": ".google.com"},
+        ]
+
+        with (
+            patch("accounts.read_provider_cookies", return_value=browser_cookies),
+            patch.object(self.accounts, "provider") as provider,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "giriş tamamlanmamış"):
+                self.accounts.session_action(self.gemini, "verify")
+
+        provider.assert_called_once_with(self.gemini)
+        self.assertEqual(self.accounts.credentials(self.gemini).load(), previous)
+
     def test_import_is_blocked_during_send_before_reading_profile(self):
         self.accounts._sending[self.gemini] = 1
         with patch("accounts.import_cookies") as read:

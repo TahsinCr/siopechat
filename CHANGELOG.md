@@ -16,6 +16,11 @@ Python distributions use the corresponding PEP 440 version (`1.5.1b0` for `v1.5.
 
 - Remove the retired Node.js browser and cookie helpers and their obsolete JavaScript tests; retain the Sentinel signer and its JSON input helper.
 
+### Fixed
+
+- Bound individual CDP messages and the queued event buffer; fail explicitly on queue overflow instead of silently discarding session-capture events.
+- Reuse the validated local DevTools endpoint check for ChatGPT browser readiness and reject malformed provider cookies before filtering.
+
 ## [1.5.1-beta] - 2026-10-29
 
 ### Added
