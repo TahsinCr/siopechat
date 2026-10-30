@@ -35,6 +35,8 @@ Sohbetlerinize devam edin, sağlayıcı projelerinizi düzenleyin ve yanıtları
 
 SiopeChat için Python **3.11+** ve Node.js **22+** gerekir. Python, ChatGPT Sentinel'in güncel SDK kaynağını keşfeder, indirir ve boyut/SHA-256 denetiminden geçirir; Node yayımlanmış SDK'yı çalıştırarak başlangıç bağlamını ve Turnstile gibi dinamik sunucu doğrulamalarını üretir. Python yalnızca desteklenen doğrulama biçimindeki sunucu kaynaklı proof-of-work hesabını yapar. Tarayıcı girişi ve oturum bilgisi Python sağlayıcı paketi üzerinden yürür. Kurulum ve başlatma araçları iki çalışma zamanı sürümünü de denetler. Bağımsız sağlayıcı paketi ayrı olarak Python 3.10+ desteğini korur. Chrome/Chromium yalnızca açıkça başlatılan giriş işlemi için gerekir. Unicode destekli bir terminal kullanın; gerçek renk ve fare raporlama desteği önerilir.
 
+SDK sağlayıcı önbelleğinde saklanır. Varsayılan olarak altı saatten sonraki ilk kullanımda güncellik kontrol edilir; sunucu destekliyorsa değişmeyen SDK yeniden indirilmeden doğrulanır. `CHATGPT_WEB_SENTINEL_CACHE_TTL_MS` kontrol aralığını milisaniye cinsinden değiştirir.
+
 ### Kurulum ve başlatma
 
 Depoyu indirdiğiniz dizinde tek seferlik kurulum aracını çalıştırın. Python 3.11+ ve Node.js 22+ sürümlerini denetler, bulduğu uyumlu sanal ortamı kullanır ve SiopeChat ile Python bağımlılıklarını o ortama kurar. Ortam bulamazsa `python/` oluşturur; mevcut bir dizini silmez veya üzerine yazmaz.

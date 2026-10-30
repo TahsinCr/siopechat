@@ -60,14 +60,20 @@ class SentinelResourceTests(unittest.TestCase):
     def test_corrupt_cached_sdk_is_replaced_after_a_successful_refresh(self):
         responses = {
             BOOTSTRAP: httpx.Response(200, text=f"script.src = '{IMPLEMENTATION}'"),
-            IMPLEMENTATION: httpx.Response(200, text=SOURCE),
+            IMPLEMENTATION: httpx.Response(200, text=SOURCE, headers={"ETag": '"original"'}),
         }
         with patch.dict("os.environ", {"CHATGPT_WEB_SENTINEL_CACHE_TTL_MS": "0"}):
             with self.client_for(responses) as client:
                 loaded = load_sentinel_sdk(self.cache_root, client=client)
             cached_file = self.cache_root / "sentinel" / f"sdk-{loaded.sha256[:16]}.js"
             cached_file.write_text("tampered", encoding="utf-8")
-            with self.client_for(responses) as client:
+
+            def refresh(request):
+                if str(request.url) == IMPLEMENTATION:
+                    self.assertNotIn("If-None-Match", request.headers)
+                return responses[str(request.url)]
+
+            with httpx.Client(transport=httpx.MockTransport(refresh)) as client:
                 refreshed = load_sentinel_sdk(self.cache_root, client=client)
         self.assertEqual(refreshed.source, SOURCE)
         self.assertEqual(cached_file.read_text(encoding="utf-8"), SOURCE)
@@ -135,6 +141,86 @@ class SentinelResourceTests(unittest.TestCase):
                     stale = load_sentinel_sdk(self.cache_root, client=client)
         self.assertEqual(stale.source, loaded.source)
         self.assertEqual(stale.cache_status, "stale-offline")
+
+    def test_expired_verified_cache_revalidates_without_downloading_sdk(self):
+        for response_header, request_header, validator in (
+            ("ETag", "If-None-Match", 'W/"sdk-1"'),
+            ("Last-Modified", "If-Modified-Since", "Wed, 28 Oct 2026 05:21:00 GMT"),
+        ):
+            with (
+                self.subTest(response_header=response_header),
+                tempfile.TemporaryDirectory() as folder,
+            ):
+                requests = []
+
+                def handle(request):
+                    requests.append(request)
+                    if str(request.url) == BOOTSTRAP:
+                        return httpx.Response(200, text=f"script.src = '{IMPLEMENTATION}'")
+                    if request.headers.get(request_header) == validator:
+                        return httpx.Response(304)
+                    return httpx.Response(200, text=SOURCE, headers={response_header: validator})
+
+                root = Path(folder)
+                with patch.dict("os.environ", {"CHATGPT_WEB_SENTINEL_CACHE_TTL_MS": "0"}):
+                    with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+                        first = load_sentinel_sdk(root, client=client)
+                        second = load_sentinel_sdk(root, client=client)
+
+                self.assertEqual(second.source, first.source)
+                self.assertEqual(second.cache_status, "revalidated")
+                self.assertEqual(requests[-1].headers.get(request_header), validator)
+                self.assertEqual(len(requests), 4)
+
+    def test_changed_sdk_url_does_not_reuse_old_validator(self):
+        replacement = "https://chatgpt.com/sentinel/new/sdk.js"
+        responses = {
+            BOOTSTRAP: httpx.Response(200, text=f"script.src = '{IMPLEMENTATION}'"),
+            IMPLEMENTATION: httpx.Response(200, text=SOURCE, headers={"ETag": '"old"'}),
+        }
+        with patch.dict("os.environ", {"CHATGPT_WEB_SENTINEL_CACHE_TTL_MS": "0"}):
+            with self.client_for(responses) as client:
+                load_sentinel_sdk(self.cache_root, client=client)
+
+            def handle(request):
+                if str(request.url) == BOOTSTRAP:
+                    return httpx.Response(200, text=f"script.src = '{replacement}'")
+                self.assertNotIn("If-None-Match", request.headers)
+                return httpx.Response(200, text="new SDK", headers={"ETag": '"new"'})
+
+            with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+                updated = load_sentinel_sdk(self.cache_root, client=client)
+        self.assertEqual(updated.implementation, replacement)
+        self.assertEqual(updated.source, "new SDK")
+
+    def test_changed_sdk_at_same_url_replaces_verified_cache(self):
+        responses = {
+            BOOTSTRAP: httpx.Response(200, text=f"script.src = '{IMPLEMENTATION}'"),
+            IMPLEMENTATION: httpx.Response(200, text=SOURCE, headers={"ETag": '"old"'}),
+        }
+        with patch.dict("os.environ", {"CHATGPT_WEB_SENTINEL_CACHE_TTL_MS": "0"}):
+            with self.client_for(responses) as client:
+                load_sentinel_sdk(self.cache_root, client=client)
+
+            def handle(request):
+                if str(request.url) == BOOTSTRAP:
+                    return httpx.Response(200, text=f"script.src = '{IMPLEMENTATION}'")
+                self.assertEqual(request.headers.get("If-None-Match"), '"old"')
+                return httpx.Response(200, text="updated SDK", headers={"ETag": '"new"'})
+
+            with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+                updated = load_sentinel_sdk(self.cache_root, client=client)
+        self.assertEqual(updated.source, "updated SDK")
+        self.assertEqual(updated.etag, '"new"')
+
+    def test_unsolicited_not_modified_cannot_supply_an_sdk(self):
+        responses = {
+            BOOTSTRAP: httpx.Response(200, text=f"script.src = '{IMPLEMENTATION}'"),
+            IMPLEMENTATION: httpx.Response(304),
+        }
+        with self.client_for(responses) as client:
+            with self.assertRaises(SentinelCompatibilityError):
+                load_sentinel_sdk(self.cache_root, client=client)
 
     def test_untrusted_bootstrap_url_is_rejected_before_fetch(self):
         responses = {

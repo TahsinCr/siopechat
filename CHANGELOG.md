@@ -16,6 +16,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.1b0` for `v1.5.
 
 - Keep the published ChatGPT Sentinel SDK responsible for its initial request context and dynamic challenge shapes, including Turnstile. Retain Python proof-of-work only for the validated server challenge shape.
 - Move Sentinel bootstrap discovery, bounded downloads, SHA-256 cache validation and atomic cache writes into the Python provider package; Node now receives the verified SDK source over its bounded JSON input and only runs the SDK.
+- Revalidate the locally cached SDK using HTTP validators after its cache interval, avoiding a full download when the provider reports it unchanged.
 - Keep browser discovery, session capture and local CDP access in the Python provider package.
 
 ### Fixed

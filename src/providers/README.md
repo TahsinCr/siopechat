@@ -21,6 +21,10 @@ challenge when its shape is supported. Browser page discovery, local CDP access
 and session capture run in Python. Importing the library or configuring an
 account does not open a browser or access the network.
 
+The SDK is cached locally. On the next use after six hours, the provider checks
+for updates and conditionally revalidates an unchanged SDK when supported by the
+server. Set `CHATGPT_WEB_SENTINEL_CACHE_TTL_MS` to change the interval in milliseconds.
+
 ## Using an account
 
 ```python

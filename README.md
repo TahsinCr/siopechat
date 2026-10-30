@@ -35,6 +35,8 @@ Keep conversations moving, organize provider projects and compare replies side b
 
 You need Python **3.11+** and Node.js **22+** for SiopeChat. Python discovers and downloads the current ChatGPT Sentinel SDK with size and SHA-256 checks; Node runs that published SDK to generate the initial request context and handle dynamic server challenges such as Turnstile. Python computes proof-of-work only for the validated challenge shape it supports. Browser login and session capture run through the Python provider package. The included installers and launchers check both runtime versions before continuing. The standalone provider package keeps a separate Python 3.10+ contract. Chrome/Chromium is needed only for the explicit sign-in step. Use a Unicode terminal. True color and mouse reporting are recommended.
 
+The SDK is stored in the provider cache. By default, the next use after six hours checks for updates; when supported by the server, an unchanged SDK is revalidated without downloading it again. `CHATGPT_WEB_SENTINEL_CACHE_TTL_MS` changes the interval in milliseconds.
+
 ### Install and launch
 
 Run the one-time installer from the checkout. It checks Python 3.11+ and Node.js 22+, reuses a supported virtual environment if it finds one, and installs SiopeChat plus its Python dependencies there. If no environment exists, it creates `python/` without replacing an existing directory.
