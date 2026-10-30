@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 from accounts import origin
+from providers.timing import SendTiming, collect_send_timing, use_send_timing
 
 from ..markdown import (
     visible_chat_message,
@@ -76,13 +77,16 @@ class SendingComponent:
         message_action=None,
         message_id=None,
         rollback=None,
+        timing: SendTiming | None = None,
     ) -> None:
+        if timing is not None:
+            timing.record_elapsed("submit_to_send_worker_start_ms", timing.started_ns)
         target_tab = self.tabs[tab_index] if target_tab is None else target_tab
 
         def is_active():
             return target_tab is self.tabs[self.active_tab]
 
-        stream = _SendStream(self, target_tab, messages)
+        stream = _SendStream(self, target_tab, messages, timing=timing)
         started = target_tab.get("started", self.active_started)
         elapsed = None
         final_status = "Ready"
@@ -93,19 +97,43 @@ class SendingComponent:
         resolved_id = conversation_id
         resolved_title: str | None = None
         resolved_model: str | None = None
+
         try:
-            result = (send_callback or self.send_prompt)(
-                conversation_id,
-                prompt,
-                attachments,
-                stream.on_event,
-                stream.register_connection,
-                model,
-                effort,
-                **({"project_id": project_id} if project_id else {}),
-                **({"temporary": True} if temporary else {}),
-                **({"action": message_action, "message_id": message_id} if message_action else {}),
-            )
+            if timing is None:
+                result = (send_callback or self.send_prompt)(
+                    conversation_id,
+                    prompt,
+                    attachments,
+                    stream.on_event,
+                    stream.register_connection,
+                    model,
+                    effort,
+                    **({"project_id": project_id} if project_id else {}),
+                    **({"temporary": True} if temporary else {}),
+                    **(
+                        {"action": message_action, "message_id": message_id}
+                        if message_action
+                        else {}
+                    ),
+                )
+            else:
+                with use_send_timing(timing):
+                    result = (send_callback or self.send_prompt)(
+                        conversation_id,
+                        prompt,
+                        attachments,
+                        stream.on_event,
+                        stream.register_connection,
+                        model,
+                        effort,
+                        **({"project_id": project_id} if project_id else {}),
+                        **({"temporary": True} if temporary else {}),
+                        **(
+                            {"action": message_action, "message_id": message_id}
+                            if message_action
+                            else {}
+                        ),
+                    )
             send_succeeded = True
             omitted_count = int(result.get("attachment_omitted_count") or 0)
             if omitted_count:
@@ -279,3 +307,5 @@ class SendingComponent:
                     self._persist_session()
 
             self._dispatch_ui(finish_turn)
+            if timing is not None:
+                collect_send_timing(timing)

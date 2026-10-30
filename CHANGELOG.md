@@ -14,6 +14,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.1b0` for `v1.5.
 
 ### Changed
 
+- Reuse a recently verified ChatGPT conversation snapshot for ordinary continuations on the same provider client, avoiding a duplicate pre-send history request while leaving message actions and branch sends on the authoritative fetch path; render TUI updates at a 16 ms minimum interval and collect opt-in, content-free send-stage latency data with `SIOPECHAT_SEND_TIMINGS=1`.
 - Replace the external Node.js runtime with `quickjs-ng` (`>=0.17.0.2,<0.18`) for ChatGPT Sentinel SDK execution, merge the bounded JSON I/O helper and Sentinel signer into `src/providers/chatgpt/scripts/sign.js`, and keep Sentinel runtime tests in the standalone provider test suite.
 - Cache verified ChatGPT Sentinel SDK files in `src/providers/chatgpt/scripts/` under content-derived names; reuse unchanged versioned SDK files and the QuickJS context.
 - Compile the verified Sentinel SDK once per reused QuickJS context and create fresh per-request SDK state without reparsing its source.

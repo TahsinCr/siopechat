@@ -873,6 +873,32 @@ class MessageToolbarTests(unittest.TestCase):
             self.assertEqual(view.messages[0]["text"].count("↓"), 1)
             self.assertEqual(view.messages[0]["_body_length"], len("Done"))
 
+    def test_first_assistant_text_is_timed_at_the_ui_after_render_hook(self):
+        from providers.timing import SendTiming
+        from tui.chat.stream import _SendStream
+
+        with terminal() as (view, _):
+            view.messages = [{"role": "assistant", "text": ""}]
+            view.tabs[0]["messages"] = view.messages
+            timing = SendTiming()
+            stream = _SendStream(view, view.tabs[0], view.messages, timing=timing)
+            stream.on_event(
+                {
+                    "type": "delta",
+                    "text": "First visible text",
+                    "channel": "final",
+                    "message_id": "answer",
+                }
+            )
+
+            self.assertTrue(stream._after_render_registered)
+            stream._after_first_text_render(view.app)
+            durations, _counts = timing.snapshot()
+
+            self.assertIn("button_to_first_ui_frame_ms", durations)
+            self.assertIn("first_sse_text_to_ui_frame_ms", durations)
+            self.assertEqual(view.messages[-1]["text"], "First visible text")
+
     def test_file_card_retains_metadata_and_starts_the_download_manager(self):
         message = {
             "id": "answer",

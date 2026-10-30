@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import threading
+import time
 import uuid
 from typing import TYPE_CHECKING, Any
+
+from providers.timing import SendTiming
 
 if TYPE_CHECKING:
     from .view import ChatView
@@ -16,13 +19,23 @@ from .contracts import Message
 class _SendStream:
     """Apply provider stream events to one conversation tab."""
 
-    def __init__(self, view: ChatView, target_tab: dict[str, Any], messages: list[Message]):
+    def __init__(
+        self,
+        view: ChatView,
+        target_tab: dict[str, Any],
+        messages: list[Message],
+        timing: SendTiming | None = None,
+    ):
         self.view = view
         self.target_tab = target_tab
         self.messages = messages
+        self.timing = timing
         self.stream_id = uuid.uuid4().hex
         self.rendered = ""
         self.final_message_id = None
+        self._first_final_text_at_ns = None
+        self._after_render_registered = False
+        self._ui_first_text_recorded = False
         self._refresh_lock = threading.Lock()
         self._refresh_pending = False
         self._refresh_status = False
@@ -42,6 +55,14 @@ class _SendStream:
                 update_status = self._refresh_status
                 self._refresh_status = False
                 self._refresh_pending = False
+            if (
+                self.timing is not None
+                and self._first_final_text_at_ns is not None
+                and not self._after_render_registered
+                and self._is_active()
+            ):
+                self.view.app.after_render += self._after_first_text_render
+                self._after_render_registered = True
             if self._is_active():
                 if update_status:
                     self.view.status = self.view.tr("Streaming response…")
@@ -136,4 +157,23 @@ class _SendStream:
         with self.view.lock:
             self.messages[-1]["text"] = self.rendered
             self.target_tab["render_revision"] = self.target_tab.get("render_revision", 0) + 1
+        if (
+            self.timing is not None
+            and self._first_final_text_at_ns is None
+            and event.get("channel") != "analysis"
+            and text.strip()
+        ):
+            self._first_final_text_at_ns = time.perf_counter_ns()
         self._schedule_refresh(show_status=True)
+
+    def _after_first_text_render(self, app) -> None:
+        if self._ui_first_text_recorded or not self._is_active() or not self.rendered:
+            return
+        now = time.perf_counter_ns()
+        self._ui_first_text_recorded = True
+        self.timing.record_elapsed("button_to_first_ui_frame_ms", self.timing.started_ns)
+        self.timing.record(
+            "first_sse_text_to_ui_frame_ms",
+            now - self._first_final_text_at_ns,
+        )
+        app.after_render -= self._after_first_text_render

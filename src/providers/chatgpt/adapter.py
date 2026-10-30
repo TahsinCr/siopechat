@@ -4,6 +4,7 @@ import asyncio
 import concurrent.futures
 import math
 import threading
+import time
 from collections import OrderedDict
 from contextlib import contextmanager
 from typing import Callable
@@ -41,6 +42,7 @@ from ..models import (
 )
 from ..projects import ProjectEditing
 from ..session import delete_session, session_exists
+from ..timing import current_send_timing
 from .client import ChatGPTClient
 from .discovery import project_id
 from .formats import message_files, message_parts
@@ -654,7 +656,13 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
 
         def work():
             try:
+                timing = current_send_timing()
+                scope_started = time.perf_counter_ns() if timing is not None else None
                 with self._client_scope() as client:
+                    if scope_started is not None:
+                        timing.record(
+                            "provider_client_ready_ms", time.perf_counter_ns() - scope_started
+                        )
                     client.temporary_conversations = self._temporary_conversations
                     holder.append(client)
                     if stopped.is_set():

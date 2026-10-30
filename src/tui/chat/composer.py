@@ -9,12 +9,14 @@ import uuid
 
 from providers import Capability
 from providers.models import FeatureState
+from providers.timing import SendTiming, timing_enabled
 
 from ..styles import ICONS
 
 
 class ComposerComponent:
     def submit_prompt(self) -> None:
+        timing = SendTiming() if self.provider_id == "chatgpt" and timing_enabled() else None
         prompt = self.input.text.strip()
         if prompt.startswith("/"):
             self.input.text = ""
@@ -174,7 +176,11 @@ class ComposerComponent:
         self.scroll_bottom()
         threading.Thread(
             target=self.run_send,
-            kwargs={"send_callback": self.send_prompt, "target_tab": self.tabs[self.active_tab]},
+            kwargs={
+                "send_callback": self.send_prompt,
+                "target_tab": self.tabs[self.active_tab],
+                "timing": timing,
+            },
             args=(
                 prompt,
                 attachments,

@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import httpx
@@ -125,6 +126,109 @@ class SendOptionsTests(unittest.TestCase):
             [item["id"] for item in conversation["messages"]],
             ["old-user", "old-assistant", self.requests[0]["messages"][0]["id"], "r-1", "a-1"],
         )
+
+    def test_recent_verified_continuation_reuses_provider_snapshot(self):
+        previous = {
+            "id": "remote",
+            "conversation_id": "remote",
+            "title": "Existing chat",
+            "current_node": "old-assistant",
+            "messages": [
+                {"id": "old-user", "author": {"role": "user"}},
+                {"id": "old-assistant", "author": {"role": "assistant"}},
+            ],
+        }
+        response = Mock()
+        response.json.return_value = previous
+
+        with patch.object(self.client, "request", return_value=response) as get_request:
+            self.client.send_prompt("remote", "First", model="account-thinking")
+            self.client.send_prompt("remote", "Second", model="account-thinking")
+
+        self.assertEqual(get_request.call_count, 1)
+        self.assertEqual(self.requests[1]["parent_message_id"], "a-1")
+        self.assertGreater(self.client._continuation_cache_text_chars, 0)
+        self.assertEqual(len(self.client._continuation_cache), 1)
+
+    def test_continuation_cache_ttl_is_measured_from_verification(self):
+        conversation = {
+            "id": "remote",
+            "current_node": "node",
+            "messages": [{"id": "user", "content": {"parts": ["text"]}}],
+        }
+        with patch("providers.chatgpt.client.time.monotonic", return_value=100.0):
+            self.client._remember_conversation(conversation)
+        with patch("providers.chatgpt.client.time.monotonic", return_value=159.0):
+            self.assertIs(self.client._cached_conversation("remote"), conversation)
+        with patch("providers.chatgpt.client.time.monotonic", return_value=160.0):
+            self.assertIsNone(self.client._cached_conversation("remote"))
+
+    def test_delete_invalidates_verified_continuation(self):
+        self.client._remember_conversation({"id": "remote", "current_node": "node", "messages": []})
+        response = Mock(content=b"")
+        with patch.object(self.client, "request", return_value=response):
+            self.client.delete_conversation("remote")
+
+        self.assertIsNone(self.client._cached_conversation("remote"))
+
+    def test_actions_and_branch_sends_bypass_reusable_snapshot(self):
+        previous = {
+            "id": "remote",
+            "current_node": "old-assistant",
+            "messages": [
+                {"id": "old-user", "author": {"role": "user"}},
+                {"id": "old-assistant", "author": {"role": "assistant"}},
+            ],
+        }
+        submitted = {"id": "submitted", "author": {"role": "user"}}
+        updated = {
+            **previous,
+            "current_node": "new-assistant",
+            "messages": previous["messages"]
+            + [submitted, {"id": "new-assistant", "author": {"role": "assistant"}}],
+        }
+        operations = (
+            ({"action": "retry", "message_id": "old-assistant"}, [previous, updated]),
+            (
+                {"branch": SimpleNamespace(conversation_id="remote", message_id="old-assistant")},
+                [updated],
+            ),
+        )
+
+        for operation, conversation_reads in operations:
+            with self.subTest(operation=tuple(operation)):
+                self.client._remember_conversation(previous)
+                with (
+                    patch.object(
+                        self.client,
+                        "_cached_conversation",
+                        side_effect=AssertionError("action/branch must read the provider"),
+                    ),
+                    patch.object(
+                        self.client, "get_conversation", side_effect=conversation_reads
+                    ) as get_conversation,
+                    patch.object(
+                        self.client,
+                        "send_prompt_direct",
+                        return_value=("remote", "submitted", submitted),
+                    ),
+                ):
+                    self.client.send_prompt(
+                        "remote", "Continue", model="account-thinking", **operation
+                    )
+
+                self.assertEqual(get_conversation.call_count, len(conversation_reads))
+                self.client._forget_conversation("remote")
+
+    def test_uncertain_send_invalidates_the_reusable_snapshot(self):
+        self.client._remember_conversation({"id": "remote", "current_node": "node", "messages": []})
+        with patch.object(
+            self.client, "send_prompt_direct", side_effect=RuntimeError("transport failed")
+        ):
+            with self.assertRaisesRegex(RuntimeError, "transport failed"):
+                self.client.send_prompt("remote", "Continue", model="account-thinking")
+
+        self.assertIsNone(self.client._cached_conversation("remote"))
 
     def test_missing_temporary_context_never_falls_back_to_saved_chat(self):
         self.client.get_conversation = Mock(side_effect=AssertionError("no fallback GET"))

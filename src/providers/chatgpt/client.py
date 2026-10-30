@@ -17,6 +17,7 @@ from urllib.parse import quote, urljoin, urlsplit
 import httpx
 
 from ..errors import RateLimited
+from ..timing import current_send_timing
 from .constants import CHATGPT_ORIGIN, DEFAULT_PAGE_SIZE
 from .discovery import (
     model_catalog as parse_model_catalog,
@@ -35,6 +36,11 @@ from .formats import message_parts, text_from_parts
 from .resources import load_sentinel_sdk
 from .sentinel import SentinelRuntime, generate_enforcement_proof
 from .session import BrowserSession
+
+_CONTINUATION_CACHE_TTL_SECONDS = 60.0
+_CONTINUATION_CACHE_MAX_ITEMS = 4
+_CONTINUATION_CACHE_MAX_MESSAGES = 2_000
+_CONTINUATION_CACHE_MAX_TEXT_CHARS = 1_000_000
 
 
 def system_timezone():
@@ -99,18 +105,29 @@ class ChatGPTClient:
         self.list_url = ""
         self.headers: dict[str, str] = {}
         self.temporary_conversations: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        self._continuation_cache: OrderedDict[str, tuple[float, dict[str, Any], int]] = (
+            OrderedDict()
+        )
+        self._continuation_cache_text_chars = 0
         self._last_stream_messages: list[dict[str, Any]] = []
         self._sentinel_lock = threading.Lock()
         self._sentinel_runtime: SentinelRuntime | None = None
         self._sentinel_runtime_key: tuple[str, str, str] | None = None
+        timing = current_send_timing()
+        http_started = time.perf_counter_ns() if timing is not None else None
         self.http = httpx.Client(
             follow_redirects=False,
             timeout=httpx.Timeout(30.0),
             limits=httpx.Limits(max_keepalive_connections=5, keepalive_expiry=30.0),
         )
+        if http_started is not None:
+            timing.record("httpx_client_construct_ms", time.perf_counter_ns() - http_started)
         if authenticate:
             try:
+                auth_started = time.perf_counter_ns() if timing is not None else None
                 self.refresh_auth()
+                if auth_started is not None:
+                    timing.record("provider_auth_refresh_ms", time.perf_counter_ns() - auth_started)
             except BaseException:
                 self.http.close()
                 raise
@@ -121,7 +138,76 @@ class ChatGPTClient:
                 self._sentinel_runtime.close()
                 self._sentinel_runtime = None
                 self._sentinel_runtime_key = None
+            continuation_cache = getattr(self, "_continuation_cache", None)
+            if continuation_cache is not None:
+                continuation_cache.clear()
+            self._continuation_cache_text_chars = 0
             self.http.close()
+
+    @staticmethod
+    def _conversation_text_size(conversation: dict[str, Any]) -> int:
+        messages = conversation.get("messages")
+        if not isinstance(messages, list):
+            return 0
+        total = 0
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            content = message.get("content")
+            parts = content.get("parts") if isinstance(content, dict) else None
+            if isinstance(parts, list):
+                for part in parts:
+                    if isinstance(part, str):
+                        total += len(part)
+                        if total > _CONTINUATION_CACHE_MAX_TEXT_CHARS:
+                            return total
+        return total
+
+    def _remember_conversation(self, conversation: dict[str, Any]) -> None:
+        conversation_id = conversation.get("conversation_id") or conversation.get("id")
+        messages = conversation.get("messages")
+        if (
+            not isinstance(conversation_id, str)
+            or not conversation_id
+            or "current_node" not in conversation
+            or not isinstance(conversation.get("current_node"), (str, type(None)))
+            or not isinstance(messages, list)
+            or len(messages) > _CONTINUATION_CACHE_MAX_MESSAGES
+        ):
+            if isinstance(conversation_id, str) and conversation_id:
+                self._forget_conversation(conversation_id)
+            return
+        text_size = self._conversation_text_size(conversation)
+        if text_size > _CONTINUATION_CACHE_MAX_TEXT_CHARS:
+            self._forget_conversation(conversation_id)
+            return
+        previous = self._continuation_cache.pop(conversation_id, None)
+        if previous is not None:
+            self._continuation_cache_text_chars -= previous[2]
+        self._continuation_cache[conversation_id] = (time.monotonic(), conversation, text_size)
+        self._continuation_cache_text_chars += text_size
+        while (
+            len(self._continuation_cache) > _CONTINUATION_CACHE_MAX_ITEMS
+            or self._continuation_cache_text_chars > _CONTINUATION_CACHE_MAX_TEXT_CHARS
+        ):
+            _, evicted = self._continuation_cache.popitem(last=False)
+            self._continuation_cache_text_chars -= evicted[2]
+
+    def _cached_conversation(self, conversation_id: str) -> dict[str, Any] | None:
+        cached = self._continuation_cache.get(conversation_id)
+        if cached is None:
+            return None
+        checked_at, conversation, _text_size = cached
+        if time.monotonic() - checked_at >= _CONTINUATION_CACHE_TTL_SECONDS:
+            self._forget_conversation(conversation_id)
+            return None
+        self._continuation_cache.move_to_end(conversation_id)
+        return conversation
+
+    def _forget_conversation(self, conversation_id: str) -> None:
+        cached = self._continuation_cache.pop(conversation_id, None)
+        if cached is not None:
+            self._continuation_cache_text_chars -= cached[2]
 
     def __enter__(self) -> "ChatGPTClient":
         return self
@@ -363,6 +449,7 @@ class ChatGPTClient:
         result = self.request("GET", url).json()
         if not isinstance(result, dict):
             raise ChatGPTWebError("conversation response was not an object")
+        self._remember_conversation(result)
         return result
 
     def rename_conversation(self, conversation_id: str, title: str) -> None:
@@ -384,6 +471,7 @@ class ChatGPTClient:
         )
         if response.content and response.json().get("success") is False:
             raise ChatGPTWebError("ChatGPT sohbeti silmeyi reddetti")
+        self._forget_conversation(conversation_id)
 
     def move_conversation(self, conversation_id: str, project_id: str | None) -> dict[str, Any]:
         """Change native membership, then require the server to confirm it."""
@@ -438,7 +526,30 @@ class ChatGPTClient:
                         "temporary conversation expired locally; start a new temporary chat"
                     )
             else:
-                previous = self.get_conversation(conversation_id)
+                timing = current_send_timing()
+                may_reuse_snapshot = action is None and branch is None
+                cache_lookup_started = (
+                    time.perf_counter_ns() if timing is not None and may_reuse_snapshot else None
+                )
+                cached = self._cached_conversation(conversation_id) if may_reuse_snapshot else None
+                if cache_lookup_started is not None:
+                    timing.record(
+                        "pre_send_conversation_cache_lookup_ms",
+                        time.perf_counter_ns() - cache_lookup_started,
+                    )
+                if cached is not None:
+                    previous = cached
+                    if timing is not None:
+                        timing.increment("pre_send_conversation_cache_hit")
+                else:
+                    started = time.perf_counter_ns() if timing is not None else None
+                    previous = self.get_conversation(conversation_id)
+                    if started is not None:
+                        timing.record(
+                            "pre_send_get_conversation_ms", time.perf_counter_ns() - started
+                        )
+                    if timing is not None and may_reuse_snapshot:
+                        timing.increment("pre_send_conversation_cache_miss")
             previous_messages = previous.get("messages", [])
             if isinstance(previous_messages, list):
                 previous_ids = {
@@ -451,7 +562,13 @@ class ChatGPTClient:
             if previous and extract_project_id(previous) not in (None, project_id):
                 raise ChatGPTWebError("conversation belongs to another project")
             previous = dict(previous or {}, project_id=project_id)
+            if action is not None and conversation_id:
+                self._forget_conversation(conversation_id)
+        timing = current_send_timing()
+        started = time.perf_counter_ns() if timing is not None else None
         catalog = self.model_catalog()
+        if started is not None:
+            timing.record("model_catalog_ms", time.perf_counter_ns() - started)
         model = (
             model
             or (previous.get("default_model_slug") if previous else None)
@@ -463,17 +580,22 @@ class ChatGPTClient:
         if effort is not None and effort not in {item.id for item in selected.efforts}:
             raise ChatGPTWebError(f"Effort '{effort}' is not offered for model '{model}'")
 
-        resolved_id, submitted_message_id, submitted_message = self.send_prompt_direct(
-            previous,
-            prompt,
-            attachments or [],
-            on_event,
-            model,
-            effort,
-            **({"temporary": True} if temporary else {}),
-            **({"action": action, "message_id": message_id} if action else {}),
-            **({"branch": branch} if branch else {}),
-        )
+        try:
+            resolved_id, submitted_message_id, submitted_message = self.send_prompt_direct(
+                previous,
+                prompt,
+                attachments or [],
+                on_event,
+                model,
+                effort,
+                **({"temporary": True} if temporary else {}),
+                **({"action": action, "message_id": message_id} if action else {}),
+                **({"branch": branch} if branch else {}),
+            )
+        except Exception:
+            if conversation_id and not temporary:
+                self._forget_conversation(conversation_id)
+            raise
         if temporary:
             submitted_messages = (
                 [submitted_message]
@@ -548,13 +670,26 @@ class ChatGPTClient:
                     }
                 )
             else:
-                conversation = self.get_conversation(resolved_id)
+                timing = current_send_timing()
+                started = time.perf_counter_ns() if timing is not None else None
+                try:
+                    conversation = self.get_conversation(resolved_id)
+                except Exception:
+                    self._forget_conversation(resolved_id)
+                    raise
+                finally:
+                    if started is not None:
+                        timing.record(
+                            "post_send_get_conversation_ms", time.perf_counter_ns() - started
+                        )
         messages = conversation.get("messages", [])
         attached = isinstance(messages, list) and any(
             isinstance(message, dict) and message.get("id") == submitted_message_id
             for message in messages
         )
         if not attached:
+            if not temporary:
+                self._forget_conversation(resolved_id)
             raise ChatGPTWebError(
                 "ChatGPT did not attach the submitted message to the conversation"
             )
@@ -564,6 +699,8 @@ class ChatGPTClient:
                     break
                 if item.get("id"):
                     previous_ids.add(item["id"])
+        if not temporary:
+            self._remember_conversation(conversation)
         return resolved_id, conversation, previous_ids
 
     def send_prompt_direct(
@@ -673,6 +810,10 @@ class ChatGPTClient:
         final_seen = False
         streamed_messages = OrderedDict()
         self._last_stream_messages = []
+        timing = current_send_timing()
+        sse_connect_started = time.perf_counter_ns() if timing is not None else None
+        first_sse_event = False
+        first_assistant_text = False
         with self.http.stream(
             method,
             url,
@@ -680,6 +821,9 @@ class ChatGPTClient:
             json=body,
             timeout=httpx.Timeout(300.0),
         ) as response:
+            response_opened = time.perf_counter_ns() if timing is not None else None
+            if response_opened is not None:
+                timing.record("sse_connect_ms", response_opened - sse_connect_started)
             if response.status_code == 429:
                 retry_after = response.headers.get("retry-after")
                 suffix = f"; retry after {retry_after} seconds" if retry_after else ""
@@ -692,8 +836,16 @@ class ChatGPTClient:
                     f"ChatGPT returned unexpected content type {content_type or '<missing>'}"
                 )
             for payload in _sse_data(response.iter_lines()):
+                event_at = time.perf_counter_ns() if timing is not None else None
+                if timing is not None and not first_sse_event:
+                    first_sse_event = True
+                    timing.record("sse_first_event_ms", event_at - response_opened)
+                    timing.record("button_to_first_sse_event_ms", event_at - timing.started_ns)
                 if payload == "[DONE]":
                     terminal_seen = True
+                    if timing is not None:
+                        timing.record("sse_last_event_ms", event_at - response_opened)
+                        timing.record("button_to_last_sse_event_ms", event_at - timing.started_ns)
                     break
                 try:
                     event = json.loads(payload)
@@ -734,6 +886,17 @@ class ChatGPTClient:
                 rendered = rendered_by_channel.get(identity, "")
                 if not text or text == rendered:
                     continue
+                if (
+                    timing is not None
+                    and channel != "analysis"
+                    and not first_assistant_text
+                    and text.strip()
+                ):
+                    first_assistant_text = True
+                    timing.record(
+                        "sse_first_assistant_text_ms", time.perf_counter_ns() - response_opened
+                    )
+                    timing.record("button_to_first_assistant_text_ms", event_at - timing.started_ns)
                 if on_event is not None:
                     on_event(
                         {
@@ -753,11 +916,16 @@ class ChatGPTClient:
         return resolved_id, submitted_message_id, submitted_message
 
     def create_sentinel_headers(self) -> dict[str, str]:
+        timing = current_send_timing()
+        started = time.perf_counter_ns() if timing is not None else None
         sdk = load_sentinel_sdk(self.session.paths.cache)
+        if started is not None:
+            timing.record("sdk_source_cache_ms", time.perf_counter_ns() - started)
         user_agent = self.headers.get("user-agent") or "Mozilla/5.0"
         runtime_key = (sdk.sha256, sdk.implementation, user_agent)
         with self._sentinel_lock:
             runtime = self._sentinel_runtime
+            local_started = time.perf_counter_ns() if timing is not None else None
             if runtime is None or self._sentinel_runtime_key != runtime_key:
                 replacement = SentinelRuntime(sdk, user_agent=user_agent)
                 previous_runtime = runtime
@@ -767,11 +935,16 @@ class ChatGPTClient:
                 if previous_runtime is not None:
                     previous_runtime.close()
             initial = runtime.create_initial_proof()
+            if local_started is not None:
+                timing.record("local_validation_prepare_ms", time.perf_counter_ns() - local_started)
+            prepare_started = time.perf_counter_ns() if timing is not None else None
             requirements = self.request(
                 "POST",
                 urljoin(CHATGPT_ORIGIN, "/backend-api/sentinel/chat-requirements/prepare"),
                 json={"p": initial},
             ).json()
+            if prepare_started is not None:
+                timing.record("sentinel_prepare_http_ms", time.perf_counter_ns() - prepare_started)
             if not isinstance(requirements, dict):
                 raise ChatGPTWebError("Sentinel prepare returned an invalid response")
             prepare_token = requirements.get("prepare_token")
@@ -794,10 +967,17 @@ class ChatGPTClient:
                     {"prepare_token", "proofofwork", "turnstile", "token"}
                 )
             ):
+                enforcement_started = time.perf_counter_ns() if timing is not None else None
                 proof = generate_enforcement_proof(initial, requirements)
                 turnstile = None
             else:
+                enforcement_started = time.perf_counter_ns() if timing is not None else None
                 _, proof, turnstile = runtime.create_enforcement_tokens(requirements)
+            if enforcement_started is not None:
+                timing.record(
+                    "local_validation_enforcement_ms",
+                    time.perf_counter_ns() - enforcement_started,
+                )
 
         if not isinstance(proof, str) or not proof:
             raise SentinelCompatibilityError("Sentinel did not return required enforcement tokens")

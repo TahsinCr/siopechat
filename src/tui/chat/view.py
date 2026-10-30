@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import threading
 import uuid
 from typing import Any, Callable
@@ -19,6 +20,7 @@ from prompt_toolkit.widgets import TextArea
 
 from providers import Capability
 from providers.models import FeatureState, ModelCatalog
+from providers.timing import send_timing_report, timing_enabled
 from settings import DEFAULT_KEYBINDINGS
 
 from ..bindings import key_bindings
@@ -512,3 +514,7 @@ def run_tui(
         view.restore_session(initial_session)
     initial_messages = None
     view.run()
+    if timing_enabled():
+        report = send_timing_report()
+        if report:
+            print(report, file=sys.stderr)
