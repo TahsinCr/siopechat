@@ -366,7 +366,7 @@ class ChatView(
             key_bindings=DynamicKeyBindings(lambda: self.bindings),
             full_screen=True,
             mouse_support=Condition(lambda: self.mouse_enabled),
-            min_redraw_interval=0.05,
+            min_redraw_interval=0.016,
             max_render_postpone_time=0.1,
             style=Style.from_dict(
                 prompt_toolkit_style_map(DEFAULT_TERMINAL_STYLES, DEFAULT_ROLE_STYLES, ICONS)
