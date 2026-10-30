@@ -20,6 +20,7 @@ from .errors import SentinelCompatibilityError
 _BOOTSTRAP_URL = "https://chatgpt.com/backend-api/sentinel/sdk.js"
 _TRUSTED_HOSTS = {"chatgpt.com", "sentinel.openai.com"}
 _MAX_SDK_BYTES = 8 * 1024 * 1024
+_MAX_MANIFEST_BYTES = 64 * 1024
 _DEFAULT_CACHE_TTL_MS = 6 * 60 * 60 * 1000
 _SDK_FILE = re.compile(r"sdk-[a-f0-9]{16}\.js\Z")
 _SDK_REFERENCE = re.compile(r"script\.src\s*=\s*(['\"])(.*?)\1")
@@ -61,8 +62,21 @@ def _validate_sdk_url(value: str) -> str:
     return value
 
 
+def _read_bounded_file(path: Path, limit: int) -> bytes:
+    with path.open("rb") as stream:
+        size = os.fstat(stream.fileno()).st_size
+        if size > limit:
+            raise ValueError("cached Sentinel resource exceeds its size limit")
+        data = stream.read(size)
+        if stream.read(1):
+            raise ValueError("cached Sentinel resource changed while reading")
+    return data
+
+
 def _read_cached_sdk(directory: Path) -> tuple[SentinelSDK, int]:
-    manifest = json.loads((directory / "current.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        _read_bounded_file(directory / "current.json", _MAX_MANIFEST_BYTES).decode("utf-8")
+    )
     if (
         not isinstance(manifest, dict)
         or type(manifest.get("version")) is not int
@@ -82,9 +96,7 @@ def _read_cached_sdk(directory: Path) -> tuple[SentinelSDK, int]:
     ):
         raise ValueError("invalid Sentinel SDK cache manifest fields")
     implementation = _validate_sdk_url(implementation)
-    source_bytes = (directory / filename).read_bytes()
-    if len(source_bytes) > _MAX_SDK_BYTES:
-        raise ValueError("cached Sentinel SDK exceeds its size limit")
+    source_bytes = _read_bounded_file(directory / filename, _MAX_SDK_BYTES)
     if hashlib.sha256(source_bytes).hexdigest() != digest:
         raise ValueError("cached Sentinel SDK failed its SHA-256 check")
     source = source_bytes.decode("utf-8")
@@ -97,10 +109,10 @@ def _fetch_text(client: httpx.Client, url: str) -> str:
         if response.status_code != 200:
             raise SentinelCompatibilityError("Sentinel SDK request was not successful")
         for chunk in response.iter_bytes():
-            data.extend(chunk)
-            if len(data) > _MAX_SDK_BYTES:
+            if len(chunk) > _MAX_SDK_BYTES - len(data):
                 raise SentinelCompatibilityError("Sentinel SDK exceeds its size limit")
-    return bytes(data).decode("utf-8")
+            data.extend(chunk)
+    return data.decode("utf-8")
 
 
 def _write_atomic(path: Path, content: bytes) -> None:
@@ -166,8 +178,8 @@ def load_sentinel_sdk(cache_root: Path, *, client: httpx.Client | None = None) -
         filename = f"sdk-{digest[:16]}.js"
         source_path = directory / filename
         try:
-            existing = source_path.read_bytes()
-        except OSError:
+            existing = _read_bounded_file(source_path, _MAX_SDK_BYTES)
+        except (OSError, ValueError):
             existing = b""
         if hashlib.sha256(existing).hexdigest() != digest:
             _write_atomic(source_path, source_bytes)

@@ -20,6 +20,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.1b0` for `v1.5.
 
 ### Fixed
 
+- Bound local SDK cache and Chromium profile-state reads before allocation; reject oversized downloads before appending their chunks.
 - Bound individual CDP messages and the queued event buffer; fail explicitly on queue overflow instead of silently discarding session-capture events.
 - Reuse the validated local DevTools endpoint check for ChatGPT browser readiness and reject malformed provider cookies before filtering.
 - Restore the SDK fallback for Turnstile and unrecognized Sentinel requirement shapes; keep the SDK-generated initial context instead of substituting an unverified Python context.

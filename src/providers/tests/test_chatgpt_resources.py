@@ -1,6 +1,7 @@
 import hashlib
 import json
 import tempfile
+import tracemalloc
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -70,6 +71,52 @@ class SentinelResourceTests(unittest.TestCase):
                 refreshed = load_sentinel_sdk(self.cache_root, client=client)
         self.assertEqual(refreshed.source, SOURCE)
         self.assertEqual(cached_file.read_text(encoding="utf-8"), SOURCE)
+
+    def test_oversized_cached_sdk_is_replaced_without_reading_it_into_memory(self):
+        responses = {
+            BOOTSTRAP: httpx.Response(200, text=f"script.src = '{IMPLEMENTATION}'"),
+            IMPLEMENTATION: httpx.Response(200, text=SOURCE),
+        }
+        with self.client_for(responses) as client:
+            loaded = load_sentinel_sdk(self.cache_root, client=client)
+        cached_file = self.cache_root / "sentinel" / f"sdk-{loaded.sha256[:16]}.js"
+        with cached_file.open("wb") as stream:
+            stream.truncate(16 * 1024 * 1024)
+
+        with patch("providers.chatgpt.resources._MAX_SDK_BYTES", 128):
+            with self.client_for(responses) as client:
+                already_tracing = tracemalloc.is_tracing()
+                if not already_tracing:
+                    tracemalloc.start()
+                baseline, _ = tracemalloc.get_traced_memory()
+                tracemalloc.reset_peak()
+                try:
+                    refreshed = load_sentinel_sdk(self.cache_root, client=client)
+                    _, peak = tracemalloc.get_traced_memory()
+                finally:
+                    if not already_tracing:
+                        tracemalloc.stop()
+
+        self.assertEqual(refreshed.source, SOURCE)
+        self.assertEqual(cached_file.read_text(encoding="utf-8"), SOURCE)
+        self.assertLess(peak - baseline, 2 * 1024 * 1024)
+
+    def test_oversized_cache_manifest_is_refreshed(self):
+        responses = {
+            BOOTSTRAP: httpx.Response(200, text=f"script.src = '{IMPLEMENTATION}'"),
+            IMPLEMENTATION: httpx.Response(200, text=SOURCE),
+        }
+        with self.client_for(responses) as client:
+            loaded = load_sentinel_sdk(self.cache_root, client=client)
+        manifest = self.cache_root / "sentinel" / "current.json"
+        manifest.write_bytes(b"x" * 1025)
+
+        with patch("providers.chatgpt.resources._MAX_MANIFEST_BYTES", 1024):
+            with self.client_for(responses) as client:
+                refreshed = load_sentinel_sdk(self.cache_root, client=client)
+
+        self.assertEqual(refreshed.source, loaded.source)
+        self.assertEqual(json.loads(manifest.read_text(encoding="utf-8"))["sha256"], loaded.sha256)
 
     def test_verified_stale_cache_is_used_when_refresh_fails(self):
         responses = {

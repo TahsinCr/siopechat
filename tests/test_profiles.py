@@ -51,6 +51,20 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(result.cookies, path)
         self.assertEqual(result.key_file, path.parents[2] / "Local State")
 
+    def test_oversized_chromium_state_does_not_select_another_profile(self):
+        root = self.home / ".config/BraveSoftware/Brave-Origin"
+        self.chromium(root)
+        with (root / "Local State").open("wb") as stream:
+            stream.truncate(8 * 1024 * 1024 + 1)
+        with (
+            patch("providers.profiles._default_id", return_value="brave-origin.desktop"),
+            patch("providers.profiles.sys.platform", "linux"),
+            patch("providers.profiles.Path.home", return_value=self.home),
+            patch.dict(os.environ, {"XDG_CONFIG_HOME": str(self.home / ".config")}),
+        ):
+            with self.assertRaises(ProfileError):
+                default_profile()
+
     def test_windows_edge_and_macos_chrome_roots(self):
         cases = [
             ("win32", "MSEdgeHTM", "Microsoft/Edge/User Data", "edge"),

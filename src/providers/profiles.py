@@ -160,9 +160,15 @@ AUTH_COOKIE = re.compile(r"__Secure-(?:next-auth|authjs)\.session-token(?:\.\d+)
 
 def _read_json(path):
     try:
-        if path.stat().st_size > 8 * 1024 * 1024:
-            return {}
-        value = json.loads(path.read_text(encoding="utf-8"))
+        limit = 8 * 1024 * 1024
+        with path.open("rb") as stream:
+            size = os.fstat(stream.fileno()).st_size
+            if size > limit:
+                return {}
+            data = stream.read(size)
+            if stream.read(1):
+                return {}
+        value = json.loads(data.decode("utf-8"))
         return value if isinstance(value, dict) else {}
     except (OSError, ValueError):
         return {}
