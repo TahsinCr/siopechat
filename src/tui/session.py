@@ -326,9 +326,11 @@ class SessionDialog:
                 self.view.session_state["authenticated"] = True
                 self.view.refresh_sidebar()
                 self.view.refresh_provider_catalog()
+                family = result.get("imported_family", "")
+                family_label = self.view.text(f"profile_family_{family}", family)
                 self.message = self.view.text(
-                    "profile_verified", "Profil doğrulandı: {browser}"
-                ).format(browser=result.get("imported_browser", ""))
+                    "profile_verified", "Profil doğrulandı: {family}"
+                ).format(family=family_label)
             else:
                 self.message = ""
             self.view.app.invalidate()

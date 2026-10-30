@@ -72,9 +72,68 @@ def _failure_code(error):
 
 @dataclass(frozen=True)
 class BrowserProfile:
-    browser: str
+    family: str
+    cookie_backend: str | None
     cookies: Path
     key_file: Path | None = None
+
+
+@dataclass(frozen=True)
+class _BrowserSource:
+    family: str
+    cookie_backend: str | None
+    location: str
+
+
+# Profile layout and cookie handling follow browser engines. A source entry only
+# supplies the OS-specific root and, for Chromium, the OS keyring identity.
+_BROWSER_SOURCES = (
+    (("brave-origin", "brave.origin"), _BrowserSource("chromium", "brave", "brave-origin")),
+    (("brave",), _BrowserSource("chromium", "brave", "brave")),
+    (("zen",), _BrowserSource("firefox", None, "zen")),
+    (("firefox",), _BrowserSource("firefox", None, "firefox")),
+    (
+        ("msedge", "microsoft-edge", "com.microsoft.edge", "edg."),
+        _BrowserSource("chromium", "edge", "edge"),
+    ),
+    (("chromium",), _BrowserSource("chromium", "chromium", "chromium")),
+    (("chrome",), _BrowserSource("chromium", "chrome", "chrome")),
+    (("vivaldi",), _BrowserSource("chromium", "vivaldi", "vivaldi")),
+    (("safari",), _BrowserSource("safari", "safari", "safari")),
+)
+
+_CHROMIUM_PROFILE_ROOTS = {
+    "chrome": {
+        "win32": "Google/Chrome/User Data",
+        "darwin": "Google/Chrome",
+        "linux": "google-chrome",
+    },
+    "chromium": {
+        "win32": "Chromium/User Data",
+        "darwin": "Chromium",
+        "linux": "chromium",
+    },
+    "brave": {
+        "win32": "BraveSoftware/Brave-Browser/User Data",
+        "darwin": "BraveSoftware/Brave-Browser",
+        "linux": "BraveSoftware/Brave-Browser",
+    },
+    "brave-origin": {
+        "win32": "BraveSoftware/Brave-Origin/User Data",
+        "darwin": "BraveSoftware/Brave-Origin",
+        "linux": "BraveSoftware/Brave-Origin",
+    },
+    "edge": {
+        "win32": "Microsoft/Edge/User Data",
+        "darwin": "Microsoft Edge",
+        "linux": "microsoft-edge",
+    },
+    "vivaldi": {
+        "win32": "Vivaldi/User Data",
+        "darwin": "Vivaldi",
+        "linux": "vivaldi",
+    },
+}
 
 
 # Host matching below is stricter than browser-cookie3's SQL substring filter.
@@ -199,12 +258,7 @@ def _is_safari_profile_id(value):
     return True
 
 
-def default_profile():
-    """Resolve one browser and one profile; never merge or probe other accounts."""
-    try:
-        name = _default_id().lower()
-    except (OSError, ValueError, subprocess.SubprocessError):
-        raise ProfileError("Varsayılan tarayıcı belirlenemedi") from None
+def _browser_source(name):
     if any(
         channel in name
         for channel in (
@@ -217,101 +271,69 @@ def default_profile():
         )
     ):
         raise ProfileError("Varsayılan tarayıcının profili desteklenmiyor")
-    if "brave" in name and "origin" in name:
-        name = "brave-origin"
-    browser = next(
-        (
-            value
-            for token, value in (
-                ("brave-origin", "brave-origin"),
-                ("brave.origin", "brave-origin"),
-                ("brave", "brave"),
-                ("zen", "zen"),
-                ("firefox", "firefox"),
-                ("msedge", "edge"),
-                ("microsoft-edge", "edge"),
-                ("com.microsoft.edge", "edge"),
-                ("edg.", "edge"),
-                ("chromium", "chromium"),
-                ("chrome", "chrome"),
-                ("vivaldi", "vivaldi"),
-                ("safari", "safari"),
-            )
-            if token in name
-        ),
+    return next(
+        (source for tokens, source in _BROWSER_SOURCES if any(token in name for token in tokens)),
         None,
     )
-    if browser is None:
+
+
+def _chromium_root(location, browser_name, home):
+    roots = _CHROMIUM_PROFILE_ROOTS[location]
+    if sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA", home / "AppData/Local"))
+        return base / roots["win32"]
+    if sys.platform == "darwin":
+        base = home / "Library/Application Support"
+        return base / roots["darwin"]
+    if location == "chrome" and browser_name.startswith("com.google.chrome"):
+        return home / ".var/app/com.google.Chrome/config/google-chrome"
+    base = Path(os.environ.get("XDG_CONFIG_HOME", home / ".config"))
+    return base / roots["linux"]
+
+
+def _firefox_root(location, browser_name, home):
+    if sys.platform == "win32":
+        base = Path(os.environ.get("APPDATA", home / "AppData/Roaming"))
+        return base / ("Mozilla/Firefox" if location == "firefox" else "zen")
+    if sys.platform == "darwin":
+        base = home / "Library/Application Support"
+        return base / ("Firefox" if location == "firefox" else "zen")
+
+    config = Path(os.environ.get("XDG_CONFIG_HOME", home / ".config"))
+    if location == "firefox":
+        roots = [home / ".mozilla/firefox", home / "snap/firefox/common/.mozilla/firefox"]
+        flatpak = home / ".var/app/org.mozilla.firefox/.mozilla/firefox"
+        if "flatpak" in browser_name or browser_name.startswith("org.mozilla."):
+            roots.insert(0, flatpak)
+        if "firefox_firefox" in browser_name:
+            roots.reverse()
+    else:
+        roots = [config / "zen", home / ".zen"]
+        if "app.zen_browser" in browser_name:
+            sandbox = home / ".var/app/app.zen_browser.zen"
+            roots = [sandbox / "config/zen", sandbox / ".zen", sandbox / "zen"]
+    return next((root for root in roots if (root / "profiles.ini").is_file()), roots[0])
+
+
+def default_profile():
+    """Resolve a profile by browser engine; never merge profiles or accounts."""
+    try:
+        name = _default_id().lower()
+    except (OSError, ValueError, subprocess.SubprocessError):
+        raise ProfileError("Varsayılan tarayıcı belirlenemedi") from None
+    source = _browser_source(name)
+    if source is None:
         raise ProfileError("Varsayılan tarayıcının profili desteklenmiyor")
     home = Path.home()
-    if browser == "safari":
+    if source.family == "safari":
         if sys.platform != "darwin":
             raise ProfileError("Safari profilleri yalnızca macOS üzerinde destekleniyor")
-        return BrowserProfile(browser, _safari_cookie_file(home))
-    if sys.platform == "win32":
-        local = Path(os.environ.get("LOCALAPPDATA", home / "AppData/Local"))
-        paths = {
-            "chrome": local / "Google/Chrome/User Data",
-            "chromium": local / "Chromium/User Data",
-            "brave": local / "BraveSoftware/Brave-Browser/User Data",
-            "brave-origin": local / "BraveSoftware/Brave-Origin/User Data",
-            "edge": local / "Microsoft/Edge/User Data",
-            "vivaldi": local / "Vivaldi/User Data",
-            "firefox": Path(os.environ.get("APPDATA", home / "AppData/Roaming"))
-            / "Mozilla/Firefox",
-            "zen": Path(os.environ.get("APPDATA", home / "AppData/Roaming")) / "zen",
-        }
-    elif sys.platform == "darwin":
-        base = home / "Library/Application Support"
-        paths = {
-            key: base / part
-            for key, part in {
-                "chrome": "Google/Chrome",
-                "chromium": "Chromium",
-                "brave": "BraveSoftware/Brave-Browser",
-                "brave-origin": "BraveSoftware/Brave-Origin",
-                "edge": "Microsoft Edge",
-                "vivaldi": "Vivaldi",
-                "firefox": "Firefox",
-                "zen": "zen",
-            }.items()
-        }
-    else:
-        base = Path(os.environ.get("XDG_CONFIG_HOME", home / ".config"))
-        paths = {
-            key: base / part
-            for key, part in {
-                "chrome": "google-chrome",
-                "chromium": "chromium",
-                "brave": "BraveSoftware/Brave-Browser",
-                "brave-origin": "BraveSoftware/Brave-Origin",
-                "edge": "microsoft-edge",
-                "vivaldi": "vivaldi",
-            }.items()
-        }
-        paths["firefox"] = home / ".mozilla/firefox"
-        firefox_roots = [paths["firefox"], home / "snap/firefox/common/.mozilla/firefox"]
-        flatpak = home / ".var/app/org.mozilla.firefox/.mozilla/firefox"
-        if "flatpak" in name or name.startswith("org.mozilla."):
-            firefox_roots.insert(0, flatpak)
-        if "firefox_firefox" in name:
-            firefox_roots.reverse()
-        paths["firefox"] = next(
-            (root for root in firefox_roots if (root / "profiles.ini").is_file()), paths["firefox"]
-        )
-        zen_roots = [base / "zen", home / ".zen"]
-        if "app.zen_browser" in name:
-            sandbox = home / ".var/app/app.zen_browser.zen"
-            zen_roots = [sandbox / "config/zen", sandbox / ".zen", sandbox / "zen"]
-        paths["zen"] = next(
-            (root for root in zen_roots if (root / "profiles.ini").is_file()), zen_roots[0]
-        )
-        if name.startswith("com.google.chrome"):
-            paths["chrome"] = home / ".var/app/com.google.Chrome/config/google-chrome"
-    root = paths[browser]
-    if browser in ("firefox", "zen"):
+        return BrowserProfile("safari", "safari", _safari_cookie_file(home))
+    if source.family == "firefox":
+        root = _firefox_root(source.location, name, home)
         cookies, key = _firefox_profile(root) / "cookies.sqlite", None
     else:
+        root = _chromium_root(source.location, name, home)
         state = _read_json(root / "Local State")
         if (root / "Local State").is_file() and not state:
             raise ProfileError("Varsayılan tarayıcı profili bulunamadı")
@@ -331,7 +353,7 @@ def default_profile():
         key = root / "Local State"
     if not cookies.is_file():
         raise ProfileError("Varsayılan tarayıcı profili bulunamadı")
-    return BrowserProfile(browser, cookies, key)
+    return BrowserProfile(source.family, source.cookie_backend, cookies, key)
 
 
 def _firefox_profile(root):
@@ -409,7 +431,8 @@ def import_cookies(provider):
             input=json.dumps(
                 {
                     "provider": provider,
-                    "browser": profile.browser,
+                    "family": profile.family,
+                    "cookie_backend": profile.cookie_backend,
                     "cookies": str(profile.cookies),
                     "key_file": str(profile.key_file) if profile.key_file else None,
                 }
@@ -445,7 +468,7 @@ def import_cookies(provider):
             raise ValueError("invalid result")
     except ValueError:
         raise ProfileError("Profil okuma sonucu geçersiz") from None
-    return profile.browser, values
+    return profile.family, values
 
 
 def _firefox_rows(cookie_file, provider):
@@ -553,8 +576,8 @@ def _main():
         import browser_cookie3
 
         data = json.load(sys.stdin)
-        browser = "brave" if data["browser"] == "brave-origin" else data["browser"]
-        if browser in ("firefox", "zen"):
+        family = data["family"]
+        if family == "firefox":
             # Firefox containers can contain other signed-in accounts. Read only
             # the default container; the upstream loader merges container rows.
             from http.cookiejar import CookieJar
@@ -575,7 +598,7 @@ def _main():
                     )
                 )
         else:
-            jar = getattr(browser_cookie3, browser)(
+            jar = getattr(browser_cookie3, data["cookie_backend"])(
                 cookie_file=data["cookies"],
                 key_file=data["key_file"],
                 domain_name="google.com"

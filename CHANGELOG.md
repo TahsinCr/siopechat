@@ -10,7 +10,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.1b0` for `v1.5.
 
 ### Added
 
-- Support profile-based session import from the last active Safari profile on macOS; Firefox and Zen profile readers remain available on their supported platforms.
+- Group profile-based cookie import around Chromium and Firefox engine families, keeping only platform profile roots and Chromium keyring identities browser-specific; retain Safari's separate macOS WebKit reader.
 
 ### Changed
 

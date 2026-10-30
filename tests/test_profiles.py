@@ -46,9 +46,10 @@ class ProfileTests(unittest.TestCase):
             patch.dict(os.environ, {"XDG_CONFIG_HOME": str(self.home / ".config")}),
         ):
             result = default_profile()
-        self.assertEqual(
-            result, BrowserProfile("brave-origin", path, path.parents[2] / "Local State")
-        )
+        self.assertEqual(result.family, "chromium")
+        self.assertEqual(result.cookie_backend, "brave")
+        self.assertEqual(result.cookies, path)
+        self.assertEqual(result.key_file, path.parents[2] / "Local State")
 
     def test_windows_edge_and_macos_chrome_roots(self):
         cases = [
@@ -63,8 +64,10 @@ class ProfileTests(unittest.TestCase):
                 patch("providers.profiles.Path.home", return_value=self.home),
                 patch.dict(os.environ, {"LOCALAPPDATA": str(self.home)}),
             ):
-                self.assertEqual(default_profile().cookies, path)
-                self.assertEqual(default_profile().browser, browser)
+                profile = default_profile()
+                self.assertEqual(profile.cookies, path)
+                self.assertEqual(profile.family, "chromium")
+                self.assertEqual(profile.cookie_backend, browser)
 
     def test_safari_profile_is_rejected_outside_macos(self):
         with (
@@ -91,7 +94,7 @@ class ProfileTests(unittest.TestCase):
                     patch("providers.profiles.Path.home", return_value=home),
                 ):
                     profile = default_profile()
-                self.assertEqual(profile, BrowserProfile("safari", cookie_file))
+                self.assertEqual(profile, BrowserProfile("safari", "safari", cookie_file))
 
     def test_macos_safari_uses_last_active_named_profile_cookie_file(self):
         profile_id = "13EC6641-7983-4826-99EE-1D6D57AE3388"
@@ -111,7 +114,7 @@ class ProfileTests(unittest.TestCase):
             patch("providers.profiles.subprocess.run", return_value=active_profile),
         ):
             profile = default_profile()
-        self.assertEqual(profile, BrowserProfile("safari", cookie_file))
+        self.assertEqual(profile, BrowserProfile("safari", "safari", cookie_file))
 
     def test_macos_safari_never_falls_back_from_missing_active_profile(self):
         profile_id = "13EC6641-7983-4826-99EE-1D6D57AE3388"
@@ -138,7 +141,8 @@ class ProfileTests(unittest.TestCase):
         cookie_file.touch()
         data = {
             "provider": "claude",
-            "browser": "safari",
+            "family": "safari",
+            "cookie_backend": "safari",
             "cookies": str(cookie_file),
             "key_file": None,
         }
@@ -195,7 +199,10 @@ class ProfileTests(unittest.TestCase):
                     patch("providers.profiles.Path.home", return_value=home),
                     patch.dict(os.environ, {"XDG_CONFIG_HOME": str(home / ".config")}),
                 ):
-                    self.assertEqual(default_profile().cookies, root / "chosen/cookies.sqlite")
+                    profile = default_profile()
+                    self.assertEqual(profile.cookies, root / "chosen/cookies.sqlite")
+                    self.assertEqual(profile.family, "firefox")
+                    self.assertIsNone(profile.cookie_backend)
 
     def test_firefox_does_not_guess_between_multiple_unselected_profiles(self):
         from providers.profiles import _firefox_profile
@@ -217,7 +224,7 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(len(values), 2)
 
     def test_keyring_timeout_and_unsafe_errors_are_sanitized(self):
-        profile = BrowserProfile("brave", self.home / "Cookies")
+        profile = BrowserProfile("chromium", "brave", self.home / "Cookies")
         with (
             patch("providers.profiles.default_profile", return_value=profile),
             patch(
@@ -256,7 +263,8 @@ class ProfileTests(unittest.TestCase):
                     continue
                 data = {
                     "provider": "claude",
-                    "browser": "brave",
+                    "family": "chromium",
+                    "cookie_backend": "brave",
                     "cookies": "/unused",
                     "key_file": None,
                 }
@@ -270,7 +278,7 @@ class ProfileTests(unittest.TestCase):
                 self.assertEqual(output.getvalue(), "")
 
     def test_dependency_failure_does_not_claim_keyring_or_browser_lock(self):
-        profile = BrowserProfile("brave", self.home / "Cookies")
+        profile = BrowserProfile("chromium", "brave", self.home / "Cookies")
         with (
             patch("providers.profiles.default_profile", return_value=profile),
             patch(
@@ -301,12 +309,16 @@ class ProfileTests(unittest.TestCase):
             db.commit()
         before = path.read_bytes()
         with patch(
-            "providers.profiles.default_profile", return_value=BrowserProfile("firefox", path)
+            "providers.profiles.default_profile",
+            return_value=BrowserProfile("firefox", None, path),
         ):
             browser, values = import_cookies("claude")
-        with patch("providers.profiles.default_profile", return_value=BrowserProfile("zen", path)):
+        with patch(
+            "providers.profiles.default_profile",
+            return_value=BrowserProfile("firefox", None, path),
+        ):
             zen_browser, zen_values = import_cookies("claude")
-        self.assertEqual(zen_browser, "zen")
+        self.assertEqual(zen_browser, "firefox")
         self.assertEqual(zen_values, values)
         self.assertEqual(browser, "firefox")
         self.assertEqual(values, {"sessionKey": "default-session"})
@@ -389,7 +401,8 @@ class ProfileTests(unittest.TestCase):
         current.write_bytes(b"mozLz40\0" + lz4.block.compress(json.dumps(payload).encode()))
         for browser in ("firefox", "zen"):
             with patch(
-                "providers.profiles.default_profile", return_value=BrowserProfile(browser, path)
+                "providers.profiles.default_profile",
+                return_value=BrowserProfile("firefox", None, path),
             ):
                 _, values = import_cookies("claude")
             self.assertEqual(values, {"sessionKey": "live-session"})
@@ -426,7 +439,8 @@ class ProfileTests(unittest.TestCase):
 
         data = {
             "provider": "claude",
-            "browser": "brave",
+            "family": "chromium",
+            "cookie_backend": "brave",
             "cookies": "/nonexistent",
             "key_file": None,
         }

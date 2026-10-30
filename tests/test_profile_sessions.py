@@ -27,9 +27,7 @@ class ProfileAccountTests(unittest.TestCase):
             authenticate=AsyncMock(side_effect=RuntimeError("rejected")), close=AsyncMock()
         )
         with (
-            patch(
-                "accounts.import_cookies", return_value=("brave-origin", {"__Secure-1PSID": "new"})
-            ),
+            patch("accounts.import_cookies", return_value=("chromium", {"__Secure-1PSID": "new"})),
             patch("accounts.GeminiProvider", return_value=candidate),
         ):
             with self.assertRaisesRegex(RuntimeError, "rejected"):
@@ -49,9 +47,7 @@ class ProfileAccountTests(unittest.TestCase):
             close=AsyncMock(),
         )
         with (
-            patch(
-                "accounts.import_cookies", return_value=("brave-origin", {"__Secure-1PSID": "new"})
-            ),
+            patch("accounts.import_cookies", return_value=("chromium", {"__Secure-1PSID": "new"})),
             patch("accounts.GeminiProvider", return_value=candidate),
             patch(
                 "providers.chatgpt.session.BrowserSession.launch",
@@ -60,7 +56,7 @@ class ProfileAccountTests(unittest.TestCase):
         ):
             state = self.accounts.session_action(self.gemini, "verify_profile")
         self.assertTrue(state["authenticated"])
-        self.assertEqual(state["imported_browser"], "brave-origin")
+        self.assertEqual(state["imported_family"], "chromium")
         self.assertEqual(path.load(), {"__Secure-1PSID": "new"})
         self.assertNotIn(self.gemini, self.accounts._catalogs)
         self.assertFalse(self.accounts.credentials("chatgpt/default").exists())
@@ -127,7 +123,7 @@ class ProfileUiTests(unittest.IsolatedAsyncioTestCase):
         with terminal(
             session_action=lambda action: {
                 "authenticated": True,
-                "imported_browser": "brave-origin",
+                "imported_family": "chromium",
             }
         ) as (view, _):
             pending = []

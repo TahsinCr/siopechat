@@ -883,7 +883,7 @@ class Accounts:
                 raise RuntimeError("Önce devam eden işlemi tamamlayın veya durdurun")
             self._session_changes.add(key)
         try:
-            browser, cookies = import_cookies(self.item(key)["provider"])
+            family, cookies = import_cookies(self.item(key)["provider"])
 
             async def verify_candidate():
                 # Validate independently before replacing any working session.
@@ -928,7 +928,7 @@ class Accounts:
                     self._remember_verification(key, resume=True)
 
             self.call(verify_candidate(), timeout=90)
-            return dict(self.status(key), imported_browser=browser)
+            return dict(self.status(key), imported_family=family)
         finally:
             with self._lock:
                 self._session_changes.discard(key)
