@@ -9,9 +9,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from prompt_toolkit.data_structures import Point, Size
+from prompt_toolkit.data_structures import Point
 from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
-from prompt_toolkit.output import DummyOutput
 from prompt_toolkit.utils import get_cwidth
 
 from backend import BackendService
@@ -606,13 +605,7 @@ class DialogInputTests(unittest.IsolatedAsyncioTestCase):
                 await run
 
     async def test_bottom_metadata_and_uniform_background_after_sidebar_toggles(self):
-        class Output(DummyOutput):
-            size = Size(rows=24, columns=80)
-
-            def get_size(self):
-                return self.size
-
-        output = Output()
+        output = ResizableOutput(rows=24, columns=80)
         with terminal(
             output=output,
             initial_messages=[
@@ -641,7 +634,7 @@ class DialogInputTests(unittest.IsolatedAsyncioTestCase):
                 await self.settle(transcript_ready)
                 for columns in (80, 120, 60, 100):
                     previous_screen = view.app.renderer._last_screen
-                    output.size = Size(rows=24, columns=columns)
+                    output.columns = columns
                     view.toggle_sidebar()
                     await self.settle(
                         lambda: (
@@ -692,13 +685,7 @@ class DialogInputTests(unittest.IsolatedAsyncioTestCase):
                 await run
 
     async def test_mouse_handler_from_rendered_toolbar_and_compact_dialogs(self):
-        class Output(DummyOutput):
-            size = Size(rows=24, columns=80)
-
-            def get_size(self):
-                return self.size
-
-        output = Output()
+        output = ResizableOutput(rows=24, columns=80)
         with terminal(output=output, session_action=lambda _: {}, settings_rows=lambda: []) as (
             view,
             _,
@@ -713,7 +700,7 @@ class DialogInputTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertFalse(view.sidebar_visible)
                 for columns, rows in ((80, 24), (60, 18), (120, 40)):
-                    output.size = Size(rows=rows, columns=columns)
+                    output.rows, output.columns = rows, columns
                     view.session_dialog.open()
                     view.app.invalidate()
                     await asyncio.sleep(0.12)

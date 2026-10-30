@@ -10,16 +10,15 @@ from unittest.mock import Mock
 
 import httpx
 from prompt_toolkit.application.current import set_app
-from prompt_toolkit.data_structures import Point, Size
+from prompt_toolkit.data_structures import Point
 from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
-from prompt_toolkit.output import DummyOutput
 
 from backend import BackendService
 from providers import Capability
 from providers.chatgpt import BrowserSession, ChatGPTClient, ChatGPTProvider, SessionPaths
 from providers.chatgpt.errors import ChatGPTWebError
 from tests import tui_support as interaction
-from tests.tui_support import click, immediate, terminal
+from tests.tui_support import ResizableOutput, click, immediate, terminal
 from tui.styles import ICONS
 from tui.widgets import TranscriptControl, TranscriptGutter
 
@@ -341,12 +340,8 @@ class FocusTests(unittest.IsolatedAsyncioTestCase):
                 await run
 
     async def test_wheel_position_and_first_line_marker_survive_redraw(self):
-        class Output(DummyOutput):
-            def get_size(self):
-                return Size(rows=24, columns=90)
-
         with terminal(
-            output=Output(),
+            output=ResizableOutput(rows=24, columns=90),
             initial_messages=[
                 {"role": "user" if i % 2 == 0 else "assistant", "text": f"Message {i}"}
                 for i in range(80)

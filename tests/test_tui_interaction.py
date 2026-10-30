@@ -5,11 +5,9 @@ import unittest
 from contextlib import nullcontext
 from unittest.mock import Mock, patch
 
-from prompt_toolkit.data_structures import Size
 from prompt_toolkit.mouse_events import MouseButton, MouseEventType
-from prompt_toolkit.output import DummyOutput
 
-from tests.tui_support import immediate, screen_text, terminal, wait_until
+from tests.tui_support import ResizableOutput, immediate, screen_text, terminal, wait_until
 
 
 class InputTests(unittest.IsolatedAsyncioTestCase):
@@ -345,13 +343,7 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
 
         from tui.styles import DEFAULT_TRANSCRIPT_GUTTER_WIDTH
 
-        class Output(DummyOutput):
-            size = Size(rows=24, columns=80)
-
-            def get_size(self):
-                return self.size
-
-        output = Output()
+        output = ResizableOutput(rows=24, columns=80)
         with terminal(output=output) as (view, _pipe):
             view.messages = [{"role": "assistant", "text": "A readable response. " * 20}]
             view.title = "日本語 🚀 Çok uzun bir sohbet başlığı"
@@ -359,7 +351,7 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
             try:
                 await self.settle(lambda: view.app.is_running)
                 for columns, rows in ((80, 24), (60, 18), (120, 40)):
-                    output.size = Size(rows=rows, columns=columns)
+                    output.rows, output.columns = rows, columns
                     view.app.invalidate()
                     expected = columns - view.sidebar_width() - 1
                     await self.settle(
@@ -389,13 +381,7 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.wait_for(run, 2)
 
     async def test_sidebar_search_accepts_mouse_focus_and_divider_stays_aligned(self):
-        class Output(DummyOutput):
-            size = Size(rows=24, columns=80)
-
-            def get_size(self):
-                return self.size
-
-        with terminal(output=Output()) as (view, _pipe):
+        with terminal(output=ResizableOutput(rows=24, columns=80)) as (view, _pipe):
             service = Mock()
             service.items.return_value = []
             service.active_accounts.return_value = []

@@ -1,4 +1,4 @@
-"""Shared CLI test helpers, kept separate from test case modules."""
+"""Shared terminal UI test helpers, kept separate from test case modules."""
 
 import asyncio
 from contextlib import contextmanager
@@ -45,7 +45,10 @@ def click(fragment):
 
 
 class ResizableOutput(DummyOutput):
-    columns, rows = 120, 34
+    def __init__(self, *, rows=34, columns=120):
+        super().__init__()
+        self.rows = rows
+        self.columns = columns
 
     def get_size(self):
         return Size(rows=self.rows, columns=self.columns)
