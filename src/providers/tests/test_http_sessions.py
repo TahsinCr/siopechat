@@ -308,6 +308,9 @@ class ClaudeHTTPTests(unittest.IsolatedAsyncioTestCase):
         final = [e for e in result if "text" in e and e.get("channel") != "analysis"]
         self.assertEqual("".join(e["text"] for e in final), "Answer")
         self.assertTrue(all(e["type"] == "delta" for e in final))
+        types = [event["type"] for event in result]
+        self.assertLess(types.index("delta"), types.index("response_complete"))
+        self.assertLess(types.index("response_complete"), types.index("done"))
         self.assertEqual(session.request.await_count, 1)
 
 

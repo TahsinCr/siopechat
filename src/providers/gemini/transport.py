@@ -285,7 +285,8 @@ async def generate(
                     current = list(metadata)
                     current.extend([None] * max(0, 3 - len(current)))
                     current[2] = candidate[0]
-                    completed = completed or nested(candidate, 8, 0) == 2
+                    response_complete = nested(candidate, 8, 0) == 2
+                    completed = completed or response_complete
                     text = nested(candidate, 1, 0)
                     if isinstance(text, str) and text.startswith(
                         (
@@ -304,6 +305,7 @@ async def generate(
                         "thoughts": last_thoughts,
                         "files": candidate_files(candidate),
                         "sources": candidate_metadata(candidate, activity)["sources"],
+                        "response_complete": response_complete,
                     }
                 if isinstance(context, str):
                     metadata = [None] * 9 + [context]

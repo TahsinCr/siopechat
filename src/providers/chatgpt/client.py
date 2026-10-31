@@ -806,6 +806,7 @@ class ChatGPTClient:
         resolved_id: str | None = conversation_id
         rendered_by_channel = {}
         terminal_seen = False
+        completion_notified = False
         final_seen = False
         streamed_messages = OrderedDict()
         self._last_stream_messages = []
@@ -842,6 +843,9 @@ class ChatGPTClient:
                     timing.record("button_to_first_sse_event_ms", event_at - timing.started_ns)
                 if payload == "[DONE]":
                     terminal_seen = True
+                    if final_seen and not completion_notified and on_event is not None:
+                        on_event({"type": "response_complete"})
+                        completion_notified = True
                     if timing is not None:
                         timing.record("sse_last_event_ms", event_at - response_opened)
                         timing.record("button_to_last_sse_event_ms", event_at - timing.started_ns)
@@ -883,29 +887,38 @@ class ChatGPTClient:
                     final_seen = True
                 text = text_from_parts(message_parts(message.get("content")))
                 rendered = rendered_by_channel.get(identity, "")
-                if not text or text == rendered:
-                    continue
+                if text and text != rendered:
+                    if (
+                        timing is not None
+                        and channel != "analysis"
+                        and not first_assistant_text
+                        and text.strip()
+                    ):
+                        first_assistant_text = True
+                        timing.record(
+                            "sse_first_assistant_text_ms", time.perf_counter_ns() - response_opened
+                        )
+                        timing.record(
+                            "button_to_first_assistant_text_ms", event_at - timing.started_ns
+                        )
+                    if on_event is not None:
+                        on_event(
+                            {
+                                "type": "delta" if text.startswith(rendered) else "replace",
+                                "text": text[len(rendered) :] if text.startswith(rendered) else text,
+                                "channel": channel,
+                                "message_id": identity,
+                            }
+                        )
+                    rendered_by_channel[identity] = text
                 if (
-                    timing is not None
-                    and channel != "analysis"
-                    and not first_assistant_text
-                    and text.strip()
+                    channel != "analysis"
+                    and message.get("status") == "finished_successfully"
+                    and not completion_notified
+                    and on_event is not None
                 ):
-                    first_assistant_text = True
-                    timing.record(
-                        "sse_first_assistant_text_ms", time.perf_counter_ns() - response_opened
-                    )
-                    timing.record("button_to_first_assistant_text_ms", event_at - timing.started_ns)
-                if on_event is not None:
-                    on_event(
-                        {
-                            "type": "delta" if text.startswith(rendered) else "replace",
-                            "text": text[len(rendered) :] if text.startswith(rendered) else text,
-                            "channel": channel,
-                            "message_id": identity,
-                        }
-                    )
-                rendered_by_channel[identity] = text
+                    on_event({"type": "response_complete"})
+                    completion_notified = True
         if not terminal_seen or not final_seen:
             raise ChatGPTWebError(
                 "ChatGPT response incomplete; remote outcome unknown; request not retried"

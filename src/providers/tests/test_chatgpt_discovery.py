@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from dataclasses import asdict
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import httpx
 
@@ -284,3 +284,48 @@ class DiscoveryTests(unittest.TestCase):
 
         self.assertEqual(result[0], "chat")
         self.assertEqual(self.client._last_stream_messages[0]["content"]["parts"], ["Answer"])
+
+    def test_chatgpt_reports_generated_text_before_sse_done(self):
+        event = {
+            "conversation_id": "chat",
+            "message": {
+                "id": "assistant",
+                "author": {"role": "assistant"},
+                "status": "finished_successfully",
+                "content": {"parts": ["Answer"]},
+            },
+        }
+        payload = "data: " + json.dumps(event) + "\n\ndata: [DONE]\n\n"
+        self.client.http.close()
+        self.client.http = httpx.Client(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(
+                    200, headers={"content-type": "text/event-stream"}, text=payload
+                )
+            )
+        )
+        received = []
+        with patch.object(self.client, "create_sentinel_headers", return_value={}):
+            self.client.send_prompt_direct(None, "hello", [], on_event=received.append)
+
+        self.assertEqual(
+            [item["type"] for item in received], ["delta", "response_complete"]
+        )
+
+    def test_model_catalog_reuses_valid_cache_and_refreshes_expired_cache(self):
+        import time
+
+        cached = model_catalog(CATALOG)
+        self.client._model_catalog = (time.monotonic(), cached)
+        with patch.object(self.client, "request") as request:
+            self.assertIs(self.client.model_catalog(), cached)
+            request.assert_not_called()
+
+            response = Mock()
+            response.json.return_value = CATALOG
+            request.return_value = response
+            self.client._model_catalog = (time.monotonic() - 301, cached)
+            refreshed = self.client.model_catalog()
+
+        self.assertIsNot(refreshed, cached)
+        request.assert_called_once()

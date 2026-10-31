@@ -27,6 +27,7 @@ from providers import (
     MessageAction,
     MessageMetadata,
     ReplaceText,
+    ResponseComplete,
     SendRequest,
     TextDelta,
 )
@@ -1631,6 +1632,9 @@ class Accounts:
             def deliver(event):
                 if isinstance(event, MessageMetadata):
                     on_event(dict(asdict(event), type="metadata"))
+                    return
+                if isinstance(event, ResponseComplete):
+                    on_event({"type": "response_complete"})
                     return
                 if isinstance(event, (TextDelta, ReplaceText)):
                     on_event(

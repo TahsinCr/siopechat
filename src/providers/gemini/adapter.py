@@ -11,6 +11,7 @@ from ..api import (
     MessageAction,
     MessageMetadata,
     ReplaceText,
+    ResponseComplete,
     SendRequest,
     validate_request,
 )
@@ -489,6 +490,8 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                 while len(self._media) > 256:
                     self._media.pop(next(iter(self._media)))
                 yield ReplaceText(resolve_image_links(chunk["text"], images), "final")
+                if chunk.get("response_complete"):
+                    yield ResponseComplete()
                 rid = metadata[1] if len(metadata) > 1 else None
                 if rid:
                     final_metadata = MessageMetadata(

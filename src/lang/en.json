@@ -167,6 +167,7 @@
   "ui.Mevcut sohbetin sağlayıcısı değiştirilemez; yeni sohbet açın": "An existing chat cannot switch providers; open a new chat",
   "ui.Wait for the current load or upload before switching tabs": "Wait for the current load or upload before switching tabs",
   "ui.Streaming response…": "Streaming response…",
+  "ui.Response text complete; confirming…": "Response text complete; confirming…",
   "ui.Yeni sohbet": "New chat",
   "ui.Yanıt üretiliyor": "Generating reply",
   "ui.Hazır": "Ready",

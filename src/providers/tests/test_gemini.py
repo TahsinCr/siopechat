@@ -538,6 +538,7 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             result[1]["sources"], ({"title": "Example", "url": "https://example.com"},)
         )
+        self.assertTrue(result[1]["response_complete"])
         self.assertEqual(session.http.request.await_args.kwargs["params"], {})
         self.assertTrue(result[0]["context_only"])
         self.assertEqual(result[0]["cid"], "c_new")

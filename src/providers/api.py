@@ -79,6 +79,11 @@ class ReplaceText:
 
 
 @dataclass(frozen=True)
+class ResponseComplete:
+    """Text generation ended; request confirmation may still be pending."""
+
+
+@dataclass(frozen=True)
 class ConversationBound:
     conversation_id: str
 
@@ -94,7 +99,7 @@ class MessageMetadata:
     files: tuple[dict, ...] = ()
 
 
-ProviderEvent = TextDelta | ReplaceText | ConversationBound | MessageMetadata
+ProviderEvent = TextDelta | ReplaceText | ResponseComplete | ConversationBound | MessageMetadata
 
 
 class Provider(Protocol):

@@ -14,6 +14,7 @@ from ..api import (
     ConversationBound,
     MessageMetadata,
     ReplaceText,
+    ResponseComplete,
     SendRequest,
     TextDelta,
     validate_request,
@@ -653,6 +654,8 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
                 publish(("event", TextDelta(value.get("text", ""), value.get("channel"))))
             elif kind == "replace":
                 publish(("event", ReplaceText(value.get("text", ""), value.get("channel"))))
+            elif kind == "response_complete":
+                publish(("event", ResponseComplete()))
 
         def work():
             try:

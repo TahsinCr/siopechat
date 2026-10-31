@@ -7,6 +7,7 @@ from ..api import (
     ConversationBound,
     MessageMetadata,
     ReplaceText,
+    ResponseComplete,
     TextDelta,
     validate_request,
 )
@@ -327,6 +328,8 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
                     yield event_type(event["text"], event.get("channel", "final"))
                 elif event["type"] == "done":
                     completed = True
+                elif event["type"] == "response_complete":
+                    yield ResponseComplete()
                 elif event["type"] == "metadata":
                     yield MessageMetadata(
                         message_id=event.get("message_id"),

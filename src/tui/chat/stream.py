@@ -38,14 +38,19 @@ class _SendStream:
         self._ui_first_text_recorded = False
         self._refresh_lock = threading.Lock()
         self._refresh_pending = False
-        self._refresh_status = False
+        self._refresh_status: str | None = None
 
     def _is_active(self) -> bool:
         return self.target_tab is self.view.tabs[self.view.active_tab]
 
-    def _schedule_refresh(self, *, show_status: bool = False) -> None:
+    def _schedule_refresh(
+        self, *, show_status: bool = False, status_message: str | None = None
+    ) -> None:
         with self._refresh_lock:
-            self._refresh_status = self._refresh_status or show_status
+            if status_message is not None:
+                self._refresh_status = status_message
+            elif show_status and self._refresh_status is None:
+                self._refresh_status = "Streaming response…"
             if self._refresh_pending:
                 return
             self._refresh_pending = True
@@ -53,7 +58,7 @@ class _SendStream:
         def update_active_view() -> None:
             with self._refresh_lock:
                 update_status = self._refresh_status
-                self._refresh_status = False
+                self._refresh_status = None
                 self._refresh_pending = False
             if (
                 self.timing is not None
@@ -65,7 +70,7 @@ class _SendStream:
                 self._after_render_registered = True
             if self._is_active():
                 if update_status:
-                    self.view.status = self.view.tr("Streaming response…")
+                    self.view.status = self.view.tr(update_status)
                 self.view.scroll_bottom(force=False)
 
         self.view._dispatch_ui(update_active_view)
@@ -84,6 +89,9 @@ class _SendStream:
         if connection is not None:
             self.target_tab["job_id"] = getattr(connection, "id", None)
         event_type = event.get("type")
+        if event_type == "response_complete":
+            self._schedule_refresh(status_message="Response text complete; confirming…")
+            return
         if event_type == "metadata":
             with self.view.lock:
                 final = self.messages[-1]

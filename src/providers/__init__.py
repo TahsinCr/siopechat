@@ -12,6 +12,7 @@ from .api import (
     ProviderEvent,
     RateLimited,
     ReplaceText,
+    ResponseComplete,
     SendRequest,
     TextDelta,
 )
@@ -62,6 +63,7 @@ __all__ = [
     "ProjectOptions",
     "ProviderClient",
     "ProviderError",
+    "ResponseComplete",
     "RemoteNotFound",
     "Resource",
     "SessionState",

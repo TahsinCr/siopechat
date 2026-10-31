@@ -167,6 +167,7 @@
   "ui.Mevcut sohbetin sağlayıcısı değiştirilemez; yeni sohbet açın": "В существующем чате нельзя сменить провайдера; откройте новый",
   "ui.Wait for the current load or upload before switching tabs": "Перед сменой вкладки дождитесь окончания загрузки",
   "ui.Streaming response…": "Получение ответа…",
+  "ui.Response text complete; confirming…": "Текст ответа готов · подтверждение разговора…",
   "ui.Yeni sohbet": "Новый чат",
   "ui.Yanıt üretiliyor": "Генерация ответа",
   "ui.Hazır": "Готово",

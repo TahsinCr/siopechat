@@ -7,6 +7,7 @@ from providers import (
     CompatibilityError,
     RateLimited,
     ReplaceText,
+    ResponseComplete,
     TextDelta,
 )
 from providers.chatgpt.errors import SentinelCompatibilityError
@@ -33,6 +34,39 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
 
     async def finish(self, job_id):
         return await asyncio.wait_for(self.runtime.wait(job_id), 1)
+
+    async def test_response_complete_is_delivered_without_finishing_the_job(self):
+        release = asyncio.Event()
+        received = asyncio.Event()
+        events = []
+
+        class Provider:
+            id = "gpt"
+            capabilities = frozenset({Capability.CHAT})
+
+            async def stream(self, _request):
+                yield TextDelta("answer")
+                yield ResponseComplete()
+                await release.wait()
+
+        runtime = TaskService(ProviderRegistry())
+        runtime.providers.register(Provider())
+
+        def on_event(event):
+            events.append(event)
+            if isinstance(event, ResponseComplete):
+                received.set()
+
+        try:
+            job_id = runtime.submit(request(), on_event=on_event)
+            await asyncio.wait_for(received.wait(), 1)
+            self.assertEqual(runtime.snapshot(job_id).state, JobState.STREAMING)
+            self.assertIsInstance(events[-1], ResponseComplete)
+            release.set()
+            self.assertEqual((await runtime.wait(job_id)).state, JobState.COMPLETED)
+        finally:
+            release.set()
+            await runtime.close()
 
     def test_registry_account_factory_preserves_identity_and_isolates_instances(self):
         from types import SimpleNamespace

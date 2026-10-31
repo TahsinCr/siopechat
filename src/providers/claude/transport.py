@@ -320,7 +320,7 @@ class ClaudeTransport:
                 body.update(choice["selections"][effort])
             else:
                 body["thinking_mode"] = effort
-        completed, blocks = False, {}
+        completed, completion_notified, blocks = False, False, {}
         response_id, parent_id, final_index, sources, files = None, None, 0, (), ()
         response_model = None
         presented_inputs = {}
@@ -430,6 +430,9 @@ class ClaudeTransport:
                     completed = bool(event.get("stop_reason"))
                 if kind == "message_stop" or (kind == "message_delta" and delta.get("stop_reason")):
                     completed = True
+                if completed and not completion_notified:
+                    yield {"type": "response_complete"}
+                    completion_notified = True
         if not completed:
             raise ClaudeStreamError("Claude response ended before completion; it was not resent")
         if response_id:

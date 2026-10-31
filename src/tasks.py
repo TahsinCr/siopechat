@@ -20,6 +20,7 @@ from providers.api import (
     ProviderError,
     RateLimited,
     ReplaceText,
+    ResponseComplete,
     SendRequest,
     TextDelta,
 )
@@ -308,6 +309,8 @@ class TaskService:
                             if not event.conversation_id:
                                 raise ValueError("empty remote conversation ID")
                             job.conversation_id = event.conversation_id
+                        elif isinstance(event, ResponseComplete):
+                            self._deliver_event(job, event)
                         elif isinstance(event, MessageMetadata):
                             job.metadata = event
                             self._deliver_event(job, event)

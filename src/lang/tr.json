@@ -167,6 +167,7 @@
   "ui.Mevcut sohbetin sağlayıcısı değiştirilemez; yeni sohbet açın": "Mevcut sohbetin sağlayıcısı değiştirilemez; yeni sohbet açın",
   "ui.Wait for the current load or upload before switching tabs": "Sekme değiştirmeden önce sohbet veya dosya yüklemesinin tamamlanmasını bekleyin",
   "ui.Streaming response…": "Yanıt oluşturuluyor…",
+  "ui.Response text complete; confirming…": "Yanıt metni tamamlandı · sohbet doğrulanıyor…",
   "ui.Yeni sohbet": "Yeni sohbet",
   "ui.Yanıt üretiliyor": "Yanıt üretiliyor",
   "ui.Hazır": "Hazır",
