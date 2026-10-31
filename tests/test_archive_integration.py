@@ -64,6 +64,40 @@ class ArchiveIntegrationTests(unittest.TestCase):
             view.open_palette("models")
             self.assertEqual([x["detail"].split(" · ")[0] for x in view.palette_items], ["chatgpt"])
 
+    def test_startup_primes_cached_chat_and_project_pages(self):
+        archive = self.accounts.archive()
+        conversation_id = f"@{self.gemini}/cached-chat"
+        project_id = f"@{self.gemini}/cached-project"
+        archive.put(
+            self.gemini,
+            "chats",
+            "",
+            {"items": [{"id": conversation_id, "provider_id": "gemini", "title": "Cached"}]},
+        )
+        archive.put(
+            self.gemini,
+            "containers",
+            "",
+            {"items": [{"id": project_id, "name": "Cached project"}]},
+        )
+
+        with terminal(account_service=self.accounts) as (view, _):
+            self.assertIn(conversation_id, {item["id"] for item in view.sidebar_items})
+            self.assertEqual(view.project_items[project_id]["name"], "Cached project")
+
+    def test_startup_cache_read_errors_do_not_prevent_view_use(self):
+        with terminal(account_service=self.accounts) as (view, _):
+            archive = Mock()
+            archive.get.side_effect = OSError("archive temporarily unavailable")
+            archive.conversations.side_effect = OSError("archive temporarily unavailable")
+            archive.deleted.return_value = False
+            view.archive_service = Mock(return_value=archive)
+            view.list_workspaces = Mock(side_effect=OSError("workspace store unavailable"))
+
+            view.prime_local_cache()
+
+        self.assertEqual(view.sidebar_items, [])
+
     def test_general_list_refresh_cannot_move_known_notebook_chat_out_of_its_project(self):
         archive = self.api.get("archive")
         cid = "@" + self.gemini + "/c_chat"
@@ -75,7 +109,10 @@ class ArchiveIntegrationTests(unittest.TestCase):
             archive.put(self.gemini, "chats", "", {"items": [plain]})
             view.apply_archive_updates()
             self.assertEqual(view.sidebar_items[0]["project_id"], pid)
-            view.list_history_page = lambda cursor: {"items": [plain], "cursor": None}
+            view.list_history_page = lambda cursor, on_account_page=None: {
+                "items": [plain],
+                "cursor": None,
+            }
             with patch.object(view._reads, "submit", side_effect=lambda work: work() or True):
                 view.refresh_sidebar()
             self.assertEqual(view.sidebar_items[0]["project_id"], pid)

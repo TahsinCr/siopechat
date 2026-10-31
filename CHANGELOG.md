@@ -11,8 +11,8 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 ### Changed
 
 - Prime the TUI sidebar and model catalog synchronously from local SQLite archive and account cache on startup, rendering existing conversations and available models immediately without awaiting background network synchronization.
-- Refresh provider conversation lists concurrently and stream each provider's arriving chats incrementally into the sidebar as they finish, eliminating cross-provider synchronization blocking.
-- Expand the background read thread pool from 4 to 6 workers to prevent thread contention during startup initialization.
+- Refresh provider conversation lists concurrently and show each account's first page as soon as it arrives, while slower accounts continue loading.
+- Expand the background read thread pool from four to six workers so more independent startup reads can run concurrently.
 - Optimize Gemini Flash turn latency by omitting explicit model selector IDs and sequence numbers on default requests, preventing server-side model resolution stalls and reducing initial response latency.
 - Throttle Gemini web activity pings to a 300-second window and cache turn metadata across turns to reduce redundant transport overhead.
 

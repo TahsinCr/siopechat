@@ -363,14 +363,11 @@ class SidebarComponent:
                 self._dispatch_ui(apply_account)
 
             try:
-                try:
-                    page = (
-                        self.list_history_page(None, on_account_page=on_account_page)
-                        if self.list_history_page
-                        else None
-                    )
-                except TypeError:
-                    page = self.list_history_page(None) if self.list_history_page else None
+                page = (
+                    self.list_history_page(None, on_account_page=on_account_page)
+                    if self.list_history_page
+                    else None
+                )
                 conversations = [
                     item
                     for item in (page["items"] if page is not None else self.list_conversations())

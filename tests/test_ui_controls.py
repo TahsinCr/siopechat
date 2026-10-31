@@ -280,6 +280,41 @@ class UiControlsTests(unittest.TestCase):
             self.assertIsNone(view.history_cursor)
             self.assertFalse(view.history_loading)
 
+    def test_sidebar_refresh_applies_an_account_page_as_soon_as_it_arrives(self):
+        chat = {"id": "@gemini/default/one", "title": "Gemini chat"}
+        calls = []
+
+        def fetch(cursor, *, on_account_page):
+            calls.append(cursor)
+            page = {"items": [chat], "cursor": None}
+            on_account_page({"key": "gemini/default"}, page)
+            return page
+
+        with terminal(list_history_page=fetch) as (view, _):
+            view.refresh_projects = lambda: None
+            view._dispatch_ui = lambda callback: callback()
+            view._reads.submit = lambda work: (work(), True)[1]
+            view.refresh_sidebar()
+
+        self.assertEqual(calls, [None])
+        self.assertEqual([item["id"] for item in view.sidebar_items], [chat["id"]])
+
+    def test_sidebar_refresh_does_not_retry_a_type_error_from_its_callback(self):
+        calls = []
+
+        def fetch(cursor, *, on_account_page):
+            calls.append(cursor)
+            raise TypeError("callback implementation failed")
+
+        with terminal(list_history_page=fetch) as (view, _):
+            view.refresh_projects = lambda: None
+            view._dispatch_ui = lambda callback: callback()
+            view._reads.submit = lambda work: (work(), True)[1]
+            view.refresh_sidebar()
+
+        self.assertEqual(calls, [None])
+        self.assertIn("callback implementation failed", view.sidebar_error)
+
     def test_history_pages_continue_in_background_until_provider_history_is_complete(self):
         pages = {
             "page-1": {"items": [{"id": "two", "title": "Older 1"}], "cursor": "page-2"},

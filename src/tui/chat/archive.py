@@ -377,29 +377,39 @@ class ArchiveComponent:
             key = account.get("key")
             if not key:
                 continue
-            page = archive.get(key, "chats", "")
-            if page and isinstance(page.get("items"), list):
+            try:
+                page = archive.get(key, "chats", "")
+            except Exception:
+                page = None
+            if isinstance(page, dict) and isinstance(page.get("items"), list):
                 self._archive_page_ids[key, "chats"] = {
-                    item["id"] for item in page["items"] if item.get("id")
+                    item["id"]
+                    for item in page["items"]
+                    if isinstance(item, dict) and isinstance(item.get("id"), str)
                 }
                 for item in page["items"]:
-                    if item.get("id"):
+                    if isinstance(item, dict) and isinstance(item.get("id"), str):
                         chats[item["id"]] = merge_chat_listing(chats.get(item["id"]), item)
             elif hasattr(archive, "conversations"):
                 try:
                     records = archive.conversations(key, limit=50)
                     for item in records:
-                        if isinstance(item, dict) and item.get("id"):
+                        if isinstance(item, dict) and isinstance(item.get("id"), str):
                             chats[item["id"]] = merge_chat_listing(chats.get(item["id"]), item)
                 except Exception:
                     pass
-            containers = archive.get(key, "containers", "")
-            if containers and isinstance(containers.get("items"), list):
+            try:
+                containers = archive.get(key, "containers", "")
+            except Exception:
+                containers = None
+            if isinstance(containers, dict) and isinstance(containers.get("items"), list):
                 self._archive_page_ids[key, "containers"] = {
-                    item["id"] for item in containers["items"] if item.get("id")
+                    item["id"]
+                    for item in containers["items"]
+                    if isinstance(item, dict) and isinstance(item.get("id"), str)
                 }
                 for item in containers["items"]:
-                    if item.get("id"):
+                    if isinstance(item, dict) and isinstance(item.get("id"), str):
                         self.project_items[item["id"]] = item
         for cid in list(chats):
             key, remote = origin(cid, self.account_key)
@@ -409,10 +419,12 @@ class ArchiveComponent:
             key, remote = origin(pid, self.account_key)
             if hasattr(archive, "deleted") and archive.deleted(key, "container", remote):
                 self.project_items.pop(pid, None)
+        try:
+            workspace_items = self.list_workspaces() if self.list_workspaces else ()
+        except Exception:
+            workspace_items = ()
         workspaces = [
-            dict(item, kind="workspace")
-            for item in (self.list_workspaces() if self.list_workspaces else ())
-            if isinstance(item, dict)
+            dict(item, kind="workspace") for item in workspace_items if isinstance(item, dict)
         ]
         self.sidebar_items = list(chats.values()) + workspaces
         self.filter_sidebar()

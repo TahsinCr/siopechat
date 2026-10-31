@@ -510,8 +510,15 @@ class AccountTests(unittest.TestCase):
                 )
             )
             self.accounts._providers[key] = provider
-        page = self.accounts.list_chats()
+        delivered = []
+        page = self.accounts.list_chats(
+            on_account_page=lambda account, value: delivered.append(
+                (account["key"], value["items"])
+            )
+        )
         self.assertEqual(len({item["id"] for item in page["items"]}), 2)
+        self.assertEqual({key for key, _ in delivered}, {"chatgpt/default", self.gemini})
+        self.assertTrue(all(items for _, items in delivered))
         filtered = self.accounts.list_chats({"gemini"})
         self.assertEqual([item["provider_id"] for item in filtered["items"]], ["gemini"])
         self.accounts.list_chats(cursor=page["cursor"])
