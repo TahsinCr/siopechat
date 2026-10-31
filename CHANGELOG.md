@@ -4,9 +4,11 @@ All notable changes to SiopeChat are documented here.
 
 The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
-Python distributions use the corresponding PEP 440 version (`1.5.1b0` for `v1.5.1-beta`).
+Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.2-beta`).
 
 ## [Unreleased]
+
+## [1.5.2-beta] - 2026-10-31
 
 ### Added
 
@@ -17,7 +19,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.1b0` for `v1.5.
 - Queue one follow-up during a response, keep it with the conversation when its tab moves to the background, and restore its prompt and attachments if the current response fails.
 - Show the completed response status and freeze its displayed duration as soon as answer generation ends; keep provider confirmation and send serialization running in the background.
 - Port the ChatGPT Sentinel runtime (`SentinelRuntime`, `SentinelVM`, `SentinelSpec` and proof-of-work solver) completely to pure Python under `src/providers/chatgpt/sentinel/` (`spec.py`, `proof.py`, `vm.py`, `runtime.py`), supporting initial fingerprint generation, FNV-1a proof-of-work and the supported Turnstile challenge path; retain an explicit SDK-source profile parser without any JavaScript engine.
-- Compare the same initial-proof stage in 60 offline samples on Linux x86_64 with a 33,820-byte SDK fixture for the JavaScript paths and the matching Sentinel profile for native Python. Warm pure Python measured 0.329 ms median / 1.925 ms p95; QuickJS-NG measured 3.526 / 11.220 ms with a reused context and 8.831 / 17.285 ms with a fresh context. Node/V8 in an already-running process, creating a fresh VM per sample, measured 4.140 / 6.742 ms. V8 beat QuickJS-NG on fresh contexts in this fixture, while spawning Node per operation raised the total to 57.944 / 62.409 ms (no-op Node process-launch baseline: 32.004 / 32.448 ms). Pure Python had the lowest local proof-generation median and does not execute the JavaScript SDK. These are local timings, not network or end-to-end message latency.
+- Compare the same initial-proof stage in 60 offline samples on Linux x86_64 (Python 3.14.8, Node.js 26.12.1), with a 33,820-byte SDK fixture for both JavaScript paths and the matching Sentinel profile for native Python. Warm pure Python measured 0.329 ms median / 1.925 ms p95; QuickJS-NG measured 3.526 / 11.220 ms with a reused context and 8.831 / 17.285 ms with a fresh context. Node/V8 in an already-running process, creating a fresh VM per sample, measured 4.140 / 6.742 ms. V8 beat QuickJS-NG on fresh contexts in this fixture, while spawning Node per operation raised the total to 57.944 / 62.409 ms (no-op Node process-launch baseline: 32.004 / 32.448 ms). Pure Python had the lowest local proof-generation median and does not execute the JavaScript SDK. These are local timings, not network or end-to-end message latency.
 - Reuse a recently verified ChatGPT conversation snapshot for ordinary continuations on the same provider client, avoiding a duplicate pre-send history request while leaving message actions and branch sends on the authoritative fetch path; render TUI updates at a 16 ms minimum interval and collect opt-in, content-free send-stage latency data with `SIOPECHAT_SEND_TIMINGS=1`.
 - For existing ordinary conversation continuations, reuse the completed SSE messages when their parent confirms the submitted message, avoiding the extra post-send conversation request.
 - Keep browser discovery, session capture and local CDP access in the Python provider package.

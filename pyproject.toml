@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "siopechat"
-version = "1.5.1b0"
+version = "1.5.2b0"
 description = "Provider-oriented terminal workspace for AI web sessions"
 requires-python = ">=3.11"
 license = "GPL-3.0-only"

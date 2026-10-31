@@ -1,4 +1,4 @@
-[![Version: v1.5.1-beta][version-shield]](CHANGELOG.md)
+[![Version: v1.5.2-beta][version-shield]](CHANGELOG.md)
 [![Python 3.11+][python-shield]](https://www.python.org/downloads/)
 [![GPL-3.0-only][license-shield]](LICENSE)
 
@@ -8,13 +8,20 @@
 
 ### ChatGPT, Gemini and Claude web chats — together in one terminal.
 
-Keep conversations moving, organize provider projects and compare replies side by side, all from a focused terminal workspace.
+Bring your chats, projects and model comparisons into one terminal workspace. Switch between tabs, compare replies side by side and keep working without leaving your terminal.
 
-> **For web chat, not API products.** SiopeChat is an independent, unofficial client that works through your signed-in ChatGPT, Gemini and Claude web sessions. It does not connect through the providers’ official developer APIs or use coding-agent products such as Codex or Claude Code. No API key is required; your plan’s model access and usage limits still apply. Changes to provider websites can affect compatibility.
+> SiopeChat is an independent, unofficial client for ChatGPT, Gemini and Claude **web chats**. It uses your browser session, so no API key is required. Your plan's model access and usage limits still apply. It does not connect to official developer APIs, Codex or Claude Code. Changes to provider websites can affect compatibility.
 
-![SiopeChat terminal workspace](assets/siopechat.png)
+![SiopeChat TUI screenshot](assets/siopechat.png)
 
-*A real terminal capture of the default SiopeChat interface, shown with demonstration data.*
+*SiopeChat's terminal interface with sample conversations.*
+
+<p align="center">
+  <a href="#install-and-sign-in"><strong>Install</strong></a> &nbsp; | &nbsp;
+  <a href="#everyday-use"><strong>Everyday use</strong></a> &nbsp; | &nbsp;
+  <a href="#extensions"><strong>Extensions</strong></a> &nbsp; | &nbsp;
+  <a href="#development"><strong>Development</strong></a>
+</p>
 
 ## What you can do
 
@@ -27,15 +34,42 @@ Keep conversations moving, organize provider projects and compare replies side b
 | --- | --- | --- |
 | Download generated files from replies and track progress in the built-in download manager. | Use the command palette, configurable shortcuts, mouse controls and local extensions. | Choose the English, Turkish or Russian interface. |
 
-> **Latest: v1.5.1-beta** — Provider-published sources, thinking summaries and search activity can accompany replies. Generated files can be downloaded from the conversation, and chats can be renamed. Gemini effort choices follow the signed-in account’s web policy. The Python distribution version is `1.5.1b0`.
+## Less Waiting, Better Flow
+
+Keep writing while SiopeChat takes care of the last response. Shared chat improvements and provider-specific optimizations reduce avoidable waiting.
+
+| Where it helps | What changed |
+| --- | --- |
+| **ChatGPT, Gemini and Claude** | Saved chats open from the local archive while history refreshes in the background. Model catalogs reuse valid caches, and large history preparation stays off the UI event loop. When the provider signals that text generation is complete, the status and timer finish; connection finalization can continue in the background. Queue a follow-up while the current send finishes. |
+| **ChatGPT** | Reuse eligible conversation snapshots and completed stream messages to avoid duplicate history requests. Prepare Sentinel headers ahead of the next send. Native Python initial-proof generation takes **0.329 ms median** in the recorded offline benchmark: about **10.7× faster** than a reused QuickJS-NG context and **12.6× faster** than an already-running Node/V8 process with a fresh VM per sample. |
+| **Gemini** | Correct Flash routing, preserve the provider's default thinking policy, reuse valid continuation IDs, and avoid repeating the activity RPC within five minutes. Earlier limited live trials reported first-text latency falling from **65–110 s to 1.89–3.80 s**. These are recorded ranges, not a controlled benchmark or a guarantee for every model and account. |
+
+**Read the numbers in context:** the ChatGPT ratios compare local initial-proof medians, not whole-message speed. The Gemini trials have no published paired samples or p95, so they do not establish a reliable “× faster” figure. Shared UI improvements have no measured multiplier. Network conditions, model choice and server load still affect response times. See the benchmark details below and the [changelog](CHANGELOG.md). The Python package version is `1.5.2b0`.
 
 ## Install and sign in
 
 ### Requirements
 
-You need Python **3.11+** for SiopeChat. ChatGPT Sentinel fingerprint generation and proof-of-work solving, together with the supported Turnstile challenge-bytecode path, run natively in pure Python (`src/providers/chatgpt/sentinel/`). The runtime uses its checked-in `SentinelSpec` profile and has no JavaScript runtime dependency. Browser login and session capture run through the Python provider package. The included installers and launchers check the Python runtime version before continuing. The standalone provider package keeps a separate Python 3.10+ contract. Chrome/Chromium is needed only for the explicit sign-in step. Use a Unicode terminal. True color and mouse reporting are recommended.
+Use **Python 3.11+** and a Unicode terminal; true color and mouse support are recommended. The installers check your Python version. Import an existing login from a supported browser profile as described below. Routine chat operations use HTTP and do not need a running browser.
 
-In a 60-sample offline benchmark on Linux x86_64 (Python 3.14.8, Node.js 26.12.1; both JavaScript paths used the same 33,820-byte SDK, while native Python used its matching Sentinel profile), warm pure-Python proof generation measured **0.329 ms median / 1.925 ms p95**. QuickJS-NG measured **3.526 / 11.220 ms** with a reused context and **8.831 / 17.285 ms** with a fresh context. Node/V8, with its process already running and a fresh VM per sample, measured **4.140 / 6.742 ms**. V8 was faster than QuickJS-NG on fresh contexts in this fixture; however, starting Node for each operation raised the total to **57.944 / 62.409 ms**, while the no-op Node process-launch baseline was **32.004 / 32.448 ms**. The pure-Python path had the lowest local proof-generation median and does not execute the JavaScript SDK. These measurements exclude network and end-to-end message latency.
+ChatGPT's supported Sentinel checks run in Python using the bundled `SentinelSpec` profile. **No Node.js or JavaScript engine is required.**
+
+<details>
+<summary>Performance figures: what was measured?</summary>
+
+The recorded offline benchmark used 60 samples on Linux x86_64 with Python 3.14.8 and Node.js 26.12.1. Both JavaScript paths used the same 33,820-byte SDK; Python used the corresponding Sentinel profile rather than executing that SDK.
+
+| Initial-proof implementation | Median | p95 | Median time ÷ Python time |
+| --- | --- | --- | --- |
+| Pure Python, reused runtime | 0.329 ms | 1.925 ms | 1× |
+| QuickJS-NG, reused context | 3.526 ms | 11.220 ms | 10.7× |
+| QuickJS-NG, fresh context | 8.831 ms | 17.285 ms | 26.8× |
+| Node/V8, running process, fresh VM | 4.140 ms | 6.742 ms | 12.6× |
+| Node/V8, new process per operation | 57.944 ms | 62.409 ms | 176.1× |
+
+The last row includes process startup; a no-op Node launch alone measured 32.004 ms median / 32.448 ms p95. It is not equivalent to reusing a process. Node/V8 beat QuickJS-NG with fresh contexts in this fixture, while Python had the lowest proof-stage median. These figures exclude network requests, model generation and UI rendering. They are historical measurements, not a new benchmark of this revision.
+
+</details>
 
 ### Install and launch
 
@@ -74,7 +108,13 @@ Add, edit and remove account buttons sit beneath the account list. Edit changes 
 <details>
 <summary>Supported browser profiles and troubleshooting</summary>
 
-**Verify from profile** imports the selected provider’s signed-in session from the default browser’s last-used profile, without starting a browser or enabling debugging flags. Chromium-family browsers share the same profile resolution and provider-cookie filtering flow; standard locations are included for Chrome, Chromium, Brave/Brave Origin, Edge and Vivaldi. Their native keyring labels remain browser-specific because each vendor encrypts cookies with its own OS credential identity. Firefox and Zen share one Gecko profile reader based on `profiles.ini` and `installs.ini`. Safari uses its separate WebKit cookie reader on macOS. Only the selected provider’s authentication cookies are retained. The candidate session is checked with the provider before replacing a saved session. Your OS keyring may request access. Browser vendors use different profile directories and keyring labels, so those identifiers remain in a small platform map. Locked databases, custom/sandboxed profile locations and unsupported encryption (including some Windows Chromium configurations) can prevent import; the error is shown without deleting the saved session. Safari profile access can also depend on macOS file permissions. Import errors distinguish missing reader dependencies, file permissions, database access, keyring access and decryption failures. Update dependencies using the same Python environment that launches SiopeChat. Session cookies in the current Firefox/Zen recovery snapshot are also supported; separate containers are excluded and old recovery snapshots are not combined. If the live cookie database is locked, the reader retries from a private copy including its WAL/journal; it does not modify your profile.
+**Verify from profile** reads the selected provider's session from the default browser's last-used profile. It does not start the browser or require debugging flags. Only that provider's authentication cookies are retained, and the new session is verified before it replaces a saved one.
+
+Chrome, Chromium, Brave/Brave Origin, Edge and Vivaldi share the Chromium profile reader. Firefox and Zen share a read-only Gecko reader using `profiles.ini` and `installs.ini`. Safari uses a separate WebKit cookie reader on macOS. Cookie decryption uses browser-specific OS keyring identities; your keyring may request access.
+
+Locked databases, custom or sandboxed profile locations, and unsupported encryption can prevent import, including some Chromium configurations on Windows. Errors distinguish missing dependencies, file permissions, database access, keyring access and decryption. A failed import preserves your saved session. Update dependencies in the environment that launches SiopeChat.
+
+The reader supports session cookies from the current Firefox/Zen recovery snapshot; separate containers and old snapshots are not merged. A locked cookie database is retried from a private temporary copy with its WAL/journal files. Your browser profile is not modified.
 
 Firefox and Zen use the same read-only Gecko profile and cookie reader. Profile selection follows `profiles.ini` and `installs.ini`; ambiguous profiles are reported rather than merged. Linux discovery includes Firefox Snap/Flatpak locations and Zen’s current XDG, legacy and Flatpak locations. Portable or custom profile roots are not guessed; set the browser as the system default and use its standard profile location.
 
@@ -98,7 +138,7 @@ Click a Markdown web link in a message to open it in your default browser. Click
 
 ### Message actions and generated files
 
-Each message has a compact toolbar. Copy works locally; user messages can be edited and sent again. ChatGPT and Claude replies can be retried, while ChatGPT and Gemini replies can start a separate branch. Provider-published sources appear with the associated thinking summaries. The reply's available model and effort appear on the right, before its saved-version controls. Tools depend on the message and provider; model access follows the selected account. Editing or retrying updates the active history after provider confirmation, and branching opens a new chat. Conversation deletion and splitting are beside the upper synchronization button.
+Each message has a compact toolbar. Copy works locally; supported user messages can be edited and sent again. Replies can be retried when that message and provider allow it. ChatGPT and Gemini also support branching into a separate conversation. Provider-published sources stay with the reply they belong to. Available model and effort details appear on the right, before the saved-version controls. Editing or retrying updates the active history after provider confirmation. Conversation deletion and split-view controls sit beside the upper synchronization button.
 
 Generated files appear inside the assistant reply as clickable file cards with their available name, type and size. Clicking a card starts a background transfer in the download manager; file references and metadata remain in the archived conversation. Downloads use the owning provider and account to resolve protected resources. Provider retention and file availability still apply.
 
@@ -170,11 +210,24 @@ The archive extension stores conversations, ordered messages, published thinking
 
 ### Loading, memory and synchronization
 
-With the archive enabled, chats initially read at most 80 visible messages within a 262,144-character serialized-record budget per SQLite batch. Scrolling loads older batches without removing messages already loaded; stable message IDs keep the visible position anchored. Only lean display text and metadata remain in the tab, shared with its layout. The renderer prioritizes the viewport, then prepares two screens above and below it. Rendered rows use a one-megabyte LRU per view; large ANSI cache entries are compressed within a separate 256 KiB budget. Inactive main-tab layouts share a 4 MiB eviction budget. Accepted turns update only a bounded SQL tail. Closing a tab releases its source and render references; an active background response retains its current turn until it is saved. A single message is never truncated to fit a batch. Source memory grows with visited history, while render caches remain bounded. Python may retain freed process memory, so RSS does not necessarily fall immediately.
+Saved chats open from the archive first, then refresh from the provider in the background. You can keep typing and sending while history loads. Older messages merge with newer local turns without overwriting an active reply. Cached sidebar and project pages remain usable during refresh; a failed refresh keeps the last good data.
 
-Previously loaded conversations open from the local archive and refresh in the background. The composer stays available while local history and provider data load; if you send before older messages arrive, the app merges them into the conversation afterward. Cached sidebar and project pages stay usable as later pages are fetched in the background. Synchronization indicators appear in the footer and conversation list. Refreshes reconcile newer local turns instead of replacing an active reply. Failed refreshes retain the last good data. Remote mutations are not automatically replayed after an ambiguous failure: synchronize before resending.
+Large history preparation runs outside the UI event loop, and the sidebar draws only visible rows. Archive queues and render caches are bounded. Disabling the archive keeps its files and leaves direct provider operations available. Disabling the layout extension removes split controls without disabling providers.
 
-The archive has bounded memory and worker queues. Large transcript preparation runs outside the UI event loop. The sidebar draws visible rows on demand and reuses its filtered, sorted list until library data changes. Disabling the archive preserves its files and leaves direct provider loading and sending available. Disabling layout removes split controls without disabling providers.
+<details>
+<summary>History paging and memory budgets</summary>
+
+Each initial SQLite batch contains up to 80 visible messages within a 262,144-character serialized-record budget. Scrolling adds older batches without dropping loaded messages; stable message IDs keep your position anchored. A single message is not truncated to meet the batch budget.
+
+The renderer prepares the viewport first, then two screens above and below it. Each view has a 1 MiB LRU row cache and a separate 256 KiB ANSI cache with compression for large entries. Inactive main-tab layouts share a 4 MiB eviction budget. Text is shared with its layout where possible, and accepted turns update only a bounded tail of the SQL history.
+
+Closing a tab releases its transcript and render references; a running background response retains its current turn until persistence finishes. Source memory grows with the history you visit, while render caches remain bounded. Python may retain freed allocations, so process RSS does not necessarily fall immediately.
+
+</details>
+
+After an ambiguous remote write failure, synchronize before resending. SiopeChat does not automatically replay an operation that may already have reached the provider.
+
+
 
 ## Extensions
 
@@ -215,43 +268,77 @@ Archive lists have a stable remote-ID order; UI sorting is applied separately. `
 
 ## Development
 
-Account sessions, model catalogs, verification records and the archive-disabled conversation-cache fallback are stored in `data/accounts.sqlite3`, separated by provider and account. The cache fallback includes conversation snapshots, active-chat pointers and deletion markers; with the archive enabled, conversation history remains in `data/archive.sqlite3`. The account schema upgrade is additive and leaves the existing session/catalog table intact. Provider-specific fields remain JSON inside the database. On Unix the database is restricted to its owner; it is not encrypted. Account labels, selection and preferences remain application configuration. The independent provider library accepts a credential file or an injected credential store and never imports the application database. Gemini uses a native HTTPS transport with no Gemini SDK or browser process. Legacy account files are removed only after their database/archive replacement is confirmed.
+### Set up and validate
 
-Bundled providers use their Python HTTPS transports for conversations and projects. Browser discovery, session capture and local Chrome DevTools Protocol (CDP) access also run in Python. ChatGPT Sentinel handles server-provided proof-of-work parameters and the supported Turnstile challenge path in Python; the request path does not embed a JavaScript engine or run the SDK's JavaScript.
-
-The provider library is independent of the terminal, archive and application runtime. `accounts.py` routes provider/account work; `runtime.py`, `actions.py` and `extension.py` manage shared services and contributions. The command-line entry point is `src/cli.py`; terminal UI implementation lives in `src/tui/`. Bundled extensions use the generic extension contract in `extension.py` and, when they contribute terminal UI, the explicit `tui.api` surface rather than TUI internals. Optional features live in `extensions/`, common helpers in `src/utils/`. A GUI can consume the same application services; no GUI is included in this beta.
-
-The provider directory is also an independently installable package: `python -m pip install ./src/providers`. `ProviderClient` routes accounts by provider and account identity, manages stream cancellation and closes owned connections. The same `create_provider` factory is used by the application. The typed `Backend` API covers models, chats, projects, sources, uploads and download resolution. See the [provider package documentation](src/providers/README.md) for usage and its portable tests; the directory can become a separate repository or submodule.
-
-Tests run without requiring your personal account sessions. Install [uv](https://docs.astral.sh/uv/) first; the first command creates the lockfile-backed development environment:
+Use Python 3.11+ for application development. With [uv](https://docs.astral.sh/uv/) installed, run these commands from the repository root. Select the project's existing `python/` environment so development and the launchers use the same dependencies:
 
 ```sh
-uv sync --locked --all-groups
-python run_tests.py
+# Linux / macOS
+UV_PROJECT_ENVIRONMENT=python uv sync --locked --all-groups
+python/bin/python run_tests.py
+python/bin/python -m ruff check .
+python/bin/python -m ruff format --check .
+python/bin/python -m build
+python/bin/python -m twine check dist/*
 ```
 
-The script runs application tests, standalone provider API and credential tests, and the provider smoke script against the current checkout. It uses an active Python virtual environment first, then the locked `uv` environment, a project virtual environment, and finally the interpreter used to start the script. Tests appear in the standard verbose `unittest` format. Clean wheel/source-archive installation checks, lint/format, and package-build checks remain separate CI checks. To run the checks individually:
+In Windows PowerShell, set `$env:UV_PROJECT_ENVIRONMENT = "python"`, run `uv sync --locked --all-groups`, and replace `python/bin/python` with `./python/Scripts/python.exe` in the commands above.
+
+`run_tests.py` runs the application suite, an isolated copy of the provider tests, and the provider package smoke check. Tests use fakes and fixtures; personal account sessions are not required. The runner prefers an active virtual environment, then project environments (`python/` before `.venv/`), then uv, and finally the invoking interpreter. Run it through the intended interpreter explicitly to avoid ambiguity.
+
+Lint, formatting and distribution builds are separate checks. GitHub Actions tests the application on Linux, Windows and macOS with Python 3.11/3.14, and the provider package separately with Python 3.10/3.14. Offline success does not prove live-provider compatibility or real-terminal behavior.
+
+### Find the right layer
+
+| Location | Responsibility |
+| --- | --- |
+| `src/bootstrap.py`, `src/cli.py` | Application setup and command-line entry points |
+| `src/accounts.py`, `src/tasks.py`, `src/runtime.py` | Account routing, task ownership and service lifecycle |
+| `src/providers/` | Independent web-session clients, transports and provider contracts |
+| `src/tui/` | Terminal views, input handling and rendering |
+| `src/extension.py`, `src/tui/api.py` | Extension lifecycle and public TUI extension API |
+| `extensions/archive/`, `extensions/layout/` | Local history and saved workspace layouts |
+| `tests/`, `src/providers/tests/` | Application regressions and independent provider tests |
+
+Keep protocol details inside the owning provider. Provider code must not import the application database, settings, extensions or TUI. Extensions register services through `extension.py` and use `tui.api` for terminal contributions. Keep network requests and expensive Markdown work out of render callbacks.
+
+Sends run through `TaskService` with per-account serialization. Cancellation releases an account only after transport cleanup and accepted-response persistence finish. Closing a tab leaves its response running while the application remains open. Changes must preserve provider/account identity, message parents, branch semantics and cancellation; ambiguous remote writes must not be automatically resent.
+
+### Use the provider library independently
+
+Install it with `python -m pip install ./src/providers` in your chosen environment. `ProviderClient` manages account adapters, streams and connection cleanup; `Backend` exposes models, chats, projects, sources, uploads and download resolution. The application uses the same `create_provider` factory. See the [provider guide](src/providers/README.md) for examples and standalone tests.
+
+Transports, browser-profile discovery and local CDP access are implemented in Python. Gemini uses the bundled HTTPS transport without a Gemini SDK. ChatGPT handles supported Sentinel challenges using its Python runtime and bundled profile. Changed or unsupported server requirements need explicit compatibility checks; offline fixtures do not cover every live challenge.
+
+### Understand local storage
+
+| File | Contents |
+| --- | --- |
+| `config.json` | Preferences, account labels and selection |
+| `data/accounts.sqlite3` | Account sessions, model catalogs, verification records and fallback conversation cache |
+| `data/archive.sqlite3` | Archived history, resource metadata, download records and local reply versions |
+| `data/workspaces.sqlite3` | Saved chat layouts |
+
+These paths are relative to the configured application directory. Provider-specific fields remain JSON inside the owning database. The provider library accepts caller-owned credential storage and does not depend on these SQLite schemas. Account storage is not encrypted; Unix permissions restrict it to its owner. Keep migrations transactional and preserve existing user data. See the upgrade warning above before opening an older archive.
+
+### Measure performance and report issues
+
+After installing the performance dependency group, run:
 
 ```sh
-PYTHONPATH=src:. uv run --locked python -m unittest discover -s tests
-uv run --locked python -m ruff check .
-uv run --locked python -m ruff format --check .
-uv run --locked python -m build
-uv run --locked python -m twine check dist/*
+python/bin/python tools/measure_performance.py --interval 0.5
 ```
 
-To profile SiopeChat while using it, run `uv run --group performance python tools/measure_performance.py`. The CSV records process-tree CPU, RSS/USS/PSS memory, disk I/O, open handles, thread count and process count. A companion JSON summary compares file counts and sizes by category under `data/` and the configured download folder before and after the run, including browser profiles, caches, account data and the archive database. The storage scan reads file metadata only; it does not read file contents or follow symlinks. Pass `--interval 0.5` for two samples per second, `--storage-root PATH` (repeatable) to select other directories, or `--no-storage` to skip directory scans. Arguments after `--` are passed to SiopeChat. Process-tree CPU can exceed 100% when multiple cores are busy; USS/PSS or disk I/O may be unavailable on some operating systems and will be left blank.
+The CSV records process-tree CPU, RSS/USS/PSS memory, disk I/O, handles, threads and process counts. A companion JSON file compares storage counts and sizes before and after the run. Scans read metadata only and do not follow symlinks. Use repeatable `--storage-root PATH` options for other directories, `--no-storage` to skip scans, and `--` to pass arguments to SiopeChat. CPU can exceed 100% across multiple cores; unsupported OS metrics remain blank.
 
-Before reporting an issue, note the provider, operation, terminal, operating system and error message. Remove credentials and private conversation content. The [changelog](CHANGELOG.md) records release changes.
+For ChatGPT send-stage diagnostics, enable `SIOPECHAT_SEND_TIMINGS=1` before launching. Compare the same account, model, effort, conversation state and network conditions. Distinguish connection setup, first provider text, first visible UI text and finalization; report sample counts, medians and p95. Never include sessions, prompts or token contents in diagnostic logs.
 
-`Accounts` sends use the shared `TaskService`, with an account resolver, response limits and persistence inside the account queue. Cancellation releases the account after transport cleanup and accepted-response writes finish. Provider registration accepts an `account_factory` for isolated adapter instances. Terminal reads, mutations and Markdown preparation use separate bounded worker pools; closing a tab does not cancel its response.
-
-The GitHub Actions workflow runs the locked application Python 3.11/3.14 matrix on Linux, Windows and macOS. The standalone provider package keeps its separate Python 3.10+ contract. Passing unit tests or CI does not establish live provider compatibility or native terminal interaction. Session files still use private file permissions rather than an operating-system credential vault. Sentinel behavior for server challenges not represented in offline tests requires live-provider verification.
+When filing an issue, include the version, provider, operation, terminal, OS and sanitized error. Describe whether the problem occurred in offline tests or a live session. Release changes are recorded in the [changelog](CHANGELOG.md).
 
 ## License
 
 Copyright © TahsinCr. Licensed under [GPL-3.0-only](LICENSE). Vendored components retain their own notices in `src/utils/`.
 
-[version-shield]: https://img.shields.io/badge/version-v1.5.1--beta-b7a3e3.svg?style=for-the-badge
+[version-shield]: https://img.shields.io/badge/version-v1.5.2--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge
