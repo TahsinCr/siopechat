@@ -366,9 +366,12 @@ class GeminiSession:
                 number = nested(row, 9, default=1)
             mode_category = str(config.get("modeCategory") or "").strip().upper()
             category_name = str(category).strip().lower()
+            variant_name = f"{category_name} {str(title).strip().lower()}".replace(
+                "-", " "
+            ).replace("_", " ")
             is_fast = (
                 mode_category in {"FAST", "MODE_CATEGORY_FAST"}
-                and category_name in {"fast", "flash", "default", ""}
+                and "lite" not in variant_name.split()
             )
             models.append(
                 Model(
