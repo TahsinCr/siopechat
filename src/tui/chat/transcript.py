@@ -48,6 +48,18 @@ class TranscriptComponent:
                 return FormattedText([("", f" {stop_hint} ")])
             self.stop_confirmation_until = 0.0
             self.stop_confirmation_tab_id = None
+        active_tab = self.tabs[self.active_tab]
+        if active_tab.get("generation_complete"):
+            elapsed = active_tab.get("generation_elapsed")
+            if elapsed is not None:
+                return FormattedText(
+                    [
+                        (
+                            "",
+                            self.tr(" — Worked for {0} ").format(self.format_elapsed(elapsed)),
+                        ),
+                    ]
+                )
         if self.busy and self.busy_tab_index is None:
             return FormattedText([("class:sidebar.running", self.tr("Yanıt arka planda sürüyor"))])
         if self.busy and self.busy_tab_index != self.active_tab:

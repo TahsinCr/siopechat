@@ -105,6 +105,11 @@ class _SendStream:
             self.target_tab["job_id"] = getattr(connection, "id", None)
         event_type = event.get("type")
         if event_type == "response_complete":
+            started = self.target_tab.get("started")
+            if started is not None:
+                self.target_tab["generation_elapsed"] = max(
+                    0.0, time.monotonic() - started
+                )
             self._schedule_refresh(status_message="Response complete", mark_complete=True)
             return
         if event_type == "metadata":

@@ -185,6 +185,8 @@ class ComposerComponent:
         self.busy = True
         self.busy_tab_index = self.active_tab
         self.tabs[self.active_tab]["busy"] = True
+        self.tabs[self.active_tab]["generation_complete"] = False
+        self.tabs[self.active_tab]["generation_elapsed"] = None
         self.tabs[self.active_tab]["cancel_requested"] = False
         self.stop_confirmation_until = 0.0
         self.stop_confirmation_tab_id = None

@@ -176,6 +176,7 @@ class SendingComponent:
 
             def finish_turn() -> None:
                 nonlocal messages
+                completed_elapsed = target_tab.get("generation_elapsed")
                 if message_action and not send_succeeded and rollback is not None:
                     messages = rollback[0]
                     if rollback[1] is not None:
@@ -227,6 +228,7 @@ class SendingComponent:
                 if tab.get("effort") == effort:
                     tab["effort"] = effort
                 tab["generation_complete"] = False
+                tab["generation_elapsed"] = None
                 tab["busy"] = False
                 tab["stream_received"] = False
                 tab["completed_pending"] = not is_active()
@@ -311,7 +313,9 @@ class SendingComponent:
                     self.model = tab["model"]
                     self.last_response_model = resolved_model
                     self.effort = tab["effort"]
-                    self.last_elapsed = elapsed
+                    self.last_elapsed = (
+                        completed_elapsed if completed_elapsed is not None else elapsed
+                    )
                     self.status = final_status
                     if self.set_active_conversation is not None:
                         self.set_active_conversation(None if tab.get("temporary") else resolved_id)
@@ -356,6 +360,8 @@ class SendingComponent:
         tab_index = next((i for i, item in enumerate(self.tabs) if item is tab), -1)
         tab["busy"] = True
         tab["stream_received"] = False
+        tab["generation_complete"] = False
+        tab["generation_elapsed"] = None
         tab["cancel_requested"] = False
         tab["started"] = time.monotonic()
         tab["completed_pending"] = False

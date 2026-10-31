@@ -108,11 +108,13 @@ class SidebarComponent:
         key, remote = origin(row.get("id"), self.account_key)
         state = states.get((key, "conversation" if kind == "chat" else "container", remote))
         live_tab = row.get("live_tab")
-        if kind == "chat" and live_tab is not None and live_tab.get("busy"):
+        if kind == "chat" and live_tab is not None and (
+            live_tab.get("generation_complete") or live_tab.get("completed_pending")
+        ):
+            suffix += f" {ICONS['complete'].icon}"
+        elif kind == "chat" and live_tab is not None and live_tab.get("busy"):
             suffix += f" {ICONS['running'].icon}"
             style += " class:sidebar.running"
-        elif kind == "chat" and live_tab is not None and live_tab.get("completed_pending"):
-            suffix += f" {ICONS['complete'].icon}"
         if state == "syncing":
             suffix += f" {ICONS['retry'].icon}"
         elif state == "error":
