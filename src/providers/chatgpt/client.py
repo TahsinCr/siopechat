@@ -69,11 +69,13 @@ def system_timezone():
 def _sse_data(lines):
     """Yield Server-Sent Events data fields, including valid multiline payloads."""
     data = []
+    total_bytes = 0
     for line in lines:
         if line == "":
             if data:
                 yield "\n".join(data)
                 data.clear()
+                total_bytes = 0
             continue
         if line.startswith(":"):
             continue
@@ -92,7 +94,11 @@ def _sse_data(lines):
                     # data line without the blank separator required by SSE.
                     yield previous
                     data.clear()
+                    total_bytes = 0
             data.append(value)
+            total_bytes += len(value)
+            if total_bytes > 2_000_000:
+                raise ChatGPTWebError("ChatGPT event payload exceeded the 2 MB limit")
     if data:
         yield "\n".join(data)
 
@@ -145,6 +151,12 @@ class ChatGPTClient:
             if continuation_cache is not None:
                 continuation_cache.clear()
             self._continuation_cache_text_chars = 0
+            temporary_conversations = getattr(self, "temporary_conversations", None)
+            if temporary_conversations is not None:
+                temporary_conversations.clear()
+            stream_messages = getattr(self, "_last_stream_messages", None)
+            if stream_messages is not None:
+                stream_messages.clear()
             self.http.close()
 
     @staticmethod
@@ -706,6 +718,7 @@ class ChatGPTClient:
         if not temporary:
             self._remember_conversation(conversation)
             self.trigger_sentinel_prewarm()
+        self._last_stream_messages = []
         return resolved_id, conversation, previous_ids
 
     def send_prompt_direct(

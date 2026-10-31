@@ -10,6 +10,7 @@ from prompt_toolkit.layout.dimension import D
 
 from accounts import origin
 from providers.models import FeatureState, ModelCatalog
+from utils.process import trim_memory
 
 
 class TabComponent:
@@ -553,6 +554,7 @@ class TabComponent:
         self._line_render_key = None
         self._ansi_fragments = ()
         self._ansi_render_key = None
+        trim_memory()
 
     def viewport_height(self) -> D:
         try:

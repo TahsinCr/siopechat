@@ -34,3 +34,13 @@ def acquire_exclusive(lock_file) -> None:
     import fcntl
 
     fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def trim_memory() -> None:
+    if os.name != "nt":
+        try:
+            import ctypes
+
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+        except Exception:
+            pass

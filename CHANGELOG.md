@@ -21,6 +21,10 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 
 ### Fixed
 
+- Prevent heap retention in ChatGPT provider by purging temporary conversation caches and raw stream message buffers on tab close, client disposal, and prompt completion.
+- Reclaim OS memory pages after closing tabs and discarding render caches using platform heap trimming (`malloc_trim`).
+- Enforce strict 2 MB payload bounds on individual ChatGPT SSE event chunks before buffering to avoid memory spikes from malformed payloads.
+- Optimize streaming reasoning token accumulation with in-place string concatenation to prevent memory allocation churn during live updates.
 - Display queued user prompts immediately in the chat transcript instead of hiding them until the in-flight response completes, preserving visibility and restoring cleanly on cancellation or failure.
 - Omit redundant post-send ChatGPT conversation history fetch on stream completions where SSE chunk deltas omit parent message IDs.
 - Avoid automatically repeating ambiguous ChatGPT and Claude sends, verify Gemini sessions remotely before use, and keep ChatGPT stream buffering bounded.

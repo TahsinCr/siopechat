@@ -183,6 +183,7 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
                 try:
                     await self.editor.close()
                 finally:
+                    self._temporary_conversations.clear()
                     await self._discard_http_client()
 
     async def session_status(self) -> SessionStatus:
@@ -223,6 +224,11 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
             await asyncio.to_thread(delete_session, self.session.paths.session_file)
             self._temporary_conversations.clear()
         return SessionStatus(SessionState.LOGIN_REQUIRED, False, "browser_session_retained")
+
+    async def forget_temporary(self, remote_id: str) -> None:
+        self._temporary_conversations.pop(remote_id, None)
+        if self._http_client is not None:
+            self._http_client.temporary_conversations.pop(remote_id, None)
 
     async def describe(self) -> ProviderDescription:
         return ProviderDescription(

@@ -177,7 +177,10 @@ class _SendStream:
                         "local_pending": True,
                     }
                     self.messages.insert(max(0, len(self.messages) - 1), item)
-                item["text"] = item["text"] + text if event_type == "delta" else text
+                if event_type == "delta":
+                    item["text"] += text
+                else:
+                    item["text"] = text
                 self.target_tab["render_revision"] = self.target_tab.get("render_revision", 0) + 1
             self._schedule_refresh()
             return
