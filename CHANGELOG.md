@@ -10,6 +10,12 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 
 ### Changed
 
+- Implement zero-RTT next-turn prewarming across ChatGPT, Claude, and Gemini: retain parent message IDs in memory and touch continuation caches upon response completion and tab switching to eliminate redundant pre-send history GET requests.
+- Add optimistic send with automatic fallback on parent mismatch in ChatGPT and Claude transports, catching desynchronization from multi-device turns and recovering without failing the user's turn.
+- Convert the ChatGPT streaming token queue to a non-blocking `loop.call_soon_threadsafe(queue.put_nowait, item)` pipeline on an unbounded `asyncio.Queue`, eliminating worker thread synchronization locks during token generation.
+- Persist Gemini session tokens (`SNlM0e`, `build`, `sid`, `push_id`, `rpc_path_prefix`) in `session.json`, completely bypassing the 1.5–3 MB `/app` HTML page fetch on cold application startup.
+- Parallelize Claude organization discovery (`/api/bootstrap` and `/model_selector/chat`) via `asyncio.gather` on cold start when `lastActiveOrg` is present in session storage.
+- Support `prepare_next_turn` hooks across account service, UI tab restoration, and response finalization to proactively pre-warm Sentinel proofs and continuation metadata.
 - Prime the TUI sidebar and model catalog synchronously from local SQLite archive and account cache on startup, rendering existing conversations and available models immediately without awaiting background network synchronization.
 - Refresh provider conversation lists concurrently and show each account's first page as soon as it arrives, while slower accounts continue loading.
 - Expand the background read thread pool from four to six workers so more independent startup reads can run concurrently.

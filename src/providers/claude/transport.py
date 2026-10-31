@@ -48,16 +48,31 @@ class ClaudeTransport:
         self.authenticated = False
         self._discover_task = None
         self._discovered_at = 0.0
+        self._leaf_cache = {}
 
     async def _discover(self):
-        data = await self.session.request("GET", "/api/bootstrap")
         values = read_session(self.path)
-        organization = organization_from_bootstrap(
-            data, values.get("cookies", values).get("lastActiveOrg")
-        )
-        selected = await self.session.request(
-            "GET", "/api/organizations/" + remote_id(organization) + "/model_selector/chat"
-        )
+        last_org = values.get("cookies", values).get("lastActiveOrg")
+        if last_org:
+            try:
+                bootstrap_task = self.session.request("GET", "/api/bootstrap")
+                selector_task = self.session.request(
+                    "GET", "/api/organizations/" + remote_id(last_org) + "/model_selector/chat"
+                )
+                data, selected = await asyncio.gather(bootstrap_task, selector_task)
+                organization = organization_from_bootstrap(data, last_org)
+            except Exception:
+                data = await self.session.request("GET", "/api/bootstrap")
+                organization = organization_from_bootstrap(data, last_org)
+                selected = await self.session.request(
+                    "GET", "/api/organizations/" + remote_id(organization) + "/model_selector/chat"
+                )
+        else:
+            data = await self.session.request("GET", "/api/bootstrap")
+            organization = organization_from_bootstrap(data, None)
+            selected = await self.session.request(
+                "GET", "/api/organizations/" + remote_id(organization) + "/model_selector/chat"
+            )
         catalog = selector_catalog(selected)
         self.organization = organization
         self.catalog = catalog
@@ -243,15 +258,21 @@ class ClaudeTransport:
         pid = remote_id(v["project_id"]) if v.get("project_id") else None
         cid = remote_id(v["conversation_id"]) if v.get("conversation_id") else str(uuid.uuid4())
         path = base + "/chat_conversations/" + cid
+        cached_parent = False
         if v.get("conversation_id"):
-            history = (
-                await self.request("history", conversation_id=cid)
-                if v.get("action")
-                else await self.session.request("GET", path)
-            )
-            if v.get("temporary") and history.get("is_temporary") is not True:
-                raise ClaudeRequestNotSent("Claude temporary conversation could not be verified")
-            parent = history.get("current_leaf_message_uuid")
+            parent = v.get("parent_message_uuid") or self._leaf_cache.get(cid)
+            if v.get("action") or not parent:
+                history = (
+                    await self.request("history", conversation_id=cid)
+                    if v.get("action")
+                    else await self.session.request("GET", path)
+                )
+                if v.get("temporary") and history.get("is_temporary") is not True:
+                    raise ClaudeRequestNotSent("Claude temporary conversation could not be verified")
+                parent = history.get("current_leaf_message_uuid")
+                self._leaf_cache[cid] = parent
+            else:
+                cached_parent = True
             if v.get("action"):
                 from ..messages import target_message
                 from .records import conversation
@@ -325,15 +346,47 @@ class ClaudeTransport:
         response_model = None
         presented_inputs = {}
         suffix = "/retry_completion" if v.get("action") == MessageAction.RETRY else "/completion"
-        async with self.session.connect().stream(
-            "POST",
-            self.session.url(path + suffix),
-            json=body,
-            headers={"accept": "text/event-stream"},
-            allow_redirects=False,
-            timeout=600,
-        ) as response:
-            self.session.check(response)
+        stream_url = self.session.url(path + suffix)
+        conn = self.session.connect()
+
+        async def open_stream():
+            ctx = conn.stream(
+                "POST",
+                stream_url,
+                json=body,
+                headers={"accept": "text/event-stream"},
+                allow_redirects=False,
+                timeout=600,
+            )
+            res = await ctx.__aenter__()
+            try:
+                self.session.check(res)
+                return ctx, res
+            except Exception:
+                if cached_parent:
+                    self._leaf_cache.pop(cid, None)
+                    await ctx.__aexit__(None, None, None)
+                    hist = await self.session.request("GET", path)
+                    new_parent = hist.get("current_leaf_message_uuid")
+                    if new_parent:
+                        body["parent_message_uuid"] = new_parent
+                    else:
+                        body.pop("parent_message_uuid", None)
+                    retry_ctx = conn.stream(
+                        "POST",
+                        stream_url,
+                        json=body,
+                        headers={"accept": "text/event-stream"},
+                        allow_redirects=False,
+                        timeout=600,
+                    )
+                    retry_res = await retry_ctx.__aenter__()
+                    self.session.check(retry_res)
+                    return retry_ctx, retry_res
+                raise
+
+        stream_ctx, response = await open_stream()
+        try:
             payload = []
             payload_size = 0
             async for line in response.aiter_lines():
@@ -433,9 +486,12 @@ class ClaudeTransport:
                 if completed and not completion_notified:
                     yield {"type": "response_complete"}
                     completion_notified = True
+        finally:
+            await stream_ctx.__aexit__(None, None, None)
         if not completed:
             raise ClaudeStreamError("Claude response ended before completion; it was not resent")
         if response_id:
+            self._leaf_cache[cid] = response_id
             yield {
                 "type": "metadata",
                 "message_id": response_id + ":" + str(final_index),

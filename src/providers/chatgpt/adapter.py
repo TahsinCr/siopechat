@@ -1,7 +1,6 @@
 """Async common API over the independent, synchronous ChatGPT web client."""
 
 import asyncio
-import concurrent.futures
 import math
 import threading
 import time
@@ -631,22 +630,14 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
     async def stream(self, request: SendRequest):
         validate_request(self, request)
         loop = asyncio.get_running_loop()
-        queue = asyncio.Queue(maxsize=32)
+        queue = asyncio.Queue()
         stopped = threading.Event()
         holder = []
 
         def publish(item):
             if stopped.is_set():
                 raise _Stopped()
-            future = asyncio.run_coroutine_threadsafe(queue.put(item), loop)
-            while True:
-                try:
-                    future.result(timeout=0.1)
-                    return
-                except concurrent.futures.TimeoutError:
-                    if stopped.is_set():
-                        future.cancel()
-                        raise _Stopped()
+            loop.call_soon_threadsafe(queue.put_nowait, item)
 
         def event(value):
             kind = value.get("type")
@@ -793,3 +784,13 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
                 await asyncio.shield(worker)
                 if self._persistent_client and not stream_finished:
                     await self._discard_http_client()
+
+    def prepare_next_turn(self, conversation_id, last_message_id):
+        if conversation_id and last_message_id:
+            with self._client_scope() as client:
+                client._remember_conversation({
+                    "id": conversation_id,
+                    "current_node": str(last_message_id),
+                    "messages": [],
+                })
+                client.trigger_sentinel_prewarm()

@@ -584,3 +584,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
 
     async def forget_temporary(self, remote_id):
         self._temporary.pop(remote_id, None)
+
+    def prepare_next_turn(self, conversation_id, last_message_id=None):
+        if conversation_id and conversation_id in self._chat_metadata:
+            self._chat_metadata.move_to_end(conversation_id)

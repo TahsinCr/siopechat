@@ -37,9 +37,9 @@ from .sentinel import SentinelRuntime
 from .session import BrowserSession
 
 _CONTINUATION_CACHE_TTL_SECONDS = 60.0
-_CONTINUATION_CACHE_MAX_ITEMS = 4
+_CONTINUATION_CACHE_MAX_ITEMS = 32
 _CONTINUATION_CACHE_MAX_MESSAGES = 2_000
-_CONTINUATION_CACHE_MAX_TEXT_CHARS = 1_000_000
+_CONTINUATION_CACHE_MAX_TEXT_CHARS = 10_000_000
 
 
 def system_timezone():
@@ -519,6 +519,7 @@ class ChatGPTClient:
             raise ChatGPTWebError("temporary conversations cannot belong to a project")
         previous_ids: set[str] = set()
         previous: dict[str, Any] | None = None
+        cached: dict[str, Any] | None = None
         if branch is not None:
             previous = {"current_node": branch.message_id}
         elif conversation_id:
@@ -583,6 +584,7 @@ class ChatGPTClient:
         if effort is not None and effort not in {item.id for item in selected.efforts}:
             raise ChatGPTWebError(f"Effort '{effort}' is not offered for model '{model}'")
 
+        used_cached = cached is not None
         try:
             resolved_id, submitted_message_id, submitted_message = self.send_prompt_direct(
                 previous,
@@ -595,6 +597,30 @@ class ChatGPTClient:
                 **({"action": action, "message_id": message_id} if action else {}),
                 **({"branch": branch} if branch else {}),
             )
+        except ChatGPTWebError:
+            if used_cached and conversation_id and not temporary:
+                self._forget_conversation(conversation_id)
+                try:
+                    previous = self.get_conversation(conversation_id)
+                    resolved_id, submitted_message_id, submitted_message = self.send_prompt_direct(
+                        previous,
+                        prompt,
+                        attachments or [],
+                        on_event,
+                        model,
+                        effort,
+                        **({"temporary": True} if temporary else {}),
+                        **({"action": action, "message_id": message_id} if action else {}),
+                        **({"branch": branch} if branch else {}),
+                    )
+                except Exception:
+                    if conversation_id and not temporary:
+                        self._forget_conversation(conversation_id)
+                    raise
+            else:
+                if conversation_id and not temporary:
+                    self._forget_conversation(conversation_id)
+                raise
         except Exception:
             if conversation_id and not temporary:
                 self._forget_conversation(conversation_id)
