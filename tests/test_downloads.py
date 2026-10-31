@@ -426,3 +426,29 @@ class DownloadTests(unittest.TestCase):
         service._records["in"] = {"state": "completed", "path": str(inside)}
         service.remove("in", delete_file=True)
         self.assertFalse(inside.exists())
+
+    def test_remove_with_delete_file_unlinks_symlink_without_deleting_target(self):
+        service = self.service(lambda _: httpx.Response(200, content=b"ok"))
+        directory = service.directory()
+        directory.mkdir(parents=True, exist_ok=True)
+        inside_target = directory / "target.txt"
+        inside_target.write_text("keep target")
+        inside_link = directory / "inside-link.txt"
+        outside_target = self.root / "outside-target.txt"
+        outside_target.write_text("keep outside target")
+        outside_link = directory / "outside-link.txt"
+        try:
+            inside_link.symlink_to(inside_target)
+            outside_link.symlink_to(outside_target)
+        except (NotImplementedError, OSError) as error:
+            self.skipTest(f"symbolic links are unavailable: {error}")
+
+        service._records["inside-link"] = {"state": "completed", "path": str(inside_link)}
+        service.remove("inside-link", delete_file=True)
+        service._records["outside-link"] = {"state": "completed", "path": str(outside_link)}
+        service.remove("outside-link", delete_file=True)
+
+        self.assertTrue(inside_target.exists())
+        self.assertTrue(outside_target.exists())
+        self.assertFalse(inside_link.exists())
+        self.assertFalse(outside_link.exists())

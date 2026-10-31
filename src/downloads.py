@@ -222,9 +222,13 @@ class Downloads:
                 raise ValueError("İndirme sürerken kayıt silinemez")
             if delete_file:
                 if row.get("path"):
-                    target_path = Path(row["path"]).resolve()
+                    source_path = Path(row["path"])
                     base_dir = self.directory().resolve()
-                    if target_path != base_dir and base_dir in target_path.parents:
+                    target_parent = source_path.parent.resolve()
+                    if source_path.name not in {"", ".", ".."} and (
+                        target_parent == base_dir or base_dir in target_parent.parents
+                    ):
+                        target_path = target_parent / source_path.name
                         target_path.unlink(missing_ok=True)
                 self._update(identity, persist=True, state="deleted")
                 return
