@@ -14,9 +14,7 @@ class ProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         root = Path(self.directory.name)
-        self.session = BrowserSession(
-            SessionPaths(root / "session.json", root / "cache", root / "profile")
-        )
+        self.session = BrowserSession(SessionPaths(root / "session.json", root / "profile"))
         self.client = FakeClient(self.session)
         self.provider = ChatGPTProvider(self.session, client_factory=lambda _: self.client)
 

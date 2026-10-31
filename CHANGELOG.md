@@ -14,7 +14,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.1b0` for `v1.5.
 
 ### Changed
 
-- Port the ChatGPT Sentinel runtime (`SentinelRuntime`, `SentinelVM`, `SentinelSpec` and proof-of-work solver) completely to pure Python under `src/providers/chatgpt/sentinel/` (`spec.py`, `proof.py`, `vm.py`, `runtime.py`), supporting initial fingerprint generation, FNV-1a proof-of-work, Turnstile/SessionObserver bytecode execution, automatic protocol adaptation from SDK sources and strict pre-submission `SentinelCompatibilityError` aborts on SDK drift or unsupported challenges without any JavaScript engine.
+- Port the ChatGPT Sentinel runtime (`SentinelRuntime`, `SentinelVM`, `SentinelSpec` and proof-of-work solver) completely to pure Python under `src/providers/chatgpt/sentinel/` (`spec.py`, `proof.py`, `vm.py`, `runtime.py`), supporting initial fingerprint generation, FNV-1a proof-of-work, the supported Turnstile challenge path, automatic protocol adaptation from SDK sources and strict pre-submission `SentinelCompatibilityError` aborts on SDK drift or unsupported required challenges without any JavaScript engine.
 - Reuse a recently verified ChatGPT conversation snapshot for ordinary continuations on the same provider client, avoiding a duplicate pre-send history request while leaving message actions and branch sends on the authoritative fetch path; render TUI updates at a 16 ms minimum interval and collect opt-in, content-free send-stage latency data with `SIOPECHAT_SEND_TIMINGS=1`.
 - For existing ordinary conversation continuations, reuse the completed SSE messages when their parent confirms the submitted message, avoiding the extra post-send conversation request.
 - Keep browser discovery, session capture and local CDP access in the Python provider package.
@@ -22,15 +22,14 @@ Python distributions use the corresponding PEP 440 version (`1.5.1b0` for `v1.5.
 ### Removed
 
 - Remove `quickjs-ng`, the external Node.js dependency, `src/providers/chatgpt/resources.py` and `src/providers/chatgpt/scripts/` from the runtime, packaging and test suite.
+- Remove the unused Sentinel SDK cache path from ChatGPT session setup; credential stores now take an explicit browser profile directory.
 
 ### Fixed
 
-- Use a verified cached Sentinel SDK only after transient network or service failures; report HTTP authorization and SDK-compatibility failures instead of masking them.
-- Expire Sentinel cache entries with future timestamps and derive proof diagnostics from parsed SDK output without exposing the token.
-- Bound local SDK cache and Chromium profile-state reads before allocation; reject oversized downloads before appending their chunks.
+- Generate a missing initial Sentinel proof without recursively acquiring the runtime lock; reject required SessionObserver challenges before submitting a chat request because their output is not part of the current request headers; keep VM rejection details out of provider errors.
+- Bound Chromium profile-state reads before allocation.
 - Bound individual CDP messages and the queued event buffer; fail explicitly on queue overflow instead of silently discarding session-capture events.
 - Reuse the validated local DevTools endpoint check for ChatGPT browser readiness and reject malformed provider cookies before filtering.
-- Restore the SDK fallback for Turnstile and unrecognized Sentinel requirement shapes; keep the SDK-generated initial context instead of substituting an unverified Python context.
 
 ## [1.5.1-beta] - 2026-10-29
 

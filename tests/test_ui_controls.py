@@ -755,9 +755,7 @@ class SessionSecurityTests(unittest.TestCase):
     def test_default_browser_does_not_claim_session_import(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            session = BrowserSession(
-                SessionPaths(root / "session", root / "cache", root / "profile")
-            )
+            session = BrowserSession(SessionPaths(root / "session", root / "profile"))
             with patch("providers.chatgpt.session.webbrowser.open", return_value=True) as opened:
                 result = session.open_login()
             opened.assert_called_once_with("https://chatgpt.com/", new=2)
@@ -767,9 +765,7 @@ class SessionSecurityTests(unittest.TestCase):
     def test_invalid_session_utf8_and_malformed_ipc_are_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            session = BrowserSession(
-                SessionPaths(root / "session", root / "cache", root / "profile")
-            )
+            session = BrowserSession(SessionPaths(root / "session", root / "profile"))
             session.paths.session_file.write_bytes(b"\xff")
             with self.assertRaises(ChatGPTWebError):
                 session.load()

@@ -16,9 +16,7 @@ class ChatGPTProfileBootstrapTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            session = BrowserSession(
-                SessionPaths(root / "session.json", root / "cache", root / "profile")
-            )
+            session = BrowserSession(SessionPaths(root / "session.json", root / "profile"))
             http = MagicMock()
             http.get.return_value.status_code = 200
             http.get.return_value.json.return_value = {"accessToken": "verified-token"}
@@ -53,9 +51,7 @@ class ChatGPTProfileBootstrapTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            session = BrowserSession(
-                SessionPaths(root / "session.json", root / "cache", root / "profile")
-            )
+            session = BrowserSession(SessionPaths(root / "session.json", root / "profile"))
             session.save(
                 "https://chatgpt.com/backend-api/conversations", {"authorization": "previous"}
             )

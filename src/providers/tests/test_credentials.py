@@ -28,11 +28,20 @@ class MemoryCredentials:
 
 
 class CredentialContractTests(unittest.IsolatedAsyncioTestCase):
+    async def test_chatgpt_file_credentials_default_to_a_sibling_browser_profile(self):
+        with tempfile.TemporaryDirectory() as folder:
+            credentials = Path(folder) / "session.json"
+            provider = create_provider("chatgpt", credential_file=credentials)
+            try:
+                self.assertEqual(provider.session.paths.profile, Path(folder) / "chrome-profile")
+            finally:
+                await provider.close()
+
     async def test_chatgpt_refresh_saves_through_host_store_without_a_filesystem_path(self):
         with tempfile.TemporaryDirectory() as folder:
             store = MemoryCredentials()
             provider = create_provider(
-                "chatgpt", credential_file=store, cache_directory=Path(folder)
+                "chatgpt", credential_file=store, profile_directory=Path(folder) / "profile"
             )
             try:
                 provider.session.save(
@@ -49,7 +58,7 @@ class CredentialContractTests(unittest.IsolatedAsyncioTestCase):
                 store = MemoryCredentials()
                 self.assertIsInstance(store, CredentialStore)
                 provider = create_provider(
-                    kind, "fixture", credential_file=store, cache_directory=Path(folder) / kind
+                    kind, "fixture", credential_file=store, profile_directory=Path(folder) / kind
                 )
                 try:
                     if kind == "chatgpt":
@@ -75,6 +84,6 @@ class CredentialContractTests(unittest.IsolatedAsyncioTestCase):
                 finally:
                     await provider.close()
 
-    def test_chatgpt_store_requires_caller_owned_signer_cache(self):
-        with self.assertRaises(ValueError):
+    def test_chatgpt_store_requires_caller_owned_profile_directory(self):
+        with self.assertRaisesRegex(ValueError, "profile_directory is required"):
             create_provider("chatgpt", "fixture", credential_file=MemoryCredentials())

@@ -31,9 +31,7 @@ class DiscoveryTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         root = Path(directory.name)
-        self.session = BrowserSession(
-            SessionPaths(root / "session", root / "cache", root / "profile")
-        )
+        self.session = BrowserSession(SessionPaths(root / "session", root / "profile"))
         self.client = ChatGPTClient(self.session, authenticate=False)
         self.client.http.close()
         self.addCleanup(self.client.close)

@@ -22,7 +22,7 @@ class SendOptionsTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         root = Path(directory.name)
         self.client = ChatGPTClient(
-            BrowserSession(SessionPaths(root / "session", root / "cache", root / "profile")),
+            BrowserSession(SessionPaths(root / "session", root / "profile")),
             authenticate=False,
         )
         self.client.http.close()

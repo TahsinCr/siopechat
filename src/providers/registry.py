@@ -106,14 +106,13 @@ def create_provider(
     *,
     credential_file=None,
     session=None,
-    cache_directory=None,
     profile_directory=None,
     **options,
 ) -> Backend:
     """Construct a bundled account backend without application state or network I/O.
 
     Callers own credentials and their locations. ChatGPT callers may supply an
-    existing BrowserSession, or a credential path and optional cache/profile paths.
+    existing BrowserSession, or a credential path and an optional profile path.
     Other keyword options are passed to the selected adapter (e.g. client_factory).
     """
     from pathlib import Path
@@ -131,18 +130,15 @@ def create_provider(
             from .session import CredentialStore
 
             is_store = isinstance(credential_file, CredentialStore)
-            if is_store and cache_directory is None:
-                raise ValueError("cache_directory is required with a ChatGPT credential store")
+            if is_store and profile_directory is None:
+                raise ValueError("profile_directory is required with a ChatGPT credential store")
             path = credential_file if is_store else Path(credential_file)
-            cache = Path(cache_directory) if cache_directory else path.parent / "cache"
-            profile = Path(profile_directory) if profile_directory else cache / "login-profile"
-            session = BrowserSession(
-                SessionPaths(
-                    path,
-                    cache,
-                    profile,
-                )
+            profile = (
+                Path(profile_directory)
+                if profile_directory is not None
+                else path.parent / "chrome-profile"
             )
+            session = BrowserSession(SessionPaths(path, profile))
         return ChatGPTProvider(session, account_id, **options)
     if credential_file is None:
         raise ValueError("credential_file is required")

@@ -39,9 +39,7 @@ class ProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         root = Path(self.directory.name)
-        self.session = BrowserSession(
-            SessionPaths(root / "session.json", root / "cache", root / "profile")
-        )
+        self.session = BrowserSession(SessionPaths(root / "session.json", root / "profile"))
         self.client = FakeClient(self.session)
         self.provider = ChatGPTProvider(self.session, client_factory=lambda _: self.client)
 
@@ -51,15 +49,13 @@ class ProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.provider.session_status()).state, SessionState.UNKNOWN)
         self.assertEqual((await self.provider.authenticate()).state, SessionState.AUTHENTICATED)
 
-    async def test_forget_session_retains_browser_profile_and_caches(self):
+    async def test_forget_session_retains_browser_profile(self):
         self.session.paths.session_file.write_text("{}")
         self.session.paths.profile.mkdir()
-        self.session.paths.cache.mkdir()
         result = await self.provider.forget_session()
         self.assertEqual(result.state, SessionState.LOGIN_REQUIRED)
         self.assertFalse(self.session.paths.session_file.exists())
         self.assertTrue(self.session.paths.profile.exists())
-        self.assertTrue(self.session.paths.cache.exists())
 
     async def test_history_keeps_provenance_thinking_channel_sources_and_native_fields(self):
         page = await self.provider.list_chats(limit=1)

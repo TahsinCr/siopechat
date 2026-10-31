@@ -302,7 +302,7 @@ class Accounts:
                 replace(session.paths, session_file=self.credentials(key)), session.cdp_url
             )
         return BrowserSession(
-            SessionPaths(self.credentials(key), directory / "cache", directory / "chrome-profile"),
+            SessionPaths(self.credentials(key), directory / "chrome-profile"),
             f"http://127.0.0.1:{item['port']}",
         )
 

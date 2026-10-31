@@ -231,9 +231,7 @@ class PolishTests(unittest.TestCase):
     def test_provider_requires_server_membership_confirmation(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            session = BrowserSession(
-                SessionPaths(root / "session", root / "cache", root / "profile")
-            )
+            session = BrowserSession(SessionPaths(root / "session", root / "profile"))
             client = ChatGPTClient(session, authenticate=False)
             client.http.close()
             requests = []

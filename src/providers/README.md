@@ -13,10 +13,11 @@ python -m pip install .
 ```
 
 Python 3.10+ supports ChatGPT and Claude. The Gemini transport requires Python
-3.11+. ChatGPT Sentinel fingerprint generation, proof-of-work solving and
-Turnstile/SessionObserver challenge bytecode execution run natively in pure Python
+3.11+. ChatGPT Sentinel fingerprint generation, proof-of-work solving and the
+supported Turnstile challenge path run natively in pure Python
 (`providers/chatgpt/sentinel/`) via a declarative `SentinelSpec` profile without
-any JavaScript engine dependency. Browser page discovery, local CDP access
+any JavaScript engine dependency. Unsupported required challenges stop before
+the chat request is submitted. Browser page discovery, local CDP access
 and session capture run in Python. Importing the library or configuring an
 account does not open a browser or access the network.
 
@@ -53,8 +54,9 @@ asyncio.run(main())
 The caller supplies credential paths and imports a valid session through its own
 login flow or the profile helpers in `providers.profiles`. No application config is
 read. For ChatGPT, `create_provider` also accepts an existing `BrowserSession`, or
-explicit `cache_directory` and `profile_directory` paths. Each account has its own
-adapter, connections and concurrency controls.
+an explicit `profile_directory` when using a credential store. File-backed
+credentials default to a sibling `chrome-profile` directory. Each account has its
+own adapter, connections and concurrency controls.
 
 Call `await account.prepare()` to establish the initial account connection before
 interactive work starts. Concurrent first requests wait for the account's initial
@@ -137,4 +139,4 @@ Offline API tests run after installation with:
 python -m unittest discover -s tests
 ```
 
-Gemini uses the bundled native HTTPS implementation. All three backends accept caller-owned credential storage through `providers.session.CredentialStore` (`load`, `save`, `exists`, `delete`); file paths remain supported. ChatGPT also needs a cache directory for Sentinel SDK resources when using an injected credential store. Database implementations belong to the host application.
+Gemini uses the bundled native HTTPS implementation. All three backends accept caller-owned credential storage through `providers.session.CredentialStore` (`load`, `save`, `exists`, `delete`); file paths remain supported. Database implementations belong to the host application.

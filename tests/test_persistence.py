@@ -64,7 +64,7 @@ class AtomicPersistenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             path = root / "session.json"
-            session = BrowserSession(SessionPaths(path, root / "cache", root / "profile"))
+            session = BrowserSession(SessionPaths(path, root / "profile"))
             with ThreadPoolExecutor(max_workers=8) as workers:
                 list(
                     workers.map(

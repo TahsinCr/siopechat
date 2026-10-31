@@ -26,8 +26,7 @@ CHATGPT_ROOT = Path(__file__).resolve().parent
 
 @dataclass(frozen=True)
 class SessionPaths:
-    session_file: Path
-    cache: Path = CHATGPT_ROOT
+    session_file: Path | CredentialStore
     profile: Path = CHATGPT_ROOT / "login-profile"
 
 

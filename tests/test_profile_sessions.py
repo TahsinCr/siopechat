@@ -151,9 +151,7 @@ class ProfileUiTests(unittest.IsolatedAsyncioTestCase):
 
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            session = BrowserSession(
-                SessionPaths(root / "session.json", root / "cache", root / "profile")
-            )
+            session = BrowserSession(SessionPaths(root / "session.json", root / "profile"))
             client = FakeClient(session)
             provider = ChatGPTProvider(session, client_factory=lambda _: client)
             with (
