@@ -344,12 +344,3 @@ class ClaudeProvider(ProjectEditing, OptionalFeatures):
                 raise ClaudeStreamError(
                     "Claude response ended before completion; it was not resent"
                 )
-
-    def prepare_next_turn(self, conversation_id, last_message_id):
-        if conversation_id and last_message_id:
-            raw_uuid = str(last_message_id).split(":")[0]
-            try:
-                from .transport import remote_id
-                self.transport._leaf_cache[remote_id(conversation_id)] = remote_id(raw_uuid)
-            except ValueError:
-                pass

@@ -203,6 +203,15 @@ class CredentialHeaderTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "geçersiz"):
                 cookie_header({"sessionKey": invalid}, ("sessionKey",))
 
+    def test_cookie_header_accepts_wrapped_or_flat_cookie_records(self):
+        self.assertEqual(
+            cookie_header({"cookies": {"sessionKey": "owned"}}, ("sessionKey",)), "sessionKey=owned"
+        )
+        self.assertEqual(
+            cookie_header({"cookies": "unrelated", "sessionKey": "owned"}, ("sessionKey",)),
+            "sessionKey=owned",
+        )
+
     def test_native_transport_failure_does_not_expose_signed_url(self):
         from unittest.mock import patch
 

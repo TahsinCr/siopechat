@@ -348,17 +348,6 @@ class Accounts:
                 self._providers[key] = provider
             return self._providers[key]
 
-    def prepare_next_turn(self, account_key, conversation_id, last_message_id=None):
-        if not account_key or not conversation_id:
-            return
-        try:
-            provider = self.provider(account_key)
-            method = getattr(provider, "prepare_next_turn", None)
-            if method is not None:
-                method(conversation_id, last_message_id)
-        except Exception:
-            return
-
     def _start(self, allow_closed=False):
         with self._lock:
             if (self.closing or self.closed) and not allow_closed:

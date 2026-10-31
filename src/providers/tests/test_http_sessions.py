@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 
+from providers.claude.errors import ClaudeRequestNotSent
 from providers.claude.transport import ClaudeTransport, organization_from_bootstrap
 from providers.errors import AccountPaused, ProviderError, RateLimited, RemoteNotFound
 from providers.gemini.rpc import NotebookEditor, NotebookRPC
@@ -152,6 +153,62 @@ class NotebookHTTPTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ClaudeHTTPTests(unittest.IsolatedAsyncioTestCase):
+    async def test_temporary_continuation_checks_remote_state_even_with_parent_hint(self):
+        cid = "11111111-1111-1111-1111-111111111111"
+        session = SimpleNamespace(
+            path=Path("unused"),
+            request=AsyncMock(return_value={"is_temporary": False}),
+            connect=Mock(),
+        )
+        transport = ClaudeTransport("unused", session=session)
+        transport.base = AsyncMock(return_value="/api/organizations/account")
+        transport.catalog = {"default_model": "model", "models": [{"id": "model", "efforts": []}]}
+        with self.assertRaises(ClaudeRequestNotSent):
+            _ = [
+                event
+                async for event in transport.events(
+                    "send",
+                    conversation_id=cid,
+                    parent_message_uuid=cid,
+                    temporary=True,
+                    prompt="Question",
+                    model="model",
+                )
+            ]
+        session.request.assert_awaited_once()
+        session.connect.assert_not_called()
+
+    async def test_failed_completion_is_not_retried_with_a_parent_hint(self):
+        cid = "11111111-1111-1111-1111-111111111111"
+        response = SimpleNamespace(status_code=403)
+        context = AsyncMock()
+        context.__aenter__.return_value = response
+        context.__aexit__.return_value = False
+        stream = Mock(return_value=context)
+        session = SimpleNamespace(
+            path=Path("unused"),
+            request=AsyncMock(return_value={"current_leaf_message_uuid": cid}),
+            connect=Mock(return_value=SimpleNamespace(stream=stream)),
+            check=Mock(side_effect=ProviderError("denied")),
+            url=lambda value: value,
+        )
+        transport = ClaudeTransport("unused", session=session)
+        transport.base = AsyncMock(return_value="/api/organizations/account")
+        transport.catalog = {"default_model": "model", "models": [{"id": "model", "efforts": []}]}
+        with self.assertRaises(ProviderError):
+            _ = [
+                event
+                async for event in transport.events(
+                    "send",
+                    conversation_id=cid,
+                    parent_message_uuid=cid,
+                    prompt="Question",
+                    model="model",
+                )
+            ]
+        stream.assert_called_once()
+        context.__aexit__.assert_awaited_once()
+
     def test_catalog_uses_selected_workspace_and_filters_inactive_models(self):
         data = {
             "account": {
@@ -185,11 +242,14 @@ class ClaudeHTTPTests(unittest.IsolatedAsyncioTestCase):
             path = Path(directory) / "session.json"
             save_session(path, {"cookies": {"lastActiveOrg": organization}})
             calls = []
+            bootstrap_started = asyncio.Event()
+            selector_started = asyncio.Event()
 
             async def request(method, endpoint, **_kwargs):
                 calls.append(endpoint)
                 if endpoint == "/api/bootstrap":
-                    await asyncio.sleep(0.02)
+                    bootstrap_started.set()
+                    await asyncio.wait_for(selector_started.wait(), 1)
                     return {
                         "account": {
                             "memberships": [
@@ -203,7 +263,8 @@ class ClaudeHTTPTests(unittest.IsolatedAsyncioTestCase):
                         }
                     }
                 if endpoint.endswith("/model_selector/chat"):
-                    await asyncio.sleep(0.02)
+                    selector_started.set()
+                    await asyncio.wait_for(bootstrap_started.wait(), 1)
                     return {
                         "model_selector_config": [
                             {"id": "chat", "models": [{"id": "model", "name": "Model"}]}
@@ -231,6 +292,37 @@ class ClaudeHTTPTests(unittest.IsolatedAsyncioTestCase):
         chats_endpoint = f"/api/organizations/{organization}/chat_conversations?limit=50&offset=0"
         self.assertEqual(calls.count(selector), 1)
         self.assertGreater(calls.index(chats_endpoint), calls.index(selector))
+
+    async def test_parallel_discovery_cancels_peer_without_retry_on_failure(self):
+        organization = "11111111-1111-1111-1111-111111111111"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "session.json"
+            save_session(path, {"cookies": {"lastActiveOrg": organization}})
+            started = asyncio.Event()
+            cancelled = asyncio.Event()
+            calls = []
+
+            async def request(method, endpoint, **kwargs):
+                calls.append(endpoint)
+                if endpoint == "/api/bootstrap":
+                    started.set()
+                    try:
+                        await asyncio.Event().wait()
+                    finally:
+                        cancelled.set()
+                await started.wait()
+                raise ProviderError("selector failed")
+
+            session = SimpleNamespace(
+                path=path, request=AsyncMock(side_effect=request), close=AsyncMock()
+            )
+            transport = ClaudeTransport(path, session=session)
+            self.addAsyncCleanup(transport.close)
+            with self.assertRaisesRegex(ProviderError, "selector failed"):
+                await transport.prepare()
+            self.assertTrue(cancelled.is_set())
+            self.assertEqual(calls.count("/api/bootstrap"), 1)
+            self.assertEqual(len(calls), 2)
 
     async def test_model_catalog_expires_and_explicit_refresh_bypasses_cache(self):
         transport = ClaudeTransport("unused")

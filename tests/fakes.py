@@ -58,9 +58,6 @@ class Accounts:
     def list_chats(self, selected=None, cursor=None, account_keys=None):
         return {"items": [], "cursor": None}
 
-    def prepare_next_turn(self, account_key, conversation_id, last_message_id=None):
-        pass
-
     def callbacks(self, key):
         model = Model(key, key, (Choice("standard", "Standart"),))
         return {

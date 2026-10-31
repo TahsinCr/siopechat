@@ -8,7 +8,7 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from providers import ReplaceText, SendRequest
 from providers.errors import AccountPaused, ProviderError
@@ -19,6 +19,28 @@ from providers.models import Choice, Model
 
 
 class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
+    async def test_saved_parameters_do_not_bypass_remote_session_validation(self):
+        saved = {
+            "__Secure-1PSID": "cookie",
+            "token": "stale-token",
+            "build": "stale-build",
+            "sid": "stale-sid",
+            "rpc_path_prefix": "/_/BardChatUi/",
+        }
+        http = SimpleNamespace(
+            get=AsyncMock(return_value=SimpleNamespace(status_code=401)), close=AsyncMock()
+        )
+        factory = Mock(return_value=http)
+        session = GeminiSession(Path("unused"), http_factory=factory)
+        with patch("providers.gemini.session.read_session", return_value=saved):
+            with self.assertRaises(AccountPaused):
+                await session.open()
+
+        http.get.assert_awaited_once()
+        http.close.assert_awaited_once()
+        self.assertFalse(session.verified)
+        self.assertEqual(factory.call_args.kwargs["cookies"], {"__Secure-1PSID": "cookie"})
+
     async def test_logout_waits_for_inflight_open_and_removes_rotated_cookie_write(self):
         with tempfile.TemporaryDirectory() as folder:
             credential = Path(folder) / "session.json"
@@ -795,38 +817,3 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(fast_model.metadata["number"])
         self.assertEqual(lite_model.metadata["selector_id"], "remote-lite")
         self.assertEqual(lite_model.metadata["number"], 42)
-
-    async def test_gemini_session_open_reuses_persisted_tokens_without_http_get(self):
-        saved = {
-            "__Secure-1PSID": "test_psid",
-            "token": "cached_tok",
-            "build": "cached_bld",
-            "sid": "cached_sid",
-            "language": "tr",
-            "push_id": "cached_push",
-            "rpc_path_prefix": "/_/BardChatUi/",
-        }
-        mock_http = MagicMock()
-        mock_http.get = AsyncMock()
-        mock_http.close = AsyncMock()
-        mock_http.cookies.get_dict.return_value = {"__Secure-1PSID": "test_psid"}
-        with tempfile.TemporaryDirectory() as folder:
-            session = GeminiSession(Path(folder) / "session.json", http_factory=lambda **_: mock_http)
-            with patch("providers.gemini.session.read_session", return_value=saved):
-                await session.open()
-                self.assertEqual(session.token, "cached_tok")
-                self.assertEqual(session.build, "cached_bld")
-                self.assertEqual(session.sid, "cached_sid")
-                self.assertEqual(session.language, "tr")
-                self.assertEqual(session.push_id, "cached_push")
-                self.assertEqual(session.rpc_path_prefix, "/_/BardChatUi/")
-                self.assertTrue(session.verified)
-                mock_http.get.assert_not_called()
-                await session.close()
-
-    def test_gemini_prepare_next_turn(self):
-        provider = GeminiProvider(Path("unused"), "test")
-        provider._chat_metadata["conv1"] = ["conv1", "r1", "rc1"]
-        provider._chat_metadata["conv2"] = ["conv2", "r2", "rc2"]
-        provider.prepare_next_turn("conv1")
-        self.assertEqual(list(provider._chat_metadata.keys()), ["conv2", "conv1"])

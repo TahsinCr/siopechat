@@ -273,12 +273,6 @@ class TabComponent:
         self.input.text = tab.get("draft", "")
         self.current_project = dict(tab.get("project") or {})
         self._sync_activity()
-        if tab.get("conversation_id") and not tab.get("temporary") and tab.get("messages"):
-            last_id = tab["messages"][-1].get("id")
-            if self.account_service and hasattr(self.account_service, "prepare_next_turn"):
-                self.account_service.prepare_next_turn(
-                    tab.get("account_key", self.account_key), tab["conversation_id"], last_id
-                )
         completed_pending = bool(tab.get("completed_pending"))
         tab["completed_pending"] = False
         if self.set_active_conversation is not None:

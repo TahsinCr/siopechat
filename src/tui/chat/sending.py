@@ -285,12 +285,6 @@ class SendingComponent:
                             record["updated_at"] = now
                             record.setdefault("created_at", now)
                 self._invalidate_sidebar_rows()
-                if send_succeeded and resolved_id and not temporary:
-                    messages = tab.get("messages") or []
-                    last_id = messages[-1].get("id") if messages else None
-                    account_key = tab.get("account_key") or self.account_key
-                    if self.account_service and hasattr(self.account_service, "prepare_next_turn"):
-                        self.account_service.prepare_next_turn(account_key, resolved_id, last_id)
                 if was_new_chat and send_succeeded and not temporary and resolved_id:
                     try:
                         loop = asyncio.get_running_loop()

@@ -69,33 +69,20 @@ class GeminiSession:
         from curl_cffi.requests import AsyncSession
 
         saved = read_session(self.credential_file)
-        raw = saved.get("cookies", saved) if isinstance(saved, dict) else {}
+        raw_cookies = saved.get("cookies")
+        if not isinstance(raw_cookies, dict):
+            raw_cookies = saved
         cookies = {
-            k: v
-            for k, v in raw.items()
-            if k not in {"token", "build", "sid", "language", "push_id", "rpc_path_prefix"}
-        } if isinstance(raw, dict) else {}
+            key: value
+            for key, value in raw_cookies.items()
+            if key not in {"token", "build", "sid", "language", "push_id", "rpc_path_prefix"}
+        }
         if not cookies.get("__Secure-1PSID"):
             raise AccountPaused("Gemini oturum çerezleri eksik")
         self.http = (self.http_factory or AsyncSession)(
             cookies=cookies, impersonate="chrome145", timeout=45
         )
         try:
-            cached_token = saved.get("token") if isinstance(saved, dict) else None
-            cached_build = saved.get("build") if isinstance(saved, dict) else None
-            cached_sid = saved.get("sid") if isinstance(saved, dict) else None
-            cached_prefix = saved.get("rpc_path_prefix") if isinstance(saved, dict) else None
-            if cached_token and cached_build and cached_sid and cached_prefix:
-                self.token = cached_token
-                self.build = cached_build
-                self.sid = cached_sid
-                self.language = (saved.get("language") if isinstance(saved, dict) else None) or "en"
-                self.push_id = (saved.get("push_id") if isinstance(saved, dict) else None) or ""
-                self.rpc_path_prefix = cached_prefix
-                self.verified = True
-                self.refresh_task = asyncio.create_task(self.refresh(), name="gemini-session-refresh")
-                return self
-
             response = await self.http.get(ORIGIN + "/app", headers=HEADERS, allow_redirects=False)
             WebSession.check(response)
             fields = {}
@@ -420,23 +407,13 @@ class GeminiSession:
             if self.http is None or not self.verified:
                 return
             cookies = self.http.cookies.get_dict()
-            record = dict(cookies)
-            if self.token:
-                record.update(
-                    token=self.token,
-                    build=self.build,
-                    sid=self.sid,
-                    language=self.language,
-                    push_id=self.push_id,
-                    rpc_path_prefix=self.rpc_path_prefix,
-                )
-            if record != self._saved:
+            if cookies != self._saved:
                 try:
-                    await save_session_async(self.credential_file, record)
+                    await save_session_async(self.credential_file, cookies)
                 except (OSError, ValueError):
                     self.persistence_warning = "Gemini oturum kaydı güncellenemedi"
                     return
-                self._saved = record
+                self._saved = cookies
                 self.persistence_warning = None
 
     async def refresh(self):

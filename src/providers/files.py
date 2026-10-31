@@ -17,8 +17,8 @@ class DownloadSource:
 def cookie_header(values, names):
     """Build a transient header from explicitly allowed account cookies only."""
     selected = []
-    if isinstance(values, dict):
-        values = values.get("cookies", values)
+    if isinstance(values.get("cookies"), dict):
+        values = values["cookies"]
     for key in names:
         value = values.get(key)
         if value is None:

@@ -165,6 +165,26 @@ class SendOptionsTests(unittest.TestCase):
         with patch("providers.chatgpt.client.time.monotonic", return_value=160.0):
             self.assertIsNone(self.client._cached_conversation("remote"))
 
+    def test_cached_send_failure_does_not_resubmit_after_streamed_content(self):
+        self.client._remember_conversation({"id": "remote", "current_node": "node", "messages": []})
+        events = []
+
+        def fail_after_content(*args, **kwargs):
+            args[3]({"type": "delta", "text": "partial"})
+            raise ChatGPTWebError("stream interrupted")
+
+        self.client.send_prompt_direct = Mock(side_effect=fail_after_content)
+        self.client.get_conversation = Mock()
+        with self.assertRaisesRegex(ChatGPTWebError, "stream interrupted"):
+            self.client.send_prompt(
+                "remote", "Continue", model="account-thinking", on_event=events.append
+            )
+
+        self.client.send_prompt_direct.assert_called_once()
+        self.client.get_conversation.assert_not_called()
+        self.assertEqual(events, [{"type": "delta", "text": "partial"}])
+        self.assertIsNone(self.client._cached_conversation("remote"))
+
     def test_delete_invalidates_verified_continuation(self):
         self.client._remember_conversation({"id": "remote", "current_node": "node", "messages": []})
         response = Mock(content=b"")
