@@ -10,6 +10,8 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 
 ### Changed
 
+- Extend ChatGPT continuation cache lifetime to 180 seconds and capacity to 8 items, avoiding redundant pre-send conversation history downloads during pauses between turns.
+- Extend ChatGPT HTTP keep-alive expiry to 60 seconds to match standard browser connection persistence and avoid repeated TLS handshakes.
 - Fetch Claude's bootstrap and saved organization's model catalog concurrently during discovery when a valid organization ID is available.
 - Prime the TUI sidebar and model catalog synchronously from local SQLite archive and account cache on startup, rendering existing conversations and available models immediately without awaiting background network synchronization.
 - Refresh provider conversation lists concurrently and show each account's first page as soon as it arrives, while slower accounts continue loading.

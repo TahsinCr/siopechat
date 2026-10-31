@@ -36,8 +36,8 @@ from .formats import message_parts, text_from_parts
 from .sentinel import SentinelRuntime
 from .session import BrowserSession
 
-_CONTINUATION_CACHE_TTL_SECONDS = 60.0
-_CONTINUATION_CACHE_MAX_ITEMS = 4
+_CONTINUATION_CACHE_TTL_SECONDS = 180.0
+_CONTINUATION_CACHE_MAX_ITEMS = 8
 _CONTINUATION_CACHE_MAX_MESSAGES = 2_000
 _CONTINUATION_CACHE_MAX_TEXT_CHARS = 1_000_000
 
@@ -119,7 +119,7 @@ class ChatGPTClient:
         self.http = httpx.Client(
             follow_redirects=False,
             timeout=httpx.Timeout(30.0),
-            limits=httpx.Limits(max_keepalive_connections=5, keepalive_expiry=30.0),
+            limits=httpx.Limits(max_keepalive_connections=5, keepalive_expiry=60.0),
         )
         if http_started is not None:
             timing.record("httpx_client_construct_ms", time.perf_counter_ns() - http_started)
