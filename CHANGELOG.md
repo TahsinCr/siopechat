@@ -8,6 +8,10 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep newly sent chats at the top of the sidebar and refresh their provider title against the originating conversation after switching tabs; defer restored-tab hydration until the TUI event loop starts.
+
 ## [1.5.2-beta] - 2026-10-31
 
 ### Added

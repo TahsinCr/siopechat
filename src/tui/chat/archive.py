@@ -110,18 +110,23 @@ class ArchiveComponent:
             session_bound=False,
         )
 
-    def refresh_open_conversation(self):
-        if not self.account_service or not self.conversation_id or not self.archive_service():
+    def refresh_open_conversation(self, conversation_id=None, account_key=None):
+        conversation_id = self.conversation_id if conversation_id is None else conversation_id
+        key = self.account_key if account_key is None else account_key
+        if not self.account_service or not conversation_id or not self.archive_service():
             return
-        conversation_id, key = self.conversation_id, self.account_key
 
         def refreshed(_):
             self.apply_archive_updates()
 
+        def failed(reason):
+            if self.conversation_id == conversation_id and self.account_key == key:
+                self._show_refresh_error(reason)
+
         self._read_in_background(
             lambda: self.account_service.load(conversation_id, key, force=True),
             refreshed,
-            lambda reason: self._show_refresh_error(reason),
+            failed,
             session_bound=False,
         )
 

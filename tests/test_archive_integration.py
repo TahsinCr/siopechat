@@ -461,6 +461,62 @@ class ArchiveIntegrationTests(unittest.TestCase):
             self.assertEqual(view.input.text, "Continue drafting")
             self.assertFalse(view.loading_conversation)
 
+    def test_delayed_refresh_uses_its_original_conversation_and_account(self):
+        active_id = "@chatgpt/default/active"
+        target_id = f"@{self.gemini}/new-chat"
+        self.accounts.load = Mock(return_value={"id": target_id, "messages": []})
+        with terminal(account_service=self.accounts) as (view, _):
+            view.conversation_id = active_id
+            view.account_key = "chatgpt/default"
+            view._read_in_background = immediate
+            view.apply_archive_updates = Mock()
+            view.refresh_open_conversation(target_id, self.gemini)
+
+        self.accounts.load.assert_called_once_with(target_id, self.gemini, force=True)
+        view.apply_archive_updates.assert_called_once_with()
+
+    def test_refresh_error_is_only_shown_for_the_conversation_still_open(self):
+        target_id = f"@{self.gemini}/new-chat"
+        with terminal(account_service=self.accounts) as (view, _):
+            view.conversation_id = "@chatgpt/default/another-chat"
+            view.account_key = "chatgpt/default"
+            view._read_in_background = lambda _work, _done, fail, **_kwargs: fail("offline")
+            view._show_refresh_error = Mock()
+
+            view.refresh_open_conversation(target_id, self.gemini)
+            view._show_refresh_error.assert_not_called()
+
+            view.conversation_id = target_id
+            view.account_key = self.gemini
+            view.refresh_open_conversation(target_id, self.gemini)
+
+        self.assertEqual(view._show_refresh_error.call_count, 1)
+
+    def test_restore_session_defers_conversation_hydration_until_startup(self):
+        conversation_id = f"@{self.gemini}/cached"
+        with terminal(account_service=self.accounts) as (view, _):
+            view.resume_conversation = Mock()
+            self.assertTrue(
+                view.restore_session(
+                    {
+                        "tabs": [
+                            {
+                                "tab_id": "restored-tab",
+                                "account_key": self.gemini,
+                                "conversation_id": conversation_id,
+                            }
+                        ]
+                    }
+                )
+            )
+
+            view.resume_conversation.assert_not_called()
+            restored_tab = view.tabs[view.active_tab]
+            self.assertTrue(restored_tab["needs_hydration"])
+            view._hydrate_restored_tab(restored_tab)
+
+        view.resume_conversation.assert_called_once_with(conversation_id)
+
     def test_opening_cached_chat_starts_a_forced_provider_refresh_in_background(self):
         conversation_id = f"@{self.gemini}/c_cached"
         self.accounts.cached_window = Mock(

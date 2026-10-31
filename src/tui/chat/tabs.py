@@ -138,7 +138,6 @@ class TabComponent:
                     pass
         finally:
             self._restoring_session = False
-        self._hydrate_restored_tab(self.tabs[self.active_tab])
         return True
 
     def _hydrate_restored_tab(self, tab: dict[str, Any]) -> None:

@@ -221,6 +221,45 @@ class CliComponentTests(unittest.TestCase):
                 self.assertEqual(view.messages, [])
                 self.assertIn("tamamlandı", view.status)
 
+    def test_new_chat_completion_keeps_sidebar_order_and_refresh_target(self):
+        import asyncio
+
+        from tui.library import sort_records
+
+        view = ChatView(lambda: [], lambda _: {}, lambda *_: {})
+        target_id = "@gemini/default/new-chat"
+        view.tabs[0]["account_key"] = "gemini/default"
+        view.sidebar_items = [{"id": "@gemini/default/older", "created_at": 1.0, "updated_at": 1.0}]
+        loop = Mock()
+
+        def send(*_args, **_kwargs):
+            return {
+                "conversation_id": target_id,
+                "conversation": {"title": "New chat", "default_model_slug": "flash"},
+                "previous_ids": [],
+            }
+
+        view._dispatch_ui = lambda callback: callback()
+        with patch.object(asyncio, "get_running_loop", return_value=loop):
+            view.run_send(
+                "question",
+                [],
+                0,
+                [{"role": "user", "text": "question"}, {"role": "assistant", "text": ""}],
+                None,
+                "flash",
+                None,
+                send_callback=send,
+            )
+
+        record = next(item for item in view.sidebar_items if item["id"] == target_id)
+        self.assertGreater(record["updated_at"], 1.0)
+        self.assertEqual(record["created_at"], record["updated_at"])
+        self.assertEqual(sort_records(view.sidebar_items)[0]["id"], target_id)
+        loop.call_later.assert_called_once_with(
+            2.0, view.refresh_open_conversation, target_id, "gemini/default"
+        )
+
     def test_duplicate_shortcuts_are_valid_and_report_every_conflicting_action(self):
         collided = json.loads(json.dumps(DEFAULTS))
         collided["keybindings"]["extra.action"] = DEFAULTS["keybindings"]["ui.command_palette"]

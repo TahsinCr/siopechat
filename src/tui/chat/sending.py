@@ -270,13 +270,28 @@ class SendingComponent:
                             provider_id=tab.get("account_key", self.account_key).split("/")[0],
                             project_id=(tab.get("project") or {}).get("id"),
                         )
+                        if send_succeeded:
+                            now = time.time()
+                            record["updated_at"] = now
+                            record.setdefault("created_at", now)
                 self._invalidate_sidebar_rows()
-                if was_new_chat and send_succeeded and hasattr(self, "refresh_open_conversation"):
+                if (
+                    was_new_chat
+                    and send_succeeded
+                    and not temporary
+                    and resolved_id
+                    and hasattr(self, "refresh_open_conversation")
+                ):
                     try:
                         import asyncio
 
                         loop = asyncio.get_running_loop()
-                        loop.call_later(2.0, self.refresh_open_conversation)
+                        loop.call_later(
+                            2.0,
+                            self.refresh_open_conversation,
+                            resolved_id,
+                            tab.get("account_key") or self.account_key,
+                        )
                     except RuntimeError:
                         pass
                 if confirm_branch_listing:
