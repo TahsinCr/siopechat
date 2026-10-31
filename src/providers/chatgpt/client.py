@@ -656,7 +656,7 @@ class ChatGPTClient:
                 and (conversation_id is None or isinstance(previous_messages, list))
                 and isinstance(submitted_message, dict)
                 and submitted_message.get("id") == submitted_message_id
-                and streamed_parent == submitted_message_id
+                and (streamed_parent is None or streamed_parent == submitted_message_id)
                 and isinstance(current_node, str)
                 and bool(current_node)
             )

@@ -194,7 +194,10 @@ class SendingComponent:
                         target_tab["history_window"] = rollback[1]
                 elif send_succeeded and result.get("history"):
                     history = result["history"]
+                    saved_queued = [m for m in messages if m.get("queued")]
                     messages = visible_chat_messages(history.get("messages", ()))
+                    if saved_queued:
+                        messages.extend(saved_queued)
                     if history.get("history_window"):
                         target_tab["history_window"] = history["history_window"]
                 if send_succeeded and result.get("replaced_conversation_id"):
@@ -250,6 +253,8 @@ class SendingComponent:
                 queued_to_start = queued if queued is not None and send_succeeded else None
                 if queued is not None:
                     if not send_succeeded:
+                        with self.lock:
+                            messages[:] = [m for m in messages if not m.get("queued")]
                         if is_active():
                             self.input.text = queued["prompt"]
                         else:
@@ -380,8 +385,15 @@ class SendingComponent:
             )
             display_prompt = f"{display_prompt}\n\n{labels}"
         messages = tab.setdefault("messages", [])
+        has_queued = False
         with self.lock:
-            messages.append({"role": "user", "text": display_prompt, "local_pending": True})
+            for m in reversed(messages):
+                if m.get("role") == "user" and m.get("queued"):
+                    m.pop("queued", None)
+                    has_queued = True
+                    break
+            if not has_queued:
+                messages.append({"role": "user", "text": display_prompt, "local_pending": True})
             messages.append({"role": "assistant", "text": "", "local_pending": True})
         tab_index = next((i for i, item in enumerate(self.tabs) if item is tab), -1)
         tab["busy"] = True
@@ -402,6 +414,7 @@ class SendingComponent:
         self._invalidate_sidebar_rows()
         self._sync_activity()
         if tab is self.tabs[self.active_tab]:
+            self.messages = messages
             self.status = self.tr("Yanıt bekleniyor…")
             self.scroll_bottom()
             self._save_active_tab()

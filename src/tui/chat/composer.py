@@ -131,9 +131,23 @@ class ComposerComponent:
                 "project_id": (self.current_project or {}).get("id"),
                 "temporary": bool(self.temporary),
             }
+            display_prompt = prompt or self.tr("Please review the attached files.")
+            if self.pending_attachments:
+                labels = " ".join(
+                    f"[{ICONS['attachment'].icon} {item['name']}]"
+                    for item in self.pending_attachments
+                )
+                display_prompt = f"{display_prompt}\n\n{labels}"
+            messages = active_tab_data.setdefault("messages", self.messages)
+            with self.lock:
+                messages.append(
+                    {"role": "user", "text": display_prompt, "local_pending": True, "queued": True}
+                )
             self.input.text = ""
             self.pending_attachments = []
             self.status = self.tr("Gönderim kuyruğunda…")
+            self.scroll_bottom()
+            self._save_active_tab()
             self.app.invalidate()
             return
         self.tabs[self.active_tab]["empty_workspace"] = False

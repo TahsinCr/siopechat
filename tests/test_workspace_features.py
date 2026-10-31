@@ -267,6 +267,8 @@ class WorkspaceTests(unittest.TestCase):
             self.assertIsNone(queued["effort"])
             self.assertEqual(queued["project_id"], "project")
             self.assertFalse(view.input.text)
+            self.assertEqual(view.messages[-1]["text"], "Follow-up")
+            self.assertTrue(view.messages[-1].get("queued"))
 
             view.input.text = "Another follow-up"
             view.submit_prompt()
@@ -346,6 +348,12 @@ class WorkspaceTests(unittest.TestCase):
             target = view.tabs[0]
             target["empty_workspace"] = False
             target["busy"] = True
+            view.messages = [
+                {"role": "user", "text": "First question"},
+                {"role": "assistant", "text": ""},
+                {"role": "user", "text": "Follow-up", "queued": True},
+            ]
+            target["messages"] = view.messages
             target["queued_submit"] = {
                 "prompt": "Follow-up",
                 "attachments": [queued_attachment],
@@ -377,6 +385,8 @@ class WorkspaceTests(unittest.TestCase):
                 [item["queue_id"] for item in view.pending_attachments],
                 ["queued-file", "existing-file"],
             )
+            self.assertEqual(len(target["messages"]), 2)
+            self.assertFalse(any(m.get("queued") for m in target["messages"]))
 
     def test_quit_confirmation_includes_background_requests_and_queued_drafts(self):
         with terminal() as (view, _):

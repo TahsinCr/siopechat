@@ -19,6 +19,8 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 
 ### Fixed
 
+- Display queued user prompts immediately in the chat transcript instead of hiding them until the in-flight response completes, preserving visibility and restoring cleanly on cancellation or failure.
+- Omit redundant post-send ChatGPT conversation history fetch on stream completions where SSE chunk deltas omit parent message IDs.
 - Avoid automatically repeating ambiguous ChatGPT and Claude sends, verify Gemini sessions remotely before use, and keep ChatGPT stream buffering bounded.
 - Keep newly sent chats at the top of the sidebar, preserve a provider-bound chat ID if its stream stops early, and refresh its title against the originating conversation after switching tabs; defer restored-tab hydration until the TUI event loop starts.
 - Preserve queued follow-up prompts as session drafts without copying them into the active composer, so they survive a restart without appearing again during the current session.
