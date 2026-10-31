@@ -506,29 +506,20 @@ class WorkspaceTests(unittest.TestCase):
     def test_queued_message_is_saved_as_draft_in_session(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = TabSessionStore(Path(tmp) / "session.json")
-            tabs = [
-                {
-                    "kind": "chat",
-                    "account_key": "chatgpt/default",
-                    "tab_id": "tab1",
-                    "conversation_id": "c1",
-                    "queued_submit": {"prompt": "queued follow up"},
-                }
-            ]
-            store.save(tabs, 0, None)
-            loaded = store.load()
-            self.assertEqual(loaded["tabs"][0]["draft"], "queued follow up")
+            with terminal() as (v, _):
+                v.session_store = store
+                v.busy = True
+                v.tabs[0]["busy"] = True
+                v.input.text = "queued follow up"
+                v.submit_prompt()
+                self.assertEqual(v.tabs[0].get("draft", ""), "")
 
-        with terminal() as (v, _):
-            v.session_store = Mock()
-            v.busy = True
-            v.tabs[0]["busy"] = True
-            v.input.text = "queued follow up"
-            v.submit_prompt()
-            v._persist_session()
-            self.assertEqual(v.tabs[0].get("draft"), "queued follow up")
-            saved_tabs = v.session_store.save.call_args[0][0]
-            self.assertEqual(saved_tabs[0]["draft"], "queued follow up")
+                v._save_active_tab()
+                self.assertEqual(v.tabs[0].get("draft", ""), "")
+                v._persist_session()
+
+                self.assertEqual(v.tabs[0].get("draft", ""), "")
+                self.assertEqual(store.load()["tabs"][0]["draft"], "queued follow up")
 
     def test_four_busy_tabs_allow_queuing_followup_on_busy_tab(self):
         with terminal() as (v, _):
