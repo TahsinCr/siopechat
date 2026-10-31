@@ -1,3 +1,4 @@
+import asyncio
 import json
 import threading
 import unittest
@@ -10,6 +11,7 @@ from prompt_toolkit.output import DummyOutput
 from providers.models import Choice, FeatureState, Model, ModelCatalog
 from settings import DEFAULTS, Settings, keybinding_conflicts
 from tui.chat import ChatView
+from tui.library import sort_records
 from tui.markdown import MessageRenderer, detect_code_language, visible_chat_message
 from utils import clipboard
 
@@ -222,10 +224,6 @@ class CliComponentTests(unittest.TestCase):
                 self.assertIn("tamamlandı", view.status)
 
     def test_new_chat_completion_keeps_sidebar_order_and_refresh_target(self):
-        import asyncio
-
-        from tui.library import sort_records
-
         view = ChatView(lambda: [], lambda _: {}, lambda *_: {})
         target_id = "@gemini/default/new-chat"
         view.tabs[0]["account_key"] = "gemini/default"
@@ -259,6 +257,34 @@ class CliComponentTests(unittest.TestCase):
         loop.call_later.assert_called_once_with(
             2.0, view.refresh_open_conversation, target_id, "gemini/default"
         )
+
+    def test_bound_new_chat_identity_survives_a_stream_failure(self):
+        view = ChatView(lambda: [], lambda _: {}, lambda *_: {})
+        remote_id = "remote-new-chat"
+        conversation_id = "@gemini/default/remote-new-chat"
+        view.tabs[0]["account_key"] = "gemini/default"
+
+        def send(_conversation_id, _prompt, _attachments, on_event, *_args, **_kwargs):
+            on_event({"type": "bound", "conversation_id": remote_id})
+            raise RuntimeError("stream interrupted")
+
+        view._dispatch_ui = lambda callback: callback()
+        view.run_send(
+            "question",
+            [],
+            0,
+            [{"role": "user", "text": "question"}, {"role": "assistant", "text": ""}],
+            None,
+            "flash",
+            None,
+            send_callback=send,
+        )
+
+        self.assertEqual(view.tabs[0]["conversation_id"], conversation_id)
+        self.assertEqual(view.conversation_id, conversation_id)
+        record = next(item for item in view.sidebar_items if item["id"] == conversation_id)
+        self.assertGreater(record["updated_at"], 1.0)
+        self.assertEqual(record["created_at"], record["updated_at"])
 
     def test_duplicate_shortcuts_are_valid_and_report_every_conflicting_action(self):
         collided = json.loads(json.dumps(DEFAULTS))

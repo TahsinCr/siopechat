@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 from typing import Any
 
-from accounts import origin
+from accounts import identity, origin
 from providers.timing import SendTiming, collect_send_timing, timing_enabled, use_send_timing
 
 from ..markdown import (
@@ -101,13 +102,22 @@ class SendingComponent:
         resolved_title: str | None = None
         resolved_model: str | None = None
 
+        def on_event(event: dict[str, Any]) -> None:
+            nonlocal resolved_id
+            if event.get("type") == "bound":
+                bound_id = event.get("conversation_id")
+                if isinstance(bound_id, str) and bound_id:
+                    account_key = target_tab.get("account_key") or self.account_key
+                    resolved_id = identity(account_key, bound_id)
+            stream.on_event(event)
+
         try:
             if timing is None:
                 result = (send_callback or self.send_prompt)(
                     conversation_id,
                     prompt,
                     attachments,
-                    stream.on_event,
+                    on_event,
                     stream.register_connection,
                     model,
                     effort,
@@ -125,7 +135,7 @@ class SendingComponent:
                         conversation_id,
                         prompt,
                         attachments,
-                        stream.on_event,
+                        on_event,
                         stream.register_connection,
                         model,
                         effort,
@@ -270,21 +280,13 @@ class SendingComponent:
                             provider_id=tab.get("account_key", self.account_key).split("/")[0],
                             project_id=(tab.get("project") or {}).get("id"),
                         )
-                        if send_succeeded:
+                        if send_succeeded or was_new_chat:
                             now = time.time()
                             record["updated_at"] = now
                             record.setdefault("created_at", now)
                 self._invalidate_sidebar_rows()
-                if (
-                    was_new_chat
-                    and send_succeeded
-                    and not temporary
-                    and resolved_id
-                    and hasattr(self, "refresh_open_conversation")
-                ):
+                if was_new_chat and send_succeeded and not temporary and resolved_id:
                     try:
-                        import asyncio
-
                         loop = asyncio.get_running_loop()
                         loop.call_later(
                             2.0,
