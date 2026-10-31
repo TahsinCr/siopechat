@@ -67,13 +67,8 @@ class ComposerComponent:
             )
             self.app.invalidate()
             return
-        if (
-            self.active_busy()
-            or sum(bool(tab.get("busy")) for tab in self.tabs + self.background_tabs) >= 4
-        ):
-            self.status = self.tr(
-                "Bu sohbetin yanıtını bekleyin · aynı anda en fazla 4 bekleyen istek"
-            )
+        if sum(bool(tab.get("busy")) for tab in self.tabs + self.background_tabs) >= 4:
+            self.status = self.tr("Aynı anda en fazla 4 bekleyen istek çalıştırılabilir · bekleyin")
             self.app.invalidate()
             return
         if (
@@ -103,11 +98,40 @@ class ComposerComponent:
             return
         prompt = self.input.text.strip()
         attachments = list(self.pending_attachments)
-        if attachments and self._attachments_in_flight:
-            self.status = self.tr("Ekler başka bir sohbete gönderiliyor · bekleyin")
+        if attachments and (
+            self._attachments_in_flight
+            or any(
+                (tab.get("queued_submit") or {}).get("attachments")
+                for tab in self.tabs + self.background_tabs
+            )
+        ):
+            self.status = self.tr("Ekler başka bir mesajla kullanılıyor · bekleyin")
             self.app.invalidate()
             return
         if not prompt and not attachments:
+            return
+        if self.active_busy():
+            active_tab_data = self.tabs[self.active_tab]
+            if active_tab_data.get("queued_submit"):
+                self.status = self.tr("Bu sohbet için bekleyen bir mesaj zaten var")
+                self.app.invalidate()
+                return
+            source_tab_id = active_tab_data.setdefault("tab_id", uuid.uuid4().hex)
+            for item in self.pending_attachments:
+                item.setdefault("queue_id", uuid.uuid4().hex)
+                item.setdefault("source_tab_id", source_tab_id)
+            active_tab_data["queued_submit"] = {
+                "prompt": prompt,
+                "attachments": list(self.pending_attachments),
+                "model": self.model,
+                "effort": self.effort,
+                "project_id": (self.current_project or {}).get("id"),
+                "temporary": bool(self.temporary),
+            }
+            self.input.text = ""
+            self.pending_attachments = []
+            self.status = self.tr("Gönderim kuyruğunda…")
+            self.app.invalidate()
             return
         self.tabs[self.active_tab]["empty_workspace"] = False
         if self.tab_kind == "project":

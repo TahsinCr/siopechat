@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from typing import Any
 
 from accounts import origin
-from providers.timing import SendTiming, collect_send_timing, use_send_timing
+from providers.timing import SendTiming, collect_send_timing, timing_enabled, use_send_timing
 
 from ..markdown import (
     visible_chat_message,
     visible_chat_messages,
 )
+from ..styles import ICONS
 from .contracts import Message
 from .stream import _SendStream
 
@@ -219,14 +221,34 @@ class SendingComponent:
                 tab["title"] = resolved_title or tab.get("title") or self.tr("New conversation")
                 tab["messages"] = messages
                 tab["render_revision"] = tab.get("render_revision", 0) + 1
-                tab["model"] = model or resolved_model or ""
+                if tab.get("model") == model or not tab.get("model"):
+                    tab["model"] = model or resolved_model or ""
                 tab["response_model"] = resolved_model
-                tab["effort"] = effort
+                if tab.get("effort") == effort:
+                    tab["effort"] = effort
                 tab["busy"] = False
+                tab["stream_received"] = False
                 tab["completed_pending"] = not is_active()
                 tab["started"] = None
                 tab["connection"] = None
                 tab["cancel_requested"] = False
+                queued = tab.pop("queued_submit", None)
+                queued_to_start = queued if queued is not None and send_succeeded else None
+                if queued is not None:
+                    if not send_succeeded:
+                        if is_active():
+                            self.input.text = queued["prompt"]
+                        else:
+                            tab["draft"] = queued["prompt"]
+                        existing_attachment_ids = {
+                            str(item.get("queue_id") or "") for item in self.pending_attachments
+                        }
+                        restored = [
+                            item
+                            for item in queued["attachments"]
+                            if str(item.get("queue_id") or "") not in existing_attachment_ids
+                        ]
+                        self.pending_attachments = restored + self.pending_attachments
                 confirm_branch_listing = bool(
                     send_succeeded and tab.pop("_confirm_branch_listing", False)
                 )
@@ -248,7 +270,8 @@ class SendingComponent:
                 if confirm_branch_listing:
                     self._confirm_branch_listing(tab, resolved_id)
                 if (
-                    any(item is tab for item in self.background_tabs)
+                    queued_to_start is None
+                    and any(item is tab for item in self.background_tabs)
                     and send_succeeded
                     and (temporary or self.archive_service())
                 ):
@@ -286,7 +309,7 @@ class SendingComponent:
                     self.messages = messages
                     self.model = tab["model"]
                     self.last_response_model = resolved_model
-                    self.effort = effort
+                    self.effort = tab["effort"]
                     self.last_elapsed = elapsed
                     self.status = final_status
                     if self.set_active_conversation is not None:
@@ -305,7 +328,73 @@ class SendingComponent:
                     self.app.invalidate()
                 if any(item is tab for item in self.tabs):
                     self._persist_session()
+                if queued_to_start is not None:
+                    self._execute_queued_submit(tab, queued_to_start)
 
             self._dispatch_ui(finish_turn)
             if timing is not None:
                 collect_send_timing(timing)
+
+    def _execute_queued_submit(self, tab: dict[str, Any], queued: dict[str, Any]) -> None:
+        prompt = queued["prompt"] or self.tr("Please review the attached files.")
+        attachments = queued["attachments"]
+        model = queued["model"]
+        effort = queued["effort"]
+        project_id = queued["project_id"]
+        temporary = queued["temporary"]
+        display_prompt = prompt
+        if attachments:
+            labels = " ".join(
+                f"[{ICONS['attachment'].icon} {item['name']}]" for item in attachments
+            )
+            display_prompt = f"{display_prompt}\n\n{labels}"
+        messages = tab.setdefault("messages", [])
+        with self.lock:
+            messages.append({"role": "user", "text": display_prompt, "local_pending": True})
+            messages.append({"role": "assistant", "text": "", "local_pending": True})
+        tab_index = next((i for i, item in enumerate(self.tabs) if item is tab), -1)
+        tab["busy"] = True
+        tab["stream_received"] = False
+        tab["cancel_requested"] = False
+        tab["started"] = time.monotonic()
+        tab["completed_pending"] = False
+        tab["draft"] = ""
+        tab["empty_workspace"] = False
+        if attachments:
+            self._attachments_in_flight = True
+            self._inflight_attachments = list(attachments)
+        self.stop_confirmation_until = 0.0
+        self.stop_confirmation_tab_id = None
+        self.last_elapsed = None
+        self._invalidate_sidebar_rows()
+        self._sync_activity()
+        if tab is self.tabs[self.active_tab]:
+            self.status = self.tr("Yanıt bekleniyor…")
+            self.scroll_bottom()
+            self._save_active_tab()
+        self.app.invalidate()
+        timing = (
+            SendTiming()
+            if tab.get("account_key", self.account_key).startswith("chatgpt") and timing_enabled()
+            else None
+        )
+        threading.Thread(
+            target=self.run_send,
+            kwargs={
+                "send_callback": self.send_prompt,
+                "target_tab": tab,
+                "timing": timing,
+            },
+            args=(
+                prompt,
+                attachments,
+                tab_index if tab_index >= 0 else self.active_tab,
+                messages,
+                tab.get("conversation_id"),
+                model,
+                effort,
+                project_id,
+                temporary,
+            ),
+            daemon=True,
+        ).start()

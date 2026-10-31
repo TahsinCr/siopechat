@@ -79,6 +79,7 @@ class _SendStream:
             self.view._cancel_connection(connection)
 
     def on_event(self, event: dict[str, Any]) -> None:
+        self.target_tab["stream_received"] = True
         connection = self.target_tab.get("connection")
         if connection is not None:
             self.target_tab["job_id"] = getattr(connection, "id", None)

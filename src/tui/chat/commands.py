@@ -464,8 +464,16 @@ class CommandComponent:
         self.app.invalidate()
 
     def request_quit(self):
-        dirty = bool(self.input.text) or any(tab.get("draft") for tab in self.tabs)
-        if (dirty or self.busy) and time.monotonic() > getattr(self, "quit_armed_until", 0):
+        tabs = self.tabs + self.background_tabs
+        dirty = bool(self.input.text or self.pending_attachments) or any(
+            tab.get("draft") or tab.get("queued_submit") for tab in tabs
+        )
+        in_flight_unreceived = any(
+            tab.get("busy") and not tab.get("stream_received") for tab in tabs
+        )
+        if (dirty or in_flight_unreceived) and time.monotonic() > getattr(
+            self, "quit_armed_until", 0
+        ):
             self.quit_armed_until = time.monotonic() + 3
             self.status = self.tr(
                 "Çıkmak için 3 saniye içinde Ctrl+D veya Ctrl+Q'ya tekrar basın · taslak/yanıt açık"

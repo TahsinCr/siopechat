@@ -248,6 +248,172 @@ class WorkspaceTests(unittest.TestCase):
             finally:
                 gate.set()
 
+    def test_busy_composer_queues_one_followup_with_selected_context(self):
+        with terminal() as (view, _):
+            tab = view.tabs[0]
+            tab["busy"] = True
+            view.busy = True
+            view.current_project = {"id": "project"}
+            view.model = "queued-model"
+            view.effort = None
+            view.input.text = "Follow-up"
+
+            view.submit_prompt()
+
+            queued = tab["queued_submit"]
+            self.assertEqual(queued["prompt"], "Follow-up")
+            self.assertEqual(queued["model"], "queued-model")
+            self.assertIsNone(queued["effort"])
+            self.assertEqual(queued["project_id"], "project")
+            self.assertFalse(view.input.text)
+
+            view.input.text = "Another follow-up"
+            view.submit_prompt()
+            self.assertEqual(tab["queued_submit"], queued)
+            self.assertEqual(view.input.text, "Another follow-up")
+
+    def test_queued_send_preserves_explicit_defaults_and_attachment_prompt(self):
+        attachment = {"queue_id": "queued-file", "name": "notes.txt"}
+        with terminal() as (view, _):
+            tab = view.tabs[0]
+            tab.update(model="old-model", effort="high", project={"id": "old-project"})
+            queued = {
+                "prompt": "",
+                "attachments": [attachment],
+                "model": "new-model",
+                "effort": None,
+                "project_id": None,
+                "temporary": False,
+            }
+
+            with patch("tui.chat.sending.threading.Thread") as thread:
+                view._execute_queued_submit(tab, queued)
+
+            args = thread.call_args.kwargs["args"]
+            self.assertEqual(args[0], view.tr("Please review the attached files."))
+            self.assertEqual(args[5:], ("new-model", None, None, False))
+            self.assertTrue(view._attachments_in_flight)
+            thread.return_value.start.assert_called_once()
+
+    def test_queued_send_keeps_completed_background_tab_tracked(self):
+        queued = {
+            "prompt": "Follow-up",
+            "attachments": [],
+            "model": "model",
+            "effort": None,
+            "project_id": None,
+            "temporary": False,
+        }
+        with terminal() as (view, _):
+            target = view.tabs[0]
+            target["busy"] = True
+            target["messages"] = [
+                {"role": "user", "text": "First question"},
+                {"role": "assistant", "text": ""},
+            ]
+            target["queued_submit"] = queued
+            view.busy = True
+            view.close_tab()
+            target = view.background_tabs[0]
+            view.archive_service = lambda: object()
+
+            def send(*args, **kwargs):
+                return {"conversation_id": "first-chat"}
+
+            with patch("tui.chat.sending.threading.Thread") as thread:
+                view.run_send(
+                    "First question",
+                    [],
+                    0,
+                    target["messages"],
+                    None,
+                    "model",
+                    None,
+                    send_callback=send,
+                    target_tab=target,
+                )
+
+            self.assertIn(target, view.background_tabs)
+            self.assertTrue(target["busy"])
+            self.assertEqual(target["messages"][-2]["text"], "Follow-up")
+            thread.return_value.start.assert_called_once()
+
+    def test_failed_original_send_restores_queued_attachments_for_background_tab(self):
+        queued_attachment = {"queue_id": "queued-file", "name": "queued.txt"}
+        existing_attachment = {"queue_id": "existing-file", "name": "existing.txt"}
+        with terminal() as (view, _):
+            target = view.tabs[0]
+            target["empty_workspace"] = False
+            target["busy"] = True
+            target["queued_submit"] = {
+                "prompt": "Follow-up",
+                "attachments": [queued_attachment],
+                "model": "model",
+                "effort": None,
+                "project_id": None,
+                "temporary": False,
+            }
+            view.pending_attachments = [existing_attachment]
+            view.new_tab()
+
+            def fail(*args, **kwargs):
+                raise RuntimeError("offline")
+
+            view.run_send(
+                "First question",
+                [],
+                0,
+                target["messages"],
+                None,
+                "model",
+                None,
+                send_callback=fail,
+                target_tab=target,
+            )
+
+            self.assertEqual(target["draft"], "Follow-up")
+            self.assertEqual(
+                [item["queue_id"] for item in view.pending_attachments],
+                ["queued-file", "existing-file"],
+            )
+
+    def test_quit_confirmation_includes_background_requests_and_queued_drafts(self):
+        with terminal() as (view, _):
+            view.app.exit = Mock()
+            view.app.invalidate = Mock()
+            cases = (
+                {"busy": True, "stream_received": False},
+                {
+                    "busy": True,
+                    "stream_received": True,
+                    "queued_submit": {"prompt": "Follow-up", "attachments": []},
+                },
+            )
+            for case in cases:
+                with self.subTest(case=case):
+                    view.background_tabs = [case]
+                    view.quit_armed_until = 0
+                    view.request_quit()
+                    view.app.exit.assert_not_called()
+                    view.app.invalidate.assert_called()
+
+    def test_queued_attachments_block_a_second_attachment_send(self):
+        with terminal() as (view, _):
+            tab = view.tabs[0]
+            tab["busy"] = True
+            tab["queued_submit"] = {
+                "prompt": "Follow-up",
+                "attachments": [{"queue_id": "queued-file", "name": "queued.txt"}],
+            }
+            view.busy = True
+            view.pending_attachments = [{"queue_id": "new-file", "name": "new.txt"}]
+            view.input.text = "Another message"
+
+            view.submit_prompt()
+
+            self.assertEqual(view.input.text, "Another message")
+            self.assertIn("başka bir mesajla", view.status)
+
     def test_sidebar_opens_another_chat_during_a_response(self):
         gate, started = threading.Event(), threading.Event()
 

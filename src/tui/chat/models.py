@@ -182,10 +182,6 @@ class ModelComponent:
             )
 
     def select_model(self, model_id: str) -> None:
-        if self.tabs[self.active_tab].get("busy"):
-            self.status = self.tr("Yanıt tamamlanınca bu sohbetin modelini değiştirebilirsiniz")
-            self.app.invalidate()
-            return
         selected = self.catalog.chat_model(model_id)
         if selected is None:
             self.status = self.tr(
@@ -207,10 +203,6 @@ class ModelComponent:
         self.app.invalidate()
 
     def select_effort(self, effort: str | None) -> None:
-        if self.tabs[self.active_tab].get("busy"):
-            self.status = self.tr("Yanıt tamamlanınca bu sohbetin eforunu değiştirebilirsiniz")
-            self.app.invalidate()
-            return
         selected = self.catalog.chat_model(self.model)
         if effort is not None and (
             selected is None or effort not in {e.id for e in selected.efforts}

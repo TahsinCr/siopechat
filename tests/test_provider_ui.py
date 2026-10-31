@@ -101,6 +101,21 @@ class ProviderUiTests(unittest.TestCase):
             view.switch_tab(1)
             self.assertEqual(view.input.text, "second draft")
 
+    def test_model_and_effort_can_change_while_response_is_running(self):
+        with terminal(load_catalog=lambda: model_catalog(CATALOG)) as (view, _pipe):
+            view._read_in_background = immediate
+            view.refresh_provider_catalog()
+            view.tabs[0]["busy"] = True
+            view.busy = True
+
+            view.select_model("account-instant")
+            self.assertEqual(view.model, "account-instant")
+            self.assertIsNone(view.effort)
+
+            view.select_model("account-thinking")
+            view.select_effort("extended")
+            self.assertEqual((view.model, view.effort), ("account-thinking", "extended"))
+
     def test_projects_load_lazily_page_chats_and_show_details_in_their_own_tab(self):
         detail = {
             "id": "g-p-work",
