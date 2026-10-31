@@ -19,10 +19,11 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 ### Fixed
 
 - Keep newly sent chats at the top of the sidebar, preserve a provider-bound chat ID if its stream stops early, and refresh its title against the originating conversation after switching tabs; defer restored-tab hydration until the TUI event loop starts.
-- Preserve queued follow-up prompts as drafts in tab session records so pending submissions are not lost when closing or restarting the application.
+- Preserve queued follow-up prompts as session drafts without copying them into the active composer, so they survive a restart without appearing again during the current session.
 - Allow queuing a follow-up prompt on the currently busy tab even when four background requests are active, without blocking the user.
-- Narrow the Gemini Flash default fast-path match to default Fast/Flash configurations, preserving explicit model selector IDs and sequence numbers for specialized variants like Flash Lite.
-- Restrict file deletion in download removal to files strictly located within the configured download directory.
+- Keep server-declared Gemini FAST models, including versioned Flash models, on the selector-free route while preserving explicit IDs and sequence numbers for Lite variants.
+- Remove downloads only by path entries inside the configured directory; unlink symbolic links without deleting their targets.
+- Keep startup usable when local archive reads fail or contain malformed records, and avoid repeating a provider page request when its callback fails.
 
 ## [1.5.2-beta] - 2026-10-31
 
