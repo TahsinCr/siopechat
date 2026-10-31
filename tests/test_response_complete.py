@@ -2,6 +2,7 @@ import unittest
 from types import SimpleNamespace
 
 from tui.chat.stream import _SendStream
+from tui.chat.transcript import TranscriptComponent
 
 
 class ResponseCompleteUiTests(unittest.TestCase):
@@ -25,3 +26,25 @@ class ResponseCompleteUiTests(unittest.TestCase):
         self.assertTrue(tab["completed_pending"])
         self.assertTrue(tab["busy"])
         self.assertTrue(tab["stream_received"])
+
+    def test_completed_response_freezes_elapsed_status_while_request_is_busy(self):
+        tab = {
+            "tab_id": "active",
+            "busy": True,
+            "generation_complete": True,
+            "generation_elapsed": 4.8,
+        }
+        view = SimpleNamespace(
+            active_busy=lambda: True,
+            stop_confirmation_tab_id=None,
+            tabs=[tab],
+            active_tab=0,
+            busy=True,
+            busy_tab_index=0,
+            tr=lambda value: value,
+            format_elapsed=TranscriptComponent.format_elapsed,
+        )
+
+        activity = TranscriptComponent.render_activity(view)
+
+        self.assertEqual(activity[0][1], " — Worked for 4s ")

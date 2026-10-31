@@ -1497,6 +1497,14 @@ class Accounts:
 
         return self.read_record(key, "conversation", remote, fetch, force, window=window)
 
+    def _assert_send_account_available(self, key):
+        if not self.enabled(key.split("/")[0]):
+            raise ValueError("Sağlayıcı devre dışı")
+        if key not in {item["key"] for item in self.active_accounts()}:
+            raise ValueError(
+                "Bu sağlayıcıda başka hesap etkin; Hesaplar bölümünden bu hesabı etkinleştirin"
+            )
+
     def send(
         self,
         key,
@@ -1509,12 +1517,7 @@ class Accounts:
         effort=None,
         **options,
     ):
-        if not self.enabled(key.split("/")[0]):
-            raise ValueError("Sağlayıcı devre dışı")
-        if key not in {item["key"] for item in self.active_accounts()}:
-            raise ValueError(
-                "Bu sağlayıcıda başka hesap etkin; Hesaplar bölümünden bu hesabı etkinleştirin"
-            )
+        self._assert_send_account_available(key)
         context, remote = origin(selected_id, key)
         project_context, project = origin(options.get("project_id"), key)
         if context != key or project_context != key:
@@ -1874,12 +1877,7 @@ class Accounts:
         with self._lock:
             if key in self._session_changes:
                 raise RuntimeError("Profil doğrulaması tamamlanana kadar bekleyin")
-            if not self.enabled(key.split("/")[0]):
-                raise ValueError("Sağlayıcı devre dışı")
-            if key not in {item["key"] for item in self.active_accounts()}:
-                raise ValueError(
-                    "Bu sağlayıcıda başka hesap etkin; Hesaplar bölümünden bu hesabı etkinleştirin"
-                )
+            self._assert_send_account_available(key)
             self._sending[key] = self._sending.get(key, 0) + 1
 
             def finished(inner):

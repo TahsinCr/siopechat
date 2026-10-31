@@ -308,9 +308,7 @@ class DiscoveryTests(unittest.TestCase):
         with patch.object(self.client, "create_sentinel_headers", return_value={}):
             self.client.send_prompt_direct(None, "hello", [], on_event=received.append)
 
-        self.assertEqual(
-            [item["type"] for item in received], ["delta", "response_complete"]
-        )
+        self.assertEqual([item["type"] for item in received], ["delta", "response_complete"])
 
     def test_model_catalog_reuses_valid_cache_and_refreshes_expired_cache(self):
         import time
