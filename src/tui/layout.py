@@ -289,10 +289,10 @@ def render_tab_bar(view):
             view.title if i == view.active_tab else tab.get("title", view.tr("Sohbet"))
         )
         marker = (
-            f"{ICONS['running'].icon} "
+            f"{ICONS['complete'].icon} "
+            if tab.get("generation_complete") or tab.get("completed_pending")
+            else f"{ICONS['running'].icon} "
             if tab.get("busy")
-            else f"{ICONS['complete'].icon} "
-            if tab.get("completed_pending")
             else f"{ICONS['retry'].icon} "
             if tab.get("loading") or tab.get("syncing")
             else f"{ICONS['idle'].icon} "
@@ -305,6 +305,8 @@ def render_tab_bar(view):
         style = (
             "class:tab.active"
             if i == view.active_tab
+            else "class:tab"
+            if tab.get("generation_complete") or tab.get("completed_pending")
             else "class:tab.running"
             if tab.get("busy")
             else "class:tab"

@@ -39,18 +39,24 @@ class _SendStream:
         self._refresh_lock = threading.Lock()
         self._refresh_pending = False
         self._refresh_status: str | None = None
+        self._refresh_complete = False
 
     def _is_active(self) -> bool:
         return self.target_tab is self.view.tabs[self.view.active_tab]
 
     def _schedule_refresh(
-        self, *, show_status: bool = False, status_message: str | None = None
+        self,
+        *,
+        show_status: bool = False,
+        status_message: str | None = None,
+        mark_complete: bool = False,
     ) -> None:
         with self._refresh_lock:
             if status_message is not None:
                 self._refresh_status = status_message
             elif show_status and self._refresh_status is None:
                 self._refresh_status = "Streaming response…"
+            self._refresh_complete = self._refresh_complete or mark_complete
             if self._refresh_pending:
                 return
             self._refresh_pending = True
@@ -59,7 +65,16 @@ class _SendStream:
             with self._refresh_lock:
                 update_status = self._refresh_status
                 self._refresh_status = None
+                update_complete = self._refresh_complete
+                self._refresh_complete = False
                 self._refresh_pending = False
+            if update_complete and self.target_tab.get("busy"):
+                self.target_tab["generation_complete"] = True
+                self.target_tab["completed_pending"] = True
+            elif update_complete:
+                update_status = None
+            if update_complete:
+                self.view.app.invalidate()
             if (
                 self.timing is not None
                 and self._first_final_text_at_ns is not None
@@ -90,7 +105,7 @@ class _SendStream:
             self.target_tab["job_id"] = getattr(connection, "id", None)
         event_type = event.get("type")
         if event_type == "response_complete":
-            self._schedule_refresh(status_message="Response text complete; confirming…")
+            self._schedule_refresh(status_message="Response complete", mark_complete=True)
             return
         if event_type == "metadata":
             with self.view.lock:

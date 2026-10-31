@@ -10,7 +10,7 @@ class ResponseCompleteUiTests(unittest.TestCase):
         view = SimpleNamespace(
             tabs=[tab],
             active_tab=0,
-            app=SimpleNamespace(),
+            app=SimpleNamespace(invalidate=lambda: None),
             tr=lambda value: value,
             scroll_bottom=lambda **_kwargs: None,
             _dispatch_ui=lambda callback: callback(),
@@ -20,6 +20,8 @@ class ResponseCompleteUiTests(unittest.TestCase):
 
         stream.on_event({"type": "response_complete"})
 
-        self.assertEqual(view.status, "Response text complete; confirming…")
+        self.assertEqual(view.status, "Response complete")
+        self.assertTrue(tab["generation_complete"])
+        self.assertTrue(tab["completed_pending"])
         self.assertTrue(tab["busy"])
         self.assertTrue(tab["stream_received"])

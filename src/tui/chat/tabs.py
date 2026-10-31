@@ -279,6 +279,8 @@ class TabComponent:
             self.set_active_conversation(None if self.temporary else self.conversation_id)
         if tab.get("loading"):
             self.status = self.tr("Loading conversation…")
+        elif tab.get("generation_complete"):
+            self.status = self.tr("Response complete")
         elif tab.get("busy"):
             self.status = self.tr("Streaming response…")
         elif self.busy and self.busy_tab_index is not None:

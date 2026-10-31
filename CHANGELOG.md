@@ -15,7 +15,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.1b0` for `v1.5.
 ### Changed
 
 - Queue one follow-up during a response, keep it with the conversation when its tab moves to the background, and restore its prompt and attachments if the current response fails.
-- Show when answer generation has ended while the provider stream or conversation confirmation is still pending; keep the send active until final confirmation.
+- Show a completed response status and tab marker as soon as answer generation ends; keep provider confirmation and send serialization running in the background.
 - Port the ChatGPT Sentinel runtime (`SentinelRuntime`, `SentinelVM`, `SentinelSpec` and proof-of-work solver) completely to pure Python under `src/providers/chatgpt/sentinel/` (`spec.py`, `proof.py`, `vm.py`, `runtime.py`), supporting initial fingerprint generation, FNV-1a proof-of-work, the supported Turnstile challenge path, automatic protocol adaptation from SDK sources and strict pre-submission `SentinelCompatibilityError` aborts on SDK drift or unsupported required challenges without any JavaScript engine.
 - Reuse a recently verified ChatGPT conversation snapshot for ordinary continuations on the same provider client, avoiding a duplicate pre-send history request while leaving message actions and branch sends on the authoritative fetch path; render TUI updates at a 16 ms minimum interval and collect opt-in, content-free send-stage latency data with `SIOPECHAT_SEND_TIMINGS=1`.
 - For existing ordinary conversation continuations, reuse the completed SSE messages when their parent confirms the submitted message, avoiding the extra post-send conversation request.

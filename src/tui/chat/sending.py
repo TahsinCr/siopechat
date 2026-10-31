@@ -226,6 +226,7 @@ class SendingComponent:
                 tab["response_model"] = resolved_model
                 if tab.get("effort") == effort:
                     tab["effort"] = effort
+                tab["generation_complete"] = False
                 tab["busy"] = False
                 tab["stream_received"] = False
                 tab["completed_pending"] = not is_active()
