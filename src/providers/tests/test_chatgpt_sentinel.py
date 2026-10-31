@@ -3,8 +3,6 @@ import json
 import threading
 import unittest
 from dataclasses import replace
-from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from providers.chatgpt.client import ChatGPTClient
@@ -29,19 +27,26 @@ def encode_vm_program(instructions: list[list[object]], key: str) -> str:
     return _btoa(_xor_strings(raw, key))
 
 
+def run_turnstile(runtime: SentinelRuntime, dx: str) -> str | None:
+    return runtime.create_enforcement_tokens(
+        {
+            "proofofwork": {"required": False},
+            "turnstile": {"required": True, "dx": dx},
+        }
+    )[2]
+
+
 def make_client() -> ChatGPTClient:
     client = ChatGPTClient.__new__(ChatGPTClient)
     client.headers = {"user-agent": "Mozilla/5.0 (X11; Linux x86_64)"}
     client._sentinel_lock = threading.Lock()
     client._sentinel_runtime = None
     client._sentinel_runtime_key = None
-    client.session = SimpleNamespace(
-        paths=SimpleNamespace(cache=Path("sentinel-cache")),
-    )
+    client.http = Mock()
     return client
 
 
-class ChatGPTSentinelProofTests(unittest.TestCase):
+class SentinelRuntimeTests(unittest.TestCase):
     def test_enforcement_creates_initial_proof_when_one_was_not_prepared(self):
         with SentinelRuntime(user_agent="Mozilla/5.0") as runtime:
             initial, proof, turnstile = runtime.create_enforcement_tokens(
@@ -127,9 +132,9 @@ class ChatGPTSentinelProofTests(unittest.TestCase):
             "Mozilla/5.0 (X11; Linux x86_64)|sentinel/20260810913b/sdk.js",
         )
 
-    def test_sentinel_vm_executes_arithmetic_conditionals_subroutines_and_rejects_broken_challenges(
-        self,
-    ):
+
+class SentinelVMTests(unittest.TestCase):
+    def test_vm_executes_arithmetic_conditionals_and_subroutines(self):
         with SentinelRuntime(user_agent="Mozilla/5.0") as runtime:
             initial = runtime.create_initial_proof()
             sub_dx = encode_vm_program([[2, 40, "sub-ok"], [7, 3, 40]], initial)
@@ -153,82 +158,65 @@ class ChatGPTSentinelProofTests(unittest.TestCase):
                 [7, 3, 70],
             ]
             dx = encode_vm_program(program, initial)
-            _, _, turnstile = runtime.create_enforcement_tokens(
-                {
-                    "proofofwork": {"required": False},
-                    "turnstile": {"required": True, "dx": dx},
-                }
-            )
+            turnstile = run_turnstile(runtime, dx)
             self.assertEqual(_atob(turnstile), "branch-matched:sub-ok")
 
+    def test_vm_hides_remote_rejection_details(self):
+        with SentinelRuntime(user_agent="Mozilla/5.0") as runtime:
+            initial = runtime.create_initial_proof()
             reject_dx = encode_vm_program(
                 [[2, 40, "private-rejection-detail"], [7, 4, 40]], initial
             )
             with self.assertRaisesRegex(
                 SentinelCompatibilityError, "rejected challenge"
             ) as rejected:
-                runtime.create_enforcement_tokens(
-                    {
-                        "proofofwork": {"required": False},
-                        "turnstile": {"required": True, "dx": reject_dx},
-                    }
-                )
-            self.assertNotIn(_btoa("private-rejection-detail"), str(rejected.exception))
+                run_turnstile(runtime, reject_dx)
+        self.assertNotIn(_btoa("private-rejection-detail"), str(rejected.exception))
 
+    def test_vm_rejects_malformed_challenge(self):
+        with SentinelRuntime(user_agent="Mozilla/5.0") as runtime:
+            initial = runtime.create_initial_proof()
             broken_dx = _btoa(_xor_strings("{not-valid-json", initial))
             with self.assertRaisesRegex(SentinelCompatibilityError, "could not be decoded"):
-                runtime.create_enforcement_tokens(
-                    {
-                        "proofofwork": {"required": False},
-                        "turnstile": {"required": True, "dx": broken_dx},
-                    }
-                )
+                run_turnstile(runtime, broken_dx)
 
+    def test_vm_rejects_unknown_register(self):
+        with SentinelRuntime(user_agent="Mozilla/5.0") as runtime:
+            initial = runtime.create_initial_proof()
             unknown_op_dx = encode_vm_program([[17, 80, 999, 50], [7, 3, 80]], initial)
             with self.assertRaisesRegex(
                 SentinelCompatibilityError, "Unsupported or non-callable Sentinel VM register"
             ):
-                runtime.create_enforcement_tokens(
-                    {
-                        "proofofwork": {"required": False},
-                        "turnstile": {"required": True, "dx": unknown_op_dx},
-                    }
-                )
+                run_turnstile(runtime, unknown_op_dx)
 
+    def test_vm_requires_a_resolved_token(self):
+        with SentinelRuntime(user_agent="Mozilla/5.0") as runtime:
+            initial = runtime.create_initial_proof()
             unresolved_dx = encode_vm_program([[2, 40, "never-resolved"]], initial)
             with self.assertRaisesRegex(SentinelCompatibilityError, "without resolving a token"):
-                runtime.create_enforcement_tokens(
-                    {
-                        "proofofwork": {"required": False},
-                        "turnstile": {"required": True, "dx": unresolved_dx},
-                    }
-                )
+                run_turnstile(runtime, unresolved_dx)
 
+    def test_vm_rejects_newer_sdk_script_version(self):
+        with SentinelRuntime(user_agent="Mozilla/5.0") as runtime:
+            initial = runtime.create_initial_proof()
             version_mismatch_dx = encode_vm_program(
                 [[2, 24, r"sentinel/20999999xxxx/sdk\.js"], [11, 25, 24], [7, 3, 25]],
                 initial,
             )
             with self.assertRaisesRegex(SentinelCompatibilityError, "newer SDK script version"):
-                runtime.create_enforcement_tokens(
-                    {
-                        "proofofwork": {"required": False},
-                        "turnstile": {"required": True, "dx": version_mismatch_dx},
-                    }
-                )
+                run_turnstile(runtime, version_mismatch_dx)
 
+    def test_vm_enforces_step_limit(self):
         bounded_spec = replace(DEFAULT_SENTINEL_SPEC, max_vm_steps=5)
         with SentinelRuntime(bounded_spec) as bounded_runtime:
             init_bounded = bounded_runtime.create_initial_proof()
             many_steps = [[2, 40, idx] for idx in range(10)]
             loop_dx = encode_vm_program(many_steps, init_bounded)
             with self.assertRaisesRegex(SentinelCompatibilityError, "step limit"):
-                bounded_runtime.create_enforcement_tokens(
-                    {
-                        "proofofwork": {"required": False},
-                        "turnstile": {"required": True, "dx": loop_dx},
-                    }
-                )
+                run_turnstile(bounded_runtime, loop_dx)
 
+
+class SentinelSpecTests(unittest.TestCase):
     def test_sentinel_spec_adapts_from_updated_sdk_source(self):
         future_sdk_source = """
         const sdkUrl = "https://chatgpt.com/sentinel/20261201abcd/sdk.js";
@@ -296,6 +284,8 @@ class ChatGPTSentinelProofTests(unittest.TestCase):
             self.assertTrue(proof.endswith("~Z"))
             self.assertEqual(_atob(turnstile), "20261201abcd")
 
+
+class SentinelCompatibilityTests(unittest.TestCase):
     def test_session_observer_token_execution(self):
         with SentinelRuntime(user_agent="Mozilla/5.0") as runtime:
             initial = runtime.create_initial_proof()
@@ -401,8 +391,11 @@ class ChatGPTSentinelProofTests(unittest.TestCase):
         self.assertEqual(_js_number(1e-7), "1e-7")
         self.assertEqual(_js_number(-0.0), "0")
 
+
+class ChatGPTSentinelClientTests(unittest.TestCase):
     def test_client_reuses_one_sentinel_runtime_and_handles_pow_and_turnstile_headers(self):
         client = make_client()
+        self.addCleanup(client.close)
         pow_requirements = {
             "prepare_token": "server-issued-1",
             "token": "sdk-requirements-token",
@@ -501,6 +494,9 @@ class ChatGPTSentinelProofTests(unittest.TestCase):
             '{"k":"turnstile-solved"}',
         )
 
+    def test_client_rejects_unsupported_required_challenges_before_submission(self):
+        client = make_client()
+        self.addCleanup(client.close)
         for unsupported in (
             {"future_required_challenge": {"required": True}},
             {"arkose": {"required": True}},
@@ -510,11 +506,7 @@ class ChatGPTSentinelProofTests(unittest.TestCase):
             bad_resp = Mock()
             bad_resp.json.return_value = {
                 "prepare_token": "server-issued-3",
-                "proofofwork": {
-                    "required": True,
-                    "seed": "server-seed-3",
-                    "difficulty": "ffffffff",
-                },
+                "proofofwork": {"required": False},
                 **unsupported,
             }
             client.request = Mock(return_value=bad_resp)
@@ -523,6 +515,9 @@ class ChatGPTSentinelProofTests(unittest.TestCase):
             self.assertFalse(raised.exception.message_submitted)
             self.assertEqual(raised.exception.code, "chatgpt_sentinel_incompatible")
 
+    def test_client_maps_prepare_rejection_to_pre_submit_compatibility_error(self):
+        client = make_client()
+        self.addCleanup(client.close)
         client.request = Mock(
             side_effect=ChatGPTWebError(
                 "ChatGPT returned HTTP 403 for POST /backend-api/sentinel/chat-requirements/prepare"
@@ -533,7 +528,17 @@ class ChatGPTSentinelProofTests(unittest.TestCase):
         self.assertFalse(rejected_prepare.exception.message_submitted)
         self.assertEqual(rejected_prepare.exception.code, "chatgpt_sentinel_incompatible")
 
-        client.http = Mock()
+    def test_client_close_releases_its_sentinel_runtime(self):
+        client = make_client()
+        response = Mock()
+        response.json.return_value = {
+            "prepare_token": "server-issued",
+            "proofofwork": {"required": False},
+            "turnstile": {"required": False},
+        }
+        client.request = Mock(return_value=response)
+        client.create_sentinel_headers()
+        self.assertIsNotNone(client._sentinel_runtime)
         client.close()
         self.assertIsNone(client._sentinel_runtime)
 

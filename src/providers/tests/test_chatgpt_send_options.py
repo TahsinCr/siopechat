@@ -237,7 +237,7 @@ class SendOptionsTests(unittest.TestCase):
         self.client.get_conversation.assert_not_called()
         self.assertEqual(self.requests, [])
 
-    def test_temporary_never_sends_prompt_to_browser_recipe_capture(self):
+    def test_temporary_sentinel_failure_stops_before_http_or_recipe_capture(self):
         self.client.create_sentinel_headers = Mock(
             side_effect=SentinelCompatibilityError("changed")
         )
