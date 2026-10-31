@@ -190,12 +190,12 @@ class ComposerComponent:
         self.tabs[self.active_tab]["cancel_requested"] = False
         self.stop_confirmation_until = 0.0
         self.stop_confirmation_tab_id = None
-        self._invalidate_sidebar_rows()
-        if not self.conversation_id:
-            self.title = self.tabs[self.active_tab]["title"] = prompt[:60]
-        self.tabs[self.active_tab]["completed_pending"] = False
         self.active_started = time.monotonic()
         self.tabs[self.active_tab]["started"] = self.active_started
+        if not self.conversation_id:
+            short_title = prompt[:25].strip() + ("…" if len(prompt) > 25 else "")
+            self.title = self.tabs[self.active_tab]["title"] = short_title
+        self._invalidate_sidebar_rows()
         self.tabs[self.active_tab]["connection"] = None
         self.last_elapsed = None
         self.status = self.tr("Yanıt bekleniyor…")

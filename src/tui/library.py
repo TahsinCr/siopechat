@@ -84,11 +84,14 @@ def build_sidebar_rows(view) -> None:
         key = tab.get("account_key", view.account_key)
         identifier = tab.get("conversation_id") or "background:" + str(id(tab))
         item = live_items.setdefault(identifier, {"id": identifier})
+        now = datetime.now().timestamp()
         item.update(
             title=tab.get("title") or view.tr("New conversation"),
             provider_id=key.split("/")[0],
             project_id=(tab.get("project") or {}).get("id"),
             live_tab=tab,
+            updated_at=now,
+            created_at=now,
         )
     conversations = [
         item

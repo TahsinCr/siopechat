@@ -104,6 +104,19 @@ class _SendStream:
         if connection is not None:
             self.target_tab["job_id"] = getattr(connection, "id", None)
         event_type = event.get("type")
+        if event_type == "bound":
+            cid = event.get("conversation_id")
+            if cid:
+                self.target_tab["conversation_id"] = cid
+                if self._is_active():
+                    self.view.conversation_id = cid
+                    if self.view.set_active_conversation is not None:
+                        self.view.set_active_conversation(
+                            None if self.target_tab.get("temporary") else cid
+                        )
+                self.view._invalidate_sidebar_rows()
+                self.view.app.invalidate()
+            return
         if event_type == "response_complete":
             started = self.target_tab.get("started")
             if started is not None:

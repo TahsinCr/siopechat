@@ -96,6 +96,7 @@ class SendingComponent:
         submitted_attachment_ids = {
             str(item["queue_id"]) for item in attachments if item.get("queue_id")
         }
+        was_new_chat = conversation_id is None
         resolved_id = conversation_id
         resolved_title: str | None = None
         resolved_model: str | None = None
@@ -270,6 +271,14 @@ class SendingComponent:
                             project_id=(tab.get("project") or {}).get("id"),
                         )
                 self._invalidate_sidebar_rows()
+                if was_new_chat and send_succeeded and hasattr(self, "refresh_open_conversation"):
+                    try:
+                        import asyncio
+
+                        loop = asyncio.get_running_loop()
+                        loop.call_later(2.0, self.refresh_open_conversation)
+                    except RuntimeError:
+                        pass
                 if confirm_branch_listing:
                     self._confirm_branch_listing(tab, resolved_id)
                 if (

@@ -309,6 +309,7 @@ class TaskService:
                             if not event.conversation_id:
                                 raise ValueError("empty remote conversation ID")
                             job.conversation_id = event.conversation_id
+                            self._deliver_event(job, event)
                         elif isinstance(event, ResponseComplete):
                             self._deliver_event(job, event)
                         elif isinstance(event, MessageMetadata):

@@ -24,6 +24,7 @@ from backend import BackendService
 from providers import (
     BranchContext,
     Capability,
+    ConversationBound,
     MessageAction,
     MessageMetadata,
     ReplaceText,
@@ -1633,6 +1634,9 @@ class Accounts:
                     raise RemoteNotFound("Sohbet veya proje bu sırada silindi")
 
             def deliver(event):
+                if isinstance(event, ConversationBound):
+                    on_event({"type": "bound", "conversation_id": event.conversation_id})
+                    return
                 if isinstance(event, MessageMetadata):
                     on_event(dict(asdict(event), type="metadata"))
                     return
@@ -1729,7 +1733,9 @@ class Accounts:
                         },
                     }
                 )
-                title = prior.get("title") or prompt[:60]
+                title = prior.get("title") or (
+                    prompt[:25].strip() + ("…" if len(prompt) > 25 else "")
+                )
                 record = {
                     "id": remote_id,
                     "title": title,
