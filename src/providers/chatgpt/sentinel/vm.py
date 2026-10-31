@@ -864,10 +864,8 @@ class SentinelVM:
             run_queue()
         except SentinelCompatibilityError:
             raise
-        except _VMRejection as rejected:
-            raise SentinelCompatibilityError(
-                f"Sentinel VM rejected challenge: {rejected.encoded}"
-            ) from None
+        except _VMRejection:
+            raise SentinelCompatibilityError("Sentinel VM rejected challenge") from None
         except Exception as error:
             raise SentinelCompatibilityError(
                 "Sentinel challenge bytecode execution failed"

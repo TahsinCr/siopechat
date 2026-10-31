@@ -42,6 +42,19 @@ def make_client() -> ChatGPTClient:
 
 
 class ChatGPTSentinelProofTests(unittest.TestCase):
+    def test_enforcement_creates_initial_proof_when_one_was_not_prepared(self):
+        with SentinelRuntime(user_agent="Mozilla/5.0") as runtime:
+            initial, proof, turnstile = runtime.create_enforcement_tokens(
+                {
+                    "proofofwork": {"required": False},
+                    "turnstile": {"required": False},
+                }
+            )
+
+        self.assertTrue(initial.startswith("gAAAAAC"))
+        self.assertEqual(proof, initial)
+        self.assertIsNone(turnstile)
+
     def test_sentinel_runtime_generates_valid_initial_proof_and_25_slot_fingerprint(self):
         with SentinelRuntime(user_agent="Mozilla/5.0 (X11; Linux x86_64)") as runtime:
             initial = runtime.create_initial_proof()
@@ -148,14 +161,19 @@ class ChatGPTSentinelProofTests(unittest.TestCase):
             )
             self.assertEqual(_atob(turnstile), "branch-matched:sub-ok")
 
-            reject_dx = encode_vm_program([[2, 40, "denied"], [7, 4, 40]], initial)
-            with self.assertRaisesRegex(SentinelCompatibilityError, "rejected challenge"):
+            reject_dx = encode_vm_program(
+                [[2, 40, "private-rejection-detail"], [7, 4, 40]], initial
+            )
+            with self.assertRaisesRegex(
+                SentinelCompatibilityError, "rejected challenge"
+            ) as rejected:
                 runtime.create_enforcement_tokens(
                     {
                         "proofofwork": {"required": False},
                         "turnstile": {"required": True, "dx": reject_dx},
                     }
                 )
+            self.assertNotIn(_btoa("private-rejection-detail"), str(rejected.exception))
 
             broken_dx = _btoa(_xor_strings("{not-valid-json", initial))
             with self.assertRaisesRegex(SentinelCompatibilityError, "could not be decoded"):
@@ -218,7 +236,6 @@ class ChatGPTSentinelProofTests(unittest.TestCase):
           constructor() {
             this.requirementsTokenPrefix = "gAAAAAD";
             this.enforcementTokenPrefix = "gAAAAAE";
-            this.errorPrefix = "customErrorPrefix123";
             this.maxAttempts = 250000;
           }
           getConfig() {
@@ -242,7 +259,6 @@ class ChatGPTSentinelProofTests(unittest.TestCase):
         self.assertEqual(spec.sdk_url, "https://chatgpt.com/sentinel/20261201abcd/sdk.js")
         self.assertEqual(spec.initial_prefix, "gAAAAAD")
         self.assertEqual(spec.enforcement_prefix, "gAAAAAE")
-        self.assertEqual(spec.error_prefix, "customErrorPrefix123")
         self.assertEqual(spec.proof_suffix, "~Z")
         self.assertEqual(spec.max_attempts, 250_000)
         self.assertEqual(spec.nonce_index, 4)
@@ -469,13 +485,6 @@ class ChatGPTSentinelProofTests(unittest.TestCase):
                     "difficulty": "ffffffff",
                 },
                 "turnstile": {"required": True, "dx": dx},
-                "so": {
-                    "required": True,
-                    "collector_dx": encode_vm_program([[2, 20, None], [7, 3, 20]], initial_sent),
-                    "snapshot_dx": encode_vm_program(
-                        [[2, 20, "so-snapshot"], [7, 3, 20]], initial_sent
-                    ),
-                },
             }
             return resp
 
@@ -495,6 +504,7 @@ class ChatGPTSentinelProofTests(unittest.TestCase):
         for unsupported in (
             {"future_required_challenge": {"required": True}},
             {"arkose": {"required": True}},
+            {"so": {"required": True}},
             {"error": "blocked_by_sentinel"},
         ):
             bad_resp = Mock()

@@ -120,25 +120,29 @@ class SentinelRuntime:
     def create_initial_proof(self) -> str:
         """Generate a fresh ``gAAAAAC...~S`` requirements proof token."""
         with self._lock:
-            self._require_open()
-            started_ns = time.perf_counter_ns()
-            config = self.build_fingerprint_config()
-            encoded = _solve_pow(
-                config,
-                self._requirements_seed,
-                self.spec.initial_difficulty,
-                spec=self.spec,
-                started_ns=started_ns,
-            )
-            token = f"{self.spec.initial_prefix}{encoded}{self.spec.proof_suffix}"
-            self._last_initial_proof = token
-            return token
+            return self._create_initial_proof_locked()
+
+    def _create_initial_proof_locked(self) -> str:
+        """Create and remember a proof while the runtime lock is held."""
+        self._require_open()
+        started_ns = time.perf_counter_ns()
+        config = self.build_fingerprint_config()
+        encoded = _solve_pow(
+            config,
+            self._requirements_seed,
+            self.spec.initial_difficulty,
+            spec=self.spec,
+            started_ns=started_ns,
+        )
+        token = f"{self.spec.initial_prefix}{encoded}{self.spec.proof_suffix}"
+        self._last_initial_proof = token
+        return token
 
     def _validate_supported_challenges(self, requirements: dict[str, Any]) -> None:
         if requirements.get("error") or requirements.get("detail"):
             raise SentinelCompatibilityError("Sentinel prepare response reported an error")
         for key, value in requirements.items():
-            if key in ("proofofwork", "turnstile", "so"):
+            if key in ("proofofwork", "turnstile"):
                 continue
             if isinstance(value, dict) and value.get("required") is True:
                 raise SentinelCompatibilityError(f"Unsupported required Sentinel challenge: {key}")
@@ -159,7 +163,7 @@ class SentinelRuntime:
             self._validate_supported_challenges(requirements)
             initial = self._last_initial_proof
             if initial is None:
-                initial = self.create_initial_proof()
+                initial = self._create_initial_proof_locked()
 
             pow_config = requirements.get("proofofwork")
             if isinstance(pow_config, dict) and pow_config.get("required") is True:
@@ -193,7 +197,7 @@ class SentinelRuntime:
             return None
         with self._lock:
             self._require_open()
-            initial = self._last_initial_proof or self.create_initial_proof()
+            initial = self._last_initial_proof or self._create_initial_proof_locked()
             collector_dx = so_requirements.get("collector_dx")
             snapshot_dx = so_requirements.get("snapshot_dx")
             if isinstance(collector_dx, str) and collector_dx.strip():

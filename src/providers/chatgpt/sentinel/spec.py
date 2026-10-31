@@ -71,7 +71,6 @@ class SentinelSpec:
     sdk_url: str = "https://chatgpt.com/sentinel/20260810913b/sdk.js"
     initial_prefix: str = "gAAAAAC"
     enforcement_prefix: str = "gAAAAAB"
-    error_prefix: str = "wQ8Lk5FbGpA2NcR9dShT6gYjU7VxZ4D"
     proof_suffix: str = "~S"
     initial_difficulty: str = "0"
     max_attempts: int = 500_000
@@ -143,10 +142,6 @@ class SentinelSpec:
             return (self.bootstrap_url, self.sdk_url)
         return (self.sdk_url,) if self.sdk_url else ()
 
-    @property
-    def frame_url(self) -> str:
-        return f"https://chatgpt.com/backend-api/sentinel/frame.html?sv={self.sdk_version}"
-
     @classmethod
     def from_sdk_source(
         cls,
@@ -169,7 +164,6 @@ class SentinelSpec:
 
         req_prefix_match = re.search(r"requirementsTokenPrefix\s*=\s*[\"']([^\"']+)[\"']", source)
         enf_prefix_match = re.search(r"enforcementTokenPrefix\s*=\s*[\"']([^\"']+)[\"']", source)
-        err_prefix_match = re.search(r"errorPrefix\s*=\s*[\"']([^\"']+)[\"']", source)
         suffix_match = re.search(
             r"getRequirementsToken\([^)]*\)\s*\{[^}]*\+\s*[\"'](~[A-Za-z0-9_]+)[\"']",
             source,
@@ -242,7 +236,6 @@ class SentinelSpec:
             enforcement_prefix=(
                 enf_prefix_match.group(1) if enf_prefix_match else base.enforcement_prefix
             ),
-            error_prefix=err_prefix_match.group(1) if err_prefix_match else base.error_prefix,
             proof_suffix=suffix_match.group(1) if suffix_match else base.proof_suffix,
             max_attempts=max_attempts,
             nonce_index=nonce_index,
