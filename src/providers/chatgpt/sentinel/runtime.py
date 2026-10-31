@@ -142,7 +142,7 @@ class SentinelRuntime:
         if requirements.get("error") or requirements.get("detail"):
             raise SentinelCompatibilityError("Sentinel prepare response reported an error")
         for key, value in requirements.items():
-            if key in ("proofofwork", "turnstile"):
+            if key in ("proofofwork", "turnstile", "so"):
                 continue
             if isinstance(value, dict) and value.get("required") is True:
                 raise SentinelCompatibilityError(f"Unsupported required Sentinel challenge: {key}")
@@ -161,6 +161,11 @@ class SentinelRuntime:
         with self._lock:
             self._require_open()
             self._validate_supported_challenges(requirements)
+            so_config = requirements.get("so")
+            if so_config is not None and not (
+                isinstance(so_config, dict) and so_config.get("required") in (True, False)
+            ):
+                raise SentinelCompatibilityError("Sentinel session observer field was invalid")
             initial = self._last_initial_proof
             if initial is None:
                 initial = self._create_initial_proof_locked()

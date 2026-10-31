@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from collections import OrderedDict
 from dataclasses import replace
 from pathlib import Path
 
@@ -70,6 +71,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
         self._gate = asyncio.Lock()
         self._connect_gate = asyncio.Lock()
         self._temporary = {}
+        self._chat_metadata = OrderedDict()
         self.notebooks = notebooks
         from .notebooks import Notebooks
         from .rpc import NotebookEditor, NotebookRPC
@@ -155,6 +157,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                 self._client = None
             if self._client is None:
                 self._catalog_at = None
+                self._chat_metadata.clear()
         if editor_error is not None:
             raise editor_error
 
@@ -213,6 +216,15 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
 
     def _origin(self, remote_id):
         return Origin(self.id, self.account_id, remote_id)
+
+    @staticmethod
+    def _usable_chat_metadata(metadata, conversation_id):
+        return (
+            isinstance(metadata, (list, tuple))
+            and len(metadata) >= 3
+            and metadata[0] == conversation_id
+            and all(isinstance(metadata[index], str) and metadata[index] for index in (1, 2))
+        )
 
     async def list_chats(self, cursor=None, limit=50):
         try:
@@ -284,6 +296,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                 ),
                 lambda parts: not parts,
             )
+            self._chat_metadata.pop(conversation_id, None)
 
     async def rename_chat(self, conversation_id, title):
         if not isinstance(title, str) or not 1 <= len(title.strip()) <= 100:
@@ -385,65 +398,79 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
             if request.temporary and request.conversation_id and metadata is None:
                 raise ProviderError("Geçici Gemini bağlamı artık bellekte değil")
             if metadata is None:
-                metadata = [
-                    request.conversation_id or "",
-                    "",
-                    "",
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    "",
-                ]
-                if request.conversation_id:
-                    parts = await self.rpc.call(
-                        "hNvQHb",
-                        [
-                            request.conversation_id,
-                            1000 if request.action else 1,
-                            None,
-                            1,
-                            [1],
-                            [4],
-                            None,
-                            1,
-                        ],
-                        "/app",
-                    )
-                    from .session import nested
-
-                    turns = nested(parts[0], 0, default=[])
-                    turn = turns[0] if turns else None
-                    if request.action:
-                        from ..messages import target_message
-                        from .history import history
-
-                        current = history(parts[0], self._origin, request.conversation_id)
-                        role = "user" if request.action == MessageAction.EDIT else "assistant"
-                        _, target = target_message(current.messages, request.message_id, role)
-                        if request.action.value not in target.actions:
-                            raise ProviderError("This Gemini message action is not available")
-                        selected_index = next(
-                            i
-                            for i, item in enumerate(turns)
-                            if nested(item, 0, 1) == target.metadata["turn_id"]
+                cached = (
+                    self._chat_metadata.pop(request.conversation_id, None)
+                    if request.conversation_id and not request.action
+                    else None
+                )
+                if self._usable_chat_metadata(cached, request.conversation_id):
+                    metadata = list(cached)
+                else:
+                    metadata = [
+                        request.conversation_id or "",
+                        "",
+                        "",
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        "",
+                    ]
+                    if request.conversation_id:
+                        parts = await self.rpc.call(
+                            "hNvQHb",
+                            [
+                                request.conversation_id,
+                                1000 if request.action else 1,
+                                None,
+                                1,
+                                [1],
+                                [4],
+                                None,
+                                1,
+                            ],
+                            "/app",
                         )
-                        original = turns[selected_index]
-                        action_files = nested(original, 2, 0, 3) or []
-                        if not isinstance(action_files, list):
-                            raise ProviderError("Gemini message attachments cannot be preserved")
-                        if request.action == MessageAction.RETRY:
-                            request = replace(request, prompt=nested(original, 2, 0, 0) or "")
-                        turn = (
-                            turns[selected_index + 1] if selected_index + 1 < len(turns) else None
-                        )
-                    rid = nested(turn, 0, 1)
-                    rcid = nested(turn, 3, 0, 0, 0)
-                    if turn is not None and (not rid or not rcid):
-                        raise GeminiCompatibilityError("Gemini sohbet devam kimlikleri alınamadı")
-                    metadata[1:3] = [rid or "", rcid or ""]
+                        from .session import nested
+
+                        turns = nested(parts[0], 0, default=[])
+                        turn = turns[0] if turns else None
+                        if request.action:
+                            from ..messages import target_message
+                            from .history import history
+
+                            current = history(parts[0], self._origin, request.conversation_id)
+                            role = "user" if request.action == MessageAction.EDIT else "assistant"
+                            _, target = target_message(current.messages, request.message_id, role)
+                            if request.action.value not in target.actions:
+                                raise ProviderError("This Gemini message action is not available")
+                            selected_index = next(
+                                i
+                                for i, item in enumerate(turns)
+                                if nested(item, 0, 1) == target.metadata["turn_id"]
+                            )
+                            original = turns[selected_index]
+                            action_files = nested(original, 2, 0, 3) or []
+                            if not isinstance(action_files, list):
+                                raise ProviderError(
+                                    "Gemini message attachments cannot be preserved"
+                                )
+                            if request.action == MessageAction.RETRY:
+                                request = replace(request, prompt=nested(original, 2, 0, 0) or "")
+                            turn = (
+                                turns[selected_index + 1]
+                                if selected_index + 1 < len(turns)
+                                else None
+                            )
+                        rid = nested(turn, 0, 1)
+                        rcid = nested(turn, 3, 0, 0, 0)
+                        if turn is not None and (not rid or not rcid):
+                            raise GeminiCompatibilityError(
+                                "Gemini sohbet devam kimlikleri alınamadı"
+                            )
+                        metadata[1:3] = [rid or "", rcid or ""]
             bound, visible, cid = False, False, request.conversation_id
             final_metadata = None
             output_files, published_sources = (), ()
@@ -507,6 +534,10 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                 raise GeminiStreamError("Gemini yanıtı tamamlanmadı; yeniden gönderilmedi")
             if final_metadata:
                 yield final_metadata
+            if cid and not request.temporary and self._usable_chat_metadata(metadata, cid):
+                self._chat_metadata[cid] = list(metadata)
+                while len(self._chat_metadata) > 128:
+                    self._chat_metadata.popitem(last=False)
             if request.temporary:
                 self._temporary[cid] = metadata
                 while len(self._temporary) > 32:

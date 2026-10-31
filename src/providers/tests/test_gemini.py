@@ -173,6 +173,16 @@ class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.gather(provider.models(), provider.models())
         self.assertEqual(session.discover_models.await_count, 2)
 
+    async def test_delete_clears_cached_continuation_only_after_remote_confirmation(self):
+        provider = GeminiProvider(Path("unused"))
+        provider._client = SimpleNamespace()
+        provider._chat_metadata["conversation"] = ["conversation", "rid", "rcid"]
+        provider.rpc.call = AsyncMock(side_effect=[[], []])
+
+        await provider.delete_chat("conversation")
+
+        self.assertNotIn("conversation", provider._chat_metadata)
+
     async def test_rotated_credentials_are_serialized_and_saved_on_close(self):
         session = GeminiSession("unused")
         current = {"__Secure-1PSID": "first"}
@@ -642,3 +652,84 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(asyncio.CancelledError):
             await task
         self.assertTrue(response.closed)
+
+    def test_flash_model_omits_selector_id_and_number_for_fast_routing(self):
+        flash = Model(
+            "gemini-flash",
+            "Gemini Flash",
+            (),
+            default_effort=None,
+            metadata={
+                "model_id": "56fdd199312815e2",
+                "selector_id": None,
+                "capacity": 2,
+                "capacity_slot": 12,
+                "number": None,
+                "effort_values": {},
+            },
+        )
+        session = SimpleNamespace(
+            models=(flash,), language="en", token="test", session_id="session"
+        )
+        request = SendRequest("gemini", "test", "local", "hello", model="gemini-flash")
+        headers, data = generation_request(session, request, ["cid", "", ""], [])
+        body = json.loads(json.loads(data["f.req"])[1])
+        selector = json.loads(headers["x-goog-ext-525001261-jspb"])
+        self.assertIsNone(body[79])
+        self.assertIsNone(selector[4])
+        self.assertIsNone(selector[-3])
+
+    async def test_sync_activity_is_throttled_unless_forced(self):
+        session = GeminiSession(Path("unused"))
+        session.batch = AsyncMock()
+        with patch("providers.gemini.session.time.monotonic", side_effect=[1.0, 1.0, 301.0]):
+            await session.sync_activity()
+            await session.sync_activity()
+            self.assertEqual(session.batch.await_count, 1)
+            await session.sync_activity(force=True)
+        self.assertEqual(session.batch.await_count, 2)
+
+    async def test_chat_metadata_caches_turn_ids_for_consecutive_stream_calls(self):
+        provider = GeminiProvider(Path("unused"), "test")
+        client = SimpleNamespace(
+            models=(Model("gemini-flash", "Flash"),),
+            sync_activity=AsyncMock(),
+        )
+        provider._connect = AsyncMock(return_value=client)
+        provider.rpc = SimpleNamespace(call=AsyncMock())
+
+        async def fake_generate(*_args, **_kwargs):
+            yield {
+                "cid": "conv_1",
+                "metadata": ["conv_1", "rid_1", "rcid_1"],
+                "text": "first answer",
+                "thoughts": "",
+                "files": [],
+                "sources": (),
+                "response_complete": True,
+            }
+
+        with patch("providers.gemini.transport.generate", fake_generate):
+            _ = [
+                e
+                async for e in provider.stream(
+                    SendRequest("gemini", "test", "local", "first message", model="gemini-flash")
+                )
+            ]
+            self.assertEqual(provider.rpc.call.await_count, 0)
+            self.assertEqual(provider._chat_metadata.get("conv_1"), ["conv_1", "rid_1", "rcid_1"])
+
+            _ = [
+                e
+                async for e in provider.stream(
+                    SendRequest(
+                        "gemini",
+                        "test",
+                        "conv_1",
+                        "second message",
+                        model="gemini-flash",
+                        conversation_id="conv_1",
+                    )
+                )
+            ]
+            self.assertEqual(provider.rpc.call.await_count, 0)

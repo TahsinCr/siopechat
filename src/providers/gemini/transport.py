@@ -154,6 +154,9 @@ def generation_request(session, request, metadata, files, notebook=None):
     if effort is not None and effort not in {choice.id for choice in selected.efforts}:
         raise ValueError("Efor bu Gemini modelinde kullanılamıyor")
     thinking = selected.metadata["effort_values"].get(effort)
+    info = selected.metadata
+    number = info.get("number")
+    selector_id = info.get("selector_id", info.get("model_id"))
     body = [None] * 81
     body[0], body[1], body[2] = (
         [request.prompt, 0, None, files or None, None, None, 0],
@@ -173,7 +176,7 @@ def generation_request(session, request, metadata, files, notebook=None):
         53: 0,
         61: [],
         68: 1,
-        79: 1,
+        79: number,
         80: thinking,
     }.items():
         body[index] = value
@@ -192,13 +195,12 @@ def generation_request(session, request, metadata, files, notebook=None):
     identifier = str(uuid.uuid4()).upper()
     body[59] = identifier
     headers = {**HEADERS, "x-goog-ext-525005358-jspb": json.dumps([identifier, 1])}
-    info = selected.metadata
     selector = [
         1,
         None,
         None,
         None,
-        info["model_id"],
+        selector_id,
         None,
         None,
         int(request.temporary),
@@ -207,7 +209,7 @@ def generation_request(session, request, metadata, files, notebook=None):
         None,
     ]
     selector.extend([None] * (info["capacity_slot"] - 1 - len(selector)))
-    selector.extend([info["capacity"], None, None, info["number"], thinking, session.session_id])
+    selector.extend([info["capacity"], None, None, number, thinking, session.session_id])
     headers.update(
         {
             "x-goog-ext-525001261-jspb": json.dumps(selector),
@@ -215,7 +217,7 @@ def generation_request(session, request, metadata, files, notebook=None):
             "x-goog-ext-73010990-jspb": "[0,0,0]",
         }
     )
-    body[79] = info["number"]
+    body[79] = number
     return headers, {"at": session.token, "f.req": json.dumps([None, json.dumps(body)])}
 
 

@@ -1,6 +1,7 @@
 import base64
 import json
 import threading
+import time
 import unittest
 from dataclasses import replace
 from unittest.mock import Mock, patch
@@ -42,6 +43,8 @@ def make_client() -> ChatGPTClient:
     client._sentinel_lock = threading.Lock()
     client._sentinel_runtime = None
     client._sentinel_runtime_key = None
+    client._prewarmed_sentinel = None
+    client._prewarming = False
     client.http = Mock()
     return client
 
@@ -500,7 +503,7 @@ class ChatGPTSentinelClientTests(unittest.TestCase):
         for unsupported in (
             {"future_required_challenge": {"required": True}},
             {"arkose": {"required": True}},
-            {"so": {"required": True}},
+            {"unsupported_challenge": {"required": True}},
             {"error": "blocked_by_sentinel"},
         ):
             bad_resp = Mock()
@@ -527,6 +530,100 @@ class ChatGPTSentinelClientTests(unittest.TestCase):
             client.create_sentinel_headers()
         self.assertFalse(rejected_prepare.exception.message_submitted)
         self.assertEqual(rejected_prepare.exception.code, "chatgpt_sentinel_incompatible")
+
+    def test_client_allows_session_observer_requirements(self):
+        client = make_client()
+        self.addCleanup(client.close)
+        response = Mock()
+        response.json.return_value = {
+            "prepare_token": "server-issued-so",
+            "proofofwork": {"required": False},
+            "turnstile": {"required": False},
+            "so": {"required": True, "collector_dx": "dx1", "snapshot_dx": "dx2"},
+        }
+        client.request = Mock(return_value=response)
+        with patch.object(
+            SentinelRuntime, "create_session_observer_token", return_value="so-token"
+        ) as create_so:
+            headers = client.create_sentinel_headers()
+        create_so.assert_called_once_with(response.json.return_value["so"])
+        self.assertEqual(
+            headers["openai-sentinel-chat-requirements-prepare-token"],
+            "server-issued-so",
+        )
+        self.assertEqual(headers["openai-sentinel-so-token"], "so-token")
+
+    def test_client_rejects_malformed_session_observer_requirements(self):
+        client = make_client()
+        self.addCleanup(client.close)
+        response = Mock()
+        response.json.return_value = {
+            "prepare_token": "server-issued-so",
+            "proofofwork": {"required": False},
+            "so": {"required": True},
+        }
+        client.request = Mock(return_value=response)
+        with self.assertRaises(SentinelCompatibilityError):
+            client.create_sentinel_headers()
+
+    def test_client_prewarm_caches_headers_and_reuses_them(self):
+        client = make_client()
+        self.addCleanup(client.close)
+        response = Mock()
+        response.json.return_value = {
+            "prepare_token": "server-issued-prewarm",
+            "proofofwork": {"required": False},
+            "turnstile": {"required": False},
+        }
+        client.request = Mock(return_value=response)
+        client.trigger_sentinel_prewarm()
+        for _ in range(50):
+            if client._prewarmed_sentinel is not None:
+                break
+            time.sleep(0.01)
+        self.assertIsNotNone(client._prewarmed_sentinel)
+        headers = client.create_sentinel_headers()
+        self.assertEqual(
+            headers["openai-sentinel-chat-requirements-prepare-token"],
+            "server-issued-prewarm",
+        )
+        self.assertIsNone(client._prewarmed_sentinel)
+
+    def test_prewarm_exchange_is_serialized_with_a_foreground_send(self):
+        client = make_client()
+        self.addCleanup(client.close)
+        started = threading.Event()
+        release = threading.Event()
+        response = Mock()
+        response.json.return_value = {
+            "prepare_token": "server-issued-prewarm",
+            "proofofwork": {"required": False},
+            "turnstile": {"required": False},
+        }
+
+        def prepare(*_args, **_kwargs):
+            started.set()
+            release.wait(1)
+            return response
+
+        client.request = Mock(side_effect=prepare)
+        client.trigger_sentinel_prewarm()
+        self.assertTrue(started.wait(1))
+        result = []
+        foreground = threading.Thread(
+            target=lambda: result.append(client.create_sentinel_headers())
+        )
+        foreground.start()
+        time.sleep(0.01)
+        self.assertFalse(result)
+        release.set()
+        foreground.join(1)
+        self.assertFalse(foreground.is_alive())
+        self.assertEqual(client.request.call_count, 1)
+        self.assertEqual(
+            result[0]["openai-sentinel-chat-requirements-prepare-token"],
+            "server-issued-prewarm",
+        )
 
     def test_client_close_releases_its_sentinel_runtime(self):
         client = make_client()

@@ -17,7 +17,7 @@ from urllib.parse import quote, urljoin, urlsplit
 import httpx
 
 from ..errors import RateLimited
-from ..timing import current_send_timing
+from ..timing import SendTiming, current_send_timing
 from .constants import CHATGPT_ORIGIN, DEFAULT_PAGE_SIZE
 from .discovery import (
     model_catalog as parse_model_catalog,
@@ -112,6 +112,8 @@ class ChatGPTClient:
         self._sentinel_lock = threading.Lock()
         self._sentinel_runtime: SentinelRuntime | None = None
         self._sentinel_runtime_key: str | None = None
+        self._prewarmed_sentinel: tuple[float, str, dict[str, str]] | None = None
+        self._prewarming = False
         timing = current_send_timing()
         http_started = time.perf_counter_ns() if timing is not None else None
         self.http = httpx.Client(
@@ -133,6 +135,8 @@ class ChatGPTClient:
 
     def close(self) -> None:
         with self._sentinel_lock:
+            self._prewarmed_sentinel = None
+            self._prewarming = False
             if self._sentinel_runtime is not None:
                 self._sentinel_runtime.close()
                 self._sentinel_runtime = None
@@ -646,11 +650,10 @@ class ChatGPTClient:
             )
             current_node = last_message.get("id") if isinstance(last_message, dict) else None
             can_build_from_stream = (
-                conversation_id is not None
-                and resolved_id == conversation_id
+                (conversation_id is None or resolved_id == conversation_id)
                 and branch is None
                 and action is None
-                and isinstance(previous_messages, list)
+                and (conversation_id is None or isinstance(previous_messages, list))
                 and isinstance(submitted_message, dict)
                 and submitted_message.get("id") == submitted_message_id
                 and streamed_parent == submitted_message_id
@@ -658,14 +661,16 @@ class ChatGPTClient:
                 and bool(current_node)
             )
             if can_build_from_stream:
+                base_messages = list(previous_messages or ())
                 conversation = dict(previous or {})
                 conversation.update(
                     {
                         "id": resolved_id,
                         "conversation_id": resolved_id,
+                        "title": (previous or {}).get("title") or prompt[:60],
                         "default_model_slug": model,
                         "current_node": current_node,
-                        "messages": previous_messages + [submitted_message] + streamed_messages,
+                        "messages": base_messages + [submitted_message] + streamed_messages,
                     }
                 )
             else:
@@ -700,6 +705,7 @@ class ChatGPTClient:
                     previous_ids.add(item["id"])
         if not temporary:
             self._remember_conversation(conversation)
+            self.trigger_sentinel_prewarm()
         return resolved_id, conversation, previous_ids
 
     def send_prompt_direct(
@@ -905,7 +911,9 @@ class ChatGPTClient:
                         on_event(
                             {
                                 "type": "delta" if text.startswith(rendered) else "replace",
-                                "text": text[len(rendered) :] if text.startswith(rendered) else text,
+                                "text": text[len(rendered) :]
+                                if text.startswith(rendered)
+                                else text,
                                 "channel": channel,
                                 "message_id": identity,
                             }
@@ -927,61 +935,59 @@ class ChatGPTClient:
             raise ChatGPTWebError("ChatGPT did not return a conversation ID")
         return resolved_id, submitted_message_id, submitted_message
 
-    def create_sentinel_headers(self) -> dict[str, str]:
-        timing = current_send_timing()
-        user_agent = self.headers.get("user-agent") or "Mozilla/5.0"
-        with self._sentinel_lock:
-            runtime = self._sentinel_runtime
-            local_started = time.perf_counter_ns() if timing is not None else None
-            if runtime is None or self._sentinel_runtime_key != user_agent:
-                replacement = SentinelRuntime(user_agent=user_agent)
-                previous_runtime = runtime
-                self._sentinel_runtime = replacement
-                self._sentinel_runtime_key = user_agent
-                runtime = replacement
-                if previous_runtime is not None:
-                    previous_runtime.close()
-            initial = runtime.create_initial_proof()
-            if local_started is not None:
-                timing.record("local_validation_prepare_ms", time.perf_counter_ns() - local_started)
-            prepare_started = time.perf_counter_ns() if timing is not None else None
-            try:
-                prepare_response = self.request(
-                    "POST",
-                    urljoin(CHATGPT_ORIGIN, "/backend-api/sentinel/chat-requirements/prepare"),
-                    json={"p": initial},
-                )
-                requirements = prepare_response.json()
-            except SentinelCompatibilityError:
-                raise
-            except ChatGPTWebError as error:
-                message = str(error)
-                if any(code in message for code in ("HTTP 400", "HTTP 403", "HTTP 422")):
-                    raise SentinelCompatibilityError(
-                        "ChatGPT rejected the Sentinel prepare request"
-                    ) from error
-                raise
-            except ValueError as error:
-                raise SentinelCompatibilityError(
-                    "Sentinel prepare returned invalid JSON"
-                ) from error
-            if prepare_started is not None:
-                timing.record("sentinel_prepare_http_ms", time.perf_counter_ns() - prepare_started)
-            if not isinstance(requirements, dict):
-                raise SentinelCompatibilityError("Sentinel prepare returned an invalid response")
-            prepare_token = requirements.get("prepare_token")
-            if not isinstance(prepare_token, str) or not prepare_token.strip():
-                raise SentinelCompatibilityError(
-                    "Sentinel did not return required enforcement tokens"
-                )
+    def _get_or_create_sentinel_runtime(self, user_agent: str) -> SentinelRuntime:
+        runtime = self._sentinel_runtime
+        if runtime is None or self._sentinel_runtime_key != user_agent:
+            replacement = SentinelRuntime(user_agent=user_agent)
+            previous_runtime = runtime
+            self._sentinel_runtime = replacement
+            self._sentinel_runtime_key = user_agent
+            runtime = replacement
+            if previous_runtime is not None:
+                previous_runtime.close()
+        return runtime
 
-            enforcement_started = time.perf_counter_ns() if timing is not None else None
-            _, proof, turnstile = runtime.create_enforcement_tokens(requirements)
-            if enforcement_started is not None:
-                timing.record(
-                    "local_validation_enforcement_ms",
-                    time.perf_counter_ns() - enforcement_started,
-                )
+    def _create_sentinel_headers_direct(
+        self, runtime: SentinelRuntime, timing: SendTiming | None
+    ) -> dict[str, str]:
+        local_started = time.perf_counter_ns() if timing is not None else None
+        initial = runtime.create_initial_proof()
+        if local_started is not None:
+            timing.record("local_validation_prepare_ms", time.perf_counter_ns() - local_started)
+        prepare_started = time.perf_counter_ns() if timing is not None else None
+        try:
+            prepare_response = self.request(
+                "POST",
+                urljoin(CHATGPT_ORIGIN, "/backend-api/sentinel/chat-requirements/prepare"),
+                json={"p": initial},
+            )
+            requirements = prepare_response.json()
+        except SentinelCompatibilityError:
+            raise
+        except ChatGPTWebError as error:
+            message = str(error)
+            if any(code in message for code in ("HTTP 400", "HTTP 403", "HTTP 422")):
+                raise SentinelCompatibilityError(
+                    "ChatGPT rejected the Sentinel prepare request"
+                ) from error
+            raise
+        except ValueError as error:
+            raise SentinelCompatibilityError("Sentinel prepare returned invalid JSON") from error
+        if prepare_started is not None:
+            timing.record("sentinel_prepare_http_ms", time.perf_counter_ns() - prepare_started)
+        if not isinstance(requirements, dict):
+            raise SentinelCompatibilityError("Sentinel prepare returned an invalid response")
+        prepare_token = requirements.get("prepare_token")
+        if not isinstance(prepare_token, str) or not prepare_token.strip():
+            raise SentinelCompatibilityError("Sentinel did not return required enforcement tokens")
+
+        enforcement_started = time.perf_counter_ns() if timing is not None else None
+        _, proof, turnstile = runtime.create_enforcement_tokens(requirements)
+        if enforcement_started is not None:
+            timing.record(
+                "local_validation_enforcement_ms",
+                time.perf_counter_ns() - enforcement_started,
+            )
 
         if not isinstance(proof, str) or not proof:
             raise SentinelCompatibilityError("Sentinel did not return required enforcement tokens")
@@ -991,7 +997,77 @@ class ChatGPTClient:
         }
         if isinstance(turnstile, str) and turnstile:
             result["openai-sentinel-turnstile-token"] = turnstile
+        so_requirements = requirements.get("so")
+        if so_requirements is None:
+            so_token = None
+        elif not isinstance(so_requirements, dict):
+            raise SentinelCompatibilityError("Sentinel session observer field was invalid")
+        elif so_requirements.get("required") is True:
+            so_token = runtime.create_session_observer_token(so_requirements)
+            if not isinstance(so_token, str) or not so_token:
+                raise SentinelCompatibilityError(
+                    "Sentinel session observer challenge returned no token"
+                )
+        elif so_requirements.get("required") is False:
+            so_token = None
+        else:
+            raise SentinelCompatibilityError("Sentinel session observer field was invalid")
+        if so_token is not None:
+            result["openai-sentinel-so-token"] = so_token
         return result
+
+    def create_sentinel_headers(self) -> dict[str, str]:
+        timing = current_send_timing()
+        user_agent = self.headers.get("user-agent") or "Mozilla/5.0"
+        with self._sentinel_lock:
+            prewarmed = getattr(self, "_prewarmed_sentinel", None)
+            if prewarmed is not None:
+                created_at, prewarm_key, headers = prewarmed
+                self._prewarmed_sentinel = None
+                if prewarm_key == user_agent and (time.monotonic() - created_at) < 540.0:
+                    if timing is not None:
+                        timing.record("sentinel_prewarmed_hit_ms", 0)
+                    return headers
+            runtime = self._get_or_create_sentinel_runtime(user_agent)
+            return self._create_sentinel_headers_direct(runtime, timing)
+
+    def trigger_sentinel_prewarm(self) -> None:
+        if (
+            getattr(self.create_sentinel_headers, "__func__", None)
+            is not ChatGPTClient.create_sentinel_headers
+        ):
+            return
+        user_agent = self.headers.get("user-agent") or "Mozilla/5.0"
+        with self._sentinel_lock:
+            if self._prewarming:
+                return
+            if self._prewarmed_sentinel is not None:
+                created_at, prewarm_key, _ = self._prewarmed_sentinel
+                if prewarm_key == user_agent and (time.monotonic() - created_at) < 540.0:
+                    return
+            self._prewarming = True
+
+        def _worker() -> None:
+            try:
+                with self._sentinel_lock:
+                    if getattr(self.http, "is_closed", False) is True:
+                        return
+                    ua = self.headers.get("user-agent") or "Mozilla/5.0"
+                    runtime = self._get_or_create_sentinel_runtime(ua)
+                    # Serialize the entire proof/prepare/enforcement exchange with a
+                    # foreground send. The runtime retains the last initial proof, so
+                    # overlapping exchanges could pair one request's requirements with
+                    # another request's proof.
+                    headers = self._create_sentinel_headers_direct(runtime, None)
+                    if getattr(self.http, "is_closed", False) is not True:
+                        self._prewarmed_sentinel = (time.monotonic(), ua, headers)
+            except Exception:
+                pass
+            finally:
+                with self._sentinel_lock:
+                    self._prewarming = False
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def create_conversation_body(
         self,

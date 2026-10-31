@@ -4,6 +4,7 @@ import asyncio
 import json
 import random
 import re
+import time
 import uuid
 
 from ..errors import AccountPaused, ProviderError, RateLimited
@@ -58,6 +59,7 @@ class GeminiSession:
         self.request_id = random.randint(10000, 99999)
         self.session_id = str(uuid.uuid4()).upper()
         self.models = ()
+        self._activity_synced_at: float | None = None
         self._saved = None
         self.verified = False
         self.persistence_warning = None
@@ -141,11 +143,19 @@ class GeminiSession:
         await self.persist()
         return response
 
-    async def sync_activity(self):
+    async def sync_activity(self, *, force=False):
         """Mark the authenticated web session active before model generation."""
+        now = time.monotonic()
+        if (
+            not force
+            and self._activity_synced_at is not None
+            and now - self._activity_synced_at < 300
+        ):
+            return
         from .rpc import RPCPayload
 
         await self.batch([RPCPayload("ESY5D", '[[["bard_activity_enabled"]]]')])
+        self._activity_synced_at = now
 
     def graphql_endpoints(self):
         prefix = self.rpc_path_prefix
@@ -348,12 +358,15 @@ class GeminiSession:
             implicit = policy.get("implicitThinkingLevel") or ""
             default = implicit.removeprefix("THINKING_LEVEL_").lower()
             if default not in values:
-                default = efforts[0].id if efforts else None
+                default = None
             category = nested(row, 1) or nested(row, 10) or remote
             title = config.get("titleForPicker") or config.get("title") or category
             number = nested(row, 17)
             if not isinstance(number, int):
                 number = nested(row, 9, default=1)
+            mode_category = str(config.get("modeCategory") or "").strip().upper()
+            category_name = str(category).strip().lower()
+            is_fast = mode_category in {"FAST", "MODE_CATEGORY_FAST"} or "flash" in category_name
             models.append(
                 Model(
                     "gemini-" + str(category).lower().replace(" ", "-"),
@@ -362,9 +375,10 @@ class GeminiSession:
                     default_effort=default,
                     metadata={
                         "model_id": remote,
+                        "selector_id": None if is_fast else remote,
                         "capacity": capacity,
                         "capacity_slot": slot,
-                        "number": number,
+                        "number": None if is_fast else number,
                         "effort_values": values,
                         "description": nested(row, 12) or nested(row, 2),
                     },

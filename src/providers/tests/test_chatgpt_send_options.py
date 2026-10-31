@@ -63,6 +63,7 @@ class SendOptionsTests(unittest.TestCase):
         self.client.http = httpx.Client(transport=httpx.MockTransport(handle))
         self.addCleanup(self.client.close)
         self.client.create_sentinel_headers = Mock(return_value={})
+        self.client.trigger_sentinel_prewarm = Mock()
         self.client.model_catalog = Mock(return_value=model_catalog(CATALOG))
 
     def test_temporary_multiturn_has_no_history_get(self):
@@ -75,9 +76,7 @@ class SendOptionsTests(unittest.TestCase):
         self.assertTrue(conv["temporary"])
         self.assertTrue(all(b["history_and_training_disabled"] for b in self.requests))
         self.assertEqual(self.requests[1]["parent_message_id"], "a-1")
-        self.assertEqual(
-            [e["channel"] for e in events if "channel" in e], ["analysis", "final"]
-        )
+        self.assertEqual([e["channel"] for e in events if "channel" in e], ["analysis", "final"])
         self.assertEqual(events[-1]["type"], "response_complete")
         self.assertEqual(len(self.client.temporary_conversations["remote"]["messages"]), 6)
         self.client.get_conversation.assert_not_called()
