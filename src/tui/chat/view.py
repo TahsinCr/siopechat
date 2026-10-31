@@ -380,6 +380,8 @@ class ChatView(
             self.bind_account(self.account_key)
             self.restore_account_preference()
             self._save_active_tab()
+            self.prime_cached_models()
+            self.prime_local_cache()
 
         self.action_cleanup = action_host(self) if action_host else None
 

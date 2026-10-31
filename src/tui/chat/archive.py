@@ -362,3 +362,57 @@ class ArchiveComponent:
             tab["history_version"] = value.get("history_version")
         self._invalidate_sidebar_rows()
         self.app.invalidate()
+
+    def prime_local_cache(self) -> None:
+        archive = self.archive_service()
+        if not archive or not hasattr(archive, "get") or not self.account_service:
+            return
+        accounts = (
+            self.account_service.active_accounts()
+            if hasattr(self.account_service, "active_accounts")
+            else [{"key": self.account_key}]
+        )
+        chats = {item["id"]: item for item in self.sidebar_items if item.get("id")}
+        for account in accounts:
+            key = account.get("key")
+            if not key:
+                continue
+            page = archive.get(key, "chats", "")
+            if page and isinstance(page.get("items"), list):
+                self._archive_page_ids[key, "chats"] = {
+                    item["id"] for item in page["items"] if item.get("id")
+                }
+                for item in page["items"]:
+                    if item.get("id"):
+                        chats[item["id"]] = merge_chat_listing(chats.get(item["id"]), item)
+            elif hasattr(archive, "conversations"):
+                try:
+                    records = archive.conversations(key, limit=50)
+                    for item in records:
+                        if isinstance(item, dict) and item.get("id"):
+                            chats[item["id"]] = merge_chat_listing(chats.get(item["id"]), item)
+                except Exception:
+                    pass
+            containers = archive.get(key, "containers", "")
+            if containers and isinstance(containers.get("items"), list):
+                self._archive_page_ids[key, "containers"] = {
+                    item["id"] for item in containers["items"] if item.get("id")
+                }
+                for item in containers["items"]:
+                    if item.get("id"):
+                        self.project_items[item["id"]] = item
+        for cid in list(chats):
+            key, remote = origin(cid, self.account_key)
+            if hasattr(archive, "deleted") and archive.deleted(key, "conversation", remote):
+                chats.pop(cid, None)
+        for pid in list(self.project_items):
+            key, remote = origin(pid, self.account_key)
+            if hasattr(archive, "deleted") and archive.deleted(key, "container", remote):
+                self.project_items.pop(pid, None)
+        workspaces = [
+            dict(item, kind="workspace")
+            for item in (self.list_workspaces() if self.list_workspaces else ())
+            if isinstance(item, dict)
+        ]
+        self.sidebar_items = list(chats.values()) + workspaces
+        self.filter_sidebar()

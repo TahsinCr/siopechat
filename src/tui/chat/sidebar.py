@@ -336,8 +336,41 @@ class SidebarComponent:
             sidebar_error = None
             partial_error = None
             workspace_error = None
+
+            def on_account_page(account, page):
+                if generation != self.sidebar_refresh_generation:
+                    return
+                if isinstance(page, BaseException) or not isinstance(page, dict):
+                    return
+                items = page.get("items", [])
+                if not items:
+                    return
+
+                def apply_account():
+                    if generation != self.sidebar_refresh_generation:
+                        return
+                    by_id = {item["id"]: item for item in self.sidebar_items if item.get("id")}
+                    for item in items:
+                        if item.get("id"):
+                            by_id[item["id"]] = merge_chat_listing(by_id.get(item["id"]), item)
+                    saved_workspaces = [
+                        item for item in self.sidebar_items if item.get("kind") == "workspace"
+                    ]
+                    self.sidebar_items = list(by_id.values()) + saved_workspaces
+                    self.filter_sidebar()
+                    self.app.invalidate()
+
+                self._dispatch_ui(apply_account)
+
             try:
-                page = self.list_history_page(None) if self.list_history_page else None
+                try:
+                    page = (
+                        self.list_history_page(None, on_account_page=on_account_page)
+                        if self.list_history_page
+                        else None
+                    )
+                except TypeError:
+                    page = self.list_history_page(None) if self.list_history_page else None
                 conversations = [
                     item
                     for item in (page["items"] if page is not None else self.list_conversations())

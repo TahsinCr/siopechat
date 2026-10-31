@@ -126,6 +126,31 @@ class ModelComponent:
         self._model_picker_requests.discard(key)
         self._update_model_catalog_status()
 
+    def prime_cached_models(self) -> None:
+        if not self.account_service or not hasattr(self.account_service, "cached_models"):
+            return
+        accounts = self._selected_model_accounts()
+        for account in accounts:
+            key = account.get("key")
+            if not key:
+                continue
+            catalog = self._account_catalogs.get(key)
+            if catalog is None:
+                catalog = self.account_service.cached_models(key)
+                if catalog is not None and catalog.state == FeatureState.AVAILABLE:
+                    self._account_catalogs[key] = catalog
+        active_key = self.account_key
+        catalog = self._account_catalogs.get(active_key)
+        if catalog and catalog.state == FeatureState.AVAILABLE:
+            self.catalog = catalog
+            self.catalog_error = None
+            tab = self.tabs[self.active_tab]
+            if not tab.get("model") and catalog.default_chat_model:
+                tab["model"] = self.model = catalog.default_chat_model.id
+                if not tab.get("effort") and self.effort_preference:
+                    tab["effort"] = catalog.effort(self.model, self.effort_preference)
+            self._update_model_catalog_status()
+
     def refresh_other_provider_catalogs(self) -> None:
         """Load enabled providers' model catalogs without delaying chat startup."""
         if not self.account_service or not hasattr(self.account_service, "active_accounts"):

@@ -1299,7 +1299,14 @@ class Accounts:
             "messages": [message_record(message) for message in chat.messages],
         }
 
-    def list_chats(self, selected=None, cursor=None, force=False, account_keys=None):
+    def list_chats(
+        self,
+        selected=None,
+        cursor=None,
+        force=False,
+        account_keys=None,
+        on_account_page=None,
+    ):
         cursors = json.loads(cursor) if cursor else None
         accounts = [
             item
@@ -1327,21 +1334,48 @@ class Accounts:
                 }
 
             page = self.read_record(key, "chats", page_cursor, fetch, force, fresh=force)
-            # Closed or tombstoned list-page cache entries must not hide the
-            # provider's live chat list. Conversation tombstones remain enforced
-            # when the fetched page is normalized by the archive.
             return page if page is not None else fetch()
 
-        from concurrent.futures import ThreadPoolExecutor
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
+        futures_map = {}
+        pages_map = {}
         with ThreadPoolExecutor(max_workers=min(6, max(1, len(accounts)))) as pool:
-            futures = [pool.submit(page_for, account) for account in accounts]
-            pages = []
-            for future in futures:
+            for account in accounts:
+                fut = pool.submit(page_for, account)
+                futures_map[fut] = account
+            for future in as_completed(futures_map):
+                acc = futures_map[future]
                 try:
-                    pages.append(future.result())
+                    res = future.result()
                 except Exception as error:
-                    pages.append(error)
+                    res = error
+                pages_map[acc["key"]] = res
+                if (
+                    on_account_page is not None
+                    and not isinstance(res, BaseException)
+                    and isinstance(res, dict)
+                ):
+                    delivered = dict(res)
+                    pending = self._pending_local_branches(acc["key"], res.get("items", ()))
+                    if pending and (not cursors or not cursors.get(acc["key"])):
+                        known = {
+                            item.get("remote_id") or item.get("id")
+                            for item in res.get("items", ())
+                            if isinstance(item, dict)
+                        }
+                        extra = [
+                            item
+                            for item in pending
+                            if (item.get("remote_id") or item.get("id")) not in known
+                        ]
+                        if extra:
+                            delivered["items"] = list(res.get("items", ())) + extra
+                    try:
+                        on_account_page(acc, delivered)
+                    except Exception:
+                        pass
+        pages = [pages_map[account["key"]] for account in accounts]
         items, errors, next_cursors, failed = [], [], {}, []
         for account, page in zip(accounts, pages):
             if isinstance(page, BaseException):

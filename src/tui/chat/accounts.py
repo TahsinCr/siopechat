@@ -63,8 +63,13 @@ class AccountComponent:
         self.list_conversations = lambda: self.account_service.list_chats(
             self.provider_filter, account_keys=self.account_filter
         )["items"]
-        self.list_history_page = lambda cursor: self.account_service.list_chats(
-            self.provider_filter, cursor, account_keys=self.account_filter
+        self.list_history_page = (
+            lambda cursor=None, on_account_page=None: self.account_service.list_chats(
+                self.provider_filter,
+                cursor,
+                account_keys=self.account_filter,
+                on_account_page=on_account_page,
+            )
         )
 
     def select_account(self, key):
