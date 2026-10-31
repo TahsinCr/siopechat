@@ -33,9 +33,7 @@ Sohbetlerinize devam edin, sağlayıcı projelerinizi düzenleyin ve yanıtları
 
 ### Gereksinimler
 
-SiopeChat için Python **3.11+** gerekir. Python, ChatGPT Sentinel'in güncel SDK dosyalarını `src/providers/chatgpt/scripts/` içine indirir, boyut/SHA-256 denetiminden geçirir ve değişmediği sürece yeniden indirmeden kullanır; yalıtılmış QuickJS-NG (`quickjs-ng`) çalışma zamanı yayımlanmış SDK'yı ve `src/providers/chatgpt/scripts/sign.js` dosyasını çalıştırır. İstemci, SDK veya kullanıcı aracısı değişene kadar QuickJS bağlamını tekrar kullanır. Python yalnızca desteklenen doğrulama biçimindeki sunucu kaynaklı proof-of-work hesabını yapar. Tarayıcı girişi ve oturum bilgisi Python sağlayıcı paketi üzerinden yürür. Kurulum ve başlatma araçları Python çalışma zamanı sürümünü denetler. Bağımsız sağlayıcı paketi ayrı olarak Python 3.10+ desteğini korur. Chrome/Chromium yalnızca açıkça başlatılan giriş işlemi için gerekir. Unicode destekli bir terminal kullanın; gerçek renk ve fare raporlama desteği önerilir.
-
-İndirilen SDK önbelleği, URL kimliği ve içerik karmasını taşıyan açıklayıcı dosya adlarıyla `src/providers/chatgpt/scripts/` içinde saklanır. Varsayılan olarak altı saat sonra ilk kullanımda bootstrap güncellemesi denetlenir; değişmeyen sürümlü SDK dosyaları tekrar indirilmez. `CHATGPT_WEB_SENTINEL_CACHE_TTL_MS` kontrol aralığını milisaniye cinsinden değiştirir.
+SiopeChat için Python **3.11+** gerekir. ChatGPT Sentinel parmak izi üretimi, proof-of-work çözümü ve dinamik Turnstile/SessionObserver bayt kodu doğrulaması herhangi bir JavaScript motoruna ihtiyaç duymadan tamamen saf Python üzerinde (`src/providers/chatgpt/sentinel/`) çalışır ve bildirimsel `SentinelSpec` yapısı sayesinde SDK güncellemelerine kolayca uyum sağlar. Tarayıcı girişi ve oturum bilgisi Python sağlayıcı paketi üzerinden yürür. Kurulum ve başlatma araçları Python çalışma zamanı sürümünü denetler. Bağımsız sağlayıcı paketi ayrı olarak Python 3.10+ desteğini korur. Chrome/Chromium yalnızca açıkça başlatılan giriş işlemi için gerekir. Unicode destekli bir terminal kullanın; gerçek renk ve fare raporlama desteği önerilir.
 
 ### Kurulum ve başlatma
 

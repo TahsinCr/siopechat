@@ -33,8 +33,7 @@ from .discovery import (
 )
 from .errors import ChatGPTWebError, SentinelCompatibilityError
 from .formats import message_parts, text_from_parts
-from .resources import load_sentinel_sdk
-from .sentinel import SentinelRuntime, generate_enforcement_proof
+from .sentinel import SentinelRuntime
 from .session import BrowserSession
 
 _CONTINUATION_CACHE_TTL_SECONDS = 60.0
@@ -112,7 +111,7 @@ class ChatGPTClient:
         self._last_stream_messages: list[dict[str, Any]] = []
         self._sentinel_lock = threading.Lock()
         self._sentinel_runtime: SentinelRuntime | None = None
-        self._sentinel_runtime_key: tuple[str, str, str] | None = None
+        self._sentinel_runtime_key: str | None = None
         timing = current_send_timing()
         http_started = time.perf_counter_ns() if timing is not None else None
         self.http = httpx.Client(
@@ -917,20 +916,15 @@ class ChatGPTClient:
 
     def create_sentinel_headers(self) -> dict[str, str]:
         timing = current_send_timing()
-        started = time.perf_counter_ns() if timing is not None else None
-        sdk = load_sentinel_sdk(self.session.paths.cache)
-        if started is not None:
-            timing.record("sdk_source_cache_ms", time.perf_counter_ns() - started)
         user_agent = self.headers.get("user-agent") or "Mozilla/5.0"
-        runtime_key = (sdk.sha256, sdk.implementation, user_agent)
         with self._sentinel_lock:
             runtime = self._sentinel_runtime
             local_started = time.perf_counter_ns() if timing is not None else None
-            if runtime is None or self._sentinel_runtime_key != runtime_key:
-                replacement = SentinelRuntime(sdk, user_agent=user_agent)
+            if runtime is None or self._sentinel_runtime_key != user_agent:
+                replacement = SentinelRuntime(user_agent=user_agent)
                 previous_runtime = runtime
                 self._sentinel_runtime = replacement
-                self._sentinel_runtime_key = runtime_key
+                self._sentinel_runtime_key = user_agent
                 runtime = replacement
                 if previous_runtime is not None:
                     previous_runtime.close()
@@ -938,41 +932,38 @@ class ChatGPTClient:
             if local_started is not None:
                 timing.record("local_validation_prepare_ms", time.perf_counter_ns() - local_started)
             prepare_started = time.perf_counter_ns() if timing is not None else None
-            requirements = self.request(
-                "POST",
-                urljoin(CHATGPT_ORIGIN, "/backend-api/sentinel/chat-requirements/prepare"),
-                json={"p": initial},
-            ).json()
+            try:
+                prepare_response = self.request(
+                    "POST",
+                    urljoin(CHATGPT_ORIGIN, "/backend-api/sentinel/chat-requirements/prepare"),
+                    json={"p": initial},
+                )
+                requirements = prepare_response.json()
+            except SentinelCompatibilityError:
+                raise
+            except ChatGPTWebError as error:
+                message = str(error)
+                if any(code in message for code in ("HTTP 400", "HTTP 403", "HTTP 422")):
+                    raise SentinelCompatibilityError(
+                        "ChatGPT rejected the Sentinel prepare request"
+                    ) from error
+                raise
+            except ValueError as error:
+                raise SentinelCompatibilityError(
+                    "Sentinel prepare returned invalid JSON"
+                ) from error
             if prepare_started is not None:
                 timing.record("sentinel_prepare_http_ms", time.perf_counter_ns() - prepare_started)
             if not isinstance(requirements, dict):
-                raise ChatGPTWebError("Sentinel prepare returned an invalid response")
+                raise SentinelCompatibilityError("Sentinel prepare returned an invalid response")
             prepare_token = requirements.get("prepare_token")
-            if not isinstance(prepare_token, str) or not prepare_token:
+            if not isinstance(prepare_token, str) or not prepare_token.strip():
                 raise SentinelCompatibilityError(
                     "Sentinel did not return required enforcement tokens"
                 )
 
-            proof_of_work = requirements.get("proofofwork")
-            turnstile_challenge = requirements.get("turnstile")
-            turnstile_not_required = "turnstile" not in requirements or (
-                isinstance(turnstile_challenge, dict)
-                and turnstile_challenge.get("required") is False
-            )
-            if (
-                isinstance(proof_of_work, dict)
-                and proof_of_work.get("required") is True
-                and turnstile_not_required
-                and set(requirements).issubset(
-                    {"prepare_token", "proofofwork", "turnstile", "token"}
-                )
-            ):
-                enforcement_started = time.perf_counter_ns() if timing is not None else None
-                proof = generate_enforcement_proof(initial, requirements)
-                turnstile = None
-            else:
-                enforcement_started = time.perf_counter_ns() if timing is not None else None
-                _, proof, turnstile = runtime.create_enforcement_tokens(requirements)
+            enforcement_started = time.perf_counter_ns() if timing is not None else None
+            _, proof, turnstile = runtime.create_enforcement_tokens(requirements)
             if enforcement_started is not None:
                 timing.record(
                     "local_validation_enforcement_ms",

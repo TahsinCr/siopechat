@@ -27,7 +27,6 @@ dependencies = [
     "browser-cookie3>=0.20.1,<0.21",
     "lz4>=4.4.5,<5",
     "curl-cffi>=0.16,<1",
-    "quickjs-ng>=0.17.0.2,<0.18",
     "prompt-toolkit>=3.0,<4",
     "rich>=13,<15",
 ]
@@ -56,7 +55,7 @@ packages = [
     "tui",
     "providers",
     "providers.chatgpt",
-    "providers.chatgpt.scripts",
+    "providers.chatgpt.sentinel",
     "providers.gemini",
     "providers.claude",
     "utils",
@@ -69,7 +68,6 @@ packages = [
 ]
 
 [tool.setuptools.package-data]
-"providers.chatgpt" = ["scripts/sign.js"]
 "lang" = ["*.json"]
 "extensions.layout" = ["languages/*.json", "manifest.json"]
 "extensions.archive" = ["manifest.json"]

@@ -124,7 +124,6 @@ def create_provider(
         raise ValueError("unknown provider")
     if provider_id == "chatgpt":
         from .chatgpt import BrowserSession, ChatGPTProvider, SessionPaths
-        from .chatgpt.resources import CHATGPT_ROOT
 
         if session is None:
             if credential_file is None:
@@ -135,12 +134,8 @@ def create_provider(
             if is_store and cache_directory is None:
                 raise ValueError("cache_directory is required with a ChatGPT credential store")
             path = credential_file if is_store else Path(credential_file)
-            cache = Path(cache_directory) if cache_directory else CHATGPT_ROOT
-            profile = (
-                Path(profile_directory)
-                if profile_directory
-                else (Path(cache_directory) if cache_directory else path.parent) / "login-profile"
-            )
+            cache = Path(cache_directory) if cache_directory else path.parent / "cache"
+            profile = Path(profile_directory) if profile_directory else cache / "login-profile"
             session = BrowserSession(
                 SessionPaths(
                     path,

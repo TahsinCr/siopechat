@@ -20,7 +20,8 @@ from ..errors import AccountPaused
 from ..session import CredentialStore, read_session, save_session
 from .constants import DEFAULT_CDP_URL, FORBIDDEN_REPLAY_HEADERS
 from .errors import ChatGPTWebError
-from .resources import CHATGPT_ROOT, sentinel_cache_status
+
+CHATGPT_ROOT = Path(__file__).resolve().parent
 
 
 @dataclass(frozen=True)
@@ -228,6 +229,3 @@ class BrowserSession:
             "authenticated": False,
             "reason": "browser_login_does_not_import_the_application_session",
         }
-
-    def cache_status(self) -> dict[str, Any] | None:
-        return sentinel_cache_status(self.paths.cache)

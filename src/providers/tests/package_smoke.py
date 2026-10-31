@@ -2,22 +2,29 @@
 
 import asyncio
 import tempfile
-from importlib.resources import files
 from pathlib import Path
 
-import quickjs
-
 from providers import ProviderClient, SendRequest
+from providers.chatgpt.sentinel import SentinelRuntime, generate_enforcement_proof
 
 
 def main():
-    sign_js = files("providers.chatgpt").joinpath("scripts", "sign.js")
-    if not sign_js.is_file():
-        raise SystemExit("scripts/sign.js was not packaged in providers.chatgpt")
-    context = quickjs.Context()
-    context.eval(sign_js.read_text(encoding="utf-8"))
-    if int(context.eval("typeof readJsonInput === 'function' ? 1 : 0")) != 1:
-        raise SystemExit("sign.js did not expose readJsonInput in QuickJS-NG")
+    with SentinelRuntime(user_agent="Mozilla/5.0 (X11; Linux x86_64)") as runtime:
+        initial = runtime.create_initial_proof()
+        if not initial.startswith("gAAAAAC") or not initial.endswith("~S"):
+            raise SystemExit("SentinelRuntime did not produce a valid initial proof token")
+        proof = generate_enforcement_proof(
+            initial,
+            {
+                "proofofwork": {
+                    "required": True,
+                    "seed": "smoke-seed",
+                    "difficulty": "f",
+                }
+            },
+        )
+        if not proof.startswith("gAAAAAB") or not proof.endswith("~S"):
+            raise SystemExit("generate_enforcement_proof did not produce a valid proof token")
 
     async def verify_lazy_account_factory():
         with tempfile.TemporaryDirectory() as folder:
