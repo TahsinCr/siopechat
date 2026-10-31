@@ -544,4 +544,8 @@ class CommandComponent:
         previous = self.tabs[self.active_tab]
         state = self._new_tab_state()
         state["tab_id"] = previous.get("tab_id") or uuid.uuid4().hex
+        if not state.get("draft"):
+            queued = previous.get("queued_submit")
+            if isinstance(queued, dict) and isinstance(queued.get("prompt"), str):
+                state["draft"] = queued["prompt"]
         previous.update(state)

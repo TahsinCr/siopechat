@@ -16,6 +16,7 @@ from providers.chatgpt.formats import normalize_message
 from tests.tui_support import immediate, terminal
 from tui.markdown import visible_chat_message
 from tui.styles import ICONS
+from tui.tab_session import TabSessionStore
 
 
 class WorkspaceTests(unittest.TestCase):
@@ -501,3 +502,50 @@ class WorkspaceTests(unittest.TestCase):
             b.cache_conversation({"id": "temp", "temporary": True, "messages": []})
             write.assert_not_called()
             active.assert_not_called()
+
+    def test_queued_message_is_saved_as_draft_in_session(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = TabSessionStore(Path(tmp) / "session.json")
+            tabs = [
+                {
+                    "kind": "chat",
+                    "account_key": "chatgpt/default",
+                    "tab_id": "tab1",
+                    "conversation_id": "c1",
+                    "queued_submit": {"prompt": "queued follow up"},
+                }
+            ]
+            store.save(tabs, 0, None)
+            loaded = store.load()
+            self.assertEqual(loaded["tabs"][0]["draft"], "queued follow up")
+
+        with terminal() as (v, _):
+            v.session_store = Mock()
+            v.busy = True
+            v.tabs[0]["busy"] = True
+            v.input.text = "queued follow up"
+            v.submit_prompt()
+            v._persist_session()
+            self.assertEqual(v.tabs[0].get("draft"), "queued follow up")
+            saved_tabs = v.session_store.save.call_args[0][0]
+            self.assertEqual(saved_tabs[0]["draft"], "queued follow up")
+
+    def test_four_busy_tabs_allow_queuing_followup_on_busy_tab(self):
+        with terminal() as (v, _):
+            for _ in range(3):
+                v.new_tab()
+            for tab in v.tabs:
+                tab["busy"] = True
+            v.busy = True
+            v.input.text = "queued follow up"
+            v.submit_prompt()
+            self.assertEqual(
+                v.tabs[v.active_tab].get("queued_submit", {}).get("prompt"),
+                "queued follow up",
+            )
+            v.new_tab()
+            v.busy = False
+            v.tabs[v.active_tab]["busy"] = False
+            v.input.text = "blocked fifth submit"
+            v.submit_prompt()
+            self.assertIn("Aynı anda en fazla 4 bekleyen istek", v.status)

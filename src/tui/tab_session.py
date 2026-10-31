@@ -102,7 +102,16 @@ class TabSessionStore:
                 if isinstance(value.get("effort_preference"), str)
                 else ""
             ),
-            "draft": value.get("draft") if isinstance(value.get("draft"), str) else "",
+            "draft": (
+                value.get("draft")
+                if isinstance(value.get("draft"), str) and value.get("draft")
+                else (
+                    value.get("queued_submit", {}).get("prompt", "")
+                    if isinstance(value.get("queued_submit"), dict)
+                    and isinstance(value.get("queued_submit", {}).get("prompt"), str)
+                    else (value.get("draft") if isinstance(value.get("draft"), str) else "")
+                )
+            ),
             "project": {
                 key: project[key] for key in ("id", "name") if isinstance(project.get(key), str)
             },

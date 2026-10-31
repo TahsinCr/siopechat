@@ -412,3 +412,17 @@ class DownloadTests(unittest.TestCase):
                 self.assertIsNone(view.conversation_id)
         finally:
             app.runtime.close()
+
+    def test_remove_with_delete_file_never_unlinks_outside_download_directory(self):
+        service = self.service(lambda _: httpx.Response(200, content=b"ok"))
+        service.directory().mkdir(parents=True, exist_ok=True)
+        outside = self.root / "outside.txt"
+        outside.write_text("outside file")
+        inside = service.directory() / "inside.txt"
+        inside.write_text("inside file")
+        service._records["out"] = {"state": "completed", "path": str(outside)}
+        service.remove("out", delete_file=True)
+        self.assertTrue(outside.exists())
+        service._records["in"] = {"state": "completed", "path": str(inside)}
+        service.remove("in", delete_file=True)
+        self.assertFalse(inside.exists())

@@ -733,3 +733,56 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
                 )
             ]
             self.assertEqual(provider.rpc.call.await_count, 0)
+
+    async def test_flash_variants_distinguish_default_fast_and_specialized_models(self):
+        fast_row = [None] * 18
+        fast_row[0], fast_row[1], fast_row[11], fast_row[17] = "remote-fast", "flash", "Flash", 1
+        lite_row = [None] * 18
+        lite_row[0], lite_row[1], lite_row[11], lite_row[17] = (
+            "remote-lite",
+            "flash-lite",
+            "Flash Lite",
+            42,
+        )
+        legacy = [None] * 18
+        legacy[15], legacy[16], legacy[17] = [fast_row, lite_row], [], []
+        policies = [
+            {
+                "modeConfig": {"id": "remote-fast", "modeCategory": "FAST", "title": "Flash"},
+                "hosts": ["MODE_PICKER_HOST_CHAT"],
+            },
+            {
+                "modeConfig": {"id": "remote-lite", "modeCategory": "FAST", "title": "Flash Lite"},
+                "hosts": ["MODE_PICKER_HOST_CHAT"],
+            },
+        ]
+        status = {
+            "bardModeConfigs": [
+                {"id": "remote-fast", "modeCategory": "FAST"},
+                {"id": "remote-lite", "modeCategory": "FAST"},
+            ],
+            "geminiModePolicy": {"configs": policies},
+        }
+        session = GeminiSession(Path("unused"))
+        session.rpc_path_prefix = "/_/BardChatUi/"
+        session.http = SimpleNamespace(
+            get=AsyncMock(
+                return_value=SimpleNamespace(
+                    status_code=200,
+                    text=json.dumps([{"data": {"viewer": {"rpcs": {"getUserStatus": status}}}}]),
+                )
+            )
+        )
+        session.batch = AsyncMock(
+            return_value=SimpleNamespace(
+                text=json.dumps([["wrb.fr", "otAQ7b", json.dumps(legacy)]]) + "\n",
+            )
+        )
+        models = await session.discover_models()
+        self.assertEqual(len(models), 2)
+        fast_model = next(m for m in models if m.id == "gemini-flash")
+        lite_model = next(m for m in models if m.id == "gemini-flash-lite")
+        self.assertIsNone(fast_model.metadata["selector_id"])
+        self.assertIsNone(fast_model.metadata["number"])
+        self.assertEqual(lite_model.metadata["selector_id"], "remote-lite")
+        self.assertEqual(lite_model.metadata["number"], 42)

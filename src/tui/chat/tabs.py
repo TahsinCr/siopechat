@@ -58,6 +58,11 @@ class TabComponent:
             return
         try:
             self._save_active_tab()
+            for tab in self.tabs:
+                if not tab.get("draft"):
+                    queued = tab.get("queued_submit")
+                    if isinstance(queued, dict) and isinstance(queued.get("prompt"), str):
+                        tab["draft"] = queued["prompt"]
             layout = (
                 self.layout_controller.snapshot("Temporary session")
                 if self.layout_controller

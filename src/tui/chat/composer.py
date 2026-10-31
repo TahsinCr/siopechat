@@ -67,7 +67,10 @@ class ComposerComponent:
             )
             self.app.invalidate()
             return
-        if sum(bool(tab.get("busy")) for tab in self.tabs + self.background_tabs) >= 4:
+        if (
+            not self.active_busy()
+            and sum(bool(tab.get("busy")) for tab in self.tabs + self.background_tabs) >= 4
+        ):
             self.status = self.tr("Aynı anda en fazla 4 bekleyen istek çalıştırılabilir · bekleyin")
             self.app.invalidate()
             return
