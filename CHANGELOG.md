@@ -10,7 +10,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.3b0` for `v1.5.
 
 ### Added
 
-- Copy or save the full visible conversation from the final message toolbar as formatted text or JSON. Exports read archived messages in bounded SQLite windows, include unsaved transcript updates, and save through the configured download folder and history.
+- Copy or save the full visible conversation from the conversation toolbar as formatted text or JSON. Exports read archived messages in bounded SQLite windows, include unsaved transcript updates, and save through the configured download folder and history.
 
 ### Changed
 

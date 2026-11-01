@@ -374,6 +374,21 @@ class ControlsComponent:
                     on_click(self.begin_split),
                 )
             )
+        if self.tab_kind == "chat" and self.messages:
+            controls.extend(
+                (
+                    (
+                        "class:button",
+                        f" {ICONS['copy'].icon} {self.tr('Copy')} ",
+                        on_click(lambda: self._open_conversation_export("copy_conversation")),
+                    ),
+                    (
+                        "class:button",
+                        f" {ICONS['down'].icon} {self.tr('Save')} ",
+                        on_click(lambda: self._open_conversation_export("save_conversation")),
+                    ),
+                )
+            )
         return controls
 
     def render_composer_actions(self):

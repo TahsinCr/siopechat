@@ -226,6 +226,36 @@ class FormsRenderTests(unittest.IsolatedAsyncioTestCase):
             delete[2](click)
             v.delete_record.assert_called_once_with("container", v.current_project["id"])
 
+    def test_conversation_exports_are_in_the_conversation_toolbar(self):
+        with terminal(
+            initial_messages=[
+                {"id": "user", "role": "user", "text": "Question"},
+                {"id": "assistant", "role": "assistant", "text": "Answer"},
+            ]
+        ) as (v, _):
+            controls = v.render_conversation_actions()
+            labels = "".join(fragment[1] for fragment in controls)
+            self.assertIn(" Copy ", labels)
+            self.assertIn(" Save ", labels)
+
+            from prompt_toolkit.data_structures import Point
+            from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
+
+            click = MouseEvent(Point(0, 0), MouseEventType.MOUSE_UP, MouseButton.LEFT, frozenset())
+            v.forms.open = Mock()
+            for label, dialog_title in (
+                (" Copy ", "Copy conversation"),
+                (" Save ", "Save conversation"),
+            ):
+                button = next(item for item in controls if label in item[1])
+                button[2](click)
+                self.assertEqual(v.forms.open.call_args.args[0], v.tr(dialog_title))
+
+            message_toolbar = "".join(
+                fragment[1] for fragment in v.transcript_control._message_toolbar(1, 160)
+            )
+            self.assertNotIn(" Save ", message_toolbar)
+
     def test_close_all_cleans_temporary_records_in_their_account(self):
         service = Accounts()
         cleanup = Mock()

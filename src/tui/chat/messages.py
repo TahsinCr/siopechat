@@ -298,14 +298,12 @@ class MessageComponent:
                 self.show_temporary_status(self.tr("Sent message to the terminal clipboard"))
             self.app.invalidate()
             return
-        if action in ("copy_conversation", "save_conversation"):
-            self._open_conversation_export(tab_id, message_ref, action)
-            return
 
-    def _open_conversation_export(self, tab_id, message_ref, action):
-        if self._toolbar_message_index(tab_id, message_ref) is None:
+    def _open_conversation_export(self, action):
+        if not self.tabs:
             return
         saving = action == "save_conversation"
+        tab_id = self.tabs[self.active_tab].get("tab_id")
         title = self.tr("Save conversation") if saving else self.tr("Copy conversation")
         field = self.tr("Export format")
         choices = [
@@ -317,7 +315,7 @@ class MessageComponent:
             export_format = values.get("format")
             if export_format not in ("text", "json"):
                 raise ValueError(self.tr("Choose an export format"))
-            return lambda: self._export_conversation(tab_id, message_ref, saving, export_format)
+            return lambda: self._export_conversation(tab_id, saving, export_format)
 
         self.forms.open(
             title,
@@ -326,12 +324,14 @@ class MessageComponent:
             submit_label="Save" if saving else "Copy",
         )
 
-    def _export_conversation(self, tab_id, message_ref, saving, export_format):
-        if self._toolbar_message_index(tab_id, message_ref) is None:
-            self.status = self.tr("This message is no longer loaded")
+    def _export_conversation(self, tab_id, saving, export_format):
+        tab = next((item for item in self.tabs if item.get("tab_id") == tab_id), None)
+        if tab is None:
+            return
+        if tab is not self.tabs[self.active_tab]:
+            self.status = self.tr("This conversation is no longer active")
             self.app.invalidate()
             return
-        tab = self.tabs[self.active_tab]
         if tab.get("history_load_pending") and not tab.get("history_load_complete"):
             self.status = self.tr("Conversation history is still syncing. Try again shortly.")
             self.app.invalidate()

@@ -26,29 +26,8 @@ class TranscriptControl(UIControl):
         self._content_width = 0
         self._toolbar_rows = {}
         self._toolbar_fragments = {}
-        self._toolbar_last_key = None
-        self._toolbar_last_index = None
         self._pressed_interactive = None
         self.clear_selection()
-
-    def _latest_actionable_message(self):
-        messages = self.view.messages
-        key = (
-            id(messages),
-            len(messages),
-            id(messages[-1]) if messages else None,
-        )
-        if key != self._toolbar_last_key:
-            self._toolbar_last_key = key
-            self._toolbar_last_index = next(
-                (
-                    index
-                    for index in range(len(messages) - 1, -1, -1)
-                    if messages[index].get("role") in ("user", "assistant")
-                ),
-                None,
-            )
-        return self._toolbar_last_index
 
     def clear_selection(self):
         self.dragging = False
@@ -150,17 +129,6 @@ class TranscriptControl(UIControl):
         role = message.get("role")
         if role in ("user", "assistant"):
             actions = [("copy", ICONS["copy"].icon, self.view.tr("Copy"))]
-            if index == self._latest_actionable_message():
-                actions.extend(
-                    (
-                        (
-                            "copy_conversation",
-                            ICONS["copy"].icon + "+",
-                            self.view.tr("Copy chat"),
-                        ),
-                        ("save_conversation", ICONS["down"].icon, self.view.tr("Save chat")),
-                    )
-                )
         else:
             return []
         tab = self.view.tabs[self.view.active_tab]

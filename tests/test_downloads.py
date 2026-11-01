@@ -39,6 +39,39 @@ class DownloadTests(unittest.TestCase):
         self.assertEqual(result["kind"], "file")
         self.assertEqual(Path(result["path"]).read_bytes(), b"artifact")
 
+    def test_generated_export_uses_download_folder_history_and_atomic_size_limit(self):
+        self.settings.update(
+            "application", {"download_directory": "exports", "download_max_bytes": 64}
+        )
+        self.accounts.archive.return_value = None
+        service = Downloads(self.settings, self.root, self.accounts)
+
+        saved = service.save_export(
+            "chatgpt/default",
+            "@chatgpt/default/chat",
+            "Chat",
+            "Chat.json",
+            ['{"messages":[', "{}", "]}"],
+        )
+
+        export = Path(saved["path"])
+        self.assertEqual(export.parent, self.root / "exports")
+        self.assertEqual(export.read_text(), '{"messages":[{}]}')
+        self.assertEqual(service.snapshot()[0]["state"], "completed")
+        self.assertEqual(service.snapshot()[0]["path"], str(export))
+
+        self.settings.update("application", {"download_max_bytes": 3})
+        with self.assertRaisesRegex(ValueError, "boyutu"):
+            service.save_export(
+                "chatgpt/default",
+                "@chatgpt/default/chat",
+                "Chat",
+                "Too large.txt",
+                ["four"],
+            )
+        self.assertEqual(sorted(path.name for path in export.parent.iterdir()), ["Chat.json"])
+        self.assertEqual({row["state"] for row in service.snapshot()}, {"completed", "failed"})
+
     def test_private_targets_and_https_downgrade_are_rejected(self):
         for address in ("127.0.0.1", "10.0.0.1", "169.254.169.254", "::1"):
             service = self.service(lambda _: self.fail("private target must not be requested"))

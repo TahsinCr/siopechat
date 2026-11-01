@@ -1,5 +1,6 @@
 """Message mutation durability, tab ownership and asynchronous UI behavior."""
 
+import json
 import tempfile
 import threading
 import unittest
@@ -556,6 +557,66 @@ class MessageToolbarTests(unittest.TestCase):
             view.new_tab()
             view.message_toolbar_action(old_tab, old_message, "retry")
             view._submit_message_action.assert_not_called()
+
+    def test_conversation_copy_reads_all_sql_pages_and_runs_in_background(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        root = Path(folder.name)
+        archive = Archive(SQLiteRepository(root / "archive.sqlite3"), Files(root / "files"))
+        self.addCleanup(archive.close)
+        key, conversation_id = "chatgpt/default", "@chatgpt/default/chat"
+        archived = [
+            {
+                "id": f"m{index}",
+                "role": "user" if index % 2 == 0 else "assistant",
+                "text": f"Archived {index}",
+            }
+            for index in range(501)
+        ]
+        archived.insert(
+            250,
+            {
+                "id": "internal",
+                "role": "assistant",
+                "channel": "analysis",
+                "text": "Private reasoning",
+            },
+        )
+        archive.put(key, "conversation", "chat", {"title": "Test chat", "messages": archived})
+
+        pending, form, copied = {}, {}, []
+        with terminal(initial_messages=[{"id": "m500", "role": "user", "text": "Live update"}]) as (
+            view,
+            _,
+        ):
+            tab = view.tabs[view.active_tab]
+            tab.update(conversation_id=conversation_id, account_key=key, title="Test chat")
+            view.account_service = SimpleNamespace(archive=lambda: archive)
+            view.forms.open = lambda title, fields, submit, **kwargs: form.update(
+                title=title, fields=fields, submit=submit
+            )
+            view._read_in_background = lambda read, success, failure, **kwargs: pending.update(
+                read=read, success=success, failure=failure
+            )
+            before_jobs = view.background_jobs
+
+            view._open_conversation_export("copy_conversation")
+            self.assertEqual([value for value, _ in form["fields"][0][3]], ["text", "json"])
+            form["submit"]({"format": "json"})()
+            self.assertEqual(view.background_jobs, before_jobs)
+            self.assertIn("Preparing conversation copy", view.status)
+
+            with patch(
+                "tui.chat.messages.clipboard.copy_text",
+                side_effect=lambda text: copied.append(text) or True,
+            ):
+                result = pending["read"]()
+                pending["success"](result)
+
+        exported = json.loads(copied[0])
+        self.assertEqual(len(exported["messages"]), 501)
+        self.assertEqual(exported["messages"][-1], {"role": "user", "text": "Live update"})
+        self.assertNotIn("Private reasoning", copied[0])
 
     def test_branch_is_added_to_sidebar_only_after_the_provider_lists_it(self):
         with terminal() as (view, _):
