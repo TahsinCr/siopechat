@@ -23,6 +23,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 
 ### Fixed
 
+- Pace progressive background transcript hydration to prevent event loop contention and maintain smooth UI rendering.
 - Gate progressive background hydration on initial transcript completion so early render passes are never interrupted or held on placeholder notices.
 - Ensure tab removal and closing all tabs release active message and transcript references before dispatching off-thread memory trimming with full garbage collection.
 - Release temporary ChatGPT conversation state when its tab closes and keep per-send stream messages local so failures do not retain partial responses on the client.

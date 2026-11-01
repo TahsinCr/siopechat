@@ -265,6 +265,8 @@ class HistoryPager:
 
         loop = getattr(view.app, "loop", None) or getattr(view, "event_loop", None)
         if loop is not None and loop.is_running():
-            loop.call_soon_threadsafe(run_hydration)
+            loop.call_soon_threadsafe(
+                lambda: loop.call_later(0.05, run_hydration) if loop.is_running() else run_hydration()
+            )
         else:
             view._dispatch_ui(run_hydration)
