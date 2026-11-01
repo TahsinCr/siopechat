@@ -283,10 +283,6 @@ class ChatGPTClient:
     def forget_conversation(self, conversation_id: str) -> None:
         self._forget_conversation(conversation_id)
 
-    def clear_continuation_cache(self) -> None:
-        self._continuation_cache.clear()
-        self._continuation_cache_text_chars = 0
-
     def __enter__(self) -> "ChatGPTClient":
         return self
 
@@ -364,19 +360,14 @@ class ChatGPTClient:
                 delay = float(response.headers.get("retry-after", ""))
             except ValueError:
                 delay = None
-            response.close()
             raise RateLimited(delay)
         if response.status_code == 404:
             from ..errors import RemoteNotFound
 
-            response.close()
             raise RemoteNotFound("ChatGPT kaydı artık mevcut değil")
         if response.status_code >= 400:
-            status = response.status_code
-            path = response.url.path
-            response.close()
             raise ChatGPTWebError(
-                f"ChatGPT returned HTTP {status} for {method} {path}"
+                f"ChatGPT returned HTTP {response.status_code} for {method} {response.url.path}"
             )
         content_type = response.headers.get("content-type", "")
         if (
@@ -386,21 +377,13 @@ class ChatGPTClient:
         ):
             return response
         if "application/json" not in content_type:
-            response.close()
             raise ChatGPTWebError(
                 f"ChatGPT returned unexpected content type {content_type or '<missing>'}"
             )
         return response
 
-    def request_json(self, method: str, url: str, **kwargs: Any) -> Any:
-        response = self.request(method, url, expect_json=True, **kwargs)
-        try:
-            return response.json()
-        finally:
-            response.close()
-
     def verify(self) -> dict[str, Any]:
-        return self.request_json(
+        return self.request(
             "GET",
             urljoin(CHATGPT_ORIGIN, "/backend-api/conversations"),
             params={
@@ -410,13 +393,13 @@ class ChatGPTClient:
                 "is_archived": "false",
                 "is_starred": "false",
             },
-        )
+        ).json()
 
     def model_catalog(self, *, refresh: bool = False):
         cached = getattr(self, "_model_catalog", None)
         if cached is not None and not refresh and time.monotonic() - cached[0] < 300:
             return cached[1]
-        raw = self.request_json(
+        raw = self.request(
             "GET",
             urljoin(CHATGPT_ORIGIN, "/backend-api/models"),
             params={
@@ -424,7 +407,7 @@ class ChatGPTClient:
                 "is_gizmo": "false",
                 "supports_model_picker_upgrade_presets": "true",
             },
-        )
+        ).json()
         catalog = parse_model_catalog(raw)
         self._model_catalog = (time.monotonic(), catalog)
         return catalog
@@ -433,9 +416,9 @@ class ChatGPTClient:
         params = {"conversations_per_gizmo": 0, "limit": 20, "owned_only": "false"}
         if cursor is not None:
             params["cursor"] = cursor
-        raw = self.request_json(
+        raw = self.request(
             "GET", urljoin(CHATGPT_ORIGIN, "/backend-api/gizmos/snorlax/sidebar"), params=params
-        )
+        ).json()
         items, next_cursor = parse_page(raw)
         projects = [value for item in items if (value := parse_project(item)) is not None]
         return {"items": projects, "cursor": next_cursor}
@@ -445,7 +428,7 @@ class ChatGPTClient:
             raise ValueError("project name must contain 1–80 characters")
         if visibility != "private" or memory not in ("default", "project_only"):
             raise ValueError("unsupported project privacy or memory option")
-        raw = self.request_json(
+        raw = self.request(
             "POST",
             urljoin(CHATGPT_ORIGIN, "/backend-api/projects"),
             json={
@@ -453,7 +436,7 @@ class ChatGPTClient:
                 "instructions": instructions,
                 "memory_scope": "project_v2" if memory == "project_only" else "global",
             },
-        )
+        ).json()
         if raw.get("error") or not isinstance(raw.get("resource"), dict):
             raise ChatGPTWebError("Project creation response changed; request was not replayed")
         project = parse_project(raw["resource"])
@@ -462,22 +445,22 @@ class ChatGPTClient:
         return self.get_project(project["id"])
 
     def get_project(self, project_id: str) -> dict[str, Any]:
-        raw = self.request_json(
+        raw = self.request(
             "GET", urljoin(CHATGPT_ORIGIN, f"/backend-api/gizmos/{quote(project_id, safe='')}")
-        )
+        ).json()
         value = parse_project(raw)
         if value is None:
             raise ChatGPTWebError("Requested gizmo is not a project")
         return value
 
     def list_project_chats(self, project_id: str, cursor: str | None = None) -> dict[str, Any]:
-        raw = self.request_json(
+        raw = self.request(
             "GET",
             urljoin(
                 CHATGPT_ORIGIN, f"/backend-api/gizmos/{quote(project_id, safe='')}/conversations"
             ),
             params={"cursor": cursor or "0", "limit": 30, "owned_only": "false"},
-        )
+        ).json()
         items, next_cursor = parse_page(raw)
         return {
             "items": [dict(item, project_id=project_id) for item in items],
@@ -487,7 +470,7 @@ class ChatGPTClient:
     def list_page(self, offset: int = 0, limit: int = DEFAULT_PAGE_SIZE) -> dict[str, Any]:
         if offset < 0 or not 1 <= limit <= 100:
             raise ValueError("invalid conversation page")
-        return self.request_json(
+        return self.request(
             "GET",
             urljoin(CHATGPT_ORIGIN, "/backend-api/conversations"),
             params={
@@ -497,14 +480,14 @@ class ChatGPTClient:
                 "is_archived": "false",
                 "is_starred": "false",
             },
-        )
+        ).json()
 
     def list_conversations(self, maximum: int | None) -> list[dict[str, Any]]:
         offset = 0
         conversations: list[dict[str, Any]] = []
         seen: set[str] = set()
         while True:
-            response = self.request_json(
+            response = self.request(
                 "GET",
                 urljoin(CHATGPT_ORIGIN, "/backend-api/conversations"),
                 params={
@@ -514,7 +497,7 @@ class ChatGPTClient:
                     "is_archived": "false",
                     "is_starred": "false",
                 },
-            )
+            ).json()
             items = response.get("items", [])
             if not isinstance(items, list):
                 raise ChatGPTWebError("conversation list did not contain an items array")
@@ -537,11 +520,7 @@ class ChatGPTClient:
             CHATGPT_ORIGIN,
             f"/backend-api/conversations/{conversation_id}",
         )
-        response = self.request("GET", url)
-        try:
-            result = response.json()
-        finally:
-            response.close()
+        result = self.request("GET", url).json()
         if not isinstance(result, dict):
             raise ChatGPTWebError("conversation response was not an object")
         self._remember_conversation(result)

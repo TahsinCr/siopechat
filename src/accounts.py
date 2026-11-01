@@ -2461,7 +2461,7 @@ class Accounts:
                     self.status("") if action == "status" else unavailable()
                 ),
                 "forget_temporary": None,
-                "release_conversation": lambda *args: None,
+                "release_conversation": lambda chat: None,
                 "attach_file_callback": None,
                 "attachment_policy_callback": None,
             }
@@ -2525,14 +2525,10 @@ class Accounts:
             elif hasattr(provider, "_temporary_conversations"):
                 provider._temporary_conversations.pop(remote, None)
 
-        def release_conversation(chat=None):
-            remote = origin(chat, key)[1] if chat is not None else None
+        def release_conversation(chat):
+            _, remote = origin(chat, key)
             if hasattr(provider, "forget_conversation"):
                 result = provider.forget_conversation(remote)
-                if asyncio.iscoroutine(result):
-                    self.call(result)
-            elif hasattr(provider, "forget_temporary") and remote is not None:
-                result = provider.forget_temporary(remote)
                 if asyncio.iscoroutine(result):
                     self.call(result)
 

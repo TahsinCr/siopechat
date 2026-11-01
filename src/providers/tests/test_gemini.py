@@ -19,6 +19,19 @@ from providers.models import Choice, Model
 
 
 class NativeGeminiTests(unittest.IsolatedAsyncioTestCase):
+    async def test_forget_conversation_releases_only_its_cached_context(self):
+        provider = GeminiProvider(Path("unused"))
+        provider._chat_metadata.update(
+            {
+                "c1": ["c1", "request-1", "response-1"],
+                "c2": ["c2", "request-2", "response-2"],
+            }
+        )
+        await provider.forget_conversation("c1")
+
+        self.assertNotIn("c1", provider._chat_metadata)
+        self.assertEqual(provider._chat_metadata["c2"], ["c2", "request-2", "response-2"])
+
     async def test_saved_parameters_do_not_bypass_remote_session_validation(self):
         saved = {
             "__Secure-1PSID": "cookie",

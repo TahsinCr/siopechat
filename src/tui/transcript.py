@@ -378,7 +378,7 @@ class VirtualTranscript:
         """Never wait on the UI thread for an in-flight Markdown conversion."""
         self._disposed = True
         self._release_renderer = not retain_renderer
-        if self._lock.acquire(timeout=0.05):
+        if self._lock.acquire(blocking=False):
             try:
                 self._release()
             finally:

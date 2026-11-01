@@ -6,6 +6,7 @@ import tracemalloc
 import unittest
 import weakref
 from pathlib import Path
+from unittest.mock import patch
 
 from tests.account_fixture import configured_application
 from tests.tui_support import terminal
@@ -210,17 +211,13 @@ class TabMemoryReleaseTests(unittest.TestCase):
             if not tracing_before:
                 tracemalloc.stop()
 
-    def test_configure_memory_allocator_runs_safely(self):
-        from utils.process import configure_memory_allocator
-
-        configure_memory_allocator()
-
     def test_close_all_tabs_clears_prepared_transcripts_and_invokes_release_conversation(self):
         from tests.fakes import Accounts as FakeAccounts
         from tests.tui_support import immediate
 
         service = FakeAccounts()
-        service.active_accounts = lambda: [{"key": "chatgpt/default"}]
+        active_accounts_calls = []
+        service.active_accounts = lambda: active_accounts_calls.append(True) or []
         released_chats = []
         service.callbacks = lambda key: {
             "release_conversation": lambda chat: released_chats.append((key, chat)),
@@ -235,14 +232,17 @@ class TabMemoryReleaseTests(unittest.TestCase):
             tab["account_key"] = "chatgpt/default"
             view.conversation_id = "@chatgpt/default/test-chat"
             view._prepared_transcripts = {"tab-probe": {"source": "data"}}
+            active_accounts_calls.clear()
 
-            view.close_all_tabs()
+            with patch("tui.chat.tabs.trim_memory"):
+                view.close_all_tabs()
 
             self.assertEqual(getattr(view, "_prepared_transcripts", {}), {})
             self.assertIn(("chatgpt/default", "@chatgpt/default/test-chat"), released_chats)
-            self.assertIn(("chatgpt/default", None), released_chats)
+            self.assertNotIn(("chatgpt/default", None), released_chats)
+            self.assertEqual(active_accounts_calls, [])
 
-    def test_chatgpt_client_forget_conversation_and_clear_continuation_cache(self):
+    def test_chatgpt_client_forget_conversation_clears_only_the_selected_cache(self):
         from unittest.mock import Mock
 
         from providers.chatgpt.client import ChatGPTClient
@@ -259,15 +259,51 @@ class TabMemoryReleaseTests(unittest.TestCase):
             ],
         }
         client._remember_conversation(dummy_conv)
+        second = dict(dummy_conv, conversation_id="c2")
+        client._remember_conversation(second)
         self.assertIn("c1", client._continuation_cache)
+        self.assertIn("c2", client._continuation_cache)
         self.assertGreater(client._continuation_cache_text_chars, 0)
 
         client.forget_conversation("c1")
         self.assertNotIn("c1", client._continuation_cache)
-        self.assertEqual(client._continuation_cache_text_chars, 0)
+        self.assertIn("c2", client._continuation_cache)
+        self.assertGreater(client._continuation_cache_text_chars, 0)
 
-        client._remember_conversation(dummy_conv)
-        self.assertIn("c1", client._continuation_cache)
-        client.clear_continuation_cache()
-        self.assertNotIn("c1", client._continuation_cache)
-        self.assertEqual(client._continuation_cache_text_chars, 0)
+    def test_tab_memory_trim_is_scheduled_in_the_background(self):
+        with terminal() as (view, _):
+            pending = []
+            view._read_in_background = lambda callback, *_args, **_kwargs: pending.append(callback)
+            with (
+                patch("tui.chat.tabs.trim_memory") as trim,
+                patch.object(view.renderer, "clear_cache") as clear_cache,
+            ):
+                view._trim_closed_tabs()
+                trim.assert_not_called()
+                self.assertEqual(len(pending), 1)
+
+                pending.pop()()
+
+                clear_cache.assert_called_once_with(wait=True)
+                trim.assert_called_once_with()
+
+    def test_dispose_does_not_wait_for_an_inflight_render_lock(self):
+        from tui.transcript import VirtualTranscript
+
+        class BusyLock:
+            def __init__(self):
+                self.kwargs = None
+
+            def acquire(self, **kwargs):
+                self.kwargs = kwargs
+                return False
+
+        layout = object.__new__(VirtualTranscript)
+        layout._disposed = False
+        layout._release_renderer = True
+        layout._lock = BusyLock()
+        with patch.object(layout, "_release") as release:
+            layout.dispose()
+
+        self.assertEqual(layout._lock.kwargs, {"blocking": False})
+        release.assert_not_called()

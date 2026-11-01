@@ -584,3 +584,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
 
     async def forget_temporary(self, remote_id):
         self._temporary.pop(remote_id, None)
+
+    async def forget_conversation(self, conversation_id):
+        async with self._gate:
+            self._chat_metadata.pop(conversation_id, None)

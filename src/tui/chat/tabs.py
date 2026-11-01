@@ -355,19 +355,22 @@ class TabComponent:
         self._discard_tab_render_cache(closing)
         if closing.get("busy") and not empty_workspace:
             self.background_tabs.append(closing)
-        if (
-            not closing.get("busy")
-            and closing.get("temporary")
-            and closing.get("conversation_id")
-            and self.forget_temporary
-        ):
-            remote_id = closing["conversation_id"]
-            self._read_in_background(
-                lambda: self.forget_temporary(remote_id),
-                lambda _: None,
-                lambda _: None,
-                session_bound=False,
+        if not closing.get("busy") and closing.get("temporary") and closing.get("conversation_id"):
+            callback = (
+                self.account_service.callbacks(closing.get("account_key", self.account_key)).get(
+                    "forget_temporary"
+                )
+                if self.account_service
+                else self.forget_temporary
             )
+            if callback:
+                remote_id = closing["conversation_id"]
+                self._read_in_background(
+                    lambda callback=callback, remote_id=remote_id: callback(remote_id),
+                    lambda _: None,
+                    lambda _: None,
+                    session_bound=False,
+                )
         self.tabs.pop(index)
         if not self.tabs:
             self.tabs.append(
@@ -461,23 +464,6 @@ class TabComponent:
         getattr(self, "_prepared_transcripts", {}).clear()
         for tab in self.tabs:
             self._discard_tab_render_cache(tab)
-        if self.account_service:
-            accounts_fn = getattr(self.account_service, "active_accounts", None)
-            active_accounts = accounts_fn() if callable(accounts_fn) else ()
-            for account in active_accounts:
-                key = account.get("key")
-                release = (
-                    self.account_service.callbacks(key).get("release_conversation")
-                    if key and hasattr(self.account_service, "callbacks")
-                    else None
-                )
-                if release:
-                    self._read_in_background(
-                        lambda release=release: release(None),
-                        lambda _: None,
-                        lambda _: None,
-                        session_bound=False,
-                    )
         for tab in self.tabs:
             if tab.get("temporary") and tab.get("conversation_id"):
                 callback = (
@@ -532,7 +518,6 @@ class TabComponent:
             renderer.clear_cache(wait=True)
             trim_memory()
 
-        trim_memory()
         self._read_in_background(
             release_memory, lambda _: None, lambda _: None, session_bound=False
         )

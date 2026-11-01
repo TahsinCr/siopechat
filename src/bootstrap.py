@@ -26,9 +26,6 @@ def _select_environment() -> None:
 
 
 def create_application(root: Path | None = None):
-    from utils.process import configure_memory_allocator
-
-    configure_memory_allocator()
     checkout = Path(__file__).resolve().parent.parent
     if (checkout / "extensions" / "__init__.py").is_file() and str(checkout) not in sys.path:
         sys.path.insert(0, str(checkout))

@@ -36,20 +36,6 @@ def acquire_exclusive(lock_file) -> None:
     fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
 
-def configure_memory_allocator() -> None:
-    import sys
-
-    if sys.platform.startswith("linux"):
-        try:
-            import ctypes
-
-            libc = ctypes.CDLL("libc.so.6")
-            if hasattr(libc, "mallopt"):
-                libc.mallopt(-8, 2)
-        except Exception:
-            pass
-
-
 def trim_memory() -> None:
     import gc
     import sys
