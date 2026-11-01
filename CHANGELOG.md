@@ -4,9 +4,11 @@ All notable changes to SiopeChat are documented here.
 
 The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
-Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.2-beta`).
+Python distributions use the corresponding PEP 440 version (`1.5.3b0` for `v1.5.3-beta`).
 
 ## [Unreleased]
+
+## [1.5.3-beta] - 2026-11-01
 
 ### Added
 

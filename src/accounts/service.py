@@ -41,6 +41,7 @@ class Accounts(
     AccountsTransfers,
 ):
     """Coordinate account-scoped provider operations."""
+
     def __init__(self, api):
         self.api = api
         self.settings = api.settings

@@ -1,4 +1,4 @@
-[![Sürüm: v1.5.2-beta][version-shield]](CHANGELOG.md)
+[![Sürüm: v1.5.3-beta][version-shield]](CHANGELOG.md)
 [![Python 3.11+][python-shield]](https://www.python.org/downloads/)
 [![GPL-3.0-only][license-shield]](LICENSE)
 
@@ -34,9 +34,9 @@ Sohbetlerinizi, projelerinizi ve farklı modellerin yanıtlarını tek bir termi
 | --- | --- | --- |
 | Yanıtlarda üretilen dosyaları indirin; ilerlemeyi indirme yöneticisinde izleyin. | Komut paleti, değiştirilebilir kısayollar, fare kontrolleri ve yerel eklentileri kullanın. | İngilizce, Türkçe veya Rusça arayüzü seçin. |
 
-## Daha Az Bekleme, Daha Akıcı Sohbet
+> **v1.5.3-beta**, kayıtlı sohbetleri ve önbellekteki model kataloglarını daha erken gösterirken sağlayıcı geçmişini arka planda eşitler. Metin üretimi biter bitmez yanıt tamamlanmış gösterilir ve sonraki mesaj kuyruğa alınabilir; geçmiş yükleme ve temizlik işleri arayüzü bekletmez. Sağlayıcı isteklerinin yeniden kullanımı, klavye gezintisi, yeniden deneme ve hesap aksiyonları, bölünmüş görünümde geçmiş ve indirme güvenliği de iyileştirildi.
 
-SiopeChat bir yanıtı tamamlarken siz yazmayı sürdürebilirsiniz. Ortak iyileştirmeler ve sağlayıcılara özel optimizasyonlar gereksiz beklemeleri azaltır.
+## Daha Akıcı Sohbet
 
 | Kapsam | Neler iyileşti? |
 | --- | --- |
@@ -44,7 +44,7 @@ SiopeChat bir yanıtı tamamlarken siz yazmayı sürdürebilirsiniz. Ortak iyile
 | **ChatGPT** | Uygun sohbet anlık görüntüleri ve tamamlanan akışlardan alınmış mesajlar yeniden kullanılarak yinelenen geçmiş istekleri azaltılır. Sentinel başlıkları sonraki gönderimden önce hazırlanır. Kayıtlı çevrimdışı ölçümde Sentinel başlangıç kanıtı üretiminin saf Python medyanı **0,329 ms** oldu: bu aşama, yeniden kullanılan QuickJS-NG bağlamından yaklaşık **10,7 kat**, açık Node/V8 sürecinde her örnek için yeni VM oluşturan yoldan **12,6 kat daha kısa** sürdü. |
 | **Gemini** | Flash modelleri için istek yönlendirmesi düzeltildi; sağlayıcının varsayılan düşünme politikası korunuyor. Geçerli sohbet devam kimlikleri yeniden kullanılıyor ve etkinlik RPC çağrısı beş dakika içinde yinelenmiyor. Önceki sınırlı canlı denemelerde ilk metne ulaşma süresinin **65–110 saniye aralığından 1,89–3,80 saniye aralığına** düştüğü kaydedildi. Bunlar kontrollü benchmark sonuçları değil, kayıtlı süre aralıklarıdır; her model ve hesap için garanti edilmez. |
 
-**Rakamları şöyle değerlendirin:** ChatGPT oranları yalnızca yerel başlangıç kanıtı üretiminin medyanlarını karşılaştırır; mesajın baştan sona yanıtlanma hızını göstermez. Gemini denemeleri için eşleştirilmiş örnekler ve p95 yayımlanmadığından güvenilir bir “kaç kat hızlı” oranı çıkarılamaz. Ortak arayüz iyileştirmeleri için ölçülmüş bir katsayı da yoktur. Ağ koşulları, model seçimi ve sunucu yükü yanıt süresini etkilemeye devam eder. Ayrıntılar aşağıda ve [değişiklik günlüğünde](CHANGELOG.md). Python paket sürümü `1.5.2b0`.
+**Rakamlar hakkında:** ChatGPT süreleri tam yanıtı değil, yerel kanıt üretimini ölçer. Gemini değerleri eşleştirilmiş örnek ve p95 içermeyen sınırlı canlı gözlemlerdir; ortak arayüz iyileştirmeleri için ölçülmüş bir katsayı yoktur. Sonuçlar ağ, model ve sunucu yüküne göre değişir. Ayrıntılar [değişiklik günlüğünde](CHANGELOG.md). Python paket sürümü: `1.5.3b0`.
 
 ## Kurulum ve giriş
 
@@ -73,22 +73,23 @@ Son satır süreç başlatma maliyetini de içerir; boşta bir Node sürecini ba
 
 ### Kurulum ve başlatma
 
-Kurulum aracını depo dizininde bir kez çalıştırın. Python 3.11+ gereksinimini denetler, bulduğu uyumlu sanal ortamı kullanır ve SiopeChat ile Python bağımlılıklarını bu ortama kurar. Uygun bir ortam bulamazsa `python/` dizinini oluşturur; mevcut dizini silmez veya üzerine yazmaz.
+Komutları depo dizininde çalıştırın. Linux ve macOS aynı komutları kullanır. Kurulumu bir kez yapın; SiopeChat'i her açışınızda başlatma komutunu çalıştırın.
 
-| Sistem | Kurulum aracı |
-| --- | --- |
-| Linux / macOS terminali | `./install.sh` |
-| macOS Finder | `install.command` |
-| Windows PowerShell | `./install.ps1` |
-| Windows Komut İstemi | `install.bat` |
+**Linux / macOS**
 
-| Sistem | Başlatma |
-| --- | --- |
-| Linux / macOS terminal | `./siopechat.sh` |
-| macOS Finder | `siopechat.command` |
-| Windows Komut İstemi | `siopechat.bat` |
-| Windows PowerShell | `./siopechat.ps1` |
-| Kurulu konsol komutu | `siopechat` |
+```sh
+./install.sh
+./siopechat.sh
+```
+
+**Windows (PowerShell)**
+
+```powershell
+.\install.ps1
+.\siopechat.ps1
+```
+
+Kurulum aracı Python 3.11+ sürümünü denetler, uyumlu bir sanal ortamı kullanır veya `python/` dizinini oluşturur ve bağımlılıkları kurar.
 
 <details>
 <summary>Sanal ortam ve bağımlılık ayrıntıları</summary>
@@ -144,11 +145,9 @@ Her mesajın altında küçük bir araç çubuğu bulunur. Kopyalama yerel olara
 
 ### İndirme yöneticisi
 
-Dosya bağlantıları arka planda proje dizinindeki `downloads/` klasörüne indirilir. Konumu **Ayarlar → Genel → İndirme klasörü** bölümünden değiştirebilirsiniz; göreli yollar proje dizinine göre çözülür, tam yollar da desteklenir. Aynı anda en fazla iki aktarım çalışır ve ilerleme durum çubuğunda gösterilir. Mevcut dosyaların üzerine yazılmaz, başarısız aktarımlar temizlenir. Normal web sayfaları varsayılan tarayıcıda açılır. ChatGPT sandbox dosyaları ait olduğu sohbet üzerinden, Gemini görsel yer tutucuları gerçek medya kayıtlarından çözümlenir; Claude sandbox/computer bağlantıları ait olduğu sohbetin dosya deposundan alınır. Korumalı indirmelerde seçili hesabın kayıtlı oturumu kullanılır; hesap bilgileri başka adreslere yönlendirilmez. Bulunamayan veya süresi dolmuş kaynaklar için hata gösterilir.
+Dosyalar arka planda proje dizinindeki `downloads/` klasörüne iner; konumu **Ayarlar → Genel → İndirme klasörü** bölümünden değiştirebilirsiniz. Aynı anda iki aktarım çalışabilir, mevcut dosyaların üzerine yazılmaz. Normal web bağlantıları tarayıcıda açılır; korumalı dosyalar kaynak sağlayıcının ve hesabın oturumuyla, hesap bilgileri başka adreslere gönderilmeden indirilir.
 
-**Yardım** ile **Ayarlar** arasındaki **İndirmeler** düğmesini, `/downloads` komutunu veya **Alt+J** kısayolunu kullanın. Sayfada indirilen bayt miktarı, biliniyorsa toplam ve kalan boyut, aktarım durumu ve kaynak sohbet görünür. Tarih grupları katlanabilir; arama dosya adlarını, sohbet başlıklarını ve hesapları kapsar. Duruma göre filtreleyebilir; tarih, dosya adı ve boyuta göre sıralayabilirsiniz. **Eşitle**, dosyaların varlığını arka planda kontrol eder; bu kontrol on saniyede bir yinelenir. Kaldırılan dosya **Silindi** olarak listede kalır; silindiği bilinen sohbetler de belirtilir. **Dosyayı sil** geçmiş kaydını korur, **Listeden kaldır** dosyayı diskte bırakır. Arşiv eklentisi yeni indirme kayıtlarını SQLite’ta kalıcı tutar; eklenti kapalıyken geçmiş yalnızca mevcut oturum boyunca saklanır. Uygulama kapanırken yarıda kalan aktarımlar **Kesildi** olarak görünür. Geçmiş takibi eklenmeden önce indirilen dosyalar için kaynak sohbet kaydı otomatik oluşturulmaz.
-
-Varsayılan indirme sınırı 512 MiB’tır. Genel ayarlardan sınırı bayt cinsinden değiştirebilir ve yerel ağdan indirmeye izin verebilirsiniz. İnternet indirmelerinde özel ve geri döngü IP adresleri engellenir, her yönlendirme doğrulanır ve HTTPS bağlantısı HTTP’ye düşürülmez. Bağlantı doğrulanmış IP’ye kurulur; TLS ve HTTP için özgün alan adı korunur.
+İlerlemeyi ve kaynak sohbeti **İndirmeler** sekmesinde, `/downloads` komutuyla veya **Alt+J** ile görebilirsiniz. Liste aranabilir, filtrelenebilir ve sıralanabilir. **Eşitle** dosyaların varlığını on saniyede bir denetler. **Dosyayı sil** geçmiş kaydını korur; **Kaydı kaldır** dosyayı diskte bırakır. Arşiv eklentisi geçmişi yeniden başlatmalar arasında saklar; eklenti kapalıysa yalnızca geçerli oturumda tutulur. Yarım kalan aktarımlar **Kesildi** olarak işaretlenir. Varsayılan sınır 512 MiB’tır; ayarlardan değiştirilebilir ve yerel ağ indirmeleri ayrıca açılabilir.
 
 ### Kısayollar, seçim ve arka plan yanıtları
 
@@ -174,13 +173,11 @@ Ayarlar normal bir çalışma alanı sekmesidir: Alt+Sol/Sağ ile sohbetlere ge�
 
 ### Projeler ve bölünmüş görünüm
 
-Yeni sohbet için proje seçmek veya destekleniyorsa mevcut sohbeti taşımak üzere `/project` kullanın. **Projesiz** seçeneği üyeliği kaldırır. `/project-new` sağlayıcıyı ve hesabı sorar, ardından desteklenen alanları gösterir. Proje bilgilerinde ad, talimat ve kaynaklar düzenlenebilir; satır içi düzenleyicide Ctrl+S ile kaydedilir.
+Yeni sohbet için `/project` ile proje seçin veya destekleniyorsa açık sohbeti projeye taşıyın. **Projesiz** seçeneği üyeliği kaldırır. `/project-new` yeni proje oluşturur; proje bilgilerinde ad, talimat ve kaynakları düzenleyip Ctrl+S ile kaydedebilirsiniz. Buradan model ve düşünme düzeyi seçerek proje içinde yeni bir sohbet de başlatabilirsiniz.
 
-Proje ayrıntılarından doğrudan sohbet başlatabilirsiniz. Projenin hesabı için model ve düşünme düzeyi seçip mesaj gönderin; sohbet proje içinde ayrı bir sekmede açılır. Projenin kendisini düzenlerken mesaj alanı ve seçim kontrolleri gizlenir.
+**Böl**, `/split` veya `/split-down` ile görünümü bölün ve sol panelden başka bir sohbet açın. Bir panele tıklayarak etkinleştirin; `/unsplit` tek panele döner. `layout.create` açık sohbetleri, bölme yönünü ve etkin paneli kaydeder; kayıtlı çalışma alanını açarak düzeni geri yükleyin. Geçici sohbetler, taslaklar ve çalışan istekler kaydedilmez.
 
-**Böl**, `/split` veya `/split-down` seçeneklerinden birini seçip sol panelden başka bir sohbet açın. Etkin olmayan panele tıklamak onu etkinleştirir; pasif paneli fare tekerleğiyle kaydırmak odağı değiştirmez. `/unsplit` tek panele döner. Komut paletindeki `layout.create` ile açık sohbetleri, bölme yönünü ve etkin paneli kaydedebilirsiniz. Sol panelden kayıtlı bir çalışma alanı açmak düzeni geri yükler. Yalnızca sohbet başvuruları kaydedilir; geçici sohbetler, taslaklar ve çalışan istekler kayda alınmaz.
-
-Sohbeti silmek için yazma alanının yanındaki **Sil** düğmesini kullanın. `/project-delete` proje seçicisini açar; proje bilgilerinde de silme düğmesi bulunur. Her iki işlemde de kalıcı silme onayı istenir ve başlangıçta **Hayır** seçilidir. Yerel kayıt kaldırılmadan önce silme isteği sağlayıcıya gönderilir ve doğrulanır. Proje içindeki sohbetlerin silinmesi sağlayıcının kurallarına bağlıdır. Sekmeyi kapatmak sohbeti silmez.
+Sohbeti yazma alanının yanındaki **Sil** düğmesiyle, projeyi `/project-delete` veya proje bilgilerinden silebilirsiniz. Sağlayıcı silmeyi doğrulamadan yerel kayıtlar kaldırılmaz. Projedeki sohbetlerin silinmesi sağlayıcının kurallarına bağlıdır; sekmeyi kapatmak sohbeti silmez.
 
 ### Sağlayıcı farkları
 
@@ -331,6 +328,6 @@ Hata bildirirken sürümü, sağlayıcıyı, işlemi, terminali, işletim sistem
 
 Telif hakkı © TahsinCr. [GPL-3.0-only](LICENSE) ile lisanslanmıştır. Dahil edilen üçüncü taraf bileşenlerin bildirimleri `src/utils/` altında korunur.
 
-[version-shield]: https://img.shields.io/badge/version-v1.5.2--beta-b7a3e3.svg?style=for-the-badge
+[version-shield]: https://img.shields.io/badge/version-v1.5.3--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge

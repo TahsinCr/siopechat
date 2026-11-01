@@ -1,4 +1,4 @@
-[![Version: v1.5.2-beta][version-shield]](CHANGELOG.md)
+[![Version: v1.5.3-beta][version-shield]](CHANGELOG.md)
 [![Python 3.11+][python-shield]](https://www.python.org/downloads/)
 [![GPL-3.0-only][license-shield]](LICENSE)
 
@@ -34,9 +34,9 @@ Bring your chats, projects and model comparisons together in one terminal worksp
 | --- | --- | --- |
 | Download generated files from replies and track progress in the built-in download manager. | Use the command palette, configurable shortcuts, mouse controls and local extensions. | Choose the English, Turkish or Russian interface. |
 
-## Less Waiting, Better Flow
+> **v1.5.3-beta** opens archived chats and cached model catalogs sooner while provider history syncs in the background. Replies finish in the UI as soon as text generation ends, follow-ups can be queued, and history loading and cleanup no longer hold up the interface. The release also improves provider request reuse, keyboard navigation, retry and account actions, split-view history, and download safety.
 
-Keep typing while SiopeChat finishes a response. Shared improvements and provider-specific optimizations reduce avoidable delays.
+## Smoother Chats
 
 | Where it helps | What changed |
 | --- | --- |
@@ -44,7 +44,7 @@ Keep typing while SiopeChat finishes a response. Shared improvements and provide
 | **ChatGPT** | Reuse eligible conversation snapshots and messages captured from completed streams to avoid duplicate history requests. Prepare Sentinel headers before the next send. In the recorded offline benchmark, native Python Sentinel initial-proof generation had a **0.329 ms median**: about **10.7× faster** than a reused QuickJS-NG context and **12.6× faster** than an already-running Node/V8 process that creates a fresh VM for each sample. |
 | **Gemini** | Route Flash requests correctly, preserve the provider's default thinking policy, reuse valid continuation IDs, and avoid repeating the activity RPC within five minutes. Earlier limited live trials recorded first-text latency dropping from **65–110 s to 1.89–3.80 s**. These are reported ranges, not the results of a controlled benchmark or a guarantee for every model and account. |
 
-**How to read these figures:** the ChatGPT ratios compare medians for local initial-proof generation, not end-to-end message speed. The Gemini trials have no published paired samples or p95, so they cannot support a reliable “× faster” claim. No multiplier has been measured for the shared UI improvements. Network conditions, model choice and server load still affect response times. See the benchmark details below and the [changelog](CHANGELOG.md). The Python package version is `1.5.2b0`.
+**About these figures:** ChatGPT timings measure local proof generation, not a full reply. Gemini figures are limited live ranges without paired samples or p95; shared UI improvements have no measured multiplier. Results vary with network, model and server load. See the [changelog](CHANGELOG.md). Python package version: `1.5.3b0`.
 
 ## Install and sign in
 
@@ -73,22 +73,23 @@ The last row includes process startup; launching an otherwise idle Node process 
 
 ### Install and launch
 
-Run the installer once from the checkout directory. It checks for Python 3.11+, reuses a supported virtual environment when available, and installs SiopeChat with its Python dependencies there. If no environment is available, it creates `python/` without replacing an existing directory.
+Run these commands from the repository directory. Linux and macOS use the same pair. Install once, then use the launcher each time you start SiopeChat.
 
-| Platform | Installer |
-| --- | --- |
-| Linux / macOS terminal | `./install.sh` |
-| macOS Finder | `install.command` |
-| Windows PowerShell | `./install.ps1` |
-| Windows Command Prompt | `install.bat` |
+**Linux / macOS**
 
-| Platform | Launcher |
-| --- | --- |
-| Linux / macOS terminal | `./siopechat.sh` |
-| macOS Finder | `siopechat.command` |
-| Windows Command Prompt | `siopechat.bat` |
-| Windows PowerShell | `./siopechat.ps1` |
-| Installed console command | `siopechat` |
+```sh
+./install.sh
+./siopechat.sh
+```
+
+**Windows (PowerShell)**
+
+```powershell
+.\install.ps1
+.\siopechat.ps1
+```
+
+The installer checks for Python 3.11+, reuses a compatible virtual environment or creates `python/`, and installs the dependencies.
 
 <details>
 <summary>Virtual environments and dependency details</summary>
@@ -144,11 +145,9 @@ Generated files appear inside the assistant reply as clickable file cards with t
 
 ### Download manager
 
-File links download in the background to `downloads/` under the project directory. Change this in **Settings → General → Download folder**; relative paths are resolved against the project, and absolute paths are supported. At most two transfers run at once, with progress shown in the status bar. Existing files are preserved, and failed transfers are cleaned up. Ordinary web pages still open in your default browser. ChatGPT sandbox files are resolved through the owning conversation; Gemini image placeholders use actual provider media records; Claude sandbox/computer links use the owning conversation’s file store. Protected downloads use the selected account’s saved session, and account credentials are never forwarded to other origins. Missing or expired resources show an error instead of a fabricated URL.
+Files download in the background to `downloads/` in the project directory. Change the folder in **Settings → General → Download folder**. Two transfers can run at once; existing files are preserved, and ordinary web links open in your browser. Protected downloads use the owning provider and account without sending credentials to other sites.
 
-Open **Downloads** between Help and Settings, use `/downloads`, or press **Alt+J**. The workspace shows downloaded bytes, total and remaining size when known, transfer status, and the source chat. Date groups can be collapsed; search covers filenames, chat titles and accounts. Filter by status and sort by date, filename or size. **Sync** checks file presence in the background every ten seconds. Removed files stay marked **Deleted**, and chats known to be deleted are labelled accordingly. **Delete file** keeps the history entry; **Remove entry** leaves the file on disk. The archive extension stores new download records in SQLite across restarts; with the extension disabled, history lasts only for the current session. Transfers interrupted by shutdown are marked **Interrupted**. Files downloaded before history tracking was added have no automatic source-chat record.
-
-Downloads default to a 512 MiB limit. General settings expose the size limit in bytes and an opt-in for local-network downloads. Public downloads reject private and loopback addresses, validate every redirect and keep HTTPS connections on HTTPS. The checked address is used for the actual connection, while the original hostname is retained for TLS and HTTP.
+Open **Downloads** between Help and Settings, use `/downloads`, or press **Alt+J** to view progress and source chats. Search, filter and sort the list; **Sync** checks file presence every ten seconds. **Delete file** keeps its history entry, while **Remove entry** leaves the file on disk. The archive extension keeps download history across restarts; without it, history lasts for the current session. Interrupted transfers are marked **Interrupted**. Downloads default to 512 MiB; you can change the limit or allow local-network downloads in settings.
 
 ### Keyboard, selection and background replies
 
@@ -174,13 +173,11 @@ Settings is a regular workspace tab: switch back to a conversation with Alt+Left
 
 ### Projects and split views
 
-Use `/project` to choose a project for a new chat or move the current chat where supported. Choose **Unassigned** to remove membership. `/project-new` asks for the provider and account, then prompts for the fields they support. Project details provide controls for editing the name, instructions and sources; Ctrl+S saves the inline editor.
+Use `/project` to assign a project to a new chat or move a supported chat. Choose **Unassigned** to remove it. Create a project with `/project-new`; edit its name, instructions and sources in project details (`Ctrl+S` saves). You can also start a project chat there by choosing its account's model and effort.
 
-You can also write directly from project details. Choose a model and effort for that project's account and send: a separate conversation tab opens inside the project. The composer and selectors are hidden while editing the project itself.
+Choose **Split**, `/split` or `/split-down`, then open another chat from the sidebar. Click a pane to activate it; `/unsplit` returns to one pane. `layout.create` saves the open chats, split direction and active pane. Open a saved workspace to restore it. Only chat references are saved, not temporary chats, drafts or running requests.
 
-Choose **Split**, `/split` or `/split-down`, then select another chat from the sidebar. Click anywhere in an inactive pane to activate it. Scrolling a passive pane does not change focus. `/unsplit` returns to one pane. Use `layout.create` in the command palette to save the current chats, split direction and active pane. Open a saved workspace from the sidebar to restore it. Only conversation references are saved; temporary chats, drafts and running requests are excluded.
-
-Use **Delete** beside the composer to delete a conversation. `/project-delete` opens a project picker; project details also have a delete button. Both ask you to confirm permanent deletion, with **No** selected by default. SiopeChat submits the deletion to the provider and verifies it there before removing local records. Project deletion follows the provider's rules for its chats. Closing a tab does not delete its conversation.
+Delete a chat with **Delete** beside the composer; use `/project-delete` or project details to delete a project. SiopeChat asks for confirmation and removes local records after the provider confirms. Provider rules determine what happens to chats in a deleted project. Closing a tab does not delete its chat.
 
 ### Provider differences
 
@@ -331,6 +328,6 @@ When filing an issue, include the version, provider, operation, terminal, OS and
 
 Copyright © TahsinCr. Licensed under [GPL-3.0-only](LICENSE). Vendored components retain their own notices in `src/utils/`.
 
-[version-shield]: https://img.shields.io/badge/version-v1.5.2--beta-b7a3e3.svg?style=for-the-badge
+[version-shield]: https://img.shields.io/badge/version-v1.5.3--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge
