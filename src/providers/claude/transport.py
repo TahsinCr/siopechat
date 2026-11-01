@@ -10,7 +10,7 @@ from urllib.parse import quote
 
 from ..api import MessageAction
 from ..contracts import confirm_deleted
-from ..errors import AccountPaused, ProviderError
+from ..errors import AccountPaused, ProviderError, RemoteNotFound
 from ..projects import ProjectOptions, source_file
 from ..session import WebSession, read_session
 from .catalog import selector_catalog
@@ -65,12 +65,40 @@ class ClaudeTransport:
             )
             try:
                 data, selected = await asyncio.gather(bootstrap, selector)
-            except BaseException:
-                bootstrap.cancel()
-                selector.cancel()
-                await asyncio.gather(bootstrap, selector, return_exceptions=True)
-                raise
-            organization = organization_from_bootstrap(data, last_org)
+            except BaseException as error:
+                selector_error = (
+                    selector.exception() if selector.done() and not selector.cancelled() else None
+                )
+                if isinstance(selector_error, RemoteNotFound):
+                    try:
+                        data = await bootstrap
+                    except BaseException:
+                        await asyncio.gather(bootstrap, selector, return_exceptions=True)
+                        raise
+                    try:
+                        organization = organization_from_bootstrap(data, last_org)
+                    except AccountPaused:
+                        raise
+                    except ProviderError:
+                        # A stale saved workspace can be replaced only when the
+                        # authenticated account has exactly one chat workspace.
+                        organization = organization_from_bootstrap(data, None)
+                    if organization != saved_id:
+                        selected = await self.session.request(
+                            "GET",
+                            "/api/organizations/"
+                            + remote_id(organization)
+                            + "/model_selector/chat",
+                        )
+                    else:
+                        raise selector_error
+                else:
+                    bootstrap.cancel()
+                    selector.cancel()
+                    await asyncio.gather(bootstrap, selector, return_exceptions=True)
+                    raise error
+            else:
+                organization = organization_from_bootstrap(data, last_org)
         else:
             data = await self.session.request("GET", "/api/bootstrap")
             organization = organization_from_bootstrap(data, last_org)

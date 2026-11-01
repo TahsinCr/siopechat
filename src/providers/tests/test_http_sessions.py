@@ -293,6 +293,104 @@ class ClaudeHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls.count(selector), 1)
         self.assertGreater(calls.index(chats_endpoint), calls.index(selector))
 
+    async def test_stale_saved_claude_workspace_uses_only_unambiguous_bootstrap_fallback(self):
+        old_organization = "11111111-1111-1111-1111-111111111111"
+        current_organization = "22222222-2222-2222-2222-222222222222"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "session.json"
+            save_session(path, {"cookies": {"lastActiveOrg": old_organization}})
+            calls = []
+
+            async def request(method, endpoint, **_kwargs):
+                calls.append(endpoint)
+                if endpoint == "/api/bootstrap":
+                    return {
+                        "account": {
+                            "memberships": [
+                                {
+                                    "organization": {
+                                        "uuid": current_organization,
+                                        "capabilities": ["chat"],
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                if endpoint.endswith("/model_selector/chat"):
+                    if old_organization in endpoint:
+                        raise RemoteNotFound("old workspace no longer exists")
+                    return {
+                        "model_selector_config": [
+                            {"id": "chat", "models": [{"id": "model", "name": "Model"}]}
+                        ],
+                        "model_selector_state": [],
+                    }
+                raise AssertionError(endpoint)
+
+            session = SimpleNamespace(
+                path=path,
+                request=AsyncMock(side_effect=request),
+                close=AsyncMock(),
+            )
+            transport = ClaudeTransport(path, session=session)
+            self.addAsyncCleanup(transport.close)
+
+            await transport.prepare()
+
+        self.assertEqual(transport.organization, current_organization)
+        self.assertEqual(transport.catalog["default_model"], "model")
+        self.assertEqual(calls.count("/api/bootstrap"), 1)
+        self.assertEqual(
+            calls.count(f"/api/organizations/{old_organization}/model_selector/chat"), 1
+        )
+        self.assertEqual(
+            calls.count(f"/api/organizations/{current_organization}/model_selector/chat"), 1
+        )
+
+    async def test_stale_claude_workspace_does_not_guess_when_account_has_multiple_workspaces(self):
+        old_organization = "11111111-1111-1111-1111-111111111111"
+        organizations = (
+            "22222222-2222-2222-2222-222222222222",
+            "33333333-3333-3333-3333-333333333333",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "session.json"
+            save_session(path, {"cookies": {"lastActiveOrg": old_organization}})
+            calls = []
+
+            async def request(method, endpoint, **_kwargs):
+                calls.append(endpoint)
+                if endpoint == "/api/bootstrap":
+                    return {
+                        "account": {
+                            "memberships": [
+                                {
+                                    "organization": {
+                                        "uuid": organization,
+                                        "capabilities": ["chat"],
+                                    }
+                                }
+                                for organization in organizations
+                            ]
+                        }
+                    }
+                if endpoint.endswith("/model_selector/chat"):
+                    raise RemoteNotFound("old workspace no longer exists")
+                raise AssertionError(endpoint)
+
+            session = SimpleNamespace(
+                path=path,
+                request=AsyncMock(side_effect=request),
+                close=AsyncMock(),
+            )
+            transport = ClaudeTransport(path, session=session)
+            self.addAsyncCleanup(transport.close)
+
+            with self.assertRaises(ProviderError):
+                await transport.prepare()
+
+        self.assertEqual(len(calls), 2)
+
     async def test_parallel_discovery_cancels_peer_without_retry_on_failure(self):
         organization = "11111111-1111-1111-1111-111111111111"
         with tempfile.TemporaryDirectory() as directory:
