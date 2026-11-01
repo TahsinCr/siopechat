@@ -10,11 +10,14 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 
 ### Added
 
+- Add non-blocking asynchronous conversation loading (`Accounts.load_async`) and `load_conversation_async` callback, running provider network operations directly on the provider event loop without worker thread pool blocking.
 - Add canonical shortcut actions: `command.settings.keybindings` (open settings on keybindings tab), `command.settings.accounts` (open settings on accounts tab), `accounts.verify_profile` (verify active profile/subscription), `accounts.logout` (logout active account), `chat.retry` (retry latest assistant response), and `navigation.focus_transcript` (focus chat transcript for keyboard scrolling/navigation).
 - Support non-editable system keybinding protection (`app.quit` and `app.quit_eof`), displaying them as fixed/disabled in the keybinding settings UI and blocking modification attempts.
 
 ### Changed
 
+- Fast-track local archived conversation windows immediately on tab switch without worker thread pool delays, decoupling synchronous SQLite viewport reads from background synchronization.
+- Defer background history hydration when initial viewport render signature is active to prevent render lock contention.
 - Cancel transcript renders that have become obsolete while they wait for the shared render slot, freeing workers for the currently visible conversation.
 - Open archived conversations with a 25-message tail window, including after a cold provider fetch, and hydrate older history chunks progressively in the background.
 - Render message toolbars for requested transcript rows and reuse gutter markers across scroll frames.

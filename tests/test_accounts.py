@@ -683,3 +683,46 @@ class AccountTests(unittest.TestCase):
                 identity(self.gemini, "chat"), identity("chatgpt/default", "g-p-work")
             )
         provider.move_chat.assert_not_called()
+
+    def test_load_async_retrieves_conversation_and_caches_window(self):
+        provider = Mock()
+        provider.close = AsyncMock()
+        provider_id, account_id = self.gemini.split("/")
+        chat = Conversation(
+            Origin(provider_id, account_id, "remote-async"),
+            "Async Chat",
+            (
+                Message("m1", "user", (Content("text", "hello"),)),
+                Message("m2", "assistant", (Content("text", "world"),)),
+            ),
+        )
+        provider.get_chat = AsyncMock(return_value=chat)
+        self.accounts._providers[self.gemini] = provider
+
+        received = []
+        errors = []
+        done_event = Event()
+
+        def on_success(res):
+            received.append(res)
+            done_event.set()
+
+        def on_error(err):
+            errors.append(err)
+            done_event.set()
+
+        self.accounts.load_async(
+            "remote-async",
+            self.gemini,
+            on_success,
+            on_error,
+            force=True,
+            window=True,
+            window_limit=25,
+        )
+
+        self.assertTrue(done_event.wait(5))
+        self.assertEqual(errors, [])
+        self.assertEqual(len(received), 1)
+        self.assertEqual(received[0]["title"], "Async Chat")
+        self.assertEqual(len(received[0]["messages"]), 2)

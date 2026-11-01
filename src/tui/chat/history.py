@@ -228,94 +228,84 @@ class HistoryComponent:
         self.app.layout.focus(self.input)
         self.app.invalidate()
 
-        def load_selected(use_cache=True) -> None:
-            try:
-                cached = (
-                    self.account_service.cached_window(key, remote, limit=25)
-                    if self.account_service and use_cache
-                    else None
-                )
-                conversation = cached if cached is not None else load_callback(conversation_id)
-                if target_tab.get("load_token") != token or not any(
-                    tab is target_tab for tab in self.tabs
+        def apply_loaded(conversation, is_cached) -> None:
+            if target_tab.get("load_token") != token or not any(
+                tab is target_tab for tab in self.tabs
+            ):
+                return
+            messages = visible_chat_messages(conversation.get("messages", []))
+
+            def apply_conversation() -> None:
+                if (
+                    not any(tab is target_tab for tab in self.tabs)
+                    or target_tab.get("load_token") != token
                 ):
                     return
-                messages = visible_chat_messages(conversation.get("messages", []))
-
-                def apply_conversation() -> None:
-                    if (
-                        not any(tab is target_tab for tab in self.tabs)
-                        or target_tab.get("load_token") != token
-                    ):
-                        return
-                    if target_tab is self.tabs[self.active_tab]:
-                        self._save_active_tab()
-                    visible_messages = messages
-                    # History can finish after a local send has started. Merge
-                    # against the current tab snapshot so pending turns and the
-                    # active stream survive while missing history is inserted.
-                    visible_messages = visible_chat_messages(
-                        merge_conversation(
-                            {"messages": visible_messages},
-                            {"messages": target_tab.get("messages", [])},
-                        )["messages"]
-                    )
-                    project = conversation.get("project")
-                    project = dict(project) if isinstance(project, dict) else {}
-                    project_id = conversation.get("project_id") or project.get("id")
-                    project = dict(self.project_items.get(project_id, {})) | project
-                    if project_id:
-                        project["id"] = project_id
-                    if conversation.get("project_name"):
-                        project["name"] = conversation["project_name"]
-                    target_tab.update(
-                        messages=visible_messages,
-                        history_window=conversation.get("history_window"),
-                        history_version=conversation.get("history_version"),
-                        conversation_id=conversation_id,
-                        title=conversation.get("title") or self.tr("Untitled"),
-                        project=project,
-                        loading=False,
-                        loading_started=None,
-                        load_error=None,
-                        syncing=cached is not None and self.archive_service() is not None,
-                        history_load_pending=cached is not None
-                        and self.archive_service() is not None,
-                        history_load_complete=False,
-                    )
-                    model = conversation.get("model") or conversation.get("default_model_slug")
-                    if isinstance(model, str) and model:
-                        if self.account_service:
-                            target_tab["response_model"] = model
-                        else:
-                            target_tab["model"] = model
-                    if target_tab is self.tabs[self.active_tab]:
-                        self._restore_active_tab(focus=False)
-                        previous = getattr(self, "_virtual_transcript", None)
-                        if previous is not None and not any(
-                            item.get("render_layout") is previous for item in self.tabs
-                        ):
-                            previous.dispose()
-                        self._virtual_transcript = None
-                        self._virtual_signature = None
-                        self._virtual_tab_id = target_tab.get("tab_id")
-                        self.status = (
-                            self.tr("Kayıtlı geçmiş · arka planda eşitleniyor")
-                            if cached is not None
-                            else "Ready"
-                        )
-                        self.scroll_bottom()
+                if target_tab is self.tabs[self.active_tab]:
+                    self._save_active_tab()
+                visible_messages = messages
+                visible_messages = visible_chat_messages(
+                    merge_conversation(
+                        {"messages": visible_messages},
+                        {"messages": target_tab.get("messages", [])},
+                    )["messages"]
+                )
+                project = conversation.get("project")
+                project = dict(project) if isinstance(project, dict) else {}
+                project_id = conversation.get("project_id") or project.get("id")
+                project = dict(self.project_items.get(project_id, {})) | project
+                if project_id:
+                    project["id"] = project_id
+                if conversation.get("project_name"):
+                    project["name"] = conversation["project_name"]
+                target_tab.update(
+                    messages=visible_messages,
+                    history_window=conversation.get("history_window"),
+                    history_version=conversation.get("history_version"),
+                    conversation_id=conversation_id,
+                    title=conversation.get("title") or self.tr("Untitled"),
+                    project=project,
+                    loading=False,
+                    loading_started=None,
+                    load_error=None,
+                    syncing=is_cached and self.archive_service() is not None,
+                    history_load_pending=is_cached and self.archive_service() is not None,
+                    history_load_complete=False,
+                )
+                model = conversation.get("model") or conversation.get("default_model_slug")
+                if isinstance(model, str) and model:
+                    if self.account_service:
+                        target_tab["response_model"] = model
                     else:
-                        self.app.invalidate()
-                    if (target_tab.get("history_window") or {}).get("start", 0) > 0:
-                        target_tab["history_hydrate"] = True
-                        if target_tab is not self.tabs[self.active_tab]:
-                            self.history_pager.schedule_hydration(target_tab)
+                        target_tab["model"] = model
+                if target_tab is self.tabs[self.active_tab]:
+                    self._restore_active_tab(focus=False)
+                    previous = getattr(self, "_virtual_transcript", None)
+                    if previous is not None and not any(
+                        item.get("render_layout") is previous for item in self.tabs
+                    ):
+                        previous.dispose()
+                    self._virtual_transcript = None
+                    self._virtual_signature = None
+                    self._virtual_tab_id = target_tab.get("tab_id")
+                    self.status = (
+                        self.tr("Kayıtlı geçmiş · arka planda eşitleniyor")
+                        if is_cached
+                        else "Ready"
+                    )
+                    self.scroll_bottom()
+                else:
+                    self.app.invalidate()
+                if (target_tab.get("history_window") or {}).get("start", 0) > 0:
+                    target_tab["history_hydrate"] = True
+                    if target_tab is not self.tabs[self.active_tab]:
+                        self.history_pager.schedule_hydration(target_tab)
 
-                self._dispatch_ui(apply_conversation)
-                if cached is not None and self.archive_service():
+            self._dispatch_ui(apply_conversation)
+            if is_cached and self.archive_service():
 
-                    def sync_failed(reason):
+                def sync_failed(reason):
+                    def on_ui():
                         if (
                             not any(tab is target_tab for tab in self.tabs)
                             or target_tab.get("load_token") != token
@@ -325,11 +315,14 @@ class HistoryComponent:
                         target_tab.pop("history_load_pending", None)
                         target_tab.pop("history_load_complete", None)
                         if not target_tab.get("messages"):
-                            target_tab["load_error"] = reason
-                        self.status = self.tr("Senkronizasyon: ") + reason
+                            target_tab["load_error"] = str(reason)
+                        self.status = self.tr("Senkronizasyon: ") + str(reason)
                         self.app.invalidate()
 
-                    def sync_completed(_result):
+                    self._dispatch_ui(on_ui)
+
+                def sync_completed(_result):
+                    def on_ui():
                         if (
                             not any(tab is target_tab for tab in self.tabs)
                             or target_tab.get("load_token") != token
@@ -338,37 +331,53 @@ class HistoryComponent:
                         target_tab["history_load_complete"] = True
                         self.apply_archive_updates()
 
-                    self._read_in_background(
-                        lambda: self.account_service.load(
-                            conversation_id, key, force=True, window=True
-                        ),
-                        sync_completed,
-                        sync_failed,
-                        session_bound=False,
-                    )
-                elif cached is not None:
-                    load_selected(False)
+                    self._dispatch_ui(on_ui)
+
+                self._read_in_background(
+                    lambda: self.account_service.load(
+                        conversation_id, key, force=True, window=True
+                    ),
+                    sync_completed,
+                    sync_failed,
+                    session_bound=False,
+                )
+
+        def dispatch_error(error) -> None:
+            message = str(error)
+
+            def show_error() -> None:
+                if (
+                    not any(tab is target_tab for tab in self.tabs)
+                    or target_tab.get("load_token") != token
+                ):
+                    return
+                target_tab.update(
+                    loading=False, syncing=False, loading_started=None, load_error=message
+                )
+                target_tab.pop("history_load_pending", None)
+                target_tab.pop("history_load_complete", None)
+                if target_tab is self.tabs[self.active_tab]:
+                    self.loading_conversation = False
+                    self.loading_started = None
+                    self.status = self.tr("Load failed: {0}").format(message)
+                self.app.invalidate()
+
+            self._dispatch_ui(show_error)
+
+        def load_selected(use_cache=True) -> None:
+            try:
+                cached = (
+                    self.account_service.cached_window(key, remote, limit=25)
+                    if self.account_service and use_cache
+                    else None
+                )
+                if cached is not None:
+                    apply_loaded(cached, True)
+                    return
+                conversation = load_callback(conversation_id)
+                apply_loaded(conversation, False)
             except Exception as error:
-                message = str(error)
-
-                def show_error() -> None:
-                    if (
-                        not any(tab is target_tab for tab in self.tabs)
-                        or target_tab.get("load_token") != token
-                    ):
-                        return
-                    target_tab.update(
-                        loading=False, syncing=False, loading_started=None, load_error=message
-                    )
-                    target_tab.pop("history_load_pending", None)
-                    target_tab.pop("history_load_complete", None)
-                    if target_tab is self.tabs[self.active_tab]:
-                        self.loading_conversation = False
-                        self.loading_started = None
-                        self.status = self.tr("Load failed: {0}").format(message)
-                    self.app.invalidate()
-
-                self._dispatch_ui(show_error)
+                dispatch_error(error)
 
         def enqueue_load(delay=0.1):
             if target_tab.get("load_token") != token or not any(

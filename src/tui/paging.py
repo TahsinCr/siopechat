@@ -255,6 +255,10 @@ class HistoryPager:
             return
 
         def run_hydration():
+            if getattr(view, "_virtual_pending_signature", None) is not None:
+                if loop is not None and loop.is_running():
+                    loop.call_later(0.05, run_hydration)
+                return
             if (
                 tab.get("history_hydrate")
                 and not tab.get("busy")
