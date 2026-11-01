@@ -12,7 +12,16 @@ _render_gate = threading.Semaphore(1)
 
 
 def read_history(
-    archive, account, remote, *, start=None, before=None, complete=False, until=None, cancelled=None
+    archive,
+    account,
+    remote,
+    *,
+    start=None,
+    before=None,
+    complete=False,
+    until=None,
+    cancelled=None,
+    limit=None,
 ):
     """Read lean history batches; never combine different SQLite revisions."""
     if until is not None and (before is not None or start is None or until <= start):
@@ -23,11 +32,10 @@ def read_history(
         while True:
             if cancelled and cancelled():
                 return None
-            page = archive.conversation_window(
-                account,
-                remote,
-                **({"before": boundary} if boundary is not None else {"start": cursor}),
-            )
+            kw = {"before": boundary} if boundary is not None else {"start": cursor}
+            if limit is not None:
+                kw["limit"] = limit
+            page = archive.conversation_window(account, remote, **kw)
             if page is None:
                 return None
             current_version = page.get("history_version")

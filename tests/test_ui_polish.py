@@ -39,6 +39,28 @@ class PolishTests(unittest.TestCase):
         self.assertEqual(content.line_count, 1)
         self.assertEqual(content.get_line(0), [("class:transcript", "Message")])
 
+    def test_toolbar_rows_filtered_to_viewport_lines(self):
+        view = SimpleNamespace(
+            transcript_rows=lambda viewport_height: tuple(
+                (([("class:transcript", f"Line {i}")], 0),) for i in range(100)
+            ),
+            transcript_cursor_position=lambda: Point(0, 0),
+            transcript_window=SimpleNamespace(vertical_scroll=50),
+            message_ranges=[(10, 15, 0), (48, 55, 1), (80, 90, 2)],
+            messages=[
+                {"role": "assistant", "text": "Message 0"},
+                {"role": "assistant", "text": "Message 1"},
+                {"role": "assistant", "text": "Message 2"},
+            ],
+            message_selection=False,
+            selected_message=None,
+        )
+        control = TranscriptControl(view)
+        control.create_content(40, 10)
+        self.assertNotIn(13, control._toolbar_rows)
+        self.assertIn(53, control._toolbar_rows)
+        self.assertNotIn(88, control._toolbar_rows)
+
     def test_gutter_prefix_uses_rendered_roles_and_ignores_stale_ranges(self):
         view = SimpleNamespace(
             messages=[], message_ranges=[(0, 1, 0), (1, 2, 3)], _transcript_roles=("assistant",)

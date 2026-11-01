@@ -70,13 +70,22 @@ class TranscriptControl(UIControl):
         if gutter is not None:
             gutter.refresh()
         self._toolbar_rows = {}
+        window = getattr(self.view, "transcript_window", None)
+        scroll = getattr(window, "vertical_scroll", 0) if window else 0
+        min_row = max(0, scroll - 2)
+        max_row = scroll + height + 2
         for start, end, index in getattr(self.view, "message_ranges", ()):
+            if start > max_row:
+                break
+            row_num = end - 2
+            if row_num < min_row or row_num > max_row:
+                continue
             if not 0 <= index < len(self.view.messages):
                 continue
             message = self.view.messages[index]
             role = message.get("role")
             if role in ("user", "assistant") and end - start > 1:
-                self._toolbar_rows[end - 2] = index
+                self._toolbar_rows[row_num] = index
         self._toolbar_fragments = {}
         cursor = self.view.transcript_cursor_position()
         cursor = Point(0, min(max(0, cursor.y), max(0, len(rows) - 1)))
@@ -630,12 +639,17 @@ class TranscriptGutter:
         self._starts = {}
 
     def refresh(self):
+        ranges = getattr(self.view, "message_ranges", None) or ()
         roles = getattr(self.view, "_transcript_roles", None)
+        signature = (id(ranges), roles, len(self.view.messages))
+        if getattr(self, "_ranges_signature", None) == signature:
+            return
+        self._ranges_signature = signature
         if roles is None:
             roles = tuple(message.get("role") for message in self.view.messages)
         self._starts = {
             start: roles[index]
-            for start, _, index in getattr(self.view, "message_ranges", [])
+            for start, _, index in ranges
             if 0 <= index < len(roles)
         }
 

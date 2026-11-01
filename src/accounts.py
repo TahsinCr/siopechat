@@ -1072,14 +1072,15 @@ class Accounts:
             return remote
         return self.cache(key).active_conversation_id()
 
-    def cached_window(self, key, remote=None):
+    def cached_window(self, key, remote=None, *, limit=None):
         """UI history reads use bounded SQL windows; other API callers retain full history."""
         archive = self.archive()
         remote = remote or self.active_conversation(key)
         if not remote:
             return None
         if archive:
-            value = archive.conversation_window(key, remote)
+            kw = {"limit": limit} if limit is not None else {}
+            value = archive.conversation_window(key, remote, **kw)
             if value is not None or archive.deleted(key, "conversation", remote):
                 return value
         return self.cached(key, remote)

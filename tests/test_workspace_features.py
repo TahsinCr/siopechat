@@ -550,3 +550,22 @@ class WorkspaceTests(unittest.TestCase):
             v.input.text = "blocked fifth submit"
             v.submit_prompt()
             self.assertIn("Aynı anda en fazla 4 bekleyen istek", v.status)
+
+    def test_discard_tab_render_cache_invokes_trim_memory_in_background(self):
+        with terminal() as (v, _):
+            jobs = []
+            v._read_in_background = lambda fn, ok, err, session_bound=True: jobs.append(
+                (fn, session_bound)
+            )
+            v._discard_tab_render_cache(v.tabs[0])
+            self.assertEqual(len(jobs), 1)
+            fn, bound = jobs[0]
+            self.assertFalse(bound)
+            from utils.process import trim_memory
+
+            self.assertIs(fn, trim_memory)
+
+    def test_trim_memory_cross_platform_execution(self):
+        from utils.process import trim_memory
+
+        trim_memory()

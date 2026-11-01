@@ -553,3 +553,49 @@ class PagingUITests(unittest.TestCase):
                     view._operations.close()
             finally:
                 api.runtime.close()
+
+    def test_progressive_hydration_chains_older_chunks_until_start_zero(self):
+        from tests.tui_support import terminal
+
+        messages = [dict(message(i, 20), _archive_ordinal=i) for i in range(75)]
+        with terminal(initial_messages=messages[50:]) as (view, _):
+            tab = view.tabs[0]
+            tab.update(
+                conversation_id="@chatgpt/default/chat",
+                history_window={"start": 50, "end": 75, "total": 75},
+                history_hydrate=True,
+            )
+            jobs = []
+            view._read_in_background = lambda read, ready, failed, **kw: jobs.append((read, ready))
+            archive = SimpleNamespace(
+                conversation_window=lambda account, remote, **kw: {
+                    "messages": [
+                        dict(message(i, 20), _archive_ordinal=i)
+                        for i in range(max(0, kw.get("before", 50) - 25), kw.get("before", 50))
+                    ],
+                    "history_window": {
+                        "start": max(0, kw.get("before", 50) - 25),
+                        "end": kw.get("before", 50),
+                        "total": 75,
+                    },
+                    "history_version": 1,
+                }
+            )
+            view.archive_service = lambda: archive
+
+            self.assertTrue(view.history_pager.request("older"))
+            read, ready = jobs.pop(0)
+            ready(read())
+            self.assertEqual(tab["history_window"]["start"], 25)
+            self.assertTrue(tab.get("history_hydrate"))
+            self.assertEqual(len(jobs), 1)
+
+            read, ready = jobs.pop(0)
+            ready(read())
+            self.assertEqual(tab["history_window"]["start"], 0)
+            self.assertFalse(tab.get("history_hydrate"))
+            self.assertEqual(len(view.messages), 75)
+            self.assertEqual(len(jobs), 0)
+            view._reads.close()
+            view._render_reads.close()
+            view._operations.close()

@@ -92,15 +92,17 @@ class HistoryPager:
         if requested:
             view.transcript_window.scroll_direction = 0
 
-    def request(self, direction, *, refresh=False):
+    def request(self, direction, *, refresh=False, tab=None, limit=None):
         if direction not in ("older", "newer", "top", "bottom"):
             raise ValueError("Unknown history direction")
         view = self.view
-        tab = view.tabs[view.active_tab]
+        tab = tab or view.tabs[view.active_tab]
         window = tab.get("history_window")
         archive = view.archive_service()
         if not window or archive is None or tab.get("busy"):
             return False
+        if direction in ("top", "bottom"):
+            tab.pop("history_hydrate", None)
         if tab.get("history_read"):
             if direction in ("top", "bottom"):
                 tab["history_pending_edge"] = direction
@@ -117,6 +119,7 @@ class HistoryPager:
         tab["history_read"] = token
         requested_anchor = self.anchor(tab)
         revision = getattr(view, "_manual_scroll_revision", 0)
+        chunk_limit = limit or (25 if tab.get("history_hydrate") else None)
 
         def cancelled():
             return tab.get("history_read") is not token
@@ -136,6 +139,8 @@ class HistoryPager:
                 options = {"before": window["start"]}
             else:
                 options = {"start": window["end"]}
+            if chunk_limit is not None and not refresh and direction in ("older", "newer"):
+                options["limit"] = chunk_limit
             result = read_history(archive, key, remote, cancelled=cancelled, **options)
             old_version = tab.get("history_version")
             if result and old_version and old_version != result.get("history_version"):
@@ -204,6 +209,7 @@ class HistoryPager:
             archived = [m for m in messages if m.get("_archive_ordinal") is not None]
             pending_messages = [m for m in messages if m.get("_archive_ordinal") is None]
             if len(archived) > MAX_LOADED_MESSAGES:
+                tab.pop("history_hydrate", None)
                 if direction == "older":
                     archived = archived[:MAX_LOADED_MESSAGES]
                     extent["end"] = min(extent["end"], archived[-1]["_archive_ordinal"] + 1)
@@ -225,6 +231,10 @@ class HistoryPager:
             view.app.invalidate()
             if pending and active:
                 (view.scroll_top if pending == "top" else view.scroll_bottom)()
+            elif extent.get("start", 0) > 0 and not tab.get("busy") and tab.get("history_hydrate"):
+                self.schedule_hydration(tab)
+            elif extent.get("start", 0) == 0:
+                tab.pop("history_hydrate", None)
 
         def failed(reason):
             if not cancelled():
@@ -235,3 +245,26 @@ class HistoryPager:
 
         view._read_in_background(read, finished, failed, session_bound=False)
         return True
+
+    def schedule_hydration(self, tab):
+        if not tab.get("history_hydrate"):
+            return
+        view = self.view
+        window = tab.get("history_window")
+        if not window or window.get("start", 0) <= 0 or tab.get("busy") or tab.get("history_read"):
+            return
+
+        def run_hydration():
+            if (
+                tab.get("history_hydrate")
+                and not tab.get("busy")
+                and not tab.get("history_read")
+                and any(x is tab for x in view.tabs)
+            ):
+                self.request("older", tab=tab)
+
+        loop = getattr(view.app, "loop", None) or getattr(view, "event_loop", None)
+        if loop is not None and loop.is_running():
+            loop.call_soon_threadsafe(run_hydration)
+        else:
+            view._dispatch_ui(run_hydration)

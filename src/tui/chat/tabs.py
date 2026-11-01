@@ -10,6 +10,7 @@ from prompt_toolkit.layout.dimension import D
 
 from accounts import origin
 from providers.models import FeatureState, ModelCatalog
+from utils.process import trim_memory
 
 
 class TabComponent:
@@ -294,6 +295,13 @@ class TabComponent:
             10**9 if self.follow_output else tab.get("scroll", 0)
         )
         self.app.invalidate()
+        if (
+            tab.get("history_hydrate")
+            and (tab.get("history_window") or {}).get("start", 0) > 0
+            and not tab.get("busy")
+            and getattr(self, "history_pager", None) is not None
+        ):
+            self.history_pager.schedule_hydration(tab)
         if focus:
             self.app.layout.focus(
                 self.settings_dialog.category_control
@@ -553,6 +561,9 @@ class TabComponent:
         self._line_render_key = None
         self._ansi_fragments = ()
         self._ansi_render_key = None
+        read_bg = getattr(self, "_read_in_background", None)
+        if read_bg:
+            read_bg(trim_memory, lambda _: None, lambda _: None, session_bound=False)
 
     def viewport_height(self) -> D:
         try:

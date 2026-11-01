@@ -34,3 +34,39 @@ def acquire_exclusive(lock_file) -> None:
     import fcntl
 
     fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def trim_memory() -> None:
+    import gc
+    import sys
+
+    try:
+        gc.collect(1)
+    except Exception:
+        pass
+    if sys.platform.startswith("linux"):
+        try:
+            import ctypes
+
+            libc = ctypes.CDLL("libc.so.6")
+            if hasattr(libc, "malloc_trim"):
+                libc.malloc_trim(0)
+        except Exception:
+            pass
+    elif sys.platform == "win32":
+        try:
+            import ctypes
+
+            handle = ctypes.windll.kernel32.GetCurrentProcess()
+            ctypes.windll.kernel32.SetProcessWorkingSetSize(handle, -1, -1)
+        except Exception:
+            pass
+    elif sys.platform == "darwin":
+        try:
+            import ctypes
+
+            libc = ctypes.CDLL("libSystem.B.dylib")
+            if hasattr(libc, "malloc_zone_pressure_relief"):
+                libc.malloc_zone_pressure_relief(0, 0)
+        except Exception:
+            pass

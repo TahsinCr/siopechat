@@ -10,6 +10,8 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 
 ### Changed
 
+- Open conversations immediately with a 25-message tail window from archive or provider and hydrate older history chunks progressively in the background without UI stutters or viewport jumps.
+- Filter transcript message toolbars to visible viewport rows and memoize gutter markers across scroll frames, eliminating redundant redraw overhead and reducing CPU usage during transcript scrolling.
 - Reuse verified ChatGPT continuation snapshots for up to 60 seconds, avoiding redundant history downloads on recent follow-up turns while limiting stale cross-device state.
 - Extend ChatGPT HTTP keep-alive expiry to 60 seconds to match standard browser connection persistence and avoid repeated TLS handshakes.
 - Fetch Claude's bootstrap and saved organization's model catalog concurrently during discovery when a valid organization ID is available.
@@ -22,7 +24,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 ### Fixed
 
 - Release temporary ChatGPT conversation state when its tab closes and keep per-send stream messages local so failures do not retain partial responses on the client.
-- Release closed tabs' transcript and render snapshots for allocator reuse without synchronously trimming process memory on the TUI thread.
+- Reclaim heap and working set memory on closed tabs and discarded render caches across Linux (malloc_trim), Windows (SetProcessWorkingSetSize), and macOS (malloc_zone_pressure_relief), executing trimming off-thread to prevent TUI pauses.
 - Bound ChatGPT SSE event assembly to 2,000,000 UTF-8 data bytes and a line-count ceiling while reading fixed-size chunks, rejecting oversized lines and events before growing their buffers.
 - Coalesce streamed reasoning and response deltas at UI refreshes instead of rebuilding their full text for every token; keep deferred completion updates scoped to their originating send.
 - Display queued user prompts immediately in the chat transcript instead of hiding them until the in-flight response completes, preserving visibility and restoring cleanly on cancellation or failure.
