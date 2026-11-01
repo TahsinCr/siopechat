@@ -35,6 +35,19 @@ def catalog():
 
 
 class LocalizationTests(unittest.TestCase):
+    def test_bundled_locale_json_rejects_duplicate_keys(self):
+        def unique_object(pairs):
+            result = {}
+            for key, value in pairs:
+                self.assertNotIn(key, result, f"duplicate translation key: {key}")
+                result[key] = value
+            return result
+
+        for locale in ("en", "tr", "ru"):
+            path = ROOT / "src/lang" / (locale + ".json")
+            with self.subTest(locale=locale):
+                json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+
     def test_translations_keep_format_arguments_for_interpolated_messages(self):
         values = bundles()
         formatter = string.Formatter()
