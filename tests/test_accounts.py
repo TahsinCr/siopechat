@@ -526,6 +526,28 @@ class AccountTests(unittest.TestCase):
             cursor="50", limit=50
         )
 
+    def test_incremental_listing_preserves_new_pending_branches_in_final_result(self):
+        known = {"id": "known", "remote_id": "known"}
+        first = {"id": "first", "remote_id": "first"}
+        later = {"id": "later", "remote_id": "later"}
+        delivered = []
+        with (
+            patch.object(
+                self.accounts, "read_record", return_value={"items": [known], "cursor": None}
+            ),
+            patch.object(
+                self.accounts,
+                "_pending_local_branches",
+                side_effect=[[known, first], [known, first, later]],
+            ),
+        ):
+            page = self.accounts.list_chats(
+                account_keys=["chatgpt/default"],
+                on_account_page=lambda _account, value: delivered.append(value["items"]),
+            )
+        self.assertEqual([item["id"] for item in delivered[0]], ["known", "first"])
+        self.assertEqual([item["id"] for item in page["items"]], ["known", "first", "later"])
+
     def test_send_cache_and_temporary_mode_are_account_scoped(self):
         async def stream(request):
             yield ReplaceText("Answer")

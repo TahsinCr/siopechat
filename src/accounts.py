@@ -1341,6 +1341,14 @@ class Accounts:
             page = self.read_record(key, "chats", page_cursor, fetch, force, fresh=force)
             return page if page is not None else fetch()
 
+        def unlisted_pending(items, pending):
+            known = {
+                item.get("remote_id") or item.get("id") for item in items if isinstance(item, dict)
+            }
+            return [
+                item for item in pending if (item.get("remote_id") or item.get("id")) not in known
+            ]
+
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
         futures_map = {}
@@ -1356,24 +1364,11 @@ class Accounts:
                 except Exception as error:
                     res = error
                 pages_map[acc["key"]] = res
-                if (
-                    on_account_page is not None
-                    and not isinstance(res, BaseException)
-                    and isinstance(res, dict)
-                ):
+                if on_account_page is not None and isinstance(res, dict):
                     delivered = dict(res)
                     pending = self._pending_local_branches(acc["key"], res.get("items", ()))
                     if pending and (not cursors or not cursors.get(acc["key"])):
-                        known = {
-                            item.get("remote_id") or item.get("id")
-                            for item in res.get("items", ())
-                            if isinstance(item, dict)
-                        }
-                        extra = [
-                            item
-                            for item in pending
-                            if (item.get("remote_id") or item.get("id")) not in known
-                        ]
+                        extra = unlisted_pending(res.get("items", ()), pending)
                         if extra:
                             delivered["items"] = list(res.get("items", ())) + extra
                     try:
@@ -1391,16 +1386,7 @@ class Accounts:
             items.extend(page["items"])
             pending = self._pending_local_branches(account["key"], page["items"])
             if not cursors or not cursors.get(account["key"]):
-                known = {
-                    item.get("remote_id") or item.get("id")
-                    for item in page["items"]
-                    if isinstance(item, dict)
-                }
-                items.extend(
-                    item
-                    for item in pending
-                    if (item.get("remote_id") or item.get("id")) not in known
-                )
+                items.extend(unlisted_pending(page["items"], pending))
             if page["cursor"] is not None:
                 next_cursors[account["key"]] = page["cursor"]
         return {
