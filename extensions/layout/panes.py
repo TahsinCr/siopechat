@@ -464,7 +464,13 @@ class _Pane:
             return
         self._pending = key
         renderer = self.renderer
-        payload = {"snapshot": messages}
+        payload = {
+            "snapshot": (
+                messages,
+                tuple(message.get("id") for message in tab.get("messages", ())),
+                tuple(message.get("_archive_ordinal") for message in tab.get("messages", ())),
+            )
+        }
         self._render_payload = payload
 
         def cancelled():
@@ -490,7 +496,7 @@ class _Pane:
                 self.cache_key = key
                 self.message_ranges = layout.ranges
                 self.line_count = layout.line_count
-                self._transcript_roles = tuple(role for role, _text in layout.messages)
+                self._transcript_roles = layout.roles
             self.view.app.invalidate()
 
         def failed(_reason):
@@ -502,8 +508,8 @@ class _Pane:
             snapshot = payload.get("snapshot")
             if snapshot is None:
                 raise InterruptedError("Pane closed")
-            return prepare_virtual_transcript(
-                snapshot,
+            layout = prepare_virtual_transcript(
+                snapshot[0],
                 width,
                 labels,
                 key[2],
@@ -513,6 +519,9 @@ class _Pane:
                 preserve_order=bool(tab.get("history_window")),
                 previous=self.layout,
             )
+            layout.message_ids = snapshot[1]
+            layout.ordinals = snapshot[2]
+            return layout
 
         self.view._read_in_background(
             read,
@@ -556,14 +565,18 @@ class _Pane:
                 self.cache_key = key
                 self.message_ranges = self.layout.ranges
                 self.line_count = self.layout.line_count
-                self._transcript_roles = tuple(role for role, _text in messages)
+                self.layout.message_ids = tuple(message.get("id") for message in self.messages)
+                self.layout.ordinals = tuple(
+                    message.get("_archive_ordinal") for message in self.messages
+                )
+                self._transcript_roles = self.layout.roles
         if self.layout is None:
             return (([("class:sidebar.muted", " · ")], None),)
         scroll = self.body.vertical_scroll
         if scroll > self.layout.line_count:
             scroll = max(0, self.layout.line_count - viewport_height)
         self._prefetch(self.layout, scroll, max(1, viewport_height))
-        return VirtualTranscriptRows(self.layout)
+        return VirtualTranscriptRows(self.layout, None if key == self.cache_key else self.messages)
 
     def dispose(self):
         self._disposed = True

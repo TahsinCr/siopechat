@@ -39,10 +39,10 @@ class PolishTests(unittest.TestCase):
         self.assertEqual(content.line_count, 1)
         self.assertEqual(content.get_line(0), [("class:transcript", "Message")])
 
-    def test_toolbar_rows_filtered_to_viewport_lines(self):
+    def test_toolbar_follows_rows_requested_after_scroll_changes(self):
         view = SimpleNamespace(
             transcript_rows=lambda viewport_height: tuple(
-                (([("class:transcript", f"Line {i}")], 0),) for i in range(100)
+                ([("class:transcript", f"Line {i}")], 0) for i in range(100)
             ),
             transcript_cursor_position=lambda: Point(0, 0),
             transcript_window=SimpleNamespace(vertical_scroll=50),
@@ -56,10 +56,13 @@ class PolishTests(unittest.TestCase):
             selected_message=None,
         )
         control = TranscriptControl(view)
-        control.create_content(40, 10)
-        self.assertNotIn(13, control._toolbar_rows)
-        self.assertIn(53, control._toolbar_rows)
-        self.assertNotIn(88, control._toolbar_rows)
+        control._message_toolbar = Mock(side_effect=lambda index, _width: [("toolbar", str(index))])
+        content = control.create_content(40, 10)
+        view.transcript_window.vertical_scroll = 80
+        self.assertEqual(content.get_line(88), [("toolbar", "2")])
+        self.assertEqual(control._toolbar_rows, {88: 2})
+        view.transcript_window.vertical_scroll = 10
+        self.assertEqual(content.get_line(13), [("toolbar", "0")])
 
     def test_gutter_prefix_uses_rendered_roles_and_ignores_stale_ranges(self):
         view = SimpleNamespace(

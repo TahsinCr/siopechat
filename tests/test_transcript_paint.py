@@ -8,11 +8,127 @@ from pathlib import Path
 from unittest.mock import patch
 
 from tests.account_fixture import configured_application as create_application
-from tests.tui_support import terminal
+from tests.tui_support import click, terminal, wait_until
 from tui.markdown import MessageRenderer, index_transcript, open_link, transcript_fragments
 
 
 class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
+    def test_stale_layout_does_not_bind_an_unverified_replacement_message(self):
+        from tui.transcript import VirtualTranscript, VirtualTranscriptRows
+
+        layout = VirtualTranscript([{"role": "assistant", "text": "Old answer"}], 48)
+        layout.ordinals = (10,)
+        rows = VirtualTranscriptRows(
+            layout, [{"role": "assistant", "text": "Different answer", "_archive_ordinal": 10}]
+        )
+        self.assertIsNone(rows.message_index(0))
+        layout.message_ids = ("same-id",)
+        rows = VirtualTranscriptRows(
+            layout, [{"id": "same-id", "role": "user", "text": "Old answer"}]
+        )
+        self.assertIsNone(rows.message_index(0))
+
+    async def test_visible_toolbar_stays_attached_during_progressive_history_loading(self):
+        from extensions.archive.repository import Files, SQLiteRepository
+        from extensions.archive.sync import Archive
+        from tests.tui_support import ResizableOutput
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive = Archive(SQLiteRepository(root / "archive.sqlite3"), Files(root / "files"))
+            archive.put(
+                "chatgpt/default",
+                "conversation",
+                "chat",
+                {
+                    "messages": [
+                        {"id": str(i), "role": "assistant", "text": f"Answer {i}"}
+                        for i in range(100)
+                    ]
+                },
+            )
+            page = archive.conversation_window("chatgpt/default", "chat", limit=25)
+            try:
+                with terminal(
+                    output=ResizableOutput(rows=43, columns=100), initial_messages=page["messages"]
+                ) as (view, _):
+                    view.conversation_id = "@chatgpt/default/chat"
+                    view._save_active_tab()
+                    tab = view.tabs[0]
+                    tab.update(
+                        history_window=page["history_window"],
+                        history_version=page["history_version"],
+                        history_hydrate=True,
+                    )
+                    view.archive_service = lambda: archive
+                    observed, failures = set(), []
+
+                    def inspect_frame(_app):
+                        layout = view._virtual_transcript
+                        info = view.transcript_window.render_info
+                        if layout is None or info is None or "99" not in layout.message_ids:
+                            return
+                        target = layout.message_ids.index("99")
+                        row = next(end - 2 for _, end, index in layout.ranges if index == target)
+                        if info.vertical_scroll <= row < info.vertical_scroll + info.window_height:
+                            observed.add(layout.ordinals[0])
+                            index = view.transcript_control._toolbar_rows.get(row)
+                            if index is None or view.messages[index].get("id") != "99":
+                                failures.append((row, index))
+
+                    view.app.after_render += inspect_frame
+                    run = asyncio.create_task(view.app.run_async())
+                    try:
+                        await wait_until(
+                            lambda: tab["history_window"]["start"] == 0 and len(observed) >= 2,
+                            timeout=10,
+                        )
+                        self.assertFalse(failures)
+                    finally:
+                        view.app.exit()
+                        await run
+            finally:
+                archive.close()
+
+    async def test_inactive_pane_maps_old_toolbar_after_history_is_prepended(self):
+        from extensions.layout.panes import _Pane
+
+        old = [
+            {"id": str(i), "role": "assistant", "text": f"Answer {i}", "_archive_ordinal": i}
+            for i in range(5, 10)
+        ]
+        with terminal(initial_messages=old) as (view, _):
+            view.new_tab()
+            tab = view.tabs[0]
+            pane = _Pane(view, tab["tab_id"])
+            run = asyncio.create_task(view.app.run_async())
+            try:
+                await wait_until(lambda: view.app.is_running)
+                jobs = []
+                view._read_in_background = lambda read, ready, failed, **kw: jobs.append(
+                    (read, ready)
+                )
+                pane.transcript_rows(20)
+                read, ready = jobs.pop(0)
+                ready(read())
+                layout = pane.layout
+                tab["messages"] = [
+                    {"id": str(i), "role": "user", "text": f"Question {i}", "_archive_ordinal": i}
+                    for i in range(5)
+                ] + old
+                rows = pane.transcript_rows(20)
+                self.assertEqual(rows.message_index(0), 5)
+                with patch.object(
+                    pane.control, "_message_toolbar", return_value=[("toolbar", "ok")]
+                ) as toolbar:
+                    content = pane.control.create_content(80, 20)
+                    self.assertEqual(content.get_line(layout.ranges[0][1] - 2), [("toolbar", "ok")])
+                    toolbar.assert_called_once_with(5, 80)
+            finally:
+                pane.dispose()
+                view.app.exit()
+                await run
+
     def test_cumulative_layout_preserves_latest_viewport_during_prepend(self):
         from tui.history import prepare_virtual_transcript
 
@@ -34,7 +150,18 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
             view.follow_output = False
             jobs = []
             view._read_in_background = lambda read, ready, failed, **kw: jobs.append((read, ready))
-            view._virtual_transcript_rows(20)
+            rows = view._virtual_transcript_rows(20)
+            self.assertEqual(rows.message_index(0), 40)
+            previous.prefetch(0, 1)
+            self.assertEqual(rows.paint_row(0)[1], 40)
+            with (
+                patch.object(view, "transcript_rows", return_value=rows),
+                patch.object(view, "message_toolbar_action") as toolbar_action,
+            ):
+                content = view.transcript_control.create_content(80, 20)
+                toolbar = content.get_line(previous.ranges[0][1] - 2)
+                click(next(fragment for fragment in toolbar if len(fragment) > 2))
+                toolbar_action.assert_called_once_with(tab["tab_id"], view.messages[40], "copy")
             read, ready = jobs[0]
             value = read()
             view.transcript_window.vertical_scroll = previous.ranges[70][0]

@@ -16,7 +16,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 ### Changed
 
 - Open archived conversations with a 25-message tail window, including after a cold provider fetch, and hydrate older history chunks progressively in the background.
-- Filter transcript message toolbars to visible viewport rows and memoize gutter markers across scroll frames, eliminating redundant redraw overhead and reducing CPU usage during transcript scrolling.
+- Render message toolbars for requested transcript rows and reuse gutter markers across scroll frames.
 - Reuse verified ChatGPT continuation snapshots for up to 60 seconds, avoiding redundant history downloads on recent follow-up turns while limiting stale cross-device state.
 - Extend ChatGPT HTTP keep-alive expiry to 60 seconds to match standard browser connection persistence and avoid repeated TLS handshakes.
 - Fetch Claude's bootstrap and saved organization's model catalog concurrently during discovery when a valid organization ID is available.
@@ -28,6 +28,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 
 ### Fixed
 
+- Keep message toolbars visible and attached to the correct messages while scrolling and loading older history, including in split panes.
 - Ensure pressing `Escape` cleanly dismisses modal forms, dialogs (`SettingsDialog`, `SessionDialog`), overlays, and search fields without inadvertently exiting the application or modifying settings.
 - Advance and retreat focus seamlessly across controls using `Tab` and `Shift+Tab` outside active completions, and allow pressing `Enter` in the transcript to submit an existing draft or return focus to the composer.
 - Report cache read type errors instead of retrying with a different history window.

@@ -841,9 +841,7 @@ class MessageToolbarTests(unittest.TestCase):
             view.render_transcript()
             control = TranscriptControl(view)
             content = control.create_content(80, 20)
-            (toolbar_row,) = control._toolbar_rows
-
-            self.assertEqual(control._toolbar_rows[toolbar_row], 0)
+            toolbar_row = view.message_ranges[0][1] - 2
             self.assertTrue(
                 any("Sources" in fragment[1] for fragment in content.get_line(toolbar_row))
             )

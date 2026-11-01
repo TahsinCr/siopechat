@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from bisect import bisect_right
+from operator import itemgetter
 from typing import Any, Callable
 
 from prompt_toolkit.completion import Completer, Completion
@@ -70,31 +72,24 @@ class TranscriptControl(UIControl):
         if gutter is not None:
             gutter.refresh()
         self._toolbar_rows = {}
-        window = getattr(self.view, "transcript_window", None)
-        scroll = getattr(window, "vertical_scroll", 0) if window else 0
-        min_row = max(0, scroll - 2)
-        max_row = scroll + height + 2
-        for start, end, index in getattr(self.view, "message_ranges", ()):
-            if start > max_row:
-                break
-            row_num = end - 2
-            if row_num < min_row or row_num > max_row:
-                continue
-            if not 0 <= index < len(self.view.messages):
-                continue
-            message = self.view.messages[index]
-            role = message.get("role")
-            if role in ("user", "assistant") and end - start > 1:
-                self._toolbar_rows[row_num] = index
+        ranges = getattr(self.view, "message_ranges", ())
         self._toolbar_fragments = {}
         cursor = self.view.transcript_cursor_position()
         cursor = Point(0, min(max(0, cursor.y), max(0, len(rows) - 1)))
 
         def get_line(number):
-            if number in self._toolbar_rows:
-                fragments = self._message_toolbar(self._toolbar_rows[number], width)
-                self._toolbar_fragments[number] = fragments
-                return fragments
+            position = bisect_right(ranges, number, key=itemgetter(0)) - 1
+            if position >= 0:
+                start, end, index = ranges[position]
+                if end - start > 1 and number == end - 2:
+                    if hasattr(rows, "message_index"):
+                        index = rows.message_index(index)
+                    if index is not None and 0 <= index < len(self.view.messages):
+                        if self.view.messages[index].get("role") in ("user", "assistant"):
+                            self._toolbar_rows[number] = index
+                            fragments = self._message_toolbar(index, width)
+                            self._toolbar_fragments[number] = fragments
+                            return fragments
             if hasattr(rows, "paint_row"):
                 row = rows.paint_row(number)
                 if row is None:

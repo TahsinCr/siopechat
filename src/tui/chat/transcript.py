@@ -523,10 +523,10 @@ class TranscriptComponent:
 
         self.message_ranges = layout.ranges
         self.transcript_line_count = layout.line_count
+        self._transcript_roles = layout.roles
         structure_key = (tab_id, *message_key[:4])
         if structure_key != getattr(self, "_virtual_selection_key", None):
             with self.lock:
-                self._transcript_roles = tuple(message.get("role") for message in self.messages)
                 reference = getattr(self, "selected_message_ref", None)
                 if reference is not None:
                     self.selected_message = next(
@@ -534,7 +534,8 @@ class TranscriptComponent:
                         self.selected_message,
                     )
             self._virtual_selection_key = structure_key
-        rows = VirtualTranscriptRows(layout)
+        with self.lock:
+            rows = VirtualTranscriptRows(layout, None if layout_is_current else self.messages)
         last_scroll = max(0, layout.line_count - viewport_height)
         scroll = (
             last_scroll

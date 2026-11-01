@@ -44,6 +44,8 @@ class VirtualTranscript:
         self._disposed = False
         self._release_renderer = True
         self.active_index = active_index
+        self.message_ids = ()
+        self.ordinals = ()
         self._large_code = {}
         # Retain only the fields needed for drawing.  In particular, do not
         # keep a second copy of every full provider message dictionary.
@@ -66,9 +68,8 @@ class VirtualTranscript:
             self.entries = [
                 index for index in self.entries if self.messages[index][0] != "reasoning"
             ]
-        self.groups = group_reasoning_entries(
-            self.entries, tuple(message[0] for message in self.messages)
-        )
+        self.roles = tuple(message[0] for message in self.messages)
+        self.groups = group_reasoning_entries(self.entries, self.roles)
         self.entries = [indices[0] for _, indices in self.groups]
         self.starts = []
         self.ranges = []
@@ -367,6 +368,9 @@ class VirtualTranscript:
         self._cache_bytes = 0
         self._large_code.clear()
         self.messages = ()
+        self.roles = ()
+        self.message_ids = ()
+        self.ordinals = ()
         if self._release_renderer:
             self.renderer.clear_cache(wait=False)
 
@@ -440,21 +444,73 @@ class TranscriptPrefetch:
 class VirtualTranscriptRows:
     """Sequence-compatible row view consumed by TranscriptControl."""
 
-    def __init__(self, transcript):
+    def __init__(self, transcript, messages=None):
         self.transcript = transcript
+        self.indices = None if messages is None else self._match_indices(transcript, messages)
+
+    @staticmethod
+    def _match_indices(transcript, messages):
+        by_id, by_ordinal, by_content = {}, {}, {}
+        identifiers = getattr(transcript, "message_ids", ())
+        ordinals = getattr(transcript, "ordinals", ())
+        needs_content = any(
+            not (identifiers[index] if index < len(identifiers) else None)
+            and (ordinals[index] if index < len(ordinals) else None) is None
+            for index in range(len(transcript.messages))
+        )
+
+        def add(index, key, target):
+            if key is not None:
+                target[key] = index if key not in target else None
+
+        for index, message in enumerate(messages):
+            add(index, message.get("id") or None, by_id)
+            add(index, message.get("_archive_ordinal"), by_ordinal)
+            if needs_content:
+                add(index, (message.get("role"), message.get("text", "")), by_content)
+        result = {}
+        for index, content in enumerate(transcript.messages):
+            identifier = identifiers[index] if index < len(identifiers) else None
+            ordinal = ordinals[index] if index < len(ordinals) else None
+            if identifier:
+                match = by_id.get(identifier)
+            elif ordinal is not None:
+                match = by_ordinal.get(ordinal)
+            else:
+                match = by_content.get(content)
+            if (
+                match is not None
+                and messages[match].get("role") == content[0]
+                and (identifier or messages[match].get("text", "") == content[1])
+            ):
+                result[index] = match
+        return result
+
+    def message_index(self, index):
+        if index is None or self.indices is None:
+            return index
+        return self.indices.get(index)
+
+    def _map_row(self, row):
+        if row is None:
+            return None
+        spans, index = row
+        return spans, self.message_index(index)
 
     def __len__(self):
         return self.transcript.line_count
 
     def __getitem__(self, index):
         if isinstance(index, slice):
-            return tuple(self.transcript.row(i) for i in range(*index.indices(len(self))))
+            return tuple(
+                self._map_row(self.transcript.row(i)) for i in range(*index.indices(len(self)))
+            )
         if index < 0:
             index += len(self)
-        return self.transcript.row(index)
+        return self._map_row(self.transcript.row(index))
 
     def paint_row(self, index):
-        return self.transcript.cached_row(index)
+        return self._map_row(self.transcript.cached_row(index))
 
     def prefetch(self, start, stop, cancelled=None):
         return self.transcript.prefetch(start, stop, cancelled)
