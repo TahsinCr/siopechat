@@ -340,6 +340,75 @@ class Downloads:
                 self._active.discard(identity)
             self._gate.release()
 
+    def save_export(self, key, conversation_id, title, filename, chunks):
+        """Atomically save generated conversation content through download history."""
+        if not self._gate.acquire(blocking=False):
+            raise ValueError("İki indirme sürüyor; tamamlanınca yeniden deneyin")
+        record_id = uuid.uuid4().hex
+        try:
+            try:
+                with self._store_lock:
+                    self._history()
+            except (OSError, LookupError):
+                pass
+            now = time.time()
+            with self._history_lock:
+                self._records[record_id] = dict(
+                    id=record_id,
+                    account=key,
+                    conversation_id=conversation_id,
+                    title=title,
+                    created=now,
+                    updated=now,
+                    state="preparing",
+                    name="",
+                    path=None,
+                    size=0,
+                    total=None,
+                    chat_deleted=False,
+                    error="",
+                    _revision=0,
+                )
+                self._dirty_records.add(record_id)
+                self.revision += 1
+                self.model_revision += 1
+            self._update(record_id, persist=True)
+
+            last_saved = 0.0
+
+            def report(name, size, total):
+                nonlocal last_saved
+                now = time.monotonic()
+                persist = now - last_saved >= 1
+                if persist:
+                    last_saved = now
+                self._update(
+                    record_id,
+                    persist=persist,
+                    state="downloading",
+                    name=name,
+                    size=size,
+                    total=total,
+                )
+
+            result = self._save_chunks(chunks, filename, report)
+            self._update(
+                record_id,
+                persist=True,
+                state="completed",
+                path=result["path"],
+                name=result["name"],
+                size=result["size"],
+                total=result["size"],
+            )
+            return result
+        except Exception:
+            if record_id in self._records:
+                self._update(record_id, persist=True, state="failed", error="download_failed")
+            raise
+        finally:
+            self._gate.release()
+
     def remove_page(self, identity):
         with self._store_lock:
             try:
@@ -480,6 +549,19 @@ class Downloads:
         raise ValueError("Dosya çok fazla yönlendirildi")
 
     def _save(self, response, filename, progress):
+        total = response.headers.get("content-length", "")
+        total = int(total) if total.isdigit() else None
+        if response.headers.get("content-encoding"):
+            total = None  # Encoded Content-Length cannot measure decoded stream progress.
+        return self._save_chunks(
+            response.iter_bytes(256 * 1024),
+            filename,
+            progress,
+            total=total,
+            exact_total=total is not None and not response.headers.get("content-encoding"),
+        )
+
+    def _save_chunks(self, chunks, filename, progress, *, total=None, exact_total=False):
         directory = self.directory()
         directory.mkdir(parents=True, exist_ok=True)
         filename = (
@@ -513,22 +595,22 @@ class Downloads:
         temporary, done = None, False
         try:
             size, last = 0, 0.0
-            total = response.headers.get("content-length", "")
-            total = int(total) if total.isdigit() else None
             maximum = self.settings.snapshot()["application"].get(
                 "download_max_bytes", 512 * 1024 * 1024
             )
             if total is not None and total > maximum:
                 raise ValueError("Dosya indirme boyutu sınırını aşıyor")
-            if response.headers.get("content-encoding"):
-                total = None  # Encoded Content-Length cannot measure decoded stream progress.
             if progress:
                 progress(target.name, 0, total)
             with tempfile.NamedTemporaryFile(
                 dir=directory, prefix=".download-", suffix=".part", delete=False
             ) as output:
                 temporary = Path(output.name)
-                for chunk in response.iter_bytes(256 * 1024):
+                for chunk in chunks:
+                    if isinstance(chunk, str):
+                        chunk = chunk.encode("utf-8")
+                    if not isinstance(chunk, bytes):
+                        raise TypeError("download chunks must be bytes or text")
                     if size + len(chunk) > maximum:
                         raise ValueError("Dosya indirme boyutu sınırını aşıyor")
                     output.write(chunk)
@@ -537,17 +619,13 @@ class Downloads:
                     if progress and now - last >= 0.2:
                         progress(target.name, size, total)
                         last = now
-                if (
-                    total is not None
-                    and not response.headers.get("content-encoding")
-                    and size != total
-                ):
+                if exact_total and size != total:
                     raise ValueError("Dosya aktarımı tamamlanmadı")
                 output.flush()
                 os.fsync(output.fileno())
             os.replace(temporary, target)
             done = True
-            return {"kind": "file", "path": str(target), "size": size}
+            return {"kind": "file", "path": str(target), "name": target.name, "size": size}
         finally:
             if temporary:
                 temporary.unlink(missing_ok=True)

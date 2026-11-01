@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 import time
 import uuid
 from datetime import datetime
 
 from accounts import origin
+from providers.messages import files_from
 from utils import clipboard
 
 from ..markdown import (
     message_body_text,
     render_chatgpt_annotations,
+    visible_chat_message,
 )
 
 
@@ -295,6 +298,271 @@ class MessageComponent:
                 self.show_temporary_status(self.tr("Sent message to the terminal clipboard"))
             self.app.invalidate()
             return
+        if action in ("copy_conversation", "save_conversation"):
+            self._open_conversation_export(tab_id, message_ref, action)
+            return
+
+    def _open_conversation_export(self, tab_id, message_ref, action):
+        if self._toolbar_message_index(tab_id, message_ref) is None:
+            return
+        saving = action == "save_conversation"
+        title = self.tr("Save conversation") if saving else self.tr("Copy conversation")
+        field = self.tr("Export format")
+        choices = [
+            ("text", self.tr("Plain text")),
+            ("json", self.tr("JSON")),
+        ]
+
+        def submit(values):
+            export_format = values.get("format")
+            if export_format not in ("text", "json"):
+                raise ValueError(self.tr("Choose an export format"))
+            return lambda: self._export_conversation(tab_id, message_ref, saving, export_format)
+
+        self.forms.open(
+            title,
+            [("format", field, "text", choices)],
+            submit,
+            submit_label="Save" if saving else "Copy",
+        )
+
+    def _export_conversation(self, tab_id, message_ref, saving, export_format):
+        if self._toolbar_message_index(tab_id, message_ref) is None:
+            self.status = self.tr("This message is no longer loaded")
+            self.app.invalidate()
+            return
+        tab = self.tabs[self.active_tab]
+        if tab.get("history_load_pending") and not tab.get("history_load_complete"):
+            self.status = self.tr("Conversation history is still syncing. Try again shortly.")
+            self.app.invalidate()
+            return
+        with self.lock:
+            live_messages = tuple(dict(message) for message in tab.get("messages", ()))
+        account_key = tab.get("account_key", self.account_key)
+        conversation_id = tab.get("conversation_id")
+        temporary = bool(tab.get("temporary"))
+        title = str(tab.get("title") or "Conversation")
+        downloads = self.downloads_panel.service() if saving else None
+        if saving and downloads is None:
+            self.status = self.tr("Conversation downloads are unavailable")
+            self.app.invalidate()
+            return
+
+        progress = (
+            self.tr("Saving conversation…") if saving else self.tr("Preparing conversation copy…")
+        )
+        self.status = progress
+        self.app.invalidate()
+
+        def read():
+            messages = self._conversation_export_messages(
+                account_key, conversation_id, temporary, live_messages
+            )
+            chunks = self._conversation_export_chunks(title, messages, export_format)
+            if saving:
+                extension = "json" if export_format == "json" else "txt"
+                filename = f"{title}.{extension}"
+                return downloads.save_export(
+                    account_key,
+                    conversation_id,
+                    title,
+                    filename,
+                    chunks,
+                )
+            content = "".join(chunks)
+            return None if clipboard.copy_text(content) else clipboard.terminal_sequence(content)
+
+        def completed(result):
+            if saving:
+                self.downloads_panel.update()
+                message = self.tr("Conversation saved: {0}").format(result["name"])
+            elif result is None:
+                message = self.tr("Conversation copied")
+            else:
+                self.app.output.write_raw(result)
+                self.app.output.flush()
+                message = self.tr("Sent conversation to the terminal clipboard")
+            self._finish_conversation_export(tab_id, progress, message)
+
+        def failed(_reason):
+            self._finish_conversation_export(
+                tab_id, progress, self.tr("Conversation export failed")
+            )
+
+        self._read_in_background(read, completed, failed, session_bound=False)
+
+    def _finish_conversation_export(self, tab_id, progress, message):
+        if not self.tabs or self.tabs[self.active_tab].get("tab_id") != tab_id:
+            return
+        if self.status == progress:
+            self.status = message
+        else:
+            try:
+                self.show_temporary_status(message)
+            except RuntimeError:
+                self.status = message
+        self.app.invalidate()
+
+    def _conversation_export_messages(self, account_key, conversation_id, temporary, live_messages):
+        """Stream visible SQL history and merge unsaved messages from the active transcript."""
+        archive = None
+        if (
+            self.account_service
+            and hasattr(self.account_service, "archive")
+            and conversation_id
+            and not temporary
+        ):
+            archive = self.account_service.archive()
+        if archive is None:
+            yield from self._merge_export_messages((), live_messages)
+            return
+
+        key, remote = origin(conversation_id, account_key)
+        repository = getattr(archive, "repository", None)
+        superseded = (
+            repository.superseded_message_ids(key, remote) if repository is not None else set()
+        )
+        live_by_ordinal, live_by_id = {}, {}
+        for message in live_messages:
+            ordinal = message.get("_archive_ordinal")
+            identity = message.get("id")
+            if isinstance(ordinal, int):
+                live_by_ordinal.setdefault(ordinal, message)
+            if identity:
+                live_by_id.setdefault(identity, message)
+        consumed_ordinals, consumed_ids = set(), set()
+        start = 0
+        first_page = True
+        history_version = None
+        while True:
+            page = archive.conversation_window(
+                key,
+                remote,
+                start=start,
+                limit=500,
+                max_chars=1_048_576,
+                visible_only=True,
+            )
+            if page is None:
+                if first_page:
+                    yield from self._merge_export_messages((), live_messages)
+                    return
+                raise RuntimeError("conversation archive changed during export")
+            if first_page:
+                history_version = page.get("history_version")
+            elif page.get("history_version") != history_version:
+                raise RuntimeError("conversation changed during export")
+            first_page = False
+            rows = page.get("messages", ())
+            for raw in rows:
+                identity = raw.get("id")
+                ordinal = raw.get("_archive_ordinal")
+                if identity in superseded:
+                    continue
+                current = live_by_ordinal.get(ordinal) or live_by_id.get(identity)
+                if current is not None:
+                    consumed_ordinals.add(current.get("_archive_ordinal"))
+                    if current.get("id"):
+                        consumed_ids.add(current["id"])
+                    visible = visible_chat_message(current)
+                else:
+                    visible = visible_chat_message(raw)
+                exported = self._conversation_export_record(visible, raw)
+                if exported:
+                    yield exported
+            window = page.get("history_window", {})
+            end = window.get("end", start)
+            total = window.get("total", end)
+            if not rows or end <= start or end >= total:
+                break
+            start = end
+
+        for message in live_messages:
+            ordinal, identity = message.get("_archive_ordinal"), message.get("id")
+            if ordinal in consumed_ordinals or (identity and identity in consumed_ids):
+                continue
+            if identity in superseded:
+                continue
+            exported = self._conversation_export_record(visible_chat_message(message), message)
+            if exported:
+                yield exported
+
+    @staticmethod
+    def _merge_export_messages(archived, live_messages):
+        """Use live messages when no local conversation archive is available."""
+        yield from archived
+        for message in live_messages:
+            exported = MessageComponent._conversation_export_record(
+                visible_chat_message(message), message
+            )
+            if exported:
+                yield exported
+
+    @staticmethod
+    def _conversation_export_record(message, source=None):
+        if not message or message.get("role") not in ("user", "assistant"):
+            return None
+        text = render_chatgpt_annotations(message_body_text(message))
+        files = message.get("_files")
+        if files is None:
+            files = files_from(source or message)
+        attachments = []
+        for item in files:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            if not name:
+                continue
+            attachment = {"name": name}
+            media_type = item.get("media_type")
+            if isinstance(media_type, str) and media_type:
+                attachment["media_type"] = media_type
+            size = item.get("size_bytes")
+            if isinstance(size, int) and not isinstance(size, bool) and size >= 0:
+                attachment["size_bytes"] = size
+            attachments.append(attachment)
+        if not text and not attachments:
+            return None
+        result = {"role": message["role"], "text": text}
+        if attachments:
+            result["attachments"] = attachments
+        return result
+
+    def _conversation_export_chunks(self, title, messages, export_format):
+        if export_format == "json":
+            yield '{\n  "title": '
+            yield json.dumps(title, ensure_ascii=False)
+            yield ',\n  "messages": ['
+            first = True
+            for message in messages:
+                encoded = json.dumps(message, ensure_ascii=False, indent=2)
+                yield ("\n" if first else ",\n") + "\n".join(
+                    "    " + line for line in encoded.splitlines()
+                )
+                first = False
+            yield "\n  ]\n}\n"
+            return
+
+        heading = " ".join(title.split())
+        yield f"# {heading}\n\n"
+        for index, message in enumerate(messages):
+            if index:
+                yield "\n\n---\n\n"
+            role = self.tr("User") if message["role"] == "user" else self.tr("Assistant")
+            text = message["text"].strip()
+            yield f"## {role}\n\n{text}"
+            if message.get("attachments"):
+                details = []
+                for item in message["attachments"]:
+                    label = item["name"]
+                    if item.get("media_type"):
+                        label += f" ({item['media_type']})"
+                    if "size_bytes" in item:
+                        size = item["size_bytes"]
+                        label += f" · {size / 1024:.1f} KiB" if size >= 1024 else f" · {size} B"
+                    details.append(label)
+                separator = "\n\n" if text else ""
+                yield f"{separator}{self.tr('Attachments')}: {', '.join(details)}"
 
     def _show_message_sources(self, message):
         from providers.messages import sources_from
