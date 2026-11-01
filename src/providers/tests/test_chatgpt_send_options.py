@@ -160,9 +160,9 @@ class SendOptionsTests(unittest.TestCase):
         }
         with patch("providers.chatgpt.client.time.monotonic", return_value=100.0):
             self.client._remember_conversation(conversation)
-        with patch("providers.chatgpt.client.time.monotonic", return_value=279.0):
+        with patch("providers.chatgpt.client.time.monotonic", return_value=159.0):
             self.assertIs(self.client._cached_conversation("remote"), conversation)
-        with patch("providers.chatgpt.client.time.monotonic", return_value=280.0):
+        with patch("providers.chatgpt.client.time.monotonic", return_value=160.0):
             self.assertIsNone(self.client._cached_conversation("remote"))
 
     def test_cached_send_failure_does_not_resubmit_after_streamed_content(self):
@@ -232,7 +232,7 @@ class SendOptionsTests(unittest.TestCase):
                     patch.object(
                         self.client,
                         "send_prompt_direct",
-                        return_value=("remote", "submitted", submitted),
+                        return_value=("remote", "submitted", submitted, []),
                     ),
                 ):
                     self.client.send_prompt(

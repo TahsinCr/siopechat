@@ -11,7 +11,7 @@ import uuid
 from collections import OrderedDict
 from datetime import datetime
 from http.cookies import SimpleCookie
-from typing import Any
+from typing import Any, Iterable
 from urllib.parse import quote, urljoin, urlsplit
 
 import httpx
@@ -36,10 +36,14 @@ from .formats import message_parts, text_from_parts
 from .sentinel import SentinelRuntime
 from .session import BrowserSession
 
-_CONTINUATION_CACHE_TTL_SECONDS = 180.0
+_CONTINUATION_CACHE_TTL_SECONDS = 60.0
 _CONTINUATION_CACHE_MAX_ITEMS = 8
 _CONTINUATION_CACHE_MAX_MESSAGES = 2_000
 _CONTINUATION_CACHE_MAX_TEXT_CHARS = 1_000_000
+_SSE_MAX_EVENT_BYTES = 2_000_000
+_SSE_MAX_EVENT_DATA_LINES = 65_536
+_SSE_READ_CHUNK_BYTES = 64 * 1024
+_SSE_MAX_LINE_BYTES = _SSE_MAX_EVENT_BYTES + len(b"data: ")
 
 
 def system_timezone():
@@ -66,39 +70,100 @@ def system_timezone():
     return None
 
 
-def _sse_data(lines):
+def _sse_data(chunks: Iterable[bytes]):
     """Yield Server-Sent Events data fields, including valid multiline payloads."""
-    data = []
+    data: list[str] = []
     total_bytes = 0
-    for line in lines:
-        if line == "":
+    data_line_count = 0
+    line = bytearray()
+    skip_lf = False
+
+    def append_line_piece(piece: bytes) -> None:
+        line_length = len(line)
+        data_line = line.startswith(b"data:")
+        if not data_line and line_length < len(b"data:"):
+            prefix = bytes(line) + piece[: len(b"data:") - line_length]
+            data_line = prefix == b"data:"
+        if data_line:
+            if line_length >= len(b"data:"):
+                current_value_bytes = line_length - len(b"data:")
+                if line[len(b"data:") : len(b"data:") + 1] == b" ":
+                    current_value_bytes -= 1
+                added_value = piece
+                if line_length == len(b"data:") and added_value.startswith(b" "):
+                    added_value = added_value[1:]
+            else:
+                added_value = piece[len(b"data:") - line_length :]
+                if added_value.startswith(b" "):
+                    added_value = added_value[1:]
+                current_value_bytes = 0
+            if total_bytes + current_value_bytes + len(added_value) > _SSE_MAX_EVENT_BYTES:
+                raise ChatGPTWebError("ChatGPT event payload exceeded the 2 MB limit")
+        if line_length + len(piece) > _SSE_MAX_LINE_BYTES:
+            raise ChatGPTWebError("ChatGPT event payload exceeded the 2 MB limit")
+        line.extend(piece)
+
+    def consume_line(raw_line: bytes):
+        nonlocal data_line_count, total_bytes
+        if raw_line == b"":
             if data:
                 yield "\n".join(data)
                 data.clear()
                 total_bytes = 0
-            continue
-        if line.startswith(":"):
-            continue
-        field, separator, value = line.partition(":")
-        if field == "data":
-            if separator and value.startswith(" "):
-                value = value[1:]
-            if data:
-                previous = "\n".join(data)
-                try:
-                    json.loads(previous)
-                except json.JSONDecodeError:
-                    pass
+                data_line_count = 0
+            return
+        if raw_line.startswith(b":"):
+            return
+        field, separator, value = raw_line.partition(b":")
+        if field != b"data":
+            return
+        if separator and value.startswith(b" "):
+            value = value[1:]
+        if data:
+            previous = "\n".join(data)
+            try:
+                json.loads(previous)
+            except json.JSONDecodeError:
+                pass
+            else:
+                yield previous
+                data.clear()
+                total_bytes = 0
+                data_line_count = 0
+        if data_line_count >= _SSE_MAX_EVENT_DATA_LINES:
+            raise ChatGPTWebError("ChatGPT event payload exceeded the data line limit")
+        if total_bytes + len(value) > _SSE_MAX_EVENT_BYTES:
+            raise ChatGPTWebError("ChatGPT event payload exceeded the 2 MB limit")
+        data.append(value.decode("utf-8", errors="replace"))
+        total_bytes += len(value)
+        data_line_count += 1
+
+    for chunk in chunks:
+        offset = 0
+        while offset < len(chunk):
+            if skip_lf:
+                skip_lf = False
+                if chunk[offset] == 10:
+                    offset += 1
+                    continue
+            line_feed = chunk.find(b"\n", offset)
+            carriage_return = chunk.find(b"\r", offset)
+            delimiters = [index for index in (line_feed, carriage_return) if index >= 0]
+            if not delimiters:
+                append_line_piece(chunk[offset:])
+                break
+            delimiter = min(delimiters)
+            append_line_piece(chunk[offset:delimiter])
+            yield from consume_line(bytes(line))
+            line.clear()
+            offset = delimiter + 1
+            if chunk[delimiter] == 13:
+                if offset < len(chunk) and chunk[offset] == 10:
+                    offset += 1
                 else:
-                    # Preserve providers that emit one complete JSON event per
-                    # data line without the blank separator required by SSE.
-                    yield previous
-                    data.clear()
-                    total_bytes = 0
-            data.append(value)
-            total_bytes += len(value)
-            if total_bytes > 2_000_000:
-                raise ChatGPTWebError("ChatGPT event payload exceeded the 2 MB limit")
+                    skip_lf = True
+    if line:
+        yield from consume_line(bytes(line))
     if data:
         yield "\n".join(data)
 
@@ -114,7 +179,6 @@ class ChatGPTClient:
             OrderedDict()
         )
         self._continuation_cache_text_chars = 0
-        self._last_stream_messages: list[dict[str, Any]] = []
         self._sentinel_lock = threading.Lock()
         self._sentinel_runtime: SentinelRuntime | None = None
         self._sentinel_runtime_key: str | None = None
@@ -154,9 +218,6 @@ class ChatGPTClient:
             temporary_conversations = getattr(self, "temporary_conversations", None)
             if temporary_conversations is not None:
                 temporary_conversations.clear()
-            stream_messages = getattr(self, "_last_stream_messages", None)
-            if stream_messages is not None:
-                stream_messages.clear()
             self.http.close()
 
     @staticmethod
@@ -596,16 +657,18 @@ class ChatGPTClient:
             raise ChatGPTWebError(f"Effort '{effort}' is not offered for model '{model}'")
 
         try:
-            resolved_id, submitted_message_id, submitted_message = self.send_prompt_direct(
-                previous,
-                prompt,
-                attachments or [],
-                on_event,
-                model,
-                effort,
-                **({"temporary": True} if temporary else {}),
-                **({"action": action, "message_id": message_id} if action else {}),
-                **({"branch": branch} if branch else {}),
+            resolved_id, submitted_message_id, submitted_message, streamed_messages = (
+                self.send_prompt_direct(
+                    previous,
+                    prompt,
+                    attachments or [],
+                    on_event,
+                    model,
+                    effort,
+                    **({"temporary": True} if temporary else {}),
+                    **({"action": action, "message_id": message_id} if action else {}),
+                    **({"branch": branch} if branch else {}),
+                )
             )
         except Exception:
             if conversation_id and not temporary:
@@ -628,12 +691,10 @@ class ChatGPTClient:
                 "conversation_id": resolved_id,
                 "title": "Geçici sohbet",
                 "default_model_slug": model,
-                "current_node": self._last_stream_messages[-1].get("id")
-                if self._last_stream_messages
-                else None,
+                "current_node": streamed_messages[-1].get("id") if streamed_messages else None,
                 "messages": list((previous or {}).get("messages", []))
                 + submitted_messages
-                + self._last_stream_messages,
+                + streamed_messages,
                 "temporary": True,
             }
             if not conversation["current_node"]:
@@ -652,7 +713,6 @@ class ChatGPTClient:
                 self.temporary_conversations.popitem(last=False)
         else:
             previous_messages = (previous or {}).get("messages")
-            streamed_messages = self._last_stream_messages
             last_message = streamed_messages[-1] if streamed_messages else None
             first_message = streamed_messages[0] if streamed_messages else None
             streamed_parent = (
@@ -718,7 +778,6 @@ class ChatGPTClient:
         if not temporary:
             self._remember_conversation(conversation)
             self.trigger_sentinel_prewarm()
-        self._last_stream_messages = []
         return resolved_id, conversation, previous_ids
 
     def send_prompt_direct(
@@ -733,7 +792,7 @@ class ChatGPTClient:
         action=None,
         message_id: str | None = None,
         branch=None,
-    ) -> tuple[str, str, dict[str, Any] | None]:
+    ) -> tuple[str, str, dict[str, Any] | None, list[dict[str, Any]]]:
         conversation_id = None
         if conversation:
             candidate = conversation.get("conversation_id") or conversation.get("id")
@@ -828,7 +887,6 @@ class ChatGPTClient:
         completion_notified = False
         final_seen = False
         streamed_messages = OrderedDict()
-        self._last_stream_messages = []
         timing = current_send_timing()
         sse_connect_started = time.perf_counter_ns() if timing is not None else None
         first_sse_event = False
@@ -854,7 +912,7 @@ class ChatGPTClient:
                 raise ChatGPTWebError(
                     f"ChatGPT returned unexpected content type {content_type or '<missing>'}"
                 )
-            for payload in _sse_data(response.iter_lines()):
+            for payload in _sse_data(response.iter_bytes(chunk_size=_SSE_READ_CHUNK_BYTES)):
                 event_at = time.perf_counter_ns() if timing is not None else None
                 if timing is not None and not first_sse_event:
                     first_sse_event = True
@@ -890,7 +948,6 @@ class ChatGPTClient:
                     continue
                 identity = str(message.get("id") or message.get("channel") or "assistant")
                 streamed_messages[identity] = message
-                self._last_stream_messages = list(streamed_messages.values())
                 content = message.get("content") or {}
                 channel = message.get("channel") or (
                     "analysis"
@@ -946,7 +1003,12 @@ class ChatGPTClient:
             )
         if not isinstance(resolved_id, str) or not resolved_id:
             raise ChatGPTWebError("ChatGPT did not return a conversation ID")
-        return resolved_id, submitted_message_id, submitted_message
+        return (
+            resolved_id,
+            submitted_message_id,
+            submitted_message,
+            list(streamed_messages.values()),
+        )
 
     def _get_or_create_sentinel_runtime(self, user_agent: str) -> SentinelRuntime:
         runtime = self._sentinel_runtime

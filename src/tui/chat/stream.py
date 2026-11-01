@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 import uuid
@@ -32,6 +33,10 @@ class _SendStream:
         self.timing = timing
         self.stream_id = uuid.uuid4().hex
         self.rendered = ""
+        self._final_pending: list[str] = []
+        self._final_replace_pending = False
+        self._reasoning_pending: dict[str, tuple[Message, list[str], bool]] = {}
+        self._last_refresh_ns = 0
         self.final_message_id = None
         self._first_final_text_at_ns = None
         self._after_render_registered = False
@@ -62,12 +67,24 @@ class _SendStream:
             self._refresh_pending = True
 
         def update_active_view() -> None:
+            now = time.perf_counter_ns()
+            delay_ns = 16_000_000 - (now - self._last_refresh_ns)
+            if self._last_refresh_ns and delay_ns > 0:
+                try:
+                    asyncio.get_running_loop().call_later(
+                        delay_ns / 1_000_000_000, update_active_view
+                    )
+                    return
+                except RuntimeError:
+                    pass
             with self._refresh_lock:
                 update_status = self._refresh_status
                 self._refresh_status = None
                 update_complete = self._refresh_complete
                 self._refresh_complete = False
                 self._refresh_pending = False
+            self.flush_pending_text()
+            self._last_refresh_ns = time.perf_counter_ns()
             if update_complete and self.target_tab.get("busy"):
                 self.target_tab["generation_complete"] = True
                 self.target_tab["completed_pending"] = True
@@ -89,6 +106,29 @@ class _SendStream:
                 self.view.scroll_bottom(force=False)
 
         self.view._dispatch_ui(update_active_view)
+
+    def flush_pending_text(self) -> None:
+        changed = False
+        with self.view.lock:
+            if self._final_pending:
+                addition = "".join(self._final_pending)
+                self.rendered = (
+                    addition if self._final_replace_pending else self.rendered + addition
+                )
+                self._final_pending.clear()
+                self._final_replace_pending = False
+                if self.messages and self.messages[-1].get("text") != self.rendered:
+                    self.messages[-1]["text"] = self.rendered
+                    changed = True
+            for item, chunks, replaces in self._reasoning_pending.values():
+                addition = "".join(chunks)
+                new_text = addition if replaces else item["text"] + addition
+                if item["text"] != new_text:
+                    item["text"] = new_text
+                    changed = True
+            self._reasoning_pending.clear()
+            if changed:
+                self.target_tab["render_revision"] = self.target_tab.get("render_revision", 0) + 1
 
     def register_connection(self, connection: Any) -> None:
         self.target_tab["connection"] = connection
@@ -118,12 +158,14 @@ class _SendStream:
                 self.view.app.invalidate()
             return
         if event_type == "response_complete":
+            self.flush_pending_text()
             started = self.target_tab.get("started")
             if started is not None:
                 self.target_tab["generation_elapsed"] = max(0.0, time.monotonic() - started)
             self._schedule_refresh(status_message="Response complete", mark_complete=True)
             return
         if event_type == "metadata":
+            self.flush_pending_text()
             with self.view.lock:
                 final = self.messages[-1]
                 if event.get("message_id"):
@@ -177,36 +219,42 @@ class _SendStream:
                         "local_pending": True,
                     }
                     self.messages.insert(max(0, len(self.messages) - 1), item)
+                pending = self._reasoning_pending.get(identity)
+                if pending is None or pending[0] is not item:
+                    pending = (item, [], False)
+                    self._reasoning_pending[identity] = pending
+                chunks = pending[1]
                 if event_type == "delta":
-                    item["text"] += text
+                    chunks.append(text)
                 else:
-                    item["text"] = text
-                self.target_tab["render_revision"] = self.target_tab.get("render_revision", 0) + 1
+                    chunks[:] = [text]
+                    self._reasoning_pending[identity] = (item, chunks, True)
             self._schedule_refresh()
             return
 
         identity = event.get("message_id")
-        if identity and self.final_message_id and identity != self.final_message_id:
-            self.rendered = ""
-        if identity:
-            self.final_message_id = identity
         text = event.get("text")
-        if event_type == "delta" and isinstance(text, str):
-            self.rendered += text
-        elif event_type == "replace" and isinstance(text, str):
-            self.rendered = text
-        else:
+        if event_type not in {"delta", "replace"} or not isinstance(text, str):
             return
         with self.view.lock:
-            self.messages[-1]["text"] = self.rendered
-            self.target_tab["render_revision"] = self.target_tab.get("render_revision", 0) + 1
-        if (
-            self.timing is not None
-            and self._first_final_text_at_ns is None
-            and event.get("channel") != "analysis"
-            and text.strip()
-        ):
-            self._first_final_text_at_ns = time.perf_counter_ns()
+            if identity and self.final_message_id and identity != self.final_message_id:
+                self.rendered = ""
+                self._final_pending.clear()
+                self._final_replace_pending = True
+            if identity:
+                self.final_message_id = identity
+            if event_type == "delta":
+                self._final_pending.append(text)
+            else:
+                self._final_pending[:] = [text]
+                self._final_replace_pending = True
+            if (
+                self.timing is not None
+                and self._first_final_text_at_ns is None
+                and event.get("channel") != "analysis"
+                and text.strip()
+            ):
+                self._first_final_text_at_ns = time.perf_counter_ns()
         self._schedule_refresh(show_status=True)
 
     def _after_first_text_render(self, app) -> None:

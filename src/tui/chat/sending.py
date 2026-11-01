@@ -175,6 +175,7 @@ class SendingComponent:
             else:
                 failure_message = self.tr("Request stopped: {0}").format(error)
                 final_status = self.tr("Response stopped")
+            stream.flush_pending_text()
             if not stream.rendered:
                 with self.lock:
                     if messages and messages[-1].get("role") == "assistant":
@@ -187,6 +188,7 @@ class SendingComponent:
 
             def finish_turn() -> None:
                 nonlocal messages
+                stream.flush_pending_text()
                 completed_elapsed = target_tab.get("generation_elapsed")
                 if message_action and not send_succeeded and rollback is not None:
                     messages = rollback[0]

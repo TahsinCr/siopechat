@@ -12,12 +12,45 @@ from providers.models import Choice, FeatureState, Model, ModelCatalog
 from settings import DEFAULTS, Settings, keybinding_conflicts
 from tests.tui_support import terminal
 from tui.chat import ChatView
+from tui.chat.stream import _SendStream
 from tui.library import sort_records
 from tui.markdown import MessageRenderer, detect_code_language, visible_chat_message
 from utils import clipboard
 
 
 class CliComponentTests(unittest.TestCase):
+    def test_stream_deltas_are_coalesced_until_the_ui_refresh(self):
+        with terminal() as (view, _):
+            messages = [
+                {"role": "user", "text": "Question"},
+                {"role": "assistant", "text": ""},
+            ]
+            tab = view.tabs[0]
+            tab["messages"] = messages
+            view.messages = messages
+            callbacks = []
+            view._dispatch_ui = callbacks.append
+            stream = _SendStream(view, tab, messages)
+
+            stream.on_event({"type": "delta", "text": "A", "message_id": "answer"})
+            stream.on_event({"type": "delta", "text": "B", "message_id": "answer"})
+
+            self.assertEqual(messages[-1]["text"], "")
+            self.assertEqual(len(callbacks), 1)
+            callbacks.pop(0)()
+            self.assertEqual(messages[-1]["text"], "AB")
+
+            stream.on_event(
+                {"type": "delta", "text": "thinking ", "channel": "analysis", "message_id": "r"}
+            )
+            stream.on_event(
+                {"type": "delta", "text": "clearly", "channel": "analysis", "message_id": "r"}
+            )
+            reasoning = next(item for item in messages if item.get("stream_id"))
+            self.assertEqual(reasoning["text"], "")
+            callbacks.pop(0)()
+            self.assertEqual(reasoning["text"], "thinking clearly")
+
     def test_chat_view_renders_markdown_and_transcript_messages(self):
         with create_pipe_input() as pipe:
 

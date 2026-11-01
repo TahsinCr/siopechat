@@ -1,3 +1,4 @@
+import threading
 import unittest
 from types import SimpleNamespace
 
@@ -11,6 +12,7 @@ class ResponseCompleteUiTests(unittest.TestCase):
         view = SimpleNamespace(
             tabs=[tab],
             active_tab=0,
+            lock=threading.RLock(),
             app=SimpleNamespace(invalidate=lambda: None),
             tr=lambda value: value,
             scroll_bottom=lambda **_kwargs: None,

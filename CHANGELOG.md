@@ -10,7 +10,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 
 ### Changed
 
-- Extend ChatGPT continuation cache lifetime to 180 seconds and capacity to 8 items, avoiding redundant pre-send conversation history downloads during pauses between turns.
+- Reuse verified ChatGPT continuation snapshots for up to 60 seconds, avoiding redundant history downloads on recent follow-up turns while limiting stale cross-device state.
 - Extend ChatGPT HTTP keep-alive expiry to 60 seconds to match standard browser connection persistence and avoid repeated TLS handshakes.
 - Fetch Claude's bootstrap and saved organization's model catalog concurrently during discovery when a valid organization ID is available.
 - Prime the TUI sidebar and model catalog synchronously from local SQLite archive and account cache on startup, rendering existing conversations and available models immediately without awaiting background network synchronization.
@@ -21,10 +21,10 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 
 ### Fixed
 
-- Prevent heap retention in ChatGPT provider by purging temporary conversation caches and raw stream message buffers on tab close, client disposal, and prompt completion.
-- Reclaim OS memory pages after closing tabs and discarding render caches using platform heap trimming (`malloc_trim`).
-- Enforce strict 2 MB payload bounds on individual ChatGPT SSE event chunks before buffering to avoid memory spikes from malformed payloads.
-- Optimize streaming reasoning token accumulation with in-place string concatenation to prevent memory allocation churn during live updates.
+- Release temporary ChatGPT conversation state when its tab closes and keep per-send stream messages local so failures do not retain partial responses on the client.
+- Release closed tabs' transcript and render snapshots for allocator reuse without synchronously trimming process memory on the TUI thread.
+- Bound ChatGPT SSE event assembly to 2,000,000 UTF-8 data bytes and a line-count ceiling while reading fixed-size chunks, rejecting oversized lines and events before growing their buffers.
+- Coalesce streamed reasoning and response deltas at UI refreshes instead of rebuilding their full text for every token.
 - Display queued user prompts immediately in the chat transcript instead of hiding them until the in-flight response completes, preserving visibility and restoring cleanly on cancellation or failure.
 - Omit redundant post-send ChatGPT conversation history fetch on stream completions where SSE chunk deltas omit parent message IDs.
 - Avoid automatically repeating ambiguous ChatGPT and Claude sends, verify Gemini sessions remotely before use, and keep ChatGPT stream buffering bounded.
