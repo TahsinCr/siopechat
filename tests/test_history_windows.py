@@ -7,6 +7,7 @@ import threading
 import time
 import unittest
 import weakref
+from concurrent.futures import Future
 from contextlib import closing
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -109,6 +110,64 @@ class HistoryWindowTests(unittest.TestCase):
         self.assertEqual(tail["history_window"], {"start": 1920, "end": 2000, "total": 2000})
         self.assertNotIn("metadata", tail)
         self.assertEqual(self.archive._size, 0)
+
+    def test_cold_read_returns_requested_tail_and_preserves_full_history(self):
+        messages = [message(i) for i in range(100)]
+        page = self.archive.read(
+            "chatgpt/a",
+            "conversation",
+            "cold",
+            lambda: {"messages": messages},
+            window=True,
+            window_limit=25,
+        )
+        self.assertEqual(
+            [item["id"] for item in page["messages"]], [str(i) for i in range(75, 100)]
+        )
+        self.assertEqual(page["history_window"], {"start": 75, "end": 100, "total": 100})
+        older = self.archive.conversation_window("chatgpt/a", "cold", before=75, limit=25)
+        self.assertEqual(
+            [item["id"] for item in older["messages"]], [str(i) for i in range(50, 75)]
+        )
+
+    def test_concurrent_cold_readers_receive_their_own_history_windows(self):
+        entered, release, waiting = threading.Event(), threading.Event(), threading.Event()
+        results = {}
+        original_result = Future.result
+
+        def fetch():
+            entered.set()
+            if not release.wait(10):
+                raise TimeoutError("provider barrier")
+            return {"messages": [message(i) for i in range(100)]}
+
+        def observe_result(future, *args, **kwargs):
+            if threading.current_thread().name == "wide-reader":
+                waiting.set()
+            return original_result(future, *args, **kwargs)
+
+        def read(name, **options):
+            results[name] = self.archive.read("chatgpt/a", "conversation", "cold", fetch, **options)
+
+        narrow = threading.Thread(
+            target=read, args=("narrow",), kwargs={"window": True, "window_limit": 25}
+        )
+        wide = threading.Thread(
+            target=read, name="wide-reader", args=("wide",), kwargs={"window": True}
+        )
+        with patch.object(Future, "result", observe_result):
+            narrow.start()
+            try:
+                self.assertTrue(entered.wait(3))
+                wide.start()
+                self.assertTrue(waiting.wait(3))
+            finally:
+                release.set()
+                narrow.join()
+                if wide.ident is not None:
+                    wide.join()
+        self.assertEqual(len(results["narrow"]["messages"]), 25)
+        self.assertEqual(len(results["wide"]["messages"]), 80)
 
     def test_character_budget_limits_windows_without_truncating_single_messages(self):
         self.archive.put(

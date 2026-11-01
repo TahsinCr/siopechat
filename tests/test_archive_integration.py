@@ -8,6 +8,7 @@ import time
 import unittest
 from contextlib import closing
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 from extensions.archive.repository import Files, SQLiteRepository, encode
@@ -27,6 +28,59 @@ class ArchiveIntegrationTests(unittest.TestCase):
         self.addCleanup(self.api.runtime.close)
         self.accounts = self.api.get("accounts")
         self.gemini = self.accounts.add("gemini", "Gemini")
+
+    def test_cold_provider_callback_returns_25_message_archive_window(self):
+        record = {
+            "id": "@chatgpt/default/cold",
+            "messages": [
+                {"id": str(i), "role": "assistant", "text": f"Answer {i}"} for i in range(100)
+            ],
+        }
+        provider = Mock()
+        with (
+            patch.object(self.accounts, "provider", return_value=provider),
+            patch.object(self.accounts, "call", return_value=SimpleNamespace(metadata={})),
+            patch.object(self.accounts, "chat_record", return_value=record),
+        ):
+            page = self.accounts.callbacks("chatgpt/default")["load_conversation"](
+                "@chatgpt/default/cold"
+            )
+        self.assertEqual([m["id"] for m in page["messages"]], [str(i) for i in range(75, 100)])
+        self.assertEqual(page["history_window"], {"start": 75, "end": 100, "total": 100})
+        self.assertEqual(
+            len(self.accounts.archive().get("chatgpt/default", "conversation", "cold")["messages"]),
+            100,
+        )
+
+    def test_cache_type_error_is_reported_without_retrying_the_read(self):
+        with terminal(account_service=self.accounts) as (view, _):
+            view._dispatch_ui = lambda callback: callback()
+            with (
+                patch.object(
+                    self.accounts, "cached_window", side_effect=TypeError("broken cache")
+                ) as read,
+                patch.object(view._reads, "submit", side_effect=lambda work: (work(), True)[1]),
+            ):
+                view.resume_conversation("@chatgpt/default/cold")
+            read.assert_called_once_with("chatgpt/default", "cold", limit=25)
+            self.assertEqual(view.tabs[view.active_tab]["load_error"], "broken cache")
+
+    def test_unarchived_provider_history_is_not_truncated_into_a_fake_window(self):
+        record = {
+            "messages": [
+                {"id": str(i), "role": "assistant", "text": f"Answer {i}"} for i in range(35)
+            ]
+        }
+        with terminal(account_service=self.accounts) as (view, _):
+            view._dispatch_ui = lambda callback: callback()
+            with (
+                patch.object(self.accounts, "cached_window", return_value=None),
+                patch.object(view, "load_conversation", return_value=record),
+                patch.object(view._reads, "submit", side_effect=lambda work: (work(), True)[1]),
+            ):
+                view.resume_conversation("@chatgpt/default/cold")
+            self.assertEqual(len(view.messages), 35)
+            self.assertIsNone(view.tabs[view.active_tab]["history_window"])
 
     def test_active_account_is_chosen_independently_per_provider(self):
         second = self.accounts.add("chatgpt", "Other GPT")

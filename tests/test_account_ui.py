@@ -115,7 +115,7 @@ class AccountUiTests(unittest.IsolatedAsyncioTestCase):
             FeatureState.AVAILABLE, (Model("gpt-test", "GPT test"),)
         )
         cached = {"title": "Cached history", "messages": [{"role": "user", "text": "Earlier"}]}
-        service.cached_window = lambda _key, _remote: cached
+        service.cached_window = lambda _key, _remote, *, limit: cached
         provider_load = Mock(side_effect=AssertionError("provider refresh must stay in background"))
         callbacks = service.callbacks("chatgpt/default")
         callbacks["load_conversation"] = provider_load

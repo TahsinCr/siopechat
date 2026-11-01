@@ -230,39 +230,17 @@ class HistoryComponent:
 
         def load_selected(use_cache=True) -> None:
             try:
-                try:
-                    cached = (
-                        self.account_service.cached_window(key, remote, limit=25)
-                        if self.account_service and use_cache
-                        else None
-                    )
-                except TypeError:
-                    cached = (
-                        self.account_service.cached_window(key, remote)
-                        if self.account_service and use_cache
-                        else None
-                    )
+                cached = (
+                    self.account_service.cached_window(key, remote, limit=25)
+                    if self.account_service and use_cache
+                    else None
+                )
                 conversation = cached if cached is not None else load_callback(conversation_id)
                 if target_tab.get("load_token") != token or not any(
                     tab is target_tab for tab in self.tabs
                 ):
                     return
                 messages = visible_chat_messages(conversation.get("messages", []))
-                if (
-                    cached is None
-                    and self.archive_service()
-                    and len(messages) > 25
-                    and not conversation.get("history_window")
-                ):
-                    extent = {
-                        "start": len(messages) - 25,
-                        "end": len(messages),
-                        "total": len(messages),
-                    }
-                    conversation = dict(
-                        conversation, messages=messages[-25:], history_window=extent
-                    )
-                    messages = conversation["messages"]
 
                 def apply_conversation() -> None:
                     if (

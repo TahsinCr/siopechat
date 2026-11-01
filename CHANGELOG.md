@@ -10,7 +10,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 
 ### Changed
 
-- Open conversations immediately with a 25-message tail window from archive or provider and hydrate older history chunks progressively in the background without UI stutters or viewport jumps.
+- Open archived conversations with a 25-message tail window, including after a cold provider fetch, and hydrate older history chunks progressively in the background.
 - Filter transcript message toolbars to visible viewport rows and memoize gutter markers across scroll frames, eliminating redundant redraw overhead and reducing CPU usage during transcript scrolling.
 - Reuse verified ChatGPT continuation snapshots for up to 60 seconds, avoiding redundant history downloads on recent follow-up turns while limiting stale cross-device state.
 - Extend ChatGPT HTTP keep-alive expiry to 60 seconds to match standard browser connection persistence and avoid repeated TLS handshakes.
@@ -23,6 +23,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 
 ### Fixed
 
+- Report cache read type errors instead of retrying with a different history window.
 - Pace progressive background transcript hydration to prevent event loop contention and maintain smooth UI rendering.
 - Gate progressive background hydration on initial transcript completion so early render passes are never interrupted or held on placeholder notices.
 - Ensure tab removal and closing all tabs release active message and transcript references before dispatching off-thread memory trimming with full garbage collection.

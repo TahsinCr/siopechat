@@ -165,13 +165,17 @@ class Accounts:
         except LookupError:
             return None
 
-    def read_record(self, key, kind, remote, fetch, force=False, *, window=False, fresh=False):
+    def read_record(
+        self, key, kind, remote, fetch, force=False, *, window=False, fresh=False, window_limit=None
+    ):
         archive = self.archive()
         if archive:
             try:
                 options = {"window": True} if window else {}
                 if fresh:
                     options["fresh"] = True
+                if window_limit is not None:
+                    options["window_limit"] = window_limit
                 return archive.read(key, kind, remote or "", fetch, force=force, **options)
             except OSError:
                 return fetch()
@@ -1488,7 +1492,7 @@ class Accounts:
             "metadata": project.metadata,
         }
 
-    def load(self, value, key, force=False, *, window=False):
+    def load(self, value, key, force=False, *, window=False, window_limit=None):
         key, remote = origin(value, key)
         archive = self.archive()
         if archive and archive.deleted(key, "conversation", remote):
@@ -1500,7 +1504,11 @@ class Accounts:
                     key, "conversation", remote, dict(legacy, id=identity(key, remote), context=key)
                 )
 
-        cached = self.cached_window(key, remote) if archive else self.cached(key, remote)
+        cached = (
+            self.cached_window(key, remote, limit=window_limit)
+            if archive
+            else self.cached(key, remote)
+        )
         pending_branch = bool(
             cached
             and isinstance(cached.get("pending_branch"), dict)
@@ -1531,7 +1539,9 @@ class Accounts:
                 self.cache_conversation(key, dict(record, id=remote), make_active=False)
             return record
 
-        return self.read_record(key, "conversation", remote, fetch, force, window=window)
+        return self.read_record(
+            key, "conversation", remote, fetch, force, window=window, window_limit=window_limit
+        )
 
     def _assert_send_account_available(self, key):
         if not self.enabled(key.split("/")[0]):
@@ -2530,7 +2540,7 @@ class Accounts:
 
         return {
             "upload_image": lambda *args: self.upload_image(key, *args),
-            "load_conversation": lambda value: self.load(value, key, window=True),
+            "load_conversation": lambda value: self.load(value, key, window=True, window_limit=25),
             "send_prompt": lambda *args, **kwargs: self.send(key, *args, **kwargs),
             "load_catalog": lambda: self.models(key),
             "list_projects_callback": lambda cursor=None: self.list_projects(key, cursor),

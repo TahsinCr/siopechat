@@ -421,11 +421,26 @@ class Archive:
                 self._checked.pop(next(iter(self._checked)))
         return True
 
-    def read(self, account, kind, remote, fetch, force=False, wait=True, window=False, fresh=False):
+    def read(
+        self,
+        account,
+        kind,
+        remote,
+        fetch,
+        force=False,
+        wait=True,
+        window=False,
+        fresh=False,
+        window_limit=None,
+    ):
         """Serve cached records quickly, or await a bounded refresh when fresh is requested."""
         key = (account, kind, remote)
         saved = (
-            (lambda: self.conversation_window(account, remote))
+            (
+                lambda: self.conversation_window(
+                    account, remote, **({"limit": window_limit} if window_limit is not None else {})
+                )
+            )
             if window
             else (lambda: self.get(*key))
         )
@@ -467,7 +482,7 @@ class Archive:
                         result = fetch()
                         with self._write_lock:
                             if self._rewritten.get(key, 0) > generation:
-                                return saved()
+                                return
                             with self._lock:
                                 accept = (
                                     not self.closed and self._versions.get(key, 0) == generation
@@ -552,9 +567,6 @@ class Archive:
                                     if len(self._checked) > 2048:
                                         self._checked.pop(next(iter(self._checked)))
                         self.repository.state(*key, "ready")
-                        # A local send may have won while this remote read was
-                        # in flight. Cold waiters must also see that newer value.
-                        return saved()
                     except Exception as error:
                         with self._write_lock:
                             with self._lock:
@@ -601,7 +613,8 @@ class Archive:
             if not wait:
                 return None
             try:
-                return future.result(timeout=50)
+                future.result(timeout=50)
+                return saved()
             except Exception:
                 if value is not None:
                     return value
