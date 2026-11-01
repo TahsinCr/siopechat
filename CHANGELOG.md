@@ -15,48 +15,30 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 
 ### Changed
 
-- Fast-track local archived conversation windows immediately on tab switch without worker thread pool delays, decoupling synchronous SQLite viewport reads from background synchronization.
-- Defer background history hydration when initial viewport render signature is active to prevent render lock contention.
-- Cancel transcript renders that have become obsolete while they wait for the shared render slot, freeing workers for the currently visible conversation.
-- Open archived conversations with a 25-message tail window, including after a cold provider fetch, and hydrate older history chunks progressively in the background.
-- Render message toolbars for requested transcript rows and reuse gutter markers across scroll frames.
-- Reuse verified ChatGPT continuation snapshots for up to 60 seconds, avoiding redundant history downloads on recent follow-up turns while limiting stale cross-device state.
-- Extend ChatGPT HTTP keep-alive expiry to 60 seconds to match standard browser connection persistence and avoid repeated TLS handshakes.
-- Fetch Claude's bootstrap and saved organization's model catalog concurrently during discovery when a valid organization ID is available.
-- Prime the TUI sidebar and model catalog synchronously from local SQLite archive and account cache on startup, rendering existing conversations and available models immediately without awaiting background network synchronization.
-- Refresh provider conversation lists concurrently and show each account's first page as soon as it arrives, while slower accounts continue loading.
-- Expand the background read thread pool from four to six workers so more independent startup reads can run concurrently.
-- Optimize Gemini Flash turn latency by omitting explicit model selector IDs and sequence numbers on default requests, preventing server-side model resolution stalls and reducing initial response latency.
-- Throttle Gemini web activity pings to a 300-second window and cache turn metadata across turns to reduce redundant transport overhead.
+- Open archived conversations immediately from their local 25-message tail on tab switch, including after a cold provider fetch. Read the SQLite viewport without waiting for the worker pool or background synchronization, then load older history chunks progressively.
+- Prime the sidebar and model catalog synchronously from local SQLite and account caches on startup, so saved conversations and available models appear without waiting for network synchronization. Refresh provider conversation pages concurrently, show each account's first page as it arrives, and increase the background read pool from four to six workers.
+- Defer background history hydration while the initial viewport render is pending to avoid render-lock contention; cancel obsolete queued renders, render toolbars only for requested transcript rows, and reuse gutter markers across scroll frames.
+- Reuse verified ChatGPT continuation snapshots for up to 60 seconds on recent follow-up turns, avoiding duplicate history downloads while limiting stale cross-device state. Keep HTTP connections alive for 60 seconds to avoid repeated TLS handshakes.
+- Fetch Claude's bootstrap data and saved organization's model catalog concurrently during discovery when a valid organization ID is available.
+- Route Gemini Flash defaults without explicit model selector IDs or sequence numbers to avoid server-side resolution stalls; retain explicit IDs and sequence numbers for Lite variants.
+- Limit Gemini web activity pings to a 300-second window and reuse turn metadata across turns to reduce transport overhead.
 
 ### Fixed
 
 - Restore provider refresh for cached conversations when the archive service is unavailable.
-- Keep workspace entries unique while provider pages arrive and when a refresh partially fails.
-- Return focus from sidebar search on Escape without arming response cancellation.
-- Keep message toolbars visible and attached to the correct messages while scrolling and loading older history, including in split panes.
-- Apply message capability and version checks to the retry shortcut, show account actions in the session panel, and preserve logout confirmation.
-- Ensure pressing `Escape` cleanly dismisses modal forms, dialogs (`SettingsDialog`, `SessionDialog`), overlays, and search fields without inadvertently exiting the application or modifying settings.
-- Use `Tab` to advance focus when no command completion is available, and `Shift+Tab` to leave the composer for the previous control. Pressing `Enter` in the transcript submits a draft or focuses the composer.
+- Keep cached workspace entries unique while provider pages arrive, even when refreshes partially fail; avoid repeating a provider page request after its callback fails.
+- Keep startup usable when local archive reads fail or contain malformed records.
+- Keep new chats at the top of the sidebar, preserve a provider-bound chat ID if a stream stops early, refresh its title against the originating conversation after tab switches, and defer restored-tab hydration until the TUI event loop starts.
+- Return focus from sidebar search on `Escape` without arming response cancellation. Dismiss forms, dialogs (`SettingsDialog`, `SessionDialog`), overlays, and search fields without exiting the application or changing settings. Use `Tab` and `Shift+Tab` to move focus when completion is unavailable; pressing `Enter` in the transcript submits a draft or focuses the composer.
+- Keep message toolbars attached to the correct messages while scrolling and loading older history, including in split panes. Check message capabilities and version before retrying; show account actions in the session panel and preserve logout confirmation.
 - Report cache read type errors instead of retrying with a different history window.
-- Avoid waiting for Markdown rendering when closing tabs and run one background memory cleanup per close operation.
-- Schedule progressive background transcript hydration at 50 ms intervals.
-- Start active-tab background hydration after the initial transcript is prepared.
-- Ensure tab removal and closing all tabs release active message and transcript references before dispatching off-thread memory trimming with full garbage collection.
-- Release per-conversation ChatGPT and Gemini continuation state and prepared transcript layouts when their tabs close; keep allocator trimming off the UI thread.
-- Release temporary ChatGPT conversation state when its tab closes and keep per-send stream messages local so failures do not retain partial responses on the client.
-- Request memory reclamation after closing tabs on Linux, Windows, and macOS using background garbage collection and platform allocator calls where available.
-- Deliver ChatGPT SSE events as transport chunks arrive while retaining the 2,000,000-byte event and line-count limits.
-- Coalesce streamed reasoning and response deltas at UI refreshes instead of rebuilding their full text for every token; keep deferred completion updates scoped to their originating send.
-- Display queued user prompts immediately in the chat transcript instead of hiding them until the in-flight response completes, preserving visibility and restoring cleanly on cancellation or failure.
-- Omit redundant post-send ChatGPT conversation history fetch on stream completions where SSE chunk deltas omit parent message IDs.
-- Avoid automatically repeating ambiguous ChatGPT and Claude sends, verify Gemini sessions remotely before use, and keep ChatGPT stream buffering bounded.
-- Keep newly sent chats at the top of the sidebar, preserve a provider-bound chat ID if its stream stops early, and refresh its title against the originating conversation after switching tabs; defer restored-tab hydration until the TUI event loop starts.
-- Preserve queued follow-up prompts as session drafts without copying them into the active composer, so they survive a restart without appearing again during the current session.
-- Allow queuing a follow-up prompt on the currently busy tab even when four background requests are active, without blocking the user.
+- Avoid waiting for Markdown rendering when closing tabs and run one background memory cleanup per close. Release message and transcript references, ChatGPT and Gemini continuation state, prepared layouts, and temporary ChatGPT conversation state; keep per-send stream messages local so failed sends do not retain partial responses.
+- Schedule progressive transcript hydration at 50 ms intervals and start active-tab hydration after the initial transcript is prepared. Dispatch full garbage collection and platform allocator trimming off the UI thread after tab cleanup, where supported on Linux, Windows, and macOS.
+- Deliver ChatGPT SSE events as transport chunks arrive while retaining the 2,000,000-byte event and line-count limits. Coalesce streamed reasoning and response deltas at UI refreshes, and scope deferred completion updates to their originating send.
+- Show queued user prompts in the transcript immediately and restore them cleanly after cancellation or failure. Preserve follow-ups as session drafts across restarts without duplicating them in the active composer during the current session, and allow queuing on a busy tab even when four background requests are active.
+- Omit the redundant post-send ChatGPT history fetch when SSE deltas omit parent message IDs. Do not automatically repeat ambiguous ChatGPT or Claude sends; verify Gemini sessions remotely and keep ChatGPT stream buffering bounded.
 - Keep server-declared Gemini FAST models, including versioned Flash models, on the selector-free route while preserving explicit IDs and sequence numbers for Lite variants.
-- Remove downloads only by path entries inside the configured directory; unlink symbolic links without deleting their targets.
-- Keep startup usable when local archive reads fail or contain malformed records, and avoid repeating a provider page request when its callback fails.
+- Remove downloads only through paths inside the configured directory; unlink symbolic links without deleting their targets.
 
 ## [1.5.2-beta] - 2026-10-31
 
