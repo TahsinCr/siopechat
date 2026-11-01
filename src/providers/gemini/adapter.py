@@ -33,6 +33,8 @@ from ..projects import ProjectEditing
 from ..session import delete_session, session_exists
 from .errors import GeminiCompatibilityError, GeminiError, GeminiStreamError
 
+_CHAT_METADATA_TTL_SECONDS = 60.0
+
 
 class GeminiProvider(ProjectEditing, OptionalFeatures):
     id = "gemini"
@@ -72,6 +74,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
         self._connect_gate = asyncio.Lock()
         self._temporary = {}
         self._chat_metadata = OrderedDict()
+        self._chat_metadata_verified_at = {}
         self.notebooks = notebooks
         from .notebooks import Notebooks
         from .rpc import NotebookEditor, NotebookRPC
@@ -158,6 +161,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
             if self._client is None:
                 self._catalog_at = None
                 self._chat_metadata.clear()
+                self._chat_metadata_verified_at.clear()
         if editor_error is not None:
             raise editor_error
 
@@ -225,6 +229,22 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
             and metadata[0] == conversation_id
             and all(isinstance(metadata[index], str) and metadata[index] for index in (1, 2))
         )
+
+    def _take_chat_metadata(self, conversation_id):
+        metadata = self._chat_metadata.pop(conversation_id, None)
+        verified_at = self._chat_metadata_verified_at.pop(conversation_id, None)
+        if metadata is None or verified_at is None:
+            return None
+        if time.monotonic() - verified_at > _CHAT_METADATA_TTL_SECONDS:
+            return None
+        return metadata
+
+    def _remember_chat_metadata(self, conversation_id, metadata):
+        self._chat_metadata[conversation_id] = list(metadata)
+        self._chat_metadata_verified_at[conversation_id] = time.monotonic()
+        while len(self._chat_metadata) > 128:
+            oldest, _ = self._chat_metadata.popitem(last=False)
+            self._chat_metadata_verified_at.pop(oldest, None)
 
     async def list_chats(self, cursor=None, limit=50):
         try:
@@ -297,6 +317,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                 lambda parts: not parts,
             )
             self._chat_metadata.pop(conversation_id, None)
+            self._chat_metadata_verified_at.pop(conversation_id, None)
 
     async def rename_chat(self, conversation_id, title):
         if not isinstance(title, str) or not 1 <= len(title.strip()) <= 100:
@@ -399,7 +420,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                 raise ProviderError("Geçici Gemini bağlamı artık bellekte değil")
             if metadata is None:
                 cached = (
-                    self._chat_metadata.pop(request.conversation_id, None)
+                    self._take_chat_metadata(request.conversation_id)
                     if request.conversation_id and not request.action
                     else None
                 )
@@ -535,9 +556,7 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
             if final_metadata:
                 yield final_metadata
             if cid and not request.temporary and self._usable_chat_metadata(metadata, cid):
-                self._chat_metadata[cid] = list(metadata)
-                while len(self._chat_metadata) > 128:
-                    self._chat_metadata.popitem(last=False)
+                self._remember_chat_metadata(cid, metadata)
             if request.temporary:
                 self._temporary[cid] = metadata
                 while len(self._temporary) > 32:
@@ -588,3 +607,4 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
     async def forget_conversation(self, conversation_id):
         async with self._gate:
             self._chat_metadata.pop(conversation_id, None)
+            self._chat_metadata_verified_at.pop(conversation_id, None)

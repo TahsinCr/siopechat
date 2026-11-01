@@ -769,6 +769,29 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
             ]
             self.assertEqual(provider.rpc.call.await_count, 0)
 
+    async def test_chat_metadata_cache_expires_after_verification_ttl(self):
+        from providers.gemini.adapter import _CHAT_METADATA_TTL_SECONDS
+
+        provider = GeminiProvider(Path("unused"), "test")
+        metadata = ["conversation", "request", "response"]
+        with patch("providers.gemini.adapter.time.monotonic", return_value=100.0):
+            provider._remember_chat_metadata("conversation", metadata)
+
+        with patch(
+            "providers.gemini.adapter.time.monotonic",
+            return_value=100.0 + _CHAT_METADATA_TTL_SECONDS - 1,
+        ):
+            self.assertEqual(provider._take_chat_metadata("conversation"), metadata)
+
+        with patch("providers.gemini.adapter.time.monotonic", return_value=100.0):
+            provider._remember_chat_metadata("conversation", metadata)
+        with patch(
+            "providers.gemini.adapter.time.monotonic",
+            return_value=100.0 + _CHAT_METADATA_TTL_SECONDS + 1,
+        ):
+            self.assertIsNone(provider._take_chat_metadata("conversation"))
+        self.assertNotIn("conversation", provider._chat_metadata)
+
     async def test_flash_variants_distinguish_default_fast_and_specialized_models(self):
         fast_row = [None] * 18
         fast_row[0], fast_row[1], fast_row[11], fast_row[17] = (
