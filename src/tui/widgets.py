@@ -648,9 +648,7 @@ class TranscriptGutter:
         if roles is None:
             roles = tuple(message.get("role") for message in self.view.messages)
         self._starts = {
-            start: roles[index]
-            for start, _, index in ranges
-            if 0 <= index < len(roles)
+            start: roles[index] for start, _, index in ranges if 0 <= index < len(roles)
         }
 
     def __call__(self, line_number, wrap_count):

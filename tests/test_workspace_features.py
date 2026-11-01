@@ -551,19 +551,37 @@ class WorkspaceTests(unittest.TestCase):
             v.submit_prompt()
             self.assertIn("Aynı anda en fazla 4 bekleyen istek", v.status)
 
-    def test_discard_tab_render_cache_invokes_trim_memory_in_background(self):
+    def test_close_tab_does_not_wait_for_renderer_and_schedules_one_cleanup(self):
         with terminal() as (v, _):
             jobs = []
             v._read_in_background = lambda fn, ok, err, session_bound=True: jobs.append(
                 (fn, session_bound)
             )
-            v._discard_tab_render_cache(v.tabs[0])
+            entered, release = threading.Event(), threading.Event()
+
+            def hold_renderer():
+                with v.renderer._lock:
+                    entered.set()
+                    release.wait(5)
+
+            holder = threading.Thread(target=hold_renderer)
+            holder.start()
+            self.assertTrue(entered.wait(3))
+            closed = threading.Event()
+            closer = threading.Thread(target=lambda: (v.close_tab(), closed.set()))
+            try:
+                closer.start()
+                self.assertTrue(closed.wait(3), "tab close waited for the renderer lock")
+            finally:
+                release.set()
+                holder.join()
+                closer.join()
             self.assertEqual(len(jobs), 1)
             fn, bound = jobs[0]
             self.assertFalse(bound)
-            from utils.process import trim_memory
-
-            self.assertIs(fn, trim_memory)
+            with patch("tui.chat.tabs.trim_memory") as trim:
+                fn()
+            trim.assert_called_once_with()
 
     def test_trim_memory_cross_platform_execution(self):
         from utils.process import trim_memory
@@ -583,7 +601,25 @@ class WorkspaceTests(unittest.TestCase):
             self.assertEqual(len(v.tabs), 1)
             self.assertEqual(v.messages, [])
             self.assertIsNone(v.conversation_id)
-            from utils.process import trim_memory
+            self.assertEqual(len(jobs), 1)
+            fn, bound = jobs[0]
+            self.assertFalse(bound)
+            with patch("tui.chat.tabs.trim_memory") as trim:
+                fn()
+            trim.assert_called_once_with()
 
-            trim_jobs = [fn for fn, bound in jobs if fn is trim_memory and not bound]
-            self.assertTrue(len(trim_jobs) >= 1)
+    def test_removing_multiple_deleted_tabs_schedules_one_cleanup(self):
+        with terminal() as (view, _):
+            view.new_tab()
+            view.new_tab()
+            ids = [f"@chatgpt/default/{i}" for i in range(3)]
+            for tab, conversation_id in zip(view.tabs, ids):
+                tab["conversation_id"] = conversation_id
+            jobs = []
+            view._read_in_background = lambda fn, ok, err, session_bound=True: jobs.append(
+                (fn, session_bound)
+            )
+            view.remove_deleted_conversation_tabs(ids)
+            self.assertEqual(len(jobs), 1)
+            self.assertFalse(jobs[0][1])
+            self.assertTrue(all(tab.get("conversation_id") not in ids for tab in view.tabs))

@@ -331,7 +331,8 @@ class TabComponent:
             self.status = self.tr("Ekler gönderilirken kaynak sekme kapatılamaz")
             self.app.invalidate()
             return
-        self._remove_tab_at(self.active_tab)
+        if self._remove_tab_at(self.active_tab):
+            self._trim_closed_tabs()
 
     def _remove_tab_at(
         self, index, *, empty_workspace=False, save_active=True, restore=True, persist=True
@@ -399,9 +400,6 @@ class TabComponent:
             self._restore_active_tab(focus=False)
         if persist:
             self._persist_session()
-        read_bg = getattr(self, "_read_in_background", None)
-        if read_bg:
-            read_bg(trim_memory, lambda _: None, lambda _: None, session_bound=False)
         return True
 
     def remove_deleted_conversation_tabs(self, conversation_ids):
@@ -441,9 +439,7 @@ class TabComponent:
         self.active_tab = target_index
         self._restore_active_tab(focus=False)
         self._persist_session()
-        read_bg = getattr(self, "_read_in_background", None)
-        if read_bg:
-            read_bg(trim_memory, lambda _: None, lambda _: None, session_bound=False)
+        self._trim_closed_tabs()
 
     def close_all_tabs(self) -> None:
         """Close idle tabs atomically; retain a clean draft as the last tab."""
@@ -508,10 +504,19 @@ class TabComponent:
             self.layout_controller.reconcile_groups()
         self.status = self.tr("Sekmeler kapatıldı")
         self._persist_session()
-        read_bg = getattr(self, "_read_in_background", None)
-        if read_bg:
-            read_bg(trim_memory, lambda _: None, lambda _: None, session_bound=False)
+        self._trim_closed_tabs()
         self.app.invalidate()
+
+    def _trim_closed_tabs(self):
+        renderer = self.renderer
+
+        def release_memory():
+            renderer.clear_cache(wait=True)
+            trim_memory()
+
+        self._read_in_background(
+            release_memory, lambda _: None, lambda _: None, session_bound=False
+        )
 
     def _discard_tab_render_cache(self, tab):
         """Release closed-tab data; in-flight jobs retain only their own working state."""
@@ -555,7 +560,7 @@ class TabComponent:
             else:
                 tab["messages"] = []
         getattr(self, "_prepared_transcripts", {}).pop(tab_id, None)
-        self.renderer.clear_cache(wait=True)
+        self.renderer.clear_cache(wait=False)
         if getattr(self, "_virtual_tab_id", None) == tab_id or (
             self.tabs and self.tabs[self.active_tab] is tab
         ):
@@ -579,9 +584,6 @@ class TabComponent:
         self._line_render_key = None
         self._ansi_fragments = ()
         self._ansi_render_key = None
-        read_bg = getattr(self, "_read_in_background", None)
-        if read_bg:
-            read_bg(trim_memory, lambda _: None, lambda _: None, session_bound=False)
 
     def viewport_height(self) -> D:
         try:
