@@ -399,6 +399,9 @@ class TabComponent:
             self._restore_active_tab(focus=False)
         if persist:
             self._persist_session()
+        read_bg = getattr(self, "_read_in_background", None)
+        if read_bg:
+            read_bg(trim_memory, lambda _: None, lambda _: None, session_bound=False)
         return True
 
     def remove_deleted_conversation_tabs(self, conversation_ids):
@@ -438,6 +441,9 @@ class TabComponent:
         self.active_tab = target_index
         self._restore_active_tab(focus=False)
         self._persist_session()
+        read_bg = getattr(self, "_read_in_background", None)
+        if read_bg:
+            read_bg(trim_memory, lambda _: None, lambda _: None, session_bound=False)
 
     def close_all_tabs(self) -> None:
         """Close idle tabs atomically; retain a clean draft as the last tab."""
@@ -472,9 +478,12 @@ class TabComponent:
         self.close_overlays()
         self.tabs = [
             {
+                "tab_id": uuid.uuid4().hex,
                 "account_key": self.account_key,
+                "catalog": self.catalog,
+                "effort_preference": self.effort_preference,
                 "conversation_id": None,
-                "title": self.tr("Yeni sohbet"),
+                "title": self.tr("New conversation"),
                 "messages": [],
                 "model": self.model,
                 "effort": self.effort,
@@ -499,6 +508,9 @@ class TabComponent:
             self.layout_controller.reconcile_groups()
         self.status = self.tr("Sekmeler kapatıldı")
         self._persist_session()
+        read_bg = getattr(self, "_read_in_background", None)
+        if read_bg:
+            read_bg(trim_memory, lambda _: None, lambda _: None, session_bound=False)
         self.app.invalidate()
 
     def _discard_tab_render_cache(self, tab):
@@ -543,8 +555,10 @@ class TabComponent:
             else:
                 tab["messages"] = []
         getattr(self, "_prepared_transcripts", {}).pop(tab_id, None)
-        self.renderer.clear_cache(wait=False)
-        if getattr(self, "_virtual_tab_id", None) == tab_id:
+        self.renderer.clear_cache(wait=True)
+        if getattr(self, "_virtual_tab_id", None) == tab_id or (
+            self.tabs and self.tabs[self.active_tab] is tab
+        ):
             layout = getattr(self, "_virtual_transcript", None)
             if layout is not None:
                 layout.dispose()
@@ -555,6 +569,10 @@ class TabComponent:
             self._virtual_pending_signature = None
             self._transcript_prefetch.clear()
             self.transcript_control.rows = ()
+            self.messages = []
+            self.message_ranges = []
+            self._transcript_roles = ()
+            self.transcript_line_count = 0
         self._transcript_cache = ""
         self._transcript_signature = None
         self._transcript_lines = ()

@@ -331,7 +331,8 @@ class HistoryComponent:
                         self.app.invalidate()
                     if (target_tab.get("history_window") or {}).get("start", 0) > 0:
                         target_tab["history_hydrate"] = True
-                        self.history_pager.schedule_hydration(target_tab)
+                        if target_tab is not self.tabs[self.active_tab]:
+                            self.history_pager.schedule_hydration(target_tab)
 
                 self._dispatch_ui(apply_conversation)
                 if cached is not None and self.archive_service():

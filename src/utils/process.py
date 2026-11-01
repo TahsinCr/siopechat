@@ -41,7 +41,7 @@ def trim_memory() -> None:
     import sys
 
     try:
-        gc.collect(1)
+        gc.collect()
     except Exception:
         pass
     if sys.platform.startswith("linux"):

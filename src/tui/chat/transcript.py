@@ -693,6 +693,13 @@ class TranscriptComponent:
                 self._virtual_conversation_id = conversation_id
                 self._transcript_prefetch.clear()
                 self.app.invalidate()
+                if (
+                    tab.get("history_hydrate")
+                    and (tab.get("history_window") or {}).get("start", 0) > 0
+                    and not tab.get("busy")
+                    and getattr(self, "history_pager", None) is not None
+                ):
+                    self.history_pager.schedule_hydration(tab)
             else:
                 current = getattr(self, "_virtual_transcript", None)
                 value.dispose(

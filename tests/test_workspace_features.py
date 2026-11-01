@@ -569,3 +569,21 @@ class WorkspaceTests(unittest.TestCase):
         from utils.process import trim_memory
 
         trim_memory()
+
+    def test_close_all_tabs_invokes_trim_memory_in_background(self):
+        with terminal() as (v, _):
+            v.new_tab()
+            v.messages = [{"role": "user", "text": "Hello"}]
+            v.tabs[v.active_tab]["messages"] = v.messages
+            jobs = []
+            v._read_in_background = lambda fn, ok, err, session_bound=True: jobs.append(
+                (fn, session_bound)
+            )
+            v.close_all_tabs()
+            self.assertEqual(len(v.tabs), 1)
+            self.assertEqual(v.messages, [])
+            self.assertIsNone(v.conversation_id)
+            from utils.process import trim_memory
+
+            trim_jobs = [fn for fn, bound in jobs if fn is trim_memory and not bound]
+            self.assertTrue(len(trim_jobs) >= 1)

@@ -23,6 +23,8 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 
 ### Fixed
 
+- Gate progressive background hydration on initial transcript completion so early render passes are never interrupted or held on placeholder notices.
+- Ensure tab removal and closing all tabs release active message and transcript references before dispatching off-thread memory trimming with full garbage collection.
 - Release temporary ChatGPT conversation state when its tab closes and keep per-send stream messages local so failures do not retain partial responses on the client.
 - Reclaim heap and working set memory on closed tabs and discarded render caches across Linux (malloc_trim), Windows (SetProcessWorkingSetSize), and macOS (malloc_zone_pressure_relief), executing trimming off-thread to prevent TUI pauses.
 - Bound ChatGPT SSE event assembly to 2,000,000 UTF-8 data bytes and a line-count ceiling while reading fixed-size chunks, rejecting oversized lines and events before growing their buffers.
