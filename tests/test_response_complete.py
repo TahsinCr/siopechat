@@ -1,5 +1,4 @@
 import threading
-import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -28,9 +27,12 @@ class ResponseCompleteUiTests(unittest.TestCase):
             _dispatch_ui=callbacks.append,
         )
         stream = _SendStream(view, tab, [{"role": "assistant", "text": ""}])
-        stream._last_refresh_ns = time.perf_counter_ns()
+        stream._last_refresh_ns = 1_000_000_000
 
-        with patch("tui.chat.stream.asyncio.get_running_loop", return_value=Loop()):
+        with (
+            patch("tui.chat.stream.asyncio.get_running_loop", return_value=Loop()),
+            patch("tui.chat.stream.time.perf_counter_ns", return_value=1_001_000_000),
+        ):
             stream.on_event({"type": "delta", "text": "first answer"})
             callbacks.pop()()
             stream.on_event({"type": "response_complete"})
