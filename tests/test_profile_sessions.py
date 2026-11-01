@@ -27,8 +27,11 @@ class ProfileAccountTests(unittest.TestCase):
             authenticate=AsyncMock(side_effect=RuntimeError("rejected")), close=AsyncMock()
         )
         with (
-            patch("accounts.import_cookies", return_value=("chromium", {"__Secure-1PSID": "new"})),
-            patch("accounts.GeminiProvider", return_value=candidate),
+            patch(
+                "accounts.sessions.import_cookies",
+                return_value=("chromium", {"__Secure-1PSID": "new"}),
+            ),
+            patch("accounts.sessions.GeminiProvider", return_value=candidate),
         ):
             with self.assertRaisesRegex(RuntimeError, "rejected"):
                 self.accounts.session_action(self.gemini, "verify_profile")
@@ -47,8 +50,11 @@ class ProfileAccountTests(unittest.TestCase):
             close=AsyncMock(),
         )
         with (
-            patch("accounts.import_cookies", return_value=("chromium", {"__Secure-1PSID": "new"})),
-            patch("accounts.GeminiProvider", return_value=candidate),
+            patch(
+                "accounts.sessions.import_cookies",
+                return_value=("chromium", {"__Secure-1PSID": "new"}),
+            ),
+            patch("accounts.sessions.GeminiProvider", return_value=candidate),
             patch(
                 "providers.chatgpt.session.BrowserSession.launch",
                 side_effect=AssertionError("browser"),
@@ -81,7 +87,7 @@ class ProfileAccountTests(unittest.TestCase):
             {"name": "broken", "value": None, "domain": ".claude.ai"},
         ]
 
-        with patch("accounts.read_provider_cookies", return_value=browser_cookies):
+        with patch("accounts.sessions.read_provider_cookies", return_value=browser_cookies):
             self.accounts.session_action(claude, "verify")
 
         self.assertEqual(
@@ -99,7 +105,7 @@ class ProfileAccountTests(unittest.TestCase):
         ]
 
         with (
-            patch("accounts.read_provider_cookies", return_value=browser_cookies),
+            patch("accounts.sessions.read_provider_cookies", return_value=browser_cookies),
             patch.object(self.accounts, "provider") as provider,
         ):
             with self.assertRaisesRegex(RuntimeError, "giriş tamamlanmamış"):
@@ -110,7 +116,7 @@ class ProfileAccountTests(unittest.TestCase):
 
     def test_import_is_blocked_during_send_before_reading_profile(self):
         self.accounts._sending[self.gemini] = 1
-        with patch("accounts.import_cookies") as read:
+        with patch("accounts.sessions.import_cookies") as read:
             with self.assertRaises(RuntimeError):
                 self.accounts.session_action(self.gemini, "verify_profile")
         read.assert_not_called()

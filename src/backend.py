@@ -44,7 +44,7 @@ class BackendService:
         ) / "session.json"
 
     def create_session(self, cdp_url: str = DEFAULT_CDP_URL) -> BrowserSession:
-        from account_repository import AccountRepository
+        from accounts.repository import AccountRepository
         from providers.session import read_session
 
         store = AccountRepository(self.root / "data" / "accounts.sqlite3").credentials(

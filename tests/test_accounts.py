@@ -356,7 +356,7 @@ class AccountTests(unittest.TestCase):
         item = {"key": self.gemini, "enabled": True}
         with (
             patch.object(self.accounts, "items", return_value=[item]),
-            patch("accounts.session_exists", return_value=False),
+            patch("accounts.core.session_exists", return_value=False),
             patch.object(self.accounts, "provider", side_effect=AssertionError("no session")),
         ):
             self.assertEqual(self.accounts.prepare_enabled(), {})
@@ -368,7 +368,7 @@ class AccountTests(unittest.TestCase):
         provider.close = AsyncMock()
         with (
             patch.object(self.accounts, "items", return_value=[item]),
-            patch("accounts.session_exists", return_value=True),
+            patch("accounts.core.session_exists", return_value=True),
             patch.object(self.accounts, "provider", return_value=provider),
         ):
             failures = self.accounts.prepare_enabled()
@@ -392,7 +392,7 @@ class AccountTests(unittest.TestCase):
         provider.models = AsyncMock(side_effect=never_finishes)
         provider.close = AsyncMock()
         self.accounts._providers[self.gemini] = provider
-        with patch("accounts.MODEL_TIMEOUT", 0.02):
+        with patch("accounts.core.MODEL_TIMEOUT", 0.02):
             with self.assertRaises(TimeoutError):
                 self.accounts.models(self.gemini)
         self.assertNotIn(self.gemini, self.accounts._catalog_tasks)
@@ -418,7 +418,7 @@ class AccountTests(unittest.TestCase):
                 )
             )
             self.accounts._providers[key] = provider
-        with patch("accounts.HISTORY_TIMEOUT", 0.2):
+        with patch("accounts.history.HISTORY_TIMEOUT", 0.2):
             page = self.accounts.list_chats()
         self.assertEqual(len(page["items"]), 1)
         self.assertEqual(page["errors"], ["Personal Gemini"])
@@ -454,7 +454,7 @@ class AccountTests(unittest.TestCase):
         self.assertNotEqual(self.accounts.session(self.gemini).cdp_url, self.accounts.cdp_url)
 
     def test_default_browser_launch_suppresses_child_output_from_terminal(self):
-        with patch("accounts.subprocess.run", return_value=Mock(returncode=0)) as launch:
+        with patch("accounts.sessions.subprocess.run", return_value=Mock(returncode=0)) as launch:
             self.assertEqual(
                 self.accounts.session_action(self.gemini, "default_browser"), {"opened": True}
             )
@@ -471,7 +471,7 @@ class AccountTests(unittest.TestCase):
             self.assertTrue(kwargs["start_new_session"])
 
     def test_default_browser_launch_failure_is_reported(self):
-        with patch("accounts.subprocess.run", return_value=Mock(returncode=1)):
+        with patch("accounts.sessions.subprocess.run", return_value=Mock(returncode=1)):
             with self.assertRaisesRegex(RuntimeError, "Tarayıcı açılamadı"):
                 self.accounts.session_action(self.gemini, "default_browser")
 

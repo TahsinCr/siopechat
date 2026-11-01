@@ -76,7 +76,7 @@ class ClaudeAccountsTests(unittest.TestCase):
                 session.launch.return_value = {"browser": "already_running"}
                 with (
                     patch.object(accounts, "session", return_value=session),
-                    patch("accounts.open_provider_page") as open_page,
+                    patch("accounts.sessions.open_provider_page") as open_page,
                 ):
                     self.assertTrue(accounts.session_action(key, "connect_browser")["opened"])
                     open_page.assert_called_once_with(session.cdp_url, "https://claude.ai/")

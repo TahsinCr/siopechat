@@ -43,7 +43,7 @@ def create_application(root: Path | None = None):
     settings = Settings(root / "config.json")
     api = ExtensionAPI(settings)
     api.provide("application", "paths", root)
-    from account_repository import AccountRepository
+    from accounts.repository import AccountRepository
 
     repository = AccountRepository(root / "data" / "accounts.sqlite3")
     backend = BackendService(root)

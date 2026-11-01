@@ -48,14 +48,6 @@ select = ["E4", "E7", "E9", "F", "I"]
 [tool.setuptools]
 package-dir = {"" = "src", "extensions" = "extensions"}
 py-modules = [
-    "account_core",
-    "account_history",
-    "account_projects",
-    "account_repository",
-    "account_sessions",
-    "account_shared",
-    "account_transfers",
-    "accounts",
     "downloads",
     "bootstrap",
     "cli",
@@ -70,6 +62,7 @@ py-modules = [
 # Resource-only namespace packages are listed explicitly so setuptools includes
 # their bundled helpers and translations without package-discovery ambiguity.
 packages = [
+    "accounts",
     "tui",
     "providers",
     "providers.chatgpt",

@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from pathlib import Path
 
-from account_repository import AccountRepository
+from accounts.repository import AccountRepository
 from providers.errors import AccountPaused
 from providers.session import delete_session, read_session, save_session, session_exists
 
