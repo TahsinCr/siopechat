@@ -64,7 +64,7 @@ class SessionDialog:
                 else None
             )
         )
-        keys.add("escape")(lambda _: self.close())
+        keys.add("escape", filter=Condition(lambda: self.visible))(lambda _: self.close())
         keys.add("tab")(lambda event: event.app.layout.focus_next())
         keys.add("s-tab")(lambda event: event.app.layout.focus_previous())
         self.container = Frame(

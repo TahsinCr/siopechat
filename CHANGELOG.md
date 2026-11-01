@@ -8,6 +8,11 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 
 ## [Unreleased]
 
+### Added
+
+- Add canonical shortcut actions: `command.settings.keybindings` (open settings on keybindings tab), `command.settings.accounts` (open settings on accounts tab), `accounts.verify_profile` (verify active profile/subscription), `accounts.logout` (logout active account), `chat.retry` (retry latest assistant response), and `navigation.focus_transcript` (focus chat transcript for keyboard scrolling/navigation).
+- Support non-editable system keybinding protection (`app.quit` and `app.quit_eof`), displaying them as fixed/disabled in the keybinding settings UI and blocking modification attempts.
+
 ### Changed
 
 - Open archived conversations with a 25-message tail window, including after a cold provider fetch, and hydrate older history chunks progressively in the background.
@@ -23,6 +28,8 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 
 ### Fixed
 
+- Ensure pressing `Escape` cleanly dismisses modal forms, dialogs (`SettingsDialog`, `SessionDialog`), overlays, and search fields without inadvertently exiting the application or modifying settings.
+- Advance and retreat focus seamlessly across controls using `Tab` and `Shift+Tab` outside active completions, and allow pressing `Enter` in the transcript to submit an existing draft or return focus to the composer.
 - Report cache read type errors instead of retrying with a different history window.
 - Avoid waiting for Markdown rendering when closing tabs and run one background memory cleanup per close operation.
 - Schedule progressive background transcript hydration at 50 ms intervals.

@@ -80,7 +80,15 @@ DEFAULT_KEYBINDINGS = {
     "navigation.transcript_down": "pagedown",
     "navigation.transcript_start": "home",
     "navigation.transcript_end": "end",
+    "navigation.focus_transcript": "",
+    "command.settings.keybindings": "",
+    "command.settings.accounts": "",
+    "accounts.verify_profile": "",
+    "accounts.logout": "",
+    "chat.retry": "",
 }
+
+IMMUTABLE_KEYBINDINGS = frozenset({"app.quit", "app.quit_eof"})
 
 
 def keybinding_conflicts(keybindings: dict[str, str]) -> frozenset[str]:
@@ -460,6 +468,8 @@ class SettingsCatalog:
                 ),
                 "value": value,
                 "conflict": key in conflicts,
+                "immutable": key in IMMUTABLE_KEYBINDINGS,
+                "disabled": key in IMMUTABLE_KEYBINDINGS,
             }
             for key, value in sorted(keybindings.items(), key=lambda item: self.order(item[0]))
         )
@@ -503,6 +513,8 @@ class SettingsCatalog:
         return rows
 
     async def change(self, section: str, key: str, value) -> None:
+        if section == "keybindings" and key in IMMUTABLE_KEYBINDINGS:
+            raise ValueError("system keybindings cannot be modified")
         row = next(
             (row for row in self.rows() if row["section"] == section and row["key"] == key), None
         )

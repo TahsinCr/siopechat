@@ -70,7 +70,7 @@ class SettingsDialog:
         self.cancel_button = Button(self.view.tr("Kapat"), handler=self.close)
         self.view.session_dialog.close_button = self.cancel_button
         self.keys = KeyBindings()
-        self.keys.add("escape")(lambda _: self.close())
+        self.keys.add("escape", filter=Condition(lambda: self.visible))(lambda _: self.close())
         self.keys.add("c-s")(lambda _: self.save())
         self.keys.add("tab")(lambda event: event.app.layout.focus_next())
         self.keys.add("s-tab")(lambda event: event.app.layout.focus_previous())
@@ -300,6 +300,9 @@ class SettingsDialog:
 
     def focus_editor(self):
         if self.current:
+            if self.current.get("immutable"):
+                self.error(self.view.tr("Bu sistem kısayolu sabittir; değiştirilemez."))
+                return
             self.view.app.layout.focus(
                 self.save_button if type(self.current["value"]) is bool else self.editor
             )
@@ -343,13 +346,16 @@ class SettingsDialog:
                 label = fit_text(" " + title, label_width)
                 label += " " * max(1, label_width - get_cwidth(label))
                 unassigned = row["section"] == "keybindings" and not row["value"]
+                immutable = bool(row.get("immutable"))
                 value = str(row["value"])
                 if unassigned:
                     value = self.view.text("unassigned", self.view.tr("Atanmadı"))
+                elif immutable:
+                    value = value + " " + self.view.text("immutable", self.view.tr("[Sabit]"))
                 value = fit_text(value, max(1, width - label_width - 2))
                 value_style = (
                     style + " class:sidebar.muted"
-                    if unassigned
+                    if unassigned or immutable
                     else style
                     + (
                         " class:settings.conflict"
@@ -393,6 +399,17 @@ class SettingsDialog:
             ("class:sidebar.muted", row["key"] + "\n" if row["section"] == "keybindings" else ""),
             ("class:sidebar.muted", description),
         ]
+        if row["section"] == "keybindings" and row.get("immutable"):
+            details.append(
+                (
+                    "class:sidebar.muted",
+                    " · "
+                    + self.view.text(
+                        "immutable_note",
+                        self.view.tr("Bu sistem kısayolu sabittir; değiştirilemez."),
+                    ),
+                )
+            )
         if row["section"] == "keybindings" and row.get("conflict"):
             details.append(
                 (
@@ -473,7 +490,7 @@ class SettingsDialog:
 
     def save(self):
         row = self.current
-        if not row or self.saving:
+        if not row or self.saving or row.get("immutable"):
             return
         try:
             value = (

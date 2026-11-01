@@ -116,7 +116,9 @@ class Forms:
                 next_step()
 
         keys = KeyBindings()
-        keys.add("escape", is_global=True)(lambda _: self.close())
+        keys.add("escape", is_global=True, filter=Condition(lambda: self.visible))(
+            lambda _: self.close()
+        )
         keys.add("c-s", is_global=True)(lambda _: save())
         keys.add(
             "enter",
@@ -322,7 +324,9 @@ class Forms:
             Button(self.view.tr("Hayır"), handler=self.close),
         ]
         keys = KeyBindings()
-        keys.add("escape", is_global=True)(lambda _: self.close())
+        keys.add("escape", is_global=True, filter=Condition(lambda: self.visible))(
+            lambda _: self.close()
+        )
         self.container = Dialog(
             title=title,
             body=HSplit(

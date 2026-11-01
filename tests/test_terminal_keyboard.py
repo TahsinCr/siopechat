@@ -58,3 +58,32 @@ class KeyboardTests(unittest.IsolatedAsyncioTestCase):
                 await run
             stop = output.events.index("\x1b[<u\x1b[>4;0m")
             self.assertIn("quit-alternate-screen", output.events[stop + 1 :])
+
+    async def test_focus_navigation_and_transcript_enter_transitions(self):
+        with interaction.terminal(session_action=lambda _: {}) as (view, pipe):
+            view.submit_prompt = Mock()
+            run = asyncio.create_task(view.app.run_async())
+            try:
+                await self.settle(lambda: view.app.is_running)
+
+                view.app.layout.focus(view.transcript_control)
+                view.input.text = "query"
+                pipe.send_bytes(b"\r")
+                await self.settle(lambda: view.submit_prompt.called)
+
+                view.app.layout.focus(view.transcript_control)
+                view.input.text = ""
+                pipe.send_bytes(b"\r")
+                await self.settle(lambda: view.app.layout.current_control is view.input.control)
+
+                pipe.send_bytes(b"\x1b[Z")
+                await self.settle(
+                    lambda: view.app.layout.current_control is view.transcript_control
+                )
+
+                pipe.send_bytes(b"\t")
+                await self.settle(lambda: view.app.layout.current_control is view.input.control)
+
+            finally:
+                view.app.exit()
+                await run

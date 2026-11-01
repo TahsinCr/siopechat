@@ -623,3 +623,85 @@ class WorkspaceTests(unittest.TestCase):
             self.assertEqual(len(jobs), 1)
             self.assertFalse(jobs[0][1])
             self.assertTrue(all(tab.get("conversation_id") not in ids for tab in view.tabs))
+
+    def test_immutable_keybindings_in_settings_catalog_and_dialog(self):
+        from settings import IMMUTABLE_KEYBINDINGS, SettingsCatalog
+
+        with tempfile.TemporaryDirectory() as folder:
+            api = create_application(Path(folder))
+            try:
+                catalog = SettingsCatalog(api)
+                rows = {r["key"]: r for r in catalog.rows() if r.get("section") == "keybindings"}
+                for action_id in IMMUTABLE_KEYBINDINGS:
+                    self.assertIn(action_id, rows)
+                    self.assertTrue(rows[action_id].get("immutable"))
+                    self.assertTrue(rows[action_id].get("disabled"))
+                    with self.assertRaises(ValueError):
+                        asyncio.run(catalog.change("keybindings", action_id, "c-x"))
+
+                with terminal(settings_rows=lambda: catalog.rows(), session_action=lambda _: {}) as (view, _):
+                    view._read_in_background = immediate
+                    view.settings_dialog.open()
+                    view.settings_dialog.choose_category("keybindings")
+                    quit_index = next(
+                        i for i, r in enumerate(view.settings_dialog.filtered)
+                        if r.get("key") == "app.quit"
+                    )
+                    view.settings_dialog.index = quit_index
+                    view.settings_dialog.focus_editor()
+                    self.assertIn("sabittir", view.settings_dialog.message)
+                    self.assertNotEqual(view.app.layout.current_control, view.settings_dialog.editor.control)
+            finally:
+                api.runtime.close()
+
+    def test_canonical_shortcut_actions_invocation(self):
+        with terminal(session_action=lambda _: {}) as (view, _):
+            view._read_in_background = immediate
+            view.run_action("command.settings.keybindings")
+            self.assertTrue(view.settings_dialog.visible)
+            self.assertEqual(view.settings_dialog.category, "keybindings")
+
+            view.run_action("command.settings.accounts")
+            self.assertTrue(view.settings_dialog.visible)
+            self.assertEqual(view.settings_dialog.category, "accounts")
+
+            view.run_action("navigation.close_overlay")
+            self.assertFalse(view.settings_dialog.visible)
+
+            view.run_action("navigation.focus_transcript")
+            self.assertIs(view.app.layout.current_control, view.transcript_control)
+
+            tab = view.tabs[view.active_tab]
+            tab["messages"] = [
+                {"role": "user", "text": "hello"},
+                {"role": "assistant", "text": "world"},
+            ]
+            submitted = []
+            view._submit_message_action = lambda t, m, a, p: submitted.append((t, m, a, p))
+            view.run_action("chat.retry")
+            self.assertEqual(len(submitted), 1)
+            self.assertEqual(submitted[0][1]["text"], "world")
+            self.assertEqual(submitted[0][2], "retry")
+
+    def test_overlay_close_action(self):
+        with terminal(session_action=lambda _: {}) as (view, _):
+            view._read_in_background = immediate
+            view.forms.open("Test", [("f", "Field", "val", None)], lambda _: None)
+            self.assertTrue(view.forms.visible)
+            view.run_action("navigation.close_overlay")
+            self.assertFalse(view.forms.visible)
+
+            view.settings_dialog.open()
+            self.assertTrue(view.settings_dialog.visible)
+            view.run_action("navigation.close_overlay")
+            self.assertFalse(view.settings_dialog.visible)
+
+            view.session_dialog.open()
+            self.assertTrue(view.session_dialog.visible)
+            view.run_action("navigation.close_overlay")
+            self.assertFalse(view.session_dialog.visible)
+
+            view.open_palette()
+            self.assertTrue(view.palette_visible)
+            view.run_action("navigation.close_overlay")
+            self.assertFalse(view.palette_visible)

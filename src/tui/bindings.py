@@ -31,6 +31,11 @@ def key_bindings(view) -> KeyBindings:
             "accounts.add",
             "accounts.edit",
             "accounts.remove",
+            "accounts.verify_profile",
+            "accounts.logout",
+            "navigation.close_overlay",
+            "command.settings.keybindings",
+            "command.settings.accounts",
         }
     )
 
@@ -131,6 +136,11 @@ def key_bindings(view) -> KeyBindings:
                 view.input.buffer.apply_completion(state.current_completion or state.completions[0])
             else:
                 view.submit_prompt()
+        elif event.app.layout.current_control is view.transcript_control:
+            if view.input.text.strip():
+                view.submit_prompt()
+            else:
+                view.app.layout.focus(view.input)
 
     def newline(event: Any) -> None:
         if event.app.layout.current_control is view.input.control:
@@ -180,6 +190,39 @@ def key_bindings(view) -> KeyBindings:
     def settings_action(_event: Any) -> None:
         view.settings_dialog.open()
 
+    def settings_keybindings_action(_event: Any) -> None:
+        if getattr(view, "settings_dialog", None):
+            view.settings_dialog.open()
+            view.settings_dialog.choose_category("keybindings")
+
+    def settings_accounts_action(_event: Any) -> None:
+        if getattr(view, "settings_dialog", None):
+            view.settings_dialog.open()
+            view.settings_dialog.choose_category("accounts")
+
+    def verify_profile_action(_event: Any) -> None:
+        if getattr(view, "session_dialog", None):
+            view.session_dialog.perform("verify_profile")
+
+    def logout_action(_event: Any) -> None:
+        if getattr(view, "session_dialog", None):
+            view.session_dialog.logout()
+
+    def retry_action(_event: Any) -> None:
+        if not getattr(view, "tabs", None) or view.active_tab >= len(view.tabs):
+            return
+        tab = view.tabs[view.active_tab]
+        messages = tab.get("messages", [])
+        assistant_msg = next(
+            (m for m in reversed(messages) if m.get("role") == "assistant"), None
+        )
+        if assistant_msg and hasattr(view, "_submit_message_action"):
+            view._submit_message_action(tab, assistant_msg, "retry", "")
+
+    def focus_transcript_action(_event: Any) -> None:
+        if getattr(view, "transcript_control", None) and hasattr(view, "app"):
+            view.app.layout.focus(view.transcript_control)
+
     def clear_transcript(_event: Any) -> None:
         view.handle_command("/clear")
 
@@ -219,10 +262,20 @@ def key_bindings(view) -> KeyBindings:
         view.app.invalidate()
 
     def close_overlay(_event: Any) -> None:
-        if view.palette_visible:
+        if getattr(view, "forms", None) and view.forms.visible:
+            view.forms.close()
+        elif getattr(view, "settings_dialog", None) and view.settings_dialog.visible:
+            view.settings_dialog.close()
+        elif getattr(view, "session_dialog", None) and view.session_dialog.visible:
+            view.session_dialog.close()
+        elif view.palette_visible:
             view.close_palette()
         elif view.resume_visible:
             view.close_resume()
+        elif getattr(view, "tab_kind", None) == "downloads":
+            view.close_tab()
+        elif getattr(view, "sidebar_search_visible", False):
+            view.close_sidebar_search()
         elif view.handle_stop_escape():
             return
         else:
@@ -230,13 +283,17 @@ def key_bindings(view) -> KeyBindings:
                 view.layout_controller.pending = None
             view.app.layout.focus(view.input)
 
-    def focus_composer(_event: Any) -> None:
+    def focus_composer(event: Any) -> None:
         view.palette_visible = False
         view.resume_visible = False
-        view.app.layout.focus(view.input)
+        if getattr(event, "app", None) and event.app.layout.current_control is view.input.control:
+            event.app.layout.focus_previous()
+        else:
+            view.app.layout.focus(view.input)
 
     def complete_command(event: Any) -> None:
         if event.app.layout.current_control is not view.input.control:
+            event.app.layout.focus_next()
             return
         state = view.input.buffer.complete_state
         if state is not None and state.completions:
@@ -300,6 +357,12 @@ def key_bindings(view) -> KeyBindings:
         ("navigation.transcript_down", page_down),
         ("command.project", project_action),
         ("command.refresh", refresh_action),
+        ("command.settings.keybindings", settings_keybindings_action),
+        ("command.settings.accounts", settings_accounts_action),
+        ("accounts.verify_profile", verify_profile_action),
+        ("accounts.logout", logout_action),
+        ("chat.retry", retry_action),
+        ("navigation.focus_transcript", focus_transcript_action),
     ):
         bind(action_id, callback)
     bind("chat.stop", lambda _: view.stop_active_response(), Condition(view.active_busy))
