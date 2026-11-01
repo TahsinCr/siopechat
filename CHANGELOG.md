@@ -15,6 +15,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 
 ### Changed
 
+- Cancel transcript renders that have become obsolete while they wait for the shared render slot, freeing workers for the currently visible conversation.
 - Open archived conversations with a 25-message tail window, including after a cold provider fetch, and hydrate older history chunks progressively in the background.
 - Render message toolbars for requested transcript rows and reuse gutter markers across scroll frames.
 - Reuse verified ChatGPT continuation snapshots for up to 60 seconds, avoiding redundant history downloads on recent follow-up turns while limiting stale cross-device state.

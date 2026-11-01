@@ -1,6 +1,7 @@
 """Background-only archive snapshots and transcript preparation for the terminal."""
 
 import threading
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 from accounts import origin
@@ -9,6 +10,20 @@ from .markdown import MessageRenderer, index_transcript, transcript_fragments, v
 from .transcript import VirtualTranscript
 
 _render_gate = threading.Semaphore(1)
+
+
+@contextmanager
+def _render_slot(cancelled):
+    """Let obsolete render jobs leave the queue while waiting for the shared slot."""
+    while not _render_gate.acquire(timeout=0.01):
+        if cancelled and cancelled():
+            raise InterruptedError("Superseded transcript")
+    try:
+        if cancelled and cancelled():
+            raise InterruptedError("Superseded transcript")
+        yield
+    finally:
+        _render_gate.release()
 
 
 def read_history(
@@ -93,7 +108,7 @@ def prepare_virtual_transcript(
     previous=None,
 ):
     """Build line metadata off-thread; retain only pages requested by the viewport."""
-    with _render_gate:
+    with _render_slot(cancelled):
         if cancelled and cancelled():
             raise InterruptedError("Superseded transcript")
         if renderer is None:
@@ -124,7 +139,7 @@ def prepare_transcript(
     active_index=None,
     index_rows=True,
 ):
-    with _render_gate:
+    with _render_slot(cancelled):
         if cancelled and cancelled():
             raise InterruptedError("Superseded transcript")
         if renderer is None:
