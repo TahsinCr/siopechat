@@ -165,6 +165,7 @@ Sohbet sekmesini kapatmak, devam eden yanıtı durdurmaz. Sol listede yeşil **�
 | Alt+W | Boştaki tüm sekmeleri kapat |
 | F7 | Sol paneli aç / kapat |
 | F8 / F10 | Sohbeti / kütüphaneyi eşitle |
+| Esc, ardından S | Varsa diğer kayıtlı taslağa geç |
 | F5 / F12 | Ayarlar / hesaplar |
 
 Kısayol değişiklikleri arayüzün tamamında anında geçerli olur. Tüm tuş atamaları **Ayarlar → Kısayollar** bölümünden veya yerel `config.json` dosyasından değiştirilebilir. Komut paleti, eklentilerin eklediği aksiyonlar dahil aynı işlemleri sunar.

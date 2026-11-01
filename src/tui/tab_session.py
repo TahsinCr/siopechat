@@ -91,9 +91,19 @@ class TabSessionStore:
         project = project if isinstance(project, dict) else {}
         draft = value.get("draft")
         draft = draft if isinstance(draft, str) else ""
+        recoverable_drafts = value.get("recovery_drafts")
+        recoverable_drafts = (
+            [item for item in recoverable_drafts if isinstance(item, str) and item]
+            if isinstance(recoverable_drafts, list)
+            else []
+        )
         queued = value.get("queued_submit")
-        if not draft and isinstance(queued, dict) and isinstance(queued.get("prompt"), str):
-            draft = queued["prompt"]
+        queued_prompt = queued.get("prompt") if isinstance(queued, dict) else None
+        if isinstance(queued_prompt, str) and queued_prompt:
+            if draft:
+                recoverable_drafts.insert(0, queued_prompt)
+            else:
+                draft = queued_prompt
         return {
             "kind": kind,
             "account_key": account_key,
@@ -108,6 +118,7 @@ class TabSessionStore:
                 else ""
             ),
             "draft": draft,
+            "recovery_drafts": recoverable_drafts,
             "project": {
                 key: project[key] for key in ("id", "name") if isinstance(project.get(key), str)
             },

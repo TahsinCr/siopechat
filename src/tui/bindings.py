@@ -382,6 +382,7 @@ def key_bindings(view) -> KeyBindings:
         bind(action_id, callback)
     bind("chat.stop", lambda _: view.stop_active_response(), Condition(view.active_busy))
     composer_focused = Condition(lambda: view.app.layout.current_control is view.input.control)
+    bind("chat.switch_saved_draft", lambda _: view.switch_saved_draft(), composer_focused)
     bind("chat.newline_shift", newline, composer_focused)
     bind("chat.newline_lf", newline, composer_focused)
     bind("projects.create", lambda _: view.open_project_create())

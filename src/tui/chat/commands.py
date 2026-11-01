@@ -466,7 +466,8 @@ class CommandComponent:
     def request_quit(self):
         tabs = self.tabs + self.background_tabs
         dirty = bool(self.input.text or self.pending_attachments) or any(
-            tab.get("draft") or tab.get("queued_submit") for tab in tabs
+            tab.get("draft") or tab.get("queued_submit") or tab.get("recovery_drafts")
+            for tab in tabs
         )
         in_flight_unreceived = any(
             tab.get("busy") and not tab.get("stream_received") for tab in tabs
@@ -543,5 +544,9 @@ class CommandComponent:
     def _save_active_tab(self) -> None:
         previous = self.tabs[self.active_tab]
         state = self._new_tab_state()
+        recovery_drafts = previous.get("recovery_drafts", [])
+        state["recovery_drafts"] = (
+            list(recovery_drafts) if isinstance(recovery_drafts, list) else []
+        )
         state["tab_id"] = previous.get("tab_id") or uuid.uuid4().hex
         previous.update(state)

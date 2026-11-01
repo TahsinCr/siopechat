@@ -8,6 +8,18 @@ Python distributions use the corresponding PEP 440 version (`1.5.3b0` for `v1.5.
 
 ## [Unreleased]
 
+### Changed
+
+- Preserve the active composer draft and queued prompt separately across restarts. Restored prompts are never sent automatically; use `Esc`, then `S` to switch between them. Queued text is saved, while staged file attachments remain temporary and must be added again.
+- Retry Claude model discovery with the bootstrap-confirmed workspace only when the saved workspace returns 404 and the account has exactly one chat workspace. Accounts with multiple workspaces still require an unambiguous selection.
+
+### Fixed
+
+- Keep staged attachments owned by their originating tab when uploads or background sends finish or fail; release only the attachments belonging to closed or logged-out tabs.
+- Remove first-render timing callbacks when a stream finishes without rendering in its tab, while retaining measurement when active text still needs its first render.
+- Parse ChatGPT SSE data only at event boundaries so consecutive `data:` lines remain part of one standard event.
+- Expire cached Gemini continuation metadata after 60 seconds and clear its verification time whenever the entry is invalidated.
+
 ## [1.5.3-beta] - 2026-11-01
 
 ### Added

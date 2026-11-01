@@ -100,6 +100,10 @@ class ComposerComponent:
             self.app.invalidate()
             return
         prompt = self.input.text.strip()
+        active_tab_data = self.tabs[self.active_tab]
+        source_tab_id = active_tab_data.setdefault("tab_id", uuid.uuid4().hex)
+        for item in self.pending_attachments:
+            item.setdefault("source_tab_id", source_tab_id)
         attachments = list(self.pending_attachments)
         if attachments and (
             self._attachments_in_flight
@@ -114,12 +118,10 @@ class ComposerComponent:
         if not prompt and not attachments:
             return
         if self.active_busy():
-            active_tab_data = self.tabs[self.active_tab]
             if active_tab_data.get("queued_submit"):
                 self.status = self.tr("Bu sohbet için bekleyen bir mesaj zaten var")
                 self.app.invalidate()
                 return
-            source_tab_id = active_tab_data.setdefault("tab_id", uuid.uuid4().hex)
             for item in self.pending_attachments:
                 item.setdefault("queue_id", uuid.uuid4().hex)
                 item.setdefault("source_tab_id", source_tab_id)
@@ -237,6 +239,28 @@ class ComposerComponent:
             ),
             daemon=True,
         ).start()
+
+    def switch_saved_draft(self) -> None:
+        tab = self.tabs[self.active_tab]
+        recovery_drafts = tab.get("recovery_drafts")
+        if not isinstance(recovery_drafts, list):
+            recovery_drafts = []
+        next_draft = next(
+            (item for item in recovery_drafts if isinstance(item, str) and item),
+            None,
+        )
+        if next_draft is None:
+            self.status = self.tr("ui.No other saved prompt is available")
+            self.app.invalidate()
+            return
+        recovery_drafts.remove(next_draft)
+        if self.input.text:
+            recovery_drafts.append(self.input.text)
+        tab["recovery_drafts"] = recovery_drafts
+        self.input.text = next_draft
+        self.status = self.tr("ui.Switched to a saved prompt. Reattach any files if needed.")
+        self._persist_session()
+        self.app.invalidate()
 
     def handle_command(self, command: str) -> None:
         if command.strip() == "/downloads":

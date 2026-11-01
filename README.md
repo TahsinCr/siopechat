@@ -165,6 +165,7 @@ Closing a conversation tab keeps its running response in the background. In the 
 | Alt+W | Close all idle tabs |
 | F7 | Toggle sidebar |
 | F8 / F10 | Synchronize conversation / library |
+| Esc, then S | Switch to another saved prompt when one is available |
 | F5 / F12 | Settings / accounts |
 
 Shortcut changes take effect immediately throughout the interface. Every binding can be edited under **Settings → Keyboard** or in the local `config.json`. The command palette exposes the same actions, including those provided by extensions.

@@ -49,6 +49,7 @@ DEFAULT_KEYBINDINGS = {
     "chat.clear_transcript": "c-l",
     "chat.reload": "f8",
     "chat.copy_response": "f2",
+    "chat.switch_saved_draft": "escape s",
     "chat.remove_attachment": "f3",
     "command.help": "f1",
     "command.rename": "f4",
