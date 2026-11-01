@@ -638,19 +638,26 @@ class WorkspaceTests(unittest.TestCase):
                     self.assertTrue(rows[action_id].get("disabled"))
                     with self.assertRaises(ValueError):
                         asyncio.run(catalog.change("keybindings", action_id, "c-x"))
+                    with self.assertRaises(ValueError):
+                        catalog.settings.update("keybindings", {action_id: "c-x"})
 
-                with terminal(settings_rows=lambda: catalog.rows(), session_action=lambda _: {}) as (view, _):
+                with terminal(
+                    settings_rows=lambda: catalog.rows(), session_action=lambda _: {}
+                ) as (view, _):
                     view._read_in_background = immediate
                     view.settings_dialog.open()
                     view.settings_dialog.choose_category("keybindings")
                     quit_index = next(
-                        i for i, r in enumerate(view.settings_dialog.filtered)
+                        i
+                        for i, r in enumerate(view.settings_dialog.filtered)
                         if r.get("key") == "app.quit"
                     )
                     view.settings_dialog.index = quit_index
                     view.settings_dialog.focus_editor()
                     self.assertIn("sabittir", view.settings_dialog.message)
-                    self.assertNotEqual(view.app.layout.current_control, view.settings_dialog.editor.control)
+                    self.assertNotEqual(
+                        view.app.layout.current_control, view.settings_dialog.editor.control
+                    )
             finally:
                 api.runtime.close()
 
@@ -665,6 +672,10 @@ class WorkspaceTests(unittest.TestCase):
             self.assertTrue(view.settings_dialog.visible)
             self.assertEqual(view.settings_dialog.category, "accounts")
 
+            focused = view.app.layout.current_control
+            view.run_action("navigation.focus_transcript")
+            self.assertIs(view.app.layout.current_control, focused)
+
             view.run_action("navigation.close_overlay")
             self.assertFalse(view.settings_dialog.visible)
 
@@ -676,12 +687,77 @@ class WorkspaceTests(unittest.TestCase):
                 {"role": "user", "text": "hello"},
                 {"role": "assistant", "text": "world"},
             ]
-            submitted = []
-            view._submit_message_action = lambda t, m, a, p: submitted.append((t, m, a, p))
+            view.message_toolbar_action = Mock()
             view.run_action("chat.retry")
-            self.assertEqual(len(submitted), 1)
-            self.assertEqual(submitted[0][1]["text"], "world")
-            self.assertEqual(submitted[0][2], "retry")
+            view.message_toolbar_action.assert_called_once_with(
+                tab["tab_id"], tab["messages"][-1], "retry"
+            )
+
+    def test_retry_action_respects_message_capabilities(self):
+        with terminal() as (view, _):
+            tab = view.tabs[view.active_tab]
+            tab["messages"] = [{"role": "assistant", "text": "world"}]
+            view._submit_message_action = Mock()
+            view.run_action("chat.retry")
+            view._submit_message_action.assert_not_called()
+
+    def test_retry_action_rejects_older_response_versions(self):
+        from tests.fakes import Accounts
+
+        with terminal(account_service=Accounts()) as (view, _):
+            tab = view.tabs[view.active_tab]
+            tab["conversation_id"] = "@chatgpt/default/chat"
+            tab["messages"] = [
+                {
+                    "id": "answer",
+                    "role": "assistant",
+                    "text": "Older answer",
+                    "actions": ["retry"],
+                    "_response_version_index": 1,
+                    "_response_version_count": 2,
+                }
+            ]
+            view._submit_message_action = Mock()
+            view.run_action("chat.retry")
+            view._submit_message_action.assert_not_called()
+
+    def test_retry_action_uses_the_same_conversation_busy_guard_as_toolbar(self):
+        from tests.fakes import Accounts
+
+        with terminal(account_service=Accounts()) as (view, _):
+            tab = view.tabs[view.active_tab]
+            tab["conversation_id"] = "@chatgpt/default/chat"
+            answer = {"id": "answer", "role": "assistant", "text": "Answer", "actions": ["retry"]}
+            tab["messages"] = [answer]
+            view._submit_message_action = Mock()
+            view.background_tabs = [{"busy": True, "conversation_id": tab["conversation_id"]}]
+            view.run_action("chat.retry")
+            view._submit_message_action.assert_not_called()
+            view.background_tabs = []
+            view.run_action("chat.retry")
+            view._submit_message_action.assert_called_once_with(tab, answer, "retry", "")
+
+    def test_logout_action_shows_confirmation_before_logout(self):
+        callback = Mock(return_value={})
+        with terminal(session_action=callback) as (view, _):
+            view._read_in_background = immediate
+            view.run_action("accounts.logout")
+            self.assertTrue(view.session_dialog.visible)
+            self.assertFalse(view.session_dialog.confirm_logout)
+            view.run_action("accounts.logout")
+            self.assertTrue(view.session_dialog.confirm_logout)
+            self.assertNotIn(("logout",), [call.args for call in callback.call_args_list])
+
+    def test_verify_profile_action_opens_session_while_operation_runs(self):
+        callback = Mock(return_value={})
+        with terminal(session_action=callback) as (view, _):
+            jobs = []
+            view._read_in_background = lambda read, ok, err, **kw: jobs.append(read)
+            view.run_action("accounts.verify_profile")
+            self.assertTrue(view.session_dialog.visible)
+            self.assertTrue(view.session_dialog.loading)
+            jobs[0]()
+            callback.assert_called_once_with("verify_profile")
 
     def test_overlay_close_action(self):
         with terminal(session_action=lambda _: {}) as (view, _):

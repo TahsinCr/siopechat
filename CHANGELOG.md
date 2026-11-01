@@ -29,8 +29,9 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 ### Fixed
 
 - Keep message toolbars visible and attached to the correct messages while scrolling and loading older history, including in split panes.
+- Apply message capability and version checks to the retry shortcut, show account actions in the session panel, and preserve logout confirmation.
 - Ensure pressing `Escape` cleanly dismisses modal forms, dialogs (`SettingsDialog`, `SessionDialog`), overlays, and search fields without inadvertently exiting the application or modifying settings.
-- Advance and retreat focus seamlessly across controls using `Tab` and `Shift+Tab` outside active completions, and allow pressing `Enter` in the transcript to submit an existing draft or return focus to the composer.
+- Use `Tab` to advance focus when no command completion is available, and `Shift+Tab` to leave the composer for the previous control. Pressing `Enter` in the transcript submits a draft or focuses the composer.
 - Report cache read type errors instead of retrying with a different history window.
 - Avoid waiting for Markdown rendering when closing tabs and run one background memory cleanup per close operation.
 - Schedule progressive background transcript hydration at 50 ms intervals.

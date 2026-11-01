@@ -87,3 +87,36 @@ class KeyboardTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 view.app.exit()
                 await run
+
+    async def test_tab_leaves_composer_when_there_are_no_command_suggestions(self):
+        with interaction.terminal() as (view, pipe):
+            run = asyncio.create_task(view.app.run_async())
+            try:
+                await self.settle(lambda: view.app.is_running)
+                view.app.layout.focus(view.input)
+                view.input.text = "ordinary message"
+                pipe.send_bytes(b"\t")
+                await self.settle(lambda: view.app.layout.current_control is not view.input.control)
+                self.assertEqual(view.input.text, "ordinary message")
+            finally:
+                view.app.exit()
+                await run
+
+    async def test_tab_keeps_slash_completion_in_the_composer(self):
+        with interaction.terminal() as (view, pipe):
+            run = asyncio.create_task(view.app.run_async())
+            try:
+                await self.settle(lambda: view.app.is_running)
+                view.app.layout.focus(view.input)
+                view.input.text = "/hel"
+                view.input.buffer.cursor_position = len(view.input.text)
+                pipe.send_bytes(b"\t")
+                await self.settle(
+                    lambda: (
+                        view.input.buffer.complete_state is not None or view.input.text == "/help"
+                    )
+                )
+                self.assertIs(view.app.layout.current_control, view.input.control)
+            finally:
+                view.app.exit()
+                await run

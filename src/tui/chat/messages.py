@@ -248,8 +248,14 @@ class MessageComponent:
             return
         if action in ("edit", "retry", "branch"):
             tab = self.tabs[self.active_tab]
+            version_count = message.get("_response_version_count", 1)
             if (
                 action not in message.get("actions", ())
+                or (
+                    version_count > 1
+                    and message.get("_response_version_index", 1)
+                    != message.get("_response_version_current_index", version_count)
+                )
                 or not self.account_service
                 or not tab.get("conversation_id")
                 or tab.get("temporary")

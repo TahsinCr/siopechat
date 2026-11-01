@@ -2,6 +2,7 @@
 
 from typing import Any, Callable
 
+from prompt_toolkit.completion import CompleteEvent
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
 
@@ -203,24 +204,27 @@ def key_bindings(view) -> KeyBindings:
     def verify_profile_action(_event: Any) -> None:
         if getattr(view, "session_dialog", None):
             view.session_dialog.perform("verify_profile")
+            if not view.session_dialog.visible:
+                view.session_dialog.open()
 
     def logout_action(_event: Any) -> None:
         if getattr(view, "session_dialog", None):
-            view.session_dialog.logout()
+            if not view.session_dialog.visible:
+                view.session_dialog.open()
+            else:
+                view.session_dialog.logout()
 
     def retry_action(_event: Any) -> None:
         if not getattr(view, "tabs", None) or view.active_tab >= len(view.tabs):
             return
         tab = view.tabs[view.active_tab]
         messages = tab.get("messages", [])
-        assistant_msg = next(
-            (m for m in reversed(messages) if m.get("role") == "assistant"), None
-        )
-        if assistant_msg and hasattr(view, "_submit_message_action"):
-            view._submit_message_action(tab, assistant_msg, "retry", "")
+        assistant_msg = next((m for m in reversed(messages) if m.get("role") == "assistant"), None)
+        if assistant_msg:
+            view.message_toolbar_action(tab.get("tab_id"), assistant_msg, "retry")
 
     def focus_transcript_action(_event: Any) -> None:
-        if getattr(view, "transcript_control", None) and hasattr(view, "app"):
+        if view.tab_kind == "chat" and not view.forms.visible:
             view.app.layout.focus(view.transcript_control)
 
     def clear_transcript(_event: Any) -> None:
@@ -299,7 +303,18 @@ def key_bindings(view) -> KeyBindings:
         if state is not None and state.completions:
             view.input.buffer.apply_completion(state.current_completion or state.completions[0])
         else:
-            view.input.buffer.start_completion(select_first=True)
+            buffer = view.input.buffer
+            completions = (
+                buffer.completer.get_completions(
+                    buffer.document, CompleteEvent(completion_requested=True)
+                )
+                if buffer.completer
+                else ()
+            )
+            if next(iter(completions), None) is not None:
+                buffer.start_completion(select_first=True)
+            else:
+                event.app.layout.focus_next()
 
     def dismiss_completion(_event: Any) -> None:
         view.input.buffer.cancel_completion()

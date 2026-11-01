@@ -399,6 +399,11 @@ class Settings:
         if section not in ("application", "keybindings", "providers", "accounts"):
             raise ValueError("use update_extension for extension settings")
         with self._lock:
+            if section == "keybindings" and any(
+                key in values and values[key] != self._data["keybindings"].get(key)
+                for key in IMMUTABLE_KEYBINDINGS
+            ):
+                raise ValueError("system keybindings cannot be modified")
             candidate = self.snapshot()
             candidate[section] = _merge(candidate[section], values)
             self._commit(candidate)
