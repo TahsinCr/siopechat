@@ -1,4 +1,5 @@
 import asyncio
+import signal
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,11 +7,30 @@ from pathlib import Path
 from actions import Action, ActionChanged
 from bootstrap import create_application
 from extension import ExtensionAPI, ExtensionManager, ExtensionSpec
-from runtime import ServiceChanged
+from runtime import Runtime, ServiceChanged
 from settings import Settings, SettingsChanged
 from tasks import JobChanged, JobState
 from tests.fakes import ControlledProvider, request
 from utils.events import EventBus
+
+
+class RuntimeSyncCloseTests(unittest.TestCase):
+    def test_close_completes_cleanup_when_sigint_arrives_during_shutdown(self):
+        runtime = Runtime()
+        calls = []
+        previous_sigint = signal.getsignal(signal.SIGINT)
+
+        def shutdown():
+            calls.append("started")
+            signal.raise_signal(signal.SIGINT)
+            calls.append("finished")
+
+        runtime.on_shutdown(lambda: asyncio.to_thread(shutdown))
+        runtime.close()
+
+        self.assertEqual(calls, ["started", "finished"])
+        self.assertTrue(runtime._closed)
+        self.assertIs(signal.getsignal(signal.SIGINT), previous_sigint)
 
 
 class RuntimeServiceTests(unittest.IsolatedAsyncioTestCase):

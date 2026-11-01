@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import signal
+import threading
 from builtins import ExceptionGroup
 from dataclasses import dataclass
 from typing import Any, Hashable
@@ -161,7 +163,14 @@ class Runtime:
         try:
             asyncio.get_running_loop()
         except RuntimeError:
-            asyncio.run(self.aclose())
+            main_thread = threading.current_thread() is threading.main_thread()
+            # Prevent asyncio.run() from cancelling an in-progress shutdown on SIGINT.
+            previous_sigint = signal.signal(signal.SIGINT, signal.SIG_IGN) if main_thread else None
+            try:
+                asyncio.run(self.aclose())
+            finally:
+                if main_thread:
+                    signal.signal(signal.SIGINT, previous_sigint)
         else:
             raise RuntimeError("use await runtime.aclose() inside an event loop")
 
