@@ -189,6 +189,8 @@ class SendingComponent:
             def finish_turn() -> None:
                 nonlocal messages
                 stream.flush_pending_text()
+                if target_tab.get("_active_stream_id") == stream.stream_id:
+                    target_tab.pop("_active_stream_id", None)
                 completed_elapsed = target_tab.get("generation_elapsed")
                 if message_action and not send_succeeded and rollback is not None:
                     messages = rollback[0]

@@ -32,6 +32,7 @@ class _SendStream:
         self.messages = messages
         self.timing = timing
         self.stream_id = uuid.uuid4().hex
+        self.target_tab["_active_stream_id"] = self.stream_id
         self.rendered = ""
         self._final_pending: list[str] = []
         self._final_replace_pending = False
@@ -85,7 +86,11 @@ class _SendStream:
                 self._refresh_pending = False
             self.flush_pending_text()
             self._last_refresh_ns = time.perf_counter_ns()
-            if update_complete and self.target_tab.get("busy"):
+            if (
+                update_complete
+                and self.target_tab.get("busy")
+                and self.target_tab.get("_active_stream_id") == self.stream_id
+            ):
                 self.target_tab["generation_complete"] = True
                 self.target_tab["completed_pending"] = True
             elif update_complete:

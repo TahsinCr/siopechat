@@ -24,7 +24,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 - Release temporary ChatGPT conversation state when its tab closes and keep per-send stream messages local so failures do not retain partial responses on the client.
 - Release closed tabs' transcript and render snapshots for allocator reuse without synchronously trimming process memory on the TUI thread.
 - Bound ChatGPT SSE event assembly to 2,000,000 UTF-8 data bytes and a line-count ceiling while reading fixed-size chunks, rejecting oversized lines and events before growing their buffers.
-- Coalesce streamed reasoning and response deltas at UI refreshes instead of rebuilding their full text for every token.
+- Coalesce streamed reasoning and response deltas at UI refreshes instead of rebuilding their full text for every token; keep deferred completion updates scoped to their originating send.
 - Display queued user prompts immediately in the chat transcript instead of hiding them until the in-flight response completes, preserving visibility and restoring cleanly on cancellation or failure.
 - Omit redundant post-send ChatGPT conversation history fetch on stream completions where SSE chunk deltas omit parent message IDs.
 - Avoid automatically repeating ambiguous ChatGPT and Claude sends, verify Gemini sessions remotely before use, and keep ChatGPT stream buffering bounded.
