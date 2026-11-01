@@ -458,8 +458,26 @@ class TabComponent:
         cleanup = []
         self._release_staged_attachments(self.pending_attachments)
         self.pending_attachments.clear()
+        getattr(self, "_prepared_transcripts", {}).clear()
         for tab in self.tabs:
             self._discard_tab_render_cache(tab)
+        if self.account_service:
+            accounts_fn = getattr(self.account_service, "active_accounts", None)
+            active_accounts = accounts_fn() if callable(accounts_fn) else ()
+            for account in active_accounts:
+                key = account.get("key")
+                release = (
+                    self.account_service.callbacks(key).get("release_conversation")
+                    if key and hasattr(self.account_service, "callbacks")
+                    else None
+                )
+                if release:
+                    self._read_in_background(
+                        lambda release=release: release(None),
+                        lambda _: None,
+                        lambda _: None,
+                        session_bound=False,
+                    )
         for tab in self.tabs:
             if tab.get("temporary") and tab.get("conversation_id"):
                 callback = (
@@ -514,6 +532,7 @@ class TabComponent:
             renderer.clear_cache(wait=True)
             trim_memory()
 
+        trim_memory()
         self._read_in_background(
             release_memory, lambda _: None, lambda _: None, session_bound=False
         )
@@ -543,6 +562,22 @@ class TabComponent:
         if archive and tab.get("conversation_id"):
             key, remote = origin(tab["conversation_id"], tab.get("account_key", self.account_key))
             archive.release(key, remote)
+        if self.account_service and tab.get("conversation_id"):
+            callbacks_fn = getattr(self.account_service, "callbacks", None)
+            callbacks = (
+                callbacks_fn(tab.get("account_key", self.account_key))
+                if callable(callbacks_fn)
+                else None
+            )
+            release = callbacks.get("release_conversation") if isinstance(callbacks, dict) else None
+            if release:
+                cid = tab["conversation_id"]
+                self._read_in_background(
+                    lambda release=release, cid=cid: release(cid),
+                    lambda _: None,
+                    lambda _: None,
+                    session_bound=False,
+                )
         with self.lock:
             if tab.get("busy"):
                 messages = tab.get("messages", [])

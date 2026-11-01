@@ -228,6 +228,19 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
     async def forget_temporary(self, remote_id: str) -> None:
         self._temporary_conversations.pop(remote_id, None)
 
+    async def forget_conversation(self, conversation_id: str | None = None) -> None:
+        async with self._gate:
+            with self._http_lock:
+                if self._http_client is not None:
+                    if conversation_id is None:
+                        self._http_client.clear_continuation_cache()
+                    else:
+                        self._http_client.forget_conversation(conversation_id)
+            if conversation_id is None:
+                self._temporary_conversations.clear()
+            else:
+                self._temporary_conversations.pop(conversation_id, None)
+
     async def describe(self) -> ProviderDescription:
         return ProviderDescription(
             self.id,

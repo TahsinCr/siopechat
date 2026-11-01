@@ -39,6 +39,9 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 - Schedule progressive background transcript hydration at 50 ms intervals.
 - Start active-tab background hydration after the initial transcript is prepared.
 - Ensure tab removal and closing all tabs release active message and transcript references before dispatching off-thread memory trimming with full garbage collection.
+- Configure glibc memory allocator arenas (`M_ARENA_MAX=2`) on Linux startup to prevent multi-threaded arena fragmentation from trapping released heap memory.
+- Explicitly close unary ChatGPT HTTP response streams and error responses to promptly free underlying `httpx` transport buffers and decoder streams.
+- Release provider continuation caches and prepared transcript layouts on tab closure and tab strip close-all, triggering synchronous main-thread memory trimming alongside background reclamation.
 - Release temporary ChatGPT conversation state when its tab closes and keep per-send stream messages local so failures do not retain partial responses on the client.
 - Request memory reclamation after closing tabs on Linux, Windows, and macOS using background garbage collection and platform allocator calls where available.
 - Deliver ChatGPT SSE events as transport chunks arrive while retaining the 2,000,000-byte event and line-count limits.

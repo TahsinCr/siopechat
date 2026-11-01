@@ -2461,6 +2461,7 @@ class Accounts:
                     self.status("") if action == "status" else unavailable()
                 ),
                 "forget_temporary": None,
+                "release_conversation": lambda *args: None,
                 "attach_file_callback": None,
                 "attachment_policy_callback": None,
             }
@@ -2524,6 +2525,17 @@ class Accounts:
             elif hasattr(provider, "_temporary_conversations"):
                 provider._temporary_conversations.pop(remote, None)
 
+        def release_conversation(chat=None):
+            remote = origin(chat, key)[1] if chat is not None else None
+            if hasattr(provider, "forget_conversation"):
+                result = provider.forget_conversation(remote)
+                if asyncio.iscoroutine(result):
+                    self.call(result)
+            elif hasattr(provider, "forget_temporary") and remote is not None:
+                result = provider.forget_temporary(remote)
+                if asyncio.iscoroutine(result):
+                    self.call(result)
+
         return {
             "upload_image": lambda *args: self.upload_image(key, *args),
             "load_conversation": lambda value: self.load(value, key, window=True, window_limit=25),
@@ -2536,6 +2548,7 @@ class Accounts:
             "rename_conversation": rename,
             "session_action": lambda action: self.session_action(key, action),
             "forget_temporary": forget,
+            "release_conversation": release_conversation,
             "attach_file_callback": lambda path: self.attach_file(key, path),
             "attachment_policy_callback": lambda: self.attachment_policy(key),
         }

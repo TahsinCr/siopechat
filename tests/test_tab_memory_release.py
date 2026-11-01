@@ -209,3 +209,65 @@ class TabMemoryReleaseTests(unittest.TestCase):
         finally:
             if not tracing_before:
                 tracemalloc.stop()
+
+    def test_configure_memory_allocator_runs_safely(self):
+        from utils.process import configure_memory_allocator
+
+        configure_memory_allocator()
+
+    def test_close_all_tabs_clears_prepared_transcripts_and_invokes_release_conversation(self):
+        from tests.fakes import Accounts as FakeAccounts
+        from tests.tui_support import immediate
+
+        service = FakeAccounts()
+        service.active_accounts = lambda: [{"key": "chatgpt/default"}]
+        released_chats = []
+        service.callbacks = lambda key: {
+            "release_conversation": lambda chat: released_chats.append((key, chat)),
+            "forget_temporary": lambda chat: None,
+        }
+        with terminal(account_service=service) as (view, _):
+            view._read_in_background = immediate
+            view.new_tab()
+            tab = view.tabs[view.active_tab]
+            tab["tab_id"] = "tab-probe"
+            tab["conversation_id"] = "@chatgpt/default/test-chat"
+            tab["account_key"] = "chatgpt/default"
+            view.conversation_id = "@chatgpt/default/test-chat"
+            view._prepared_transcripts = {"tab-probe": {"source": "data"}}
+
+            view.close_all_tabs()
+
+            self.assertEqual(getattr(view, "_prepared_transcripts", {}), {})
+            self.assertIn(("chatgpt/default", "@chatgpt/default/test-chat"), released_chats)
+            self.assertIn(("chatgpt/default", None), released_chats)
+
+    def test_chatgpt_client_forget_conversation_and_clear_continuation_cache(self):
+        from unittest.mock import Mock
+
+        from providers.chatgpt.client import ChatGPTClient
+
+        client = ChatGPTClient(Mock(), authenticate=False)
+        dummy_conv = {
+            "conversation_id": "c1",
+            "current_node": "m1",
+            "messages": [
+                {
+                    "id": "m1",
+                    "content": {"parts": ["hello world"]},
+                }
+            ],
+        }
+        client._remember_conversation(dummy_conv)
+        self.assertIn("c1", client._continuation_cache)
+        self.assertGreater(client._continuation_cache_text_chars, 0)
+
+        client.forget_conversation("c1")
+        self.assertNotIn("c1", client._continuation_cache)
+        self.assertEqual(client._continuation_cache_text_chars, 0)
+
+        client._remember_conversation(dummy_conv)
+        self.assertIn("c1", client._continuation_cache)
+        client.clear_continuation_cache()
+        self.assertNotIn("c1", client._continuation_cache)
+        self.assertEqual(client._continuation_cache_text_chars, 0)
