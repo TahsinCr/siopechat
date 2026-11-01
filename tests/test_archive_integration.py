@@ -661,6 +661,36 @@ class ArchiveIntegrationTests(unittest.TestCase):
             conversation_id, self.gemini, force=True, window=True
         )
 
+    def test_cached_resume_refreshes_provider_when_archive_is_disabled(self):
+        conversation_id = f"@{self.gemini}/c_cached"
+        self.accounts.cached_window = Mock(
+            return_value={
+                "id": conversation_id,
+                "title": "Cached chat",
+                "messages": [{"id": "old", "role": "assistant", "text": "Cached"}],
+            }
+        )
+        self.accounts.load = Mock(
+            return_value={
+                "id": conversation_id,
+                "title": "Cached chat",
+                "messages": [
+                    {"id": "old", "role": "assistant", "text": "Cached"},
+                    {"id": "new", "role": "assistant", "text": "Refreshed"},
+                ],
+            }
+        )
+        with terminal(account_service=self.accounts) as (view, _):
+            view._dispatch_ui = lambda callback: callback()
+            view.archive_service = Mock(return_value=None)
+            with patch.object(view._reads, "submit", side_effect=lambda work: (work(), True)[1]):
+                view.resume_conversation(conversation_id)
+
+        self.accounts.load.assert_called_once_with(
+            conversation_id, self.gemini, window=True, window_limit=25
+        )
+        self.assertIn("Refreshed", [message["text"] for message in view.messages])
+
     def test_active_archive_pointer_survives_restart_and_can_be_cleared(self):
         archive = self.api.get("archive")
         archive.put(

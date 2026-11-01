@@ -12,7 +12,7 @@ from extensions.archive.sync import Archive
 from providers import ConversationBound, MessageAction, MessageMetadata, ReplaceText
 from providers.models import Content, Conversation, Message, Origin
 from tests.account_fixture import configured_application
-from tests.tui_support import terminal
+from tests.tui_support import immediate, terminal
 from tui.markdown import transcript_fragments, visible_chat_message, visible_chat_messages
 
 
@@ -570,10 +570,7 @@ class MessageToolbarTests(unittest.TestCase):
             view.account_key = key
             view.sidebar_items = []
 
-            def immediate_read(read, success, failure, **kwargs):
-                success(read())
-
-            view._read_in_background = immediate_read
+            view._read_in_background = immediate
 
             view._confirm_branch_listing({"account_key": key, "project": {}}, conversation_id)
             self.assertEqual(view.sidebar_items, [])
@@ -611,10 +608,7 @@ class MessageToolbarTests(unittest.TestCase):
             view.account_key = key
             view.sidebar_items = []
 
-            def immediate_read(read, success, failure, **kwargs):
-                success(read())
-
-            view._read_in_background = immediate_read
+            view._read_in_background = immediate
             view._confirm_branch_listing(
                 {"account_key": key, "project": {"id": project_id}}, conversation_id
             )

@@ -10,7 +10,6 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 
 ### Added
 
-- Add non-blocking asynchronous conversation loading (`Accounts.load_async`) and `load_conversation_async` callback, running provider network operations directly on the provider event loop without worker thread pool blocking.
 - Add canonical shortcut actions: `command.settings.keybindings` (open settings on keybindings tab), `command.settings.accounts` (open settings on accounts tab), `accounts.verify_profile` (verify active profile/subscription), `accounts.logout` (logout active account), `chat.retry` (retry latest assistant response), and `navigation.focus_transcript` (focus chat transcript for keyboard scrolling/navigation).
 - Support non-editable system keybinding protection (`app.quit` and `app.quit_eof`), displaying them as fixed/disabled in the keybinding settings UI and blocking modification attempts.
 
@@ -32,6 +31,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 
 ### Fixed
 
+- Restore provider refresh for cached conversations when the archive service is unavailable.
 - Keep workspace entries unique while provider pages arrive and when a refresh partially fails.
 - Return focus from sidebar search on Escape without arming response cancellation.
 - Keep message toolbars visible and attached to the correct messages while scrolling and loading older history, including in split panes.

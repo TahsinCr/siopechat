@@ -19,6 +19,21 @@ from tests.account_fixture import configured_application as create_application
 from tests.tui_support import terminal
 
 
+def blocked_remote_fetch(entered, release):
+    def fetch():
+        entered.set()
+        if not release.wait(3):
+            raise TimeoutError("test barrier")
+        return {"title": "remote"}
+
+    return fetch
+
+
+async def responsive_pulse():
+    await asyncio.sleep(0)
+    return "responsive"
+
+
 class SyncConcurrencyTests(unittest.TestCase):
     def setUp(self):
         self.folder = tempfile.TemporaryDirectory()
@@ -298,12 +313,7 @@ class SyncConcurrencyTests(unittest.TestCase):
 
     def test_repository_remains_open_until_running_fetch_finishes_after_close(self):
         entered, release, closed = threading.Event(), threading.Event(), threading.Event()
-
-        def fetch():
-            entered.set()
-            if not release.wait(3):
-                raise TimeoutError("test barrier")
-            return {"title": "remote"}
+        fetch = blocked_remote_fetch(entered, release)
 
         with patch.object(self.repo, "close", side_effect=closed.set):
             self.archive.read("gemini/a", "conversation", "one", fetch, wait=False)
@@ -322,12 +332,7 @@ class SyncConcurrencyTests(unittest.TestCase):
             threading.Event(),
             threading.Event(),
         )
-
-        def fetch():
-            entered.set()
-            if not release.wait(3):
-                raise TimeoutError("test barrier")
-            return {"title": "remote"}
+        fetch = blocked_remote_fetch(entered, release)
 
         real_close = self.repo.close
 
@@ -524,17 +529,13 @@ class AccountConcurrencyTests(unittest.TestCase):
                     raise TimeoutError("test barrier")
             return original(account, remote, value)
 
-        async def pulse():
-            await asyncio.sleep(0)
-            return "responsive"
-
         with patch.object(archive, "save_turn", side_effect=slow), ThreadPoolExecutor(2) as pool:
             first = pool.submit(self.send, self.gemini)
             try:
                 self.assertTrue(entered.wait(1))
                 second = pool.submit(self.send, "chatgpt/default")
                 self.assertTrue(self.entered["chatgpt/default"].wait(1))
-                self.assertEqual(self.accounts.call(pulse(), timeout=1), "responsive")
+                self.assertEqual(self.accounts.call(responsive_pulse(), timeout=1), "responsive")
             finally:
                 release.set()
             first.result(2)
@@ -629,10 +630,6 @@ class AccountConcurrencyTests(unittest.TestCase):
                     raise TimeoutError("test barrier")
             return original(key, kind, value)
 
-        async def pulse():
-            await asyncio.sleep(0)
-            return "responsive"
-
         with (
             patch.object(self.accounts.repository, "put", side_effect=slow),
             ThreadPoolExecutor(1) as pool,
@@ -640,7 +637,7 @@ class AccountConcurrencyTests(unittest.TestCase):
             discovering = pool.submit(self.accounts.models, self.gemini, True)
             try:
                 self.assertTrue(entered.wait(1))
-                self.assertEqual(self.accounts.call(pulse(), timeout=1), "responsive")
+                self.assertEqual(self.accounts.call(responsive_pulse(), timeout=1), "responsive")
             finally:
                 release.set()
             self.assertEqual(discovering.result(2).models[0].id, "fixture")

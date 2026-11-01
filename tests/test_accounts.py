@@ -30,6 +30,10 @@ from providers.models import (
 from tests.account_fixture import configured_application as create_application
 
 
+async def never_finishes(**_kwargs):
+    await asyncio.Event().wait()
+
+
 class AccountTests(unittest.TestCase):
     def setUp(self):
         self.folder = tempfile.TemporaryDirectory()
@@ -384,11 +388,8 @@ class AccountTests(unittest.TestCase):
         self.assertIs(self.accounts.cached_models(self.gemini), good)
 
     def test_read_timeout_releases_catalog_single_flight_for_retry(self):
-        async def stalled(*, force=False):
-            await asyncio.sleep(10)
-
         provider = Mock()
-        provider.models = AsyncMock(side_effect=stalled)
+        provider.models = AsyncMock(side_effect=never_finishes)
         provider.close = AsyncMock()
         self.accounts._providers[self.gemini] = provider
         with patch("accounts.MODEL_TIMEOUT", 0.02):
@@ -405,15 +406,12 @@ class AccountTests(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 1)
 
     def test_history_timeout_isolated_from_other_account(self):
-        async def stalled(**kwargs):
-            await asyncio.sleep(10)
-
         self.accounts.status = lambda key: {"saved_snapshot": True}
         for key in (self.gemini, "chatgpt/default"):
             provider = Mock()
             provider.close = AsyncMock()
             provider.list_chats = (
-                AsyncMock(side_effect=stalled)
+                AsyncMock(side_effect=never_finishes)
                 if key == self.gemini
                 else AsyncMock(
                     return_value=Page((Conversation(Origin("chatgpt", "default", "chat"), "GPT"),))
@@ -683,46 +681,3 @@ class AccountTests(unittest.TestCase):
                 identity(self.gemini, "chat"), identity("chatgpt/default", "g-p-work")
             )
         provider.move_chat.assert_not_called()
-
-    def test_load_async_retrieves_conversation_and_caches_window(self):
-        provider = Mock()
-        provider.close = AsyncMock()
-        provider_id, account_id = self.gemini.split("/")
-        chat = Conversation(
-            Origin(provider_id, account_id, "remote-async"),
-            "Async Chat",
-            (
-                Message("m1", "user", (Content("text", "hello"),)),
-                Message("m2", "assistant", (Content("text", "world"),)),
-            ),
-        )
-        provider.get_chat = AsyncMock(return_value=chat)
-        self.accounts._providers[self.gemini] = provider
-
-        received = []
-        errors = []
-        done_event = Event()
-
-        def on_success(res):
-            received.append(res)
-            done_event.set()
-
-        def on_error(err):
-            errors.append(err)
-            done_event.set()
-
-        self.accounts.load_async(
-            "remote-async",
-            self.gemini,
-            on_success,
-            on_error,
-            force=True,
-            window=True,
-            window_limit=25,
-        )
-
-        self.assertTrue(done_event.wait(5))
-        self.assertEqual(errors, [])
-        self.assertEqual(len(received), 1)
-        self.assertEqual(received[0]["title"], "Async Chat")
-        self.assertEqual(len(received[0]["messages"]), 2)

@@ -341,6 +341,8 @@ class HistoryComponent:
                     sync_failed,
                     session_bound=False,
                 )
+            elif is_cached:
+                load_selected(False)
 
         def dispatch_error(error) -> None:
             message = str(error)

@@ -1532,78 +1532,6 @@ class Accounts:
             self.cache_conversation(key, dict(record, id=remote), make_active=False)
         return record
 
-    def load_async(
-        self,
-        value,
-        key,
-        on_success,
-        on_error=None,
-        force=False,
-        *,
-        window=False,
-        window_limit=None,
-    ):
-        key, remote = origin(value, key)
-        archive = self.archive()
-        if archive and archive.deleted(key, "conversation", remote):
-            if on_error:
-                on_error("Bu sohbet sağlayıcıdan silindi")
-            return
-        if not force:
-            cached = (
-                self.cached_window(key, remote, limit=window_limit)
-                if archive
-                else self.cached(key, remote)
-            )
-            if cached is not None:
-                checked = (
-                    getattr(archive, "_checked", {}).get((key, "conversation", remote))
-                    if archive
-                    else None
-                )
-                if checked is not None and time.monotonic() - checked <= 60:
-                    if on_success:
-                        on_success(cached)
-                    return
-
-        async def run_fetch():
-            try:
-                provider = self.provider(key)
-                chat = await provider.get_chat(remote)
-            except RemoteNotFound:
-                if archive:
-                    archive.delete(key, "conversation", remote)
-                raise
-            record = self._record_from_chat(key, remote, chat, archive)
-            if archive:
-                archive.put(key, "conversation", remote, record)
-                if hasattr(archive, "_checked") and isinstance(archive._checked, dict):
-                    archive._checked[(key, "conversation", remote)] = time.monotonic()
-                if window:
-                    kw = {"limit": window_limit} if window_limit is not None else {}
-                    return archive.conversation_window(key, remote, **kw) or record
-            return record
-
-        try:
-            self._start()
-        except Exception as error:
-            if on_error:
-                on_error(str(error))
-            return
-
-        future = asyncio.run_coroutine_threadsafe(run_fetch(), self._loop)
-
-        def done(fut):
-            try:
-                result = fut.result()
-                if on_success:
-                    on_success(result)
-            except Exception as error:
-                if on_error:
-                    on_error(str(error))
-
-        future.add_done_callback(done)
-
     def _assert_send_account_available(self, key):
         if not self.enabled(key.split("/")[0]):
             raise ValueError("Sağlayıcı devre dışı")
@@ -2610,9 +2538,6 @@ class Accounts:
         return {
             "upload_image": lambda *args: self.upload_image(key, *args),
             "load_conversation": lambda value: self.load(value, key, window=True, window_limit=25),
-            "load_conversation_async": lambda value, on_success, on_error=None, force=False: self.load_async(
-                value, key, on_success, on_error, force=force, window=True, window_limit=25
-            ),
             "send_prompt": lambda *args, **kwargs: self.send(key, *args, **kwargs),
             "load_catalog": lambda: self.models(key),
             "list_projects_callback": lambda cursor=None: self.list_projects(key, cursor),
