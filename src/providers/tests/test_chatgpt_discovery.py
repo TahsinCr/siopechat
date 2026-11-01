@@ -289,6 +289,35 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(result[0], "chat")
         self.assertEqual(result[3][0]["content"]["parts"], ["Answer"])
 
+    def test_chatgpt_stream_delivers_first_text_before_next_network_chunk(self):
+        events = []
+        case = self
+        event = {
+            "conversation_id": "chat",
+            "message": {
+                "id": "assistant",
+                "author": {"role": "assistant"},
+                "content": {"parts": ["Answer"]},
+            },
+        }
+
+        class Stream(httpx.SyncByteStream):
+            def __iter__(self):
+                yield f"data: {json.dumps(event)}\n\n".encode()
+                case.assertTrue(any(item.get("text") == "Answer" for item in events))
+                yield b"data: [DONE]\n\n"
+
+        self.client.http.close()
+        self.client.http = httpx.Client(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(
+                    200, headers={"content-type": "text/event-stream"}, stream=Stream()
+                )
+            )
+        )
+        with patch.object(self.client, "create_sentinel_headers", return_value={}):
+            self.client.send_prompt_direct(None, "hello", [], on_event=events.append)
+
     def test_sse_event_limit_counts_utf8_bytes(self):
         chunks = (
             b"data: ",

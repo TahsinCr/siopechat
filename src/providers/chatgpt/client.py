@@ -42,7 +42,6 @@ _CONTINUATION_CACHE_MAX_MESSAGES = 2_000
 _CONTINUATION_CACHE_MAX_TEXT_CHARS = 1_000_000
 _SSE_MAX_EVENT_BYTES = 2_000_000
 _SSE_MAX_EVENT_DATA_LINES = 65_536
-_SSE_READ_CHUNK_BYTES = 64 * 1024
 _SSE_MAX_LINE_BYTES = _SSE_MAX_EVENT_BYTES + len(b"data: ")
 
 
@@ -211,13 +210,9 @@ class ChatGPTClient:
                 self._sentinel_runtime.close()
                 self._sentinel_runtime = None
                 self._sentinel_runtime_key = None
-            continuation_cache = getattr(self, "_continuation_cache", None)
-            if continuation_cache is not None:
-                continuation_cache.clear()
+            self._continuation_cache.clear()
             self._continuation_cache_text_chars = 0
-            temporary_conversations = getattr(self, "temporary_conversations", None)
-            if temporary_conversations is not None:
-                temporary_conversations.clear()
+            self.temporary_conversations.clear()
             self.http.close()
 
     @staticmethod
@@ -912,7 +907,7 @@ class ChatGPTClient:
                 raise ChatGPTWebError(
                     f"ChatGPT returned unexpected content type {content_type or '<missing>'}"
                 )
-            for payload in _sse_data(response.iter_bytes(chunk_size=_SSE_READ_CHUNK_BYTES)):
+            for payload in _sse_data(response.iter_bytes()):
                 event_at = time.perf_counter_ns() if timing is not None else None
                 if timing is not None and not first_sse_event:
                     first_sse_event = True

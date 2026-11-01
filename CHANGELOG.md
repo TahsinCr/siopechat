@@ -39,7 +39,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 - Ensure tab removal and closing all tabs release active message and transcript references before dispatching off-thread memory trimming with full garbage collection.
 - Release temporary ChatGPT conversation state when its tab closes and keep per-send stream messages local so failures do not retain partial responses on the client.
 - Request memory reclamation after closing tabs on Linux, Windows, and macOS using background garbage collection and platform allocator calls where available.
-- Bound ChatGPT SSE event assembly to 2,000,000 UTF-8 data bytes and a line-count ceiling while reading fixed-size chunks, rejecting oversized lines and events before growing their buffers.
+- Deliver ChatGPT SSE events as transport chunks arrive while retaining the 2,000,000-byte event and line-count limits.
 - Coalesce streamed reasoning and response deltas at UI refreshes instead of rebuilding their full text for every token; keep deferred completion updates scoped to their originating send.
 - Display queued user prompts immediately in the chat transcript instead of hiding them until the in-flight response completes, preserving visibility and restoring cleanly on cancellation or failure.
 - Omit redundant post-send ChatGPT conversation history fetch on stream completions where SSE chunk deltas omit parent message IDs.

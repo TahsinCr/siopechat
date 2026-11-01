@@ -3,6 +3,7 @@ import json
 import threading
 import time
 import unittest
+from collections import OrderedDict
 from dataclasses import replace
 from unittest.mock import Mock, patch
 
@@ -45,6 +46,8 @@ def make_client() -> ChatGPTClient:
     client._sentinel_runtime_key = None
     client._prewarmed_sentinel = None
     client._prewarming = False
+    client._continuation_cache = OrderedDict()
+    client.temporary_conversations = OrderedDict()
     client.http = Mock()
     return client
 
@@ -627,6 +630,8 @@ class ChatGPTSentinelClientTests(unittest.TestCase):
 
     def test_client_close_releases_its_sentinel_runtime(self):
         client = make_client()
+        client._continuation_cache["conversation"] = object()
+        client.temporary_conversations["temporary"] = object()
         response = Mock()
         response.json.return_value = {
             "prepare_token": "server-issued",
@@ -638,6 +643,8 @@ class ChatGPTSentinelClientTests(unittest.TestCase):
         self.assertIsNotNone(client._sentinel_runtime)
         client.close()
         self.assertIsNone(client._sentinel_runtime)
+        self.assertFalse(client._continuation_cache)
+        self.assertFalse(client.temporary_conversations)
 
 
 if __name__ == "__main__":
