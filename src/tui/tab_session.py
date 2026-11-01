@@ -89,6 +89,11 @@ class TabSessionStore:
             return None
         project = value.get("project")
         project = project if isinstance(project, dict) else {}
+        draft = value.get("draft")
+        draft = draft if isinstance(draft, str) else ""
+        queued = value.get("queued_submit")
+        if not draft and isinstance(queued, dict) and isinstance(queued.get("prompt"), str):
+            draft = queued["prompt"]
         return {
             "kind": kind,
             "account_key": account_key,
@@ -102,16 +107,7 @@ class TabSessionStore:
                 if isinstance(value.get("effort_preference"), str)
                 else ""
             ),
-            "draft": (
-                value.get("draft")
-                if isinstance(value.get("draft"), str) and value.get("draft")
-                else (
-                    value.get("queued_submit", {}).get("prompt", "")
-                    if isinstance(value.get("queued_submit"), dict)
-                    and isinstance(value.get("queued_submit", {}).get("prompt"), str)
-                    else (value.get("draft") if isinstance(value.get("draft"), str) else "")
-                )
-            ),
+            "draft": draft,
             "project": {
                 key: project[key] for key in ("id", "name") if isinstance(project.get(key), str)
             },

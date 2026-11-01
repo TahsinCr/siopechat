@@ -28,6 +28,8 @@ Python distributions use the corresponding PEP 440 version (`1.5.2b0` for `v1.5.
 
 ### Fixed
 
+- Keep workspace entries unique while provider pages arrive and when a refresh partially fails.
+- Return focus from sidebar search on Escape without arming response cancellation.
 - Keep message toolbars visible and attached to the correct messages while scrolling and loading older history, including in split panes.
 - Apply message capability and version checks to the retry shortcut, show account actions in the session panel, and preserve logout confirmation.
 - Ensure pressing `Escape` cleanly dismisses modal forms, dialogs (`SettingsDialog`, `SessionDialog`), overlays, and search fields without inadvertently exiting the application or modifying settings.

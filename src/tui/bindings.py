@@ -278,8 +278,8 @@ def key_bindings(view) -> KeyBindings:
             view.close_resume()
         elif getattr(view, "tab_kind", None) == "downloads":
             view.close_tab()
-        elif getattr(view, "sidebar_search_visible", False):
-            view.close_sidebar_search()
+        elif view.app.layout.current_control is view.sidebar_search.control:
+            view.app.layout.focus(view.input)
         elif view.handle_stop_escape():
             return
         else:

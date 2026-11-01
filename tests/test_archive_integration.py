@@ -29,6 +29,38 @@ class ArchiveIntegrationTests(unittest.TestCase):
         self.accounts = self.api.get("accounts")
         self.gemini = self.accounts.add("gemini", "Gemini")
 
+    def test_incremental_sidebar_pages_preserve_one_workspace_on_partial_failure(self):
+        workspace = {"id": "workspace-one", "kind": "workspace", "title": "Workspace"}
+        observed = []
+        with terminal(account_service=self.accounts) as (view, _):
+            view.sidebar_items = [workspace]
+            view.refresh_projects = Mock()
+            view._dispatch_ui = lambda callback: callback()
+            view.list_workspaces = Mock(side_effect=OSError("workspace unavailable"))
+
+            def list_page(_cursor, on_account_page):
+                for remote in ("first", "second"):
+                    item = {"id": f"@chatgpt/default/{remote}", "title": remote}
+                    on_account_page({"key": "chatgpt/default"}, {"items": [None, "invalid", item]})
+                    observed.append(
+                        sum(row.get("kind") == "workspace" for row in view.sidebar_items)
+                    )
+                return {
+                    "items": [],
+                    "errors": ["offline"],
+                    "failed_accounts": ["chatgpt/default"],
+                    "cursor": None,
+                }
+
+            view.list_history_page = list_page
+            with patch.object(view._reads, "submit", side_effect=lambda work: (work(), True)[1]):
+                view.refresh_sidebar()
+            self.assertEqual(observed, [1, 1])
+            self.assertEqual(
+                [item["id"] for item in view.sidebar_items if item.get("kind") == "workspace"],
+                ["workspace-one"],
+            )
+
     def test_cold_provider_callback_returns_25_message_archive_window(self):
         record = {
             "id": "@chatgpt/default/cold",

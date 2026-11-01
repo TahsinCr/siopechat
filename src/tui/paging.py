@@ -92,7 +92,7 @@ class HistoryPager:
         if requested:
             view.transcript_window.scroll_direction = 0
 
-    def request(self, direction, *, refresh=False, tab=None, limit=None):
+    def request(self, direction, *, refresh=False, tab=None):
         if direction not in ("older", "newer", "top", "bottom"):
             raise ValueError("Unknown history direction")
         view = self.view
@@ -119,7 +119,7 @@ class HistoryPager:
         tab["history_read"] = token
         requested_anchor = self.anchor(tab)
         revision = getattr(view, "_manual_scroll_revision", 0)
-        chunk_limit = limit or (25 if tab.get("history_hydrate") else None)
+        chunk_limit = 25 if tab.get("history_hydrate") else None
 
         def cancelled():
             return tab.get("history_read") is not token

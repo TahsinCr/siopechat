@@ -340,18 +340,22 @@ class SidebarComponent:
             def on_account_page(account, page):
                 if generation != self.sidebar_refresh_generation:
                     return
-                if isinstance(page, BaseException) or not isinstance(page, dict):
+                if not isinstance(page, dict):
                     return
                 items = page.get("items", [])
-                if not items:
+                if not isinstance(items, (list, tuple)) or not items:
                     return
 
                 def apply_account():
                     if generation != self.sidebar_refresh_generation:
                         return
-                    by_id = {item["id"]: item for item in self.sidebar_items if item.get("id")}
+                    by_id = {
+                        item["id"]: item
+                        for item in self.sidebar_items
+                        if item.get("id") and item.get("kind") != "workspace"
+                    }
                     for item in items:
-                        if item.get("id"):
+                        if isinstance(item, dict) and item.get("id"):
                             by_id[item["id"]] = merge_chat_listing(by_id.get(item["id"]), item)
                     saved_workspaces = [
                         item for item in self.sidebar_items if item.get("kind") == "workspace"
@@ -380,7 +384,8 @@ class SidebarComponent:
                     conversations.extend(
                         item
                         for item in self.sidebar_items
-                        if origin(item.get("id"), self.account_key)[0] in failed
+                        if item.get("kind") != "workspace"
+                        and origin(item.get("id"), self.account_key)[0] in failed
                     )
             except Exception as error:
                 sidebar_error = str(error)

@@ -531,6 +531,19 @@ class WorkspaceTests(unittest.TestCase):
                 self.assertEqual(v.tabs[0].get("draft", ""), "")
                 self.assertEqual(store.load()["tabs"][0]["draft"], "queued follow up")
 
+    def test_session_draft_prefers_user_text_and_ignores_invalid_queued_data(self):
+        tab = {"kind": "chat", "account_key": "chatgpt/default", "tab_id": "tab"}
+        for draft, queued, expected in (
+            ("typed", {"prompt": "queued"}, "typed"),
+            ("", {"prompt": "queued"}, "queued"),
+            (None, {"prompt": "queued"}, "queued"),
+            (None, {"prompt": 3}, ""),
+            ("", None, ""),
+        ):
+            with self.subTest(draft=draft, queued=queued):
+                value = dict(tab, draft=draft, queued_submit=queued)
+                self.assertEqual(TabSessionStore._tab_record(value)["draft"], expected)
+
     def test_four_busy_tabs_allow_queuing_followup_on_busy_tab(self):
         with terminal() as (v, _):
             for _ in range(3):
@@ -781,3 +794,13 @@ class WorkspaceTests(unittest.TestCase):
             self.assertTrue(view.palette_visible)
             view.run_action("navigation.close_overlay")
             self.assertFalse(view.palette_visible)
+
+    def test_escape_leaves_sidebar_search_without_arming_response_cancellation(self):
+        with terminal() as (view, _):
+            view.sidebar_visible = True
+            view.app.layout.focus(view.sidebar_search)
+            view.tabs[view.active_tab]["busy"] = True
+            view.run_action("navigation.close_overlay")
+            self.assertIs(view.app.layout.current_control, view.input.control)
+            self.assertFalse(view.tabs[view.active_tab].get("cancel_requested"))
+            self.assertEqual(view.stop_confirmation_until, 0.0)
