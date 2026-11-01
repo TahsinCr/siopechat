@@ -51,13 +51,14 @@ class SendOptionsTests(unittest.TestCase):
             return httpx.Response(
                 200,
                 headers={"content-type": "text/event-stream"},
-                text="\n".join(
+                text="\n\n".join(
                     [
                         "data: " + json.dumps({"conversation_id": "remote", "message": m})
                         for m in self.messages
                     ]
                     + ["data: [DONE]"]
-                ),
+                )
+                + "\n\n",
             )
 
         self.client.http = httpx.Client(transport=httpx.MockTransport(handle))

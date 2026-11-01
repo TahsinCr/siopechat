@@ -289,6 +289,12 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(result[0], "chat")
         self.assertEqual(result[3][0]["content"]["parts"], ["Answer"])
 
+    def test_sse_parser_keeps_valid_json_data_lines_in_one_event(self):
+        from providers.chatgpt.client import _sse_data
+
+        payload = b'data: {"a":1}\ndata: {"b":2}\n\n'
+        self.assertEqual(list(_sse_data([payload])), ['{"a":1}\n{"b":2}'])
+
     def test_chatgpt_stream_delivers_first_text_before_next_network_chunk(self):
         events = []
         case = self

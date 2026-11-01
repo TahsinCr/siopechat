@@ -118,17 +118,6 @@ def _sse_data(chunks: Iterable[bytes]):
             return
         if separator and value.startswith(b" "):
             value = value[1:]
-        if data:
-            previous = "\n".join(data)
-            try:
-                json.loads(previous)
-            except json.JSONDecodeError:
-                pass
-            else:
-                yield previous
-                data.clear()
-                total_bytes = 0
-                data_line_count = 0
         if data_line_count >= _SSE_MAX_EVENT_DATA_LINES:
             raise ChatGPTWebError("ChatGPT event payload exceeded the data line limit")
         if total_bytes + len(value) > _SSE_MAX_EVENT_BYTES:
