@@ -42,6 +42,8 @@ class TabComponent:
             "response_model": self.last_response_model,
             "effort_preference": self.effort_preference,
             "draft": self.input.text if hasattr(self, "input") else "",
+            "recovery_drafts": [],
+            "pending_attachments": self.pending_attachments,
             "project": self.current_project,
             "temporary": self.temporary,
             "follow_output": self.follow_output,
@@ -101,6 +103,11 @@ class TabComponent:
                     "effort": saved.get("effort"),
                     "effort_preference": saved.get("effort_preference") or "",
                     "draft": saved.get("draft", ""),
+                    "recovery_drafts": [
+                        item
+                        for item in saved.get("recovery_drafts", [])
+                        if isinstance(item, str) and item
+                    ],
                     "project": dict(project),
                     "temporary": False,
                     "busy": False,
@@ -198,6 +205,7 @@ class TabComponent:
                 "conversation_id": None,
                 "title": self.tr("New conversation"),
                 "messages": [],
+                "pending_attachments": [],
                 "model": self.model,
                 "effort": self.effort,
                 "project": {},
@@ -272,6 +280,11 @@ class TabComponent:
         self.normalize_model_selection()
         tab.update(model=self.model, effort=self.effort, catalog=self.catalog)
         self.input.text = tab.get("draft", "")
+        pending_attachments = tab.get("pending_attachments")
+        if not isinstance(pending_attachments, list):
+            pending_attachments = []
+            tab["pending_attachments"] = pending_attachments
+        self.pending_attachments = pending_attachments
         self.current_project = dict(tab.get("project") or {})
         self._sync_activity()
         completed_pending = bool(tab.get("completed_pending"))
@@ -288,6 +301,11 @@ class TabComponent:
             self.status = self.tr("Yanıt {0}. sekmede sürüyor").format(self.busy_tab_index + 1)
         elif completed_pending:
             self.status = self.tr("Yanıt bu sekmede tamamlandı")
+        elif tab.get("recovery_drafts"):
+            key = self.keybindings.get("chat.switch_saved_draft", "escape s")
+            self.status = self.tr(
+                "ui.Another saved prompt is available · use {0} to switch"
+            ).format(key)
         else:
             self.status = self.tr("Sekme {0}/{1}").format(self.active_tab + 1, len(self.tabs))
         self.follow_output = tab.get("follow_output", True)
@@ -343,14 +361,9 @@ class TabComponent:
             self._save_active_tab()
         old_active = self.active_tab
         closing = self.tabs[index]
-        closing_id = closing.get("tab_id")
-        discarded = [
-            item for item in self.pending_attachments if item.get("source_tab_id") == closing_id
-        ]
+        discarded = list(closing.get("pending_attachments", ()))
         if discarded:
-            self.pending_attachments = [
-                item for item in self.pending_attachments if item.get("source_tab_id") != closing_id
-            ]
+            closing["pending_attachments"] = []
             self._release_staged_attachments(discarded)
         self._discard_tab_render_cache(closing)
         if closing.get("busy") and not empty_workspace:
@@ -459,8 +472,12 @@ class TabComponent:
             self.app.invalidate()
             return
         cleanup = []
-        self._release_staged_attachments(self.pending_attachments)
-        self.pending_attachments.clear()
+        discarded = []
+        for tab in self.tabs:
+            pending = tab.get("pending_attachments", [])
+            discarded.extend(pending)
+            pending.clear()
+        self._release_staged_attachments(discarded)
         getattr(self, "_prepared_transcripts", {}).clear()
         for tab in self.tabs:
             self._discard_tab_render_cache(tab)
@@ -485,6 +502,7 @@ class TabComponent:
                 "conversation_id": None,
                 "title": self.tr("New conversation"),
                 "messages": [],
+                "pending_attachments": [],
                 "model": self.model,
                 "effort": self.effort,
                 "project": {},

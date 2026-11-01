@@ -189,6 +189,7 @@ class SendingComponent:
             def finish_turn() -> None:
                 nonlocal messages
                 stream.flush_pending_text()
+                stream.cleanup_after_render()
                 if target_tab.get("_active_stream_id") == stream.stream_id:
                     target_tab.pop("_active_stream_id", None)
                 completed_elapsed = target_tab.get("generation_elapsed")
@@ -215,23 +216,26 @@ class SendingComponent:
                             tab["loaded"] = False
                 if attachments:
                     submitted_ids = submitted_attachment_ids
-                    self.pending_attachments = [
+                    pending_attachments = target_tab.setdefault("pending_attachments", [])
+                    pending_attachments[:] = [
                         item
-                        for item in self.pending_attachments
+                        for item in pending_attachments
                         if str(item.get("queue_id") or "") not in submitted_ids
                     ]
                     if send_succeeded:
                         self._release_staged_attachments(attachments)
                     else:
                         queued_ids = {
-                            str(item.get("queue_id") or "") for item in self.pending_attachments
+                            str(item.get("queue_id") or "") for item in pending_attachments
                         }
                         restored = [
                             item
                             for item in attachments
                             if str(item.get("queue_id") or "") not in queued_ids
                         ]
-                        self.pending_attachments = restored + self.pending_attachments
+                        pending_attachments[:0] = restored
+                    if is_active():
+                        self.pending_attachments = pending_attachments
                     self._attachments_in_flight = False
                     self._inflight_attachments = []
                 tab = target_tab
@@ -263,15 +267,18 @@ class SendingComponent:
                             self.input.text = queued["prompt"]
                         else:
                             tab["draft"] = queued["prompt"]
+                        pending_attachments = target_tab.setdefault("pending_attachments", [])
                         existing_attachment_ids = {
-                            str(item.get("queue_id") or "") for item in self.pending_attachments
+                            str(item.get("queue_id") or "") for item in pending_attachments
                         }
                         restored = [
                             item
                             for item in queued["attachments"]
                             if str(item.get("queue_id") or "") not in existing_attachment_ids
                         ]
-                        self.pending_attachments = restored + self.pending_attachments
+                        pending_attachments[:0] = restored
+                        if is_active():
+                            self.pending_attachments = pending_attachments
                 confirm_branch_listing = bool(
                     send_succeeded and tab.pop("_confirm_branch_listing", False)
                 )

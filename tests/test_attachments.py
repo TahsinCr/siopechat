@@ -229,7 +229,7 @@ class AttachmentPolicyTests(unittest.TestCase):
             view._release_staged_attachments.assert_not_called()
             view.app.invalidate.assert_called_once()
 
-    def test_send_from_another_tab_consumes_the_shared_attachment_queue_on_success(self):
+    def test_send_from_another_tab_keeps_attachments_with_their_owner(self):
         from tests import tui_support as interaction
 
         with interaction.terminal() as (view, _):
@@ -243,8 +243,11 @@ class AttachmentPolicyTests(unittest.TestCase):
             view.tabs[0]["tab_id"] = "source"
             view.new_tab()
             target = view.tabs[1]
+            source = view.tabs[0]
             target["busy"] = True
             view.busy = True
+            self.assertEqual(view.pending_attachments, [])
+            self.assertEqual(source["pending_attachments"], [attachment])
             sent = {}
             view._dispatch_ui = lambda callback: callback()
 
@@ -257,7 +260,7 @@ class AttachmentPolicyTests(unittest.TestCase):
 
             view.run_send(
                 "hello",
-                [attachment],
+                [],
                 1,
                 target["messages"],
                 None,
@@ -266,7 +269,56 @@ class AttachmentPolicyTests(unittest.TestCase):
                 send_callback=send,
                 target_tab=target,
             )
-            self.assertEqual(sent["attachments"], [attachment])
+            self.assertEqual(sent["attachments"], [])
+            self.assertEqual(view.pending_attachments, [])
+            self.assertEqual(source["pending_attachments"], [attachment])
+
+    def test_close_all_tabs_releases_each_tabs_staged_attachments(self):
+        from tests import tui_support as interaction
+
+        with interaction.terminal() as (view, _):
+            first = {"queue_id": "first", "name": "first.txt"}
+            second = {"queue_id": "second", "name": "second.txt"}
+            view.pending_attachments = [first]
+            view.new_tab()
+            view.pending_attachments.append(second)
+            released = []
+            view._release_staged_attachments = released.extend
+
+            view.close_all_tabs()
+
+            self.assertCountEqual(released, [first, second])
+            self.assertEqual(view.pending_attachments, [])
+
+    def test_logout_releases_only_attachments_from_the_logged_out_account(self):
+        from tests import tui_support as interaction
+
+        with interaction.terminal() as (view, _):
+            current_key = view.account_key
+            other_key = "claude/other"
+            first = {"queue_id": "current", "name": "current.txt"}
+            second = {"queue_id": "other", "name": "other.txt"}
+            view.tabs[0]["account_key"] = current_key
+            view.pending_attachments = [first]
+            view.new_tab()
+            retained = view.tabs[1]
+            retained["account_key"] = other_key
+            view.account_key = other_key
+            retained["pending_attachments"].append(second)
+            view.switch_tab(-1)
+            view.account_key = current_key
+            self.assertEqual(view.active_tab, 0)
+            self.assertEqual(view.account_key, current_key)
+            self.assertEqual(view.tabs[1]["account_key"], other_key)
+            view.account_service = object()
+            released = []
+            view._release_staged_attachments = released.extend
+
+            view.after_logout()
+
+            self.assertEqual(released, [first])
+            self.assertEqual(view.tabs[0]["account_key"], other_key)
+            self.assertEqual(view.tabs[0]["pending_attachments"], [second])
             self.assertEqual(view.pending_attachments, [])
 
     def test_destination_account_reuploads_foreign_attachment_ids(self):

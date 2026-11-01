@@ -891,6 +891,43 @@ class MessageToolbarTests(unittest.TestCase):
             self.assertIn("first_sse_text_to_ui_frame_ms", durations)
             self.assertEqual(view.messages[-1]["text"], "First visible text")
 
+    def test_unrendered_timing_callback_is_removed_when_stream_finishes(self):
+        from providers.timing import SendTiming
+        from tui.chat.stream import _SendStream
+
+        with terminal() as (view, _):
+
+            class CallbackEvent:
+                def __init__(self):
+                    self.callbacks = []
+
+                def __iadd__(self, callback):
+                    self.callbacks.append(callback)
+                    return self
+
+                def __isub__(self, callback):
+                    self.callbacks.remove(callback)
+                    return self
+
+            after_render = CallbackEvent()
+            view.app.after_render = after_render
+            view.messages = [{"role": "assistant", "text": ""}]
+            view.tabs[0]["messages"] = view.messages
+            stream = _SendStream(view, view.tabs[0], view.messages, timing=SendTiming())
+            stream.on_event(
+                {"type": "delta", "text": "Answer", "channel": "final", "message_id": "answer"}
+            )
+            view.new_tab()
+
+            stream._after_first_text_render(view.app)
+            self.assertTrue(stream._after_render_registered)
+            self.assertIn(stream._after_first_text_render, after_render.callbacks)
+
+            stream.cleanup_after_render()
+
+            self.assertFalse(stream._after_render_registered)
+            self.assertNotIn(stream._after_first_text_render, after_render.callbacks)
+
     def test_file_card_retains_metadata_and_starts_the_download_manager(self):
         message = {
             "id": "answer",

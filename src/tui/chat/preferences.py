@@ -86,6 +86,7 @@ class PreferencesComponent:
         self.app.invalidate()
 
     def after_logout(self):
+        self._save_active_tab()
         retained_tabs = (
             [
                 tab
@@ -131,7 +132,15 @@ class PreferencesComponent:
         self.messages = []
         self.current_project = {}
         self.temporary = False
-        self._release_staged_attachments(self.pending_attachments)
+        retained_ids = {id(tab) for tab in retained_tabs}
+        discarded = []
+        for tab in self.tabs:
+            if id(tab) in retained_ids:
+                continue
+            pending = tab.get("pending_attachments", [])
+            discarded.extend(pending)
+            pending.clear()
+        self._release_staged_attachments(discarded)
         self.pending_attachments = []
         self.input.text = ""
         settings_open = self.settings_dialog.visible

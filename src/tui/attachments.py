@@ -373,7 +373,22 @@ class AttachmentPicker:
             uploaded, errors = result
             view.uploading_image = False
             view.background_jobs = max(0, view.background_jobs - 1)
-            view.pending_attachments.extend(uploaded)
+            owner = next(
+                (
+                    tab
+                    for tab in view.tabs + view.background_tabs
+                    if tab.get("tab_id") == target_tab_id
+                ),
+                None,
+            )
+            if owner is None:
+                view._release_staged_attachments(uploaded)
+                uploaded = []
+            else:
+                pending = owner.setdefault("pending_attachments", [])
+                pending.extend(uploaded)
+                if owner is view.tabs[view.active_tab]:
+                    view.pending_attachments = pending
             status = [view.tr("{0} dosya eklendi").format(len(uploaded))] if uploaded else []
             if errors:
                 status.append(view.tr("{0} dosya yüklenemedi").format(len(errors)))

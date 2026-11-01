@@ -42,6 +42,7 @@ class _SendStream:
         self._first_final_text_at_ns = None
         self._after_render_registered = False
         self._ui_first_text_recorded = False
+        self._stream_finished = False
         self._refresh_lock = threading.Lock()
         self._refresh_pending = False
         self._refresh_status: str | None = None
@@ -263,7 +264,11 @@ class _SendStream:
         self._schedule_refresh(show_status=True)
 
     def _after_first_text_render(self, app) -> None:
-        if self._ui_first_text_recorded or not self._is_active() or not self.rendered:
+        if self._ui_first_text_recorded:
+            return
+        if not self._is_active() or not self.rendered:
+            if self._stream_finished:
+                self.cleanup_after_render()
             return
         now = time.perf_counter_ns()
         self._ui_first_text_recorded = True
@@ -273,3 +278,17 @@ class _SendStream:
             now - self._first_final_text_at_ns,
         )
         app.after_render -= self._after_first_text_render
+        self._after_render_registered = False
+
+    def cleanup_after_render(self) -> None:
+        self._stream_finished = True
+        if (
+            self._after_render_registered
+            and not self._ui_first_text_recorded
+            and self._is_active()
+            and self.rendered
+        ):
+            return
+        if self._after_render_registered:
+            self.view.app.after_render -= self._after_first_text_render
+            self._after_render_registered = False

@@ -362,8 +362,10 @@ class WorkspaceTests(unittest.TestCase):
                 "project_id": None,
                 "temporary": False,
             }
-            view.pending_attachments = [existing_attachment]
             view.new_tab()
+            other_tab = view.tabs[1]
+            other_tab["pending_attachments"].append(existing_attachment)
+            view.pending_attachments = other_tab["pending_attachments"]
 
             def fail(*args, **kwargs):
                 raise RuntimeError("offline")
@@ -382,8 +384,12 @@ class WorkspaceTests(unittest.TestCase):
 
             self.assertEqual(target["draft"], "Follow-up")
             self.assertEqual(
+                [item["queue_id"] for item in target["pending_attachments"]],
+                ["queued-file"],
+            )
+            self.assertEqual(
                 [item["queue_id"] for item in view.pending_attachments],
-                ["queued-file", "existing-file"],
+                ["existing-file"],
             )
             self.assertEqual(len(target["messages"]), 2)
             self.assertFalse(any(m.get("queued") for m in target["messages"]))
@@ -542,7 +548,36 @@ class WorkspaceTests(unittest.TestCase):
         ):
             with self.subTest(draft=draft, queued=queued):
                 value = dict(tab, draft=draft, queued_submit=queued)
-                self.assertEqual(TabSessionStore._tab_record(value)["draft"], expected)
+                record = TabSessionStore._tab_record(value)
+                self.assertEqual(record["draft"], expected)
+                self.assertEqual(record["recovery_drafts"], ["queued"] if draft == "typed" else [])
+
+    def test_saved_draft_switch_cycles_without_losing_either_prompt(self):
+        with terminal() as (view, _):
+            saved = TabSessionStore._tab_record(
+                {
+                    "kind": "chat",
+                    "account_key": view.account_key,
+                    "tab_id": "saved-tab",
+                    "draft": "newer draft",
+                    "queued_submit": {"prompt": "queued prompt"},
+                    "recovery_drafts": ["older recovered prompt"],
+                }
+            )
+            self.assertTrue(view.restore_session({"tabs": [saved], "active_tab": 0}))
+            tab = view.tabs[view.active_tab]
+            self.assertEqual(view.input.text, "newer draft")
+            self.assertEqual(tab["recovery_drafts"], ["queued prompt", "older recovered prompt"])
+
+            view.dispatch_action("chat.switch_saved_draft")
+
+            self.assertEqual(view.input.text, "queued prompt")
+            self.assertEqual(tab["recovery_drafts"], ["older recovered prompt", "newer draft"])
+
+            view.dispatch_action("chat.switch_saved_draft")
+
+            self.assertEqual(view.input.text, "older recovered prompt")
+            self.assertEqual(tab["recovery_drafts"], ["newer draft", "queued prompt"])
 
     def test_four_busy_tabs_allow_queuing_followup_on_busy_tab(self):
         with terminal() as (v, _):
