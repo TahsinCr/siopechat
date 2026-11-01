@@ -356,7 +356,7 @@ class AccountTests(unittest.TestCase):
         item = {"key": self.gemini, "enabled": True}
         with (
             patch.object(self.accounts, "items", return_value=[item]),
-            patch("accounts.core.session_exists", return_value=False),
+            patch("accounts.service.session_exists", return_value=False),
             patch.object(self.accounts, "provider", side_effect=AssertionError("no session")),
         ):
             self.assertEqual(self.accounts.prepare_enabled(), {})
@@ -368,7 +368,7 @@ class AccountTests(unittest.TestCase):
         provider.close = AsyncMock()
         with (
             patch.object(self.accounts, "items", return_value=[item]),
-            patch("accounts.core.session_exists", return_value=True),
+            patch("accounts.service.session_exists", return_value=True),
             patch.object(self.accounts, "provider", return_value=provider),
         ):
             failures = self.accounts.prepare_enabled()
@@ -392,7 +392,7 @@ class AccountTests(unittest.TestCase):
         provider.models = AsyncMock(side_effect=never_finishes)
         provider.close = AsyncMock()
         self.accounts._providers[self.gemini] = provider
-        with patch("accounts.core.MODEL_TIMEOUT", 0.02):
+        with patch("accounts.service.MODEL_TIMEOUT", 0.02):
             with self.assertRaises(TimeoutError):
                 self.accounts.models(self.gemini)
         self.assertNotIn(self.gemini, self.accounts._catalog_tasks)

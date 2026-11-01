@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import asdict
 
 from backend import BackendService
 from providers import (
     Capability,
 )
-from providers.errors import RemoteNotFound
+from providers.errors import ProviderError, RemoteNotFound
 
 from .shared import (
     HISTORY_TIMEOUT,
@@ -376,88 +375,6 @@ class AccountsHistory:
             "failed_accounts": failed,
         }
 
-    def list_projects(self, key, cursor=None, force=False):
-        provider = self.provider(key)
-        if Capability.PROJECTS not in provider.capabilities:
-            return {"items": [], "cursor": None}
-
-        def fetch():
-            page = self.call(provider.list_projects(cursor))
-            return {
-                "items": [self.project_record(key, p) for p in page.items],
-                "cursor": page.next_cursor,
-            }
-
-        return self.read_record(key, "containers", cursor, fetch, force, fresh=force)
-
-    def all_projects(self, cursor=None, force=False, account_keys=None, on_account=None):
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
-        cursors = json.loads(cursor) if cursor else None
-        accounts = [
-            item
-            for item in self.items()
-            if self.enabled(item["provider"])
-            and (account_keys is None or item["key"] in account_keys)
-            and (cursors is None or item["key"] in cursors)
-        ]
-        items, errors, failed, more = [], [], [], {}
-
-        def report(account, outcome):
-            if on_account is None:
-                return
-            try:
-                on_account(account, outcome)
-            except Exception:
-                # Progress reporting is an optional UI hint; it cannot turn a
-                # valid provider response into a failed account refresh.
-                return
-
-        with ThreadPoolExecutor(
-            max_workers=min(6, max(1, len(accounts))), thread_name_prefix="project-list"
-        ) as pool:
-            futures = {
-                pool.submit(
-                    self.list_projects,
-                    account["key"],
-                    cursors.get(account["key"]) if cursors else None,
-                    force,
-                ): account
-                for account in accounts
-            }
-            for future in as_completed(futures):
-                account = futures[future]
-                try:
-                    page = future.result()
-                    report(account, page)
-                    items.extend(page["items"])
-                    if page.get("cursor"):
-                        more[account["key"]] = page["cursor"]
-                except Exception as error:
-                    report(account, error)
-                    errors.append(account["label"])
-                    failed.append(account["key"])
-        return {
-            "items": items,
-            "cursor": json.dumps(more) if more else None,
-            "errors": errors,
-            "failed_accounts": failed,
-        }
-
-    @staticmethod
-    def project_record(key, project):
-        return {
-            "id": identity(key, project.origin.remote_id),
-            "name": project.name,
-            "remote_id": project.origin.remote_id,
-            "instructions": project.instructions,
-            "resources": [asdict(resource) for resource in project.resources],
-            "context": key,
-            "provider_id": key.split("/")[0],
-            "kind": project.metadata.get("kind", "project"),
-            "metadata": project.metadata,
-        }
-
     def load(self, value, key, force=False, *, window=False, window_limit=None):
         key, remote = origin(value, key)
         archive = self.archive()
@@ -511,3 +428,148 @@ class AccountsHistory:
         if not archive:
             self.cache_conversation(key, dict(record, id=remote), make_active=False)
         return record
+
+    def delete(self, value, key, kind="conversation"):
+        context, remote = origin(value, key)
+        if context != key or kind not in ("conversation", "container") or not remote:
+            raise ValueError("Silinecek kayıt seçili hesaba ait olmalı")
+        with self._lock:
+            if self._sending.get(key, 0):
+                raise RuntimeError("Hesabın gönderimleri tamamlandıktan sonra silin")
+        provider = self.provider(key)
+        capability = Capability.DELETE if kind == "conversation" else Capability.PROJECT_DELETE
+        if capability not in provider.capabilities:
+            raise ValueError("Sağlayıcı bu silme işlemini desteklemiyor")
+
+        confirmed_children = None
+
+        def cleanup():
+            archive = self.archive()
+            try:
+                removed = (
+                    archive.delete(key, kind, remote, children=confirmed_children)
+                    if archive
+                    else [(key, kind, remote)]
+                )
+                if kind == "container":
+                    for member_key, project_id in tuple(self._chat_projects.items()):
+                        if member_key[0] == key and project_id == remote:
+                            self._chat_projects.pop(member_key, None)
+                for _, target_kind, target in removed:
+                    if target_kind == "conversation":
+                        pointer = archive.get(key, "pointer", "active") if archive else None
+                        if isinstance(pointer, dict) and pointer.get("remote") == target:
+                            self.set_active(key, None)
+                        if archive:
+                            self.repository.cache_delete(key, "conversation", target)
+                            self.repository.cache_delete(key, "tombstone", target)
+                        else:
+                            self.repository.cache_mark_deleted(key, target)
+                        legacy = self.cache(key)
+                        legacy.conversation_cache_path(target).unlink(missing_ok=True)
+                        legacy.conversation_cache_path(target).with_suffix(".deleted").unlink(
+                            missing_ok=True
+                        )
+                        if legacy.active_conversation_id() == target:
+                            legacy.set_active_conversation(None)
+                        self._chat_projects.pop((key, target), None)
+            except OSError as error:
+                raise RuntimeError(
+                    "Sağlayıcıdan silindi; yerel kayıt temizlenemedi. Yenileyin."
+                ) from error
+            return {"removed": [identity(a, r) for a, _, r in removed], "kind": kind}
+
+        async def remove():
+            nonlocal confirmed_children
+            archive = self.archive()
+            members = (
+                await asyncio.to_thread(archive.repository.container_members, key, remote)
+                if kind == "container" and archive
+                else set()
+            )
+            gate = self.api.tasks.account_gate(*key.split("/", 1))
+            async with gate:
+                try:
+                    await (
+                        provider.delete_chat(remote)
+                        if kind == "conversation"
+                        else provider.delete_project(remote)
+                    )
+                except RemoteNotFound:
+                    try:
+                        await (
+                            provider.get_chat(remote)
+                            if kind == "conversation"
+                            else provider.get_project(remote)
+                        )
+                    except RemoteNotFound:
+                        pass
+                    else:
+                        raise ProviderError(
+                            "Sağlayıcı silmeyi doğrulamadı; uzak ve yerel kayıt korundu"
+                        )
+                if kind == "container":
+                    confirmed_children = set()
+                    for child in members:
+                        try:
+                            chat = await provider.get_chat(child)
+                            if chat.metadata.get("is_visible") is False:
+                                confirmed_children.add(child)
+                        except RemoteNotFound:
+                            confirmed_children.add(child)
+                        except ProviderError:
+                            pass
+                return await asyncio.to_thread(cleanup)
+
+        return self.call(remove(), timeout=60)
+
+    def branch_chat(self, key, conversation_id, message_id):
+        context, remote = origin(conversation_id, key)
+        if context != key or not remote:
+            raise ValueError("The conversation belongs to a different account")
+        if not self.enabled(key.split("/")[0]):
+            raise ValueError("Provider is disabled")
+        if key not in {item["key"] for item in self.active_accounts()}:
+            raise ValueError("Select this account before creating a branch")
+        archive = self.archive()
+        if archive and archive.deleted(key, "conversation", remote):
+            raise RemoteNotFound("The conversation was deleted")
+        source = self.cached_window(key, remote) or {}
+        with self._lock:
+            if key in self._session_changes:
+                raise RuntimeError("Account verification is still running")
+            self._sending[key] = self._sending.get(key, 0) + 1
+
+        async def branch():
+            provider = self.provider(key)
+            async with self.api.tasks.account_gate(provider.id, provider.account_id):
+                if not self.enabled(provider.id):
+                    raise ValueError("Provider is disabled")
+                if archive and archive.deleted(key, "conversation", remote):
+                    raise RemoteNotFound("The conversation was deleted")
+                return await provider.branch_chat(remote, message_id)
+
+        try:
+            record = self.chat_record(key, self.call(branch()))
+            if record["remote_id"] == remote:
+                raise ProviderError("The provider did not create a separate conversation")
+            if (
+                record.get("metadata", {}).get("title_unavailable")
+                or not str(record.get("title") or "").strip()
+            ):
+                record["title"] = source.get("title") or record.get("title") or "Untitled"
+            if not record.get("project_id"):
+                record["project_id"] = source.get("project_id")
+            archive = self.archive()
+            native_preview = isinstance(record.get("pending_branch"), dict)
+            if native_preview:
+                record["branch_unanswered"] = True
+                if not archive:
+                    record["pending_local_branch"] = True
+            self.cache_conversation(key, record, make_active=False)
+            if archive and native_preview:
+                archive.mark_pending_branch(key, record["remote_id"])
+            return record
+        finally:
+            with self._lock:
+                self._sending[key] -= 1
