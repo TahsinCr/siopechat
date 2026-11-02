@@ -392,7 +392,34 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
         if not isinstance(remote_id, str) or not remote_id:
             raise ValueError("provider conversation has no remote ID")
         messages, turn = [], []
-        for item in raw.get("messages") or ():
+        raw_messages = raw.get("messages")
+        if not isinstance(raw_messages, list):
+            mapping = raw.get("mapping")
+            raw_messages = []
+            if isinstance(mapping, dict) and mapping:
+                node_id = raw.get("current_node")
+                if not isinstance(node_id, str) or node_id not in mapping:
+                    raise ValueError("ChatGPT conversation has no active message path")
+                reversed_messages = []
+                visited = set()
+                while node_id is not None:
+                    if node_id in visited:
+                        raise ValueError("ChatGPT conversation message path contains a cycle")
+                    visited.add(node_id)
+                    node = mapping.get(node_id)
+                    if not isinstance(node, dict):
+                        raise ValueError("ChatGPT conversation message path is incomplete")
+                    message = node.get("message")
+                    if isinstance(message, dict):
+                        reversed_messages.append(message)
+                    parent_id = node.get("parent")
+                    if parent_id is None:
+                        break
+                    if not isinstance(parent_id, str) or parent_id not in mapping:
+                        raise ValueError("ChatGPT conversation message path is incomplete")
+                    node_id = parent_id
+                raw_messages = list(reversed(reversed_messages))
+        for item in raw_messages:
             if not isinstance(item, dict):
                 continue
             if (item.get("author") or {}).get("role") == "user":
@@ -408,12 +435,14 @@ class ChatGPTProvider(ProjectEditing, OptionalFeatures):
                 message.metadata["files"] = message_files(*turn)
                 turn.clear()
             messages.append(message)
+        # Mapping responses can be much larger than the active branch. Keep
+        # only normalized messages in conversation metadata and the archive.
         return Conversation(
             Origin(self.id, self.account_id, remote_id),
             raw.get("title") or "Untitled",
             tuple(messages),
             project_id=project_id(raw),
-            metadata=dict(raw),
+            metadata={key: value for key, value in raw.items() if key != "mapping"},
         )
 
     async def list_chats(self, cursor: str | None = None, limit: int = 28) -> Page[Conversation]:

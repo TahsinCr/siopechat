@@ -12,6 +12,7 @@ import httpx
 from providers.chatgpt import BrowserSession, ChatGPTClient, SessionPaths
 from providers.chatgpt.discovery import model_catalog
 from providers.chatgpt.errors import ChatGPTWebError, SentinelCompatibilityError
+from providers.errors import RemoteNotFound
 
 from .fixtures import CATALOG
 
@@ -92,6 +93,41 @@ class SendOptionsTests(unittest.TestCase):
         request.assert_called_once_with(
             "GET", "https://chatgpt.com/backend-api/conversations/remote"
         )
+
+    def test_conversation_history_falls_back_to_alternate_endpoint_and_remembers_it(self):
+        first = Mock()
+        first.json.return_value = {"messages": [{"id": "first"}]}
+        second = Mock()
+        second.json.return_value = {"messages": [{"id": "second"}]}
+        with patch.object(
+            self.client,
+            "request",
+            side_effect=[RemoteNotFound("missing route"), first, second],
+        ) as request:
+            initial = self.client.get_conversation("remote")
+            subsequent = self.client.get_conversation("remote")
+
+        self.assertEqual(initial["messages"][0]["id"], "first")
+        self.assertEqual(subsequent["messages"][0]["id"], "second")
+        self.assertEqual(
+            [call.args[1] for call in request.call_args_list],
+            [
+                "https://chatgpt.com/backend-api/conversations/remote",
+                "https://chatgpt.com/backend-api/conversation/remote",
+                "https://chatgpt.com/backend-api/conversation/remote",
+            ],
+        )
+
+    def test_missing_conversation_is_reported_after_both_endpoint_forms(self):
+        with patch.object(
+            self.client,
+            "request",
+            side_effect=[RemoteNotFound("plural"), RemoteNotFound("singular")],
+        ) as request:
+            with self.assertRaisesRegex(RemoteNotFound, "singular"):
+                self.client.get_conversation("remote")
+
+        self.assertEqual(request.call_count, 2)
 
     def test_project_reaches_request_body(self):
         self.client.get_conversation = Mock(

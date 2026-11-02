@@ -70,6 +70,45 @@ class ProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(chat.metadata, self.client.raw)
 
+    async def test_history_reads_active_message_path_from_mapping_responses(self):
+        self.client.raw = {
+            "id": "remote",
+            "title": "Mapped chat",
+            "current_node": "answer",
+            "mapping": {
+                "root": {"parent": None, "message": None},
+                "user": {
+                    "parent": "root",
+                    "message": {
+                        "id": "user",
+                        "author": {"role": "user"},
+                        "content": {"parts": ["Question"]},
+                    },
+                },
+                "answer": {
+                    "parent": "user",
+                    "message": {
+                        "id": "answer",
+                        "author": {"role": "assistant"},
+                        "content": {"parts": ["Answer"]},
+                    },
+                },
+                "other-branch": {
+                    "parent": "user",
+                    "message": {
+                        "id": "other-branch",
+                        "author": {"role": "assistant"},
+                        "content": {"parts": ["Inactive branch"]},
+                    },
+                },
+            },
+        }
+
+        chat = await self.provider.get_chat("remote")
+
+        self.assertEqual([message.id for message in chat.messages], ["user", "answer"])
+        self.assertNotIn("mapping", chat.metadata)
+
     async def test_discovery_creation_and_deletion_are_available(self):
         description = await self.provider.describe()
         self.assertEqual(description.feature(Capability.PROJECTS).state, FeatureState.AVAILABLE)

@@ -162,6 +162,7 @@ class ChatGPTClient:
         self.cdp_url = session.cdp_url
         self.list_url = ""
         self.headers: dict[str, str] = {}
+        self._conversation_endpoint = "conversations"
         self.temporary_conversations: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._continuation_cache: OrderedDict[str, tuple[float, dict[str, Any], int]] = (
             OrderedDict()
@@ -505,11 +506,27 @@ class ChatGPTClient:
                 return conversations
 
     def get_conversation(self, conversation_id: str) -> dict[str, Any]:
-        url = urljoin(
-            CHATGPT_ORIGIN,
-            f"/backend-api/conversations/{conversation_id}",
-        )
-        result = self.request("GET", url).json()
+        from ..errors import RemoteNotFound
+
+        endpoint = self._conversation_endpoint
+        alternate = "conversation" if endpoint == "conversations" else "conversations"
+        # ChatGPT accounts currently expose either route; learn the working
+        # form after the first 404 so later history reads need only one request.
+        endpoints = (endpoint, alternate)
+        for index, candidate in enumerate(endpoints):
+            url = urljoin(
+                CHATGPT_ORIGIN,
+                f"/backend-api/{candidate}/{quote(conversation_id, safe='')}",
+            )
+            try:
+                response = self.request("GET", url)
+            except RemoteNotFound:
+                if index == 0:
+                    continue
+                raise
+            self._conversation_endpoint = candidate
+            result = response.json()
+            break
         if not isinstance(result, dict):
             raise ChatGPTWebError("conversation response was not an object")
         self._remember_conversation(result)
