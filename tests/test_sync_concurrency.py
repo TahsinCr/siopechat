@@ -231,7 +231,7 @@ class SyncConcurrencyTests(unittest.TestCase):
             ["archived-4999", "new question", "accepted answer"],
         )
         value = self.repo.get(account, "conversation", remote)
-        with self.repo._connect() as db:
+        with self.repo.connect() as db:
             digest = db.execute(
                 "SELECT digest FROM records WHERE account=? AND kind='conversation' AND remote=?",
                 (account, remote),

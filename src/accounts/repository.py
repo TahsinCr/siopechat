@@ -1,28 +1,24 @@
 """Private account metadata and credential persistence, outside the provider library."""
 
 import json
-import os
-import sqlite3
 import time
-from contextlib import contextmanager
-from pathlib import Path
+
+from utils.sqlite import SQLiteRepositoryBase
 
 
-class AccountRepository:
+class AccountRepository(SQLiteRepositoryBase):
     def __init__(self, path):
-        self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        # Create privately before SQLite opens it; an existing database is hardened too.
-        fd = os.open(self.path, os.O_CREAT | os.O_WRONLY, 0o600)
-        os.close(fd)
-        if os.name != "nt":
-            self.path.chmod(0o600)
+        super().__init__(path, timeout=5, error_message="Account database operation failed")
+        self.prepare_private_database()
         with self.connect() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2):
-                raise ValueError("Unsupported account database schema")
-            if version < 2:
-                db.execute("BEGIN IMMEDIATE")
+        if version not in (0, 1, 2):
+            raise ValueError("Unsupported account database schema")
+        if version < 2:
+            with self.transaction(immediate=True) as db:
+                version = db.execute("PRAGMA user_version").fetchone()[0]
+                if version not in (0, 1, 2):
+                    raise ValueError("Unsupported account database schema")
                 if version == 0:
                     db.execute(
                         """CREATE TABLE IF NOT EXISTS account_records (
@@ -33,29 +29,21 @@ class AccountRepository:
                             PRIMARY KEY(account_key,kind)
                         ) WITHOUT ROWID"""
                     )
-                db.execute(
-                    """CREATE TABLE IF NOT EXISTS account_cache (
-                        account_key TEXT NOT NULL,
-                        kind TEXT NOT NULL CHECK(kind IN ('conversation','pointer','tombstone')),
-                        remote TEXT NOT NULL,
-                        updated REAL NOT NULL,
-                        payload TEXT NOT NULL,
-                        PRIMARY KEY(account_key,kind,remote)
-                    ) WITHOUT ROWID"""
-                )
-                db.execute("PRAGMA user_version=2")
+                if version < 2:
+                    db.execute(
+                        """CREATE TABLE IF NOT EXISTS account_cache (
+                            account_key TEXT NOT NULL,
+                            kind TEXT NOT NULL CHECK(kind IN ('conversation','pointer','tombstone')),
+                            remote TEXT NOT NULL,
+                            updated REAL NOT NULL,
+                            payload TEXT NOT NULL,
+                            PRIMARY KEY(account_key,kind,remote)
+                        ) WITHOUT ROWID"""
+                    )
+                    db.execute("PRAGMA user_version=2")
 
-    @contextmanager
-    def connect(self):
-        db = sqlite3.connect(self.path, timeout=5)
-        try:
-            db.execute("PRAGMA secure_delete=ON")
-            with db:
-                yield db
-        except sqlite3.Error as error:
-            raise OSError("Account database operation failed") from error
-        finally:
-            db.close()
+    def configure_connection(self, connection):
+        connection.execute("PRAGMA secure_delete=ON")
 
     def get(self, key, kind):
         with self.connect() as db:
@@ -70,7 +58,9 @@ class AccountRepository:
             raise ValueError("Account record exceeds size limit")
         with self.connect() as db:
             db.execute(
-                "INSERT INTO account_records VALUES(?,?,?,?) ON CONFLICT(account_key,kind) DO UPDATE SET updated=excluded.updated,payload=excluded.payload",
+                "INSERT INTO account_records VALUES(?,?,?,?) "
+                "ON CONFLICT(account_key,kind) DO UPDATE SET "
+                "updated=excluded.updated,payload=excluded.payload",
                 (key, kind, time.time(), payload),
             )
 
@@ -146,19 +136,20 @@ class AccountRepository:
         if kind not in {"conversation", "pointer", "tombstone"}:
             raise ValueError("Unsupported account cache record")
         payload = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-        with self.connect() as db:
+        with self.transaction(immediate=True) as db:
             if (
                 kind == "conversation"
                 and db.execute(
-                    "SELECT 1 FROM account_cache WHERE account_key=? AND kind='tombstone' AND remote=?",
+                    "SELECT 1 FROM account_cache WHERE account_key=? "
+                    "AND kind='tombstone' AND remote=?",
                     (key, remote),
                 ).fetchone()
             ):
                 return False
             db.execute(
-                """INSERT INTO account_cache VALUES(?,?,?,?,?)
-                ON CONFLICT(account_key,kind,remote) DO UPDATE SET
-                updated=excluded.updated,payload=excluded.payload""",
+                "INSERT INTO account_cache VALUES(?,?,?,?,?) "
+                "ON CONFLICT(account_key,kind,remote) DO UPDATE SET "
+                "updated=excluded.updated,payload=excluded.payload",
                 (key, kind, remote, time.time(), payload),
             )
         return True
@@ -187,11 +178,11 @@ class AccountRepository:
         return remote if isinstance(remote, str) and remote else None
 
     def cache_mark_deleted(self, key, remote):
-        with self.connect() as db:
+        with self.transaction(immediate=True) as db:
             db.execute(
-                """INSERT INTO account_cache VALUES(?,?,?,?,?)
-                ON CONFLICT(account_key,kind,remote) DO UPDATE SET
-                updated=excluded.updated,payload=excluded.payload""",
+                "INSERT INTO account_cache VALUES(?,?,?,?,?) "
+                "ON CONFLICT(account_key,kind,remote) DO UPDATE SET "
+                "updated=excluded.updated,payload=excluded.payload",
                 (key, "tombstone", remote, time.time(), "{}"),
             )
             db.execute(
@@ -199,13 +190,15 @@ class AccountRepository:
                 (key, remote),
             )
             row = db.execute(
-                "SELECT payload FROM account_cache WHERE account_key=? AND kind='pointer' AND remote='active'",
+                "SELECT payload FROM account_cache "
+                "WHERE account_key=? AND kind='pointer' AND remote='active'",
                 (key,),
             ).fetchone()
             active = json.loads(row[0]) if row else None
             if isinstance(active, dict) and active.get("remote") == remote:
                 db.execute(
-                    "DELETE FROM account_cache WHERE account_key=? AND kind='pointer' AND remote='active'",
+                    "DELETE FROM account_cache "
+                    "WHERE account_key=? AND kind='pointer' AND remote='active'",
                     (key,),
                 )
 

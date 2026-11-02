@@ -2,18 +2,15 @@
 
 import asyncio
 import json
-import os
-import sqlite3
-from contextlib import closing
 from dataclasses import asdict
 from pathlib import Path
 
-from utils.process import set_private_permissions
+from utils.sqlite import SQLiteRepositoryBase
 
 from .models import Workspace
 
 
-class WorkspaceStore:
+class WorkspaceStore(SQLiteRepositoryBase):
     """Short SQLite transactions run in worker threads, never in the UI loop.
 
     Owns its database file; do not pass an unrelated application's database.
@@ -21,6 +18,7 @@ class WorkspaceStore:
     """
 
     def __init__(self, path: Path):
+        super().__init__(path, timeout=3)
         self.path = Path(path).expanduser().resolve()
 
     @classmethod
@@ -30,27 +28,21 @@ class WorkspaceStore:
         return store
 
     def _initialize(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        descriptor = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
-        os.close(descriptor)
-        set_private_permissions(self.path, 0o600)
-        with closing(sqlite3.connect(self.path, timeout=3)) as connection:
-            with connection:
-                connection.execute("BEGIN IMMEDIATE")
-                version = connection.execute("PRAGMA user_version").fetchone()[0]
-                if version not in (0, 1):
-                    raise ValueError("unsupported core database schema version")
-                connection.execute(
-                    "CREATE TABLE IF NOT EXISTS workspaces "
-                    "(id TEXT PRIMARY KEY, name TEXT NOT NULL, body TEXT NOT NULL)"
-                )
-                connection.execute("PRAGMA user_version = 1")
+        self.prepare_private_database()
+        with self.transaction(immediate=True) as connection:
+            version = connection.execute("PRAGMA user_version").fetchone()[0]
+            if version not in (0, 1):
+                raise ValueError("unsupported core database schema version")
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS workspaces "
+                "(id TEXT PRIMARY KEY, name TEXT NOT NULL, body TEXT NOT NULL)"
+            )
+            connection.execute("PRAGMA user_version = 1")
 
     def _execute(self, sql: str, parameters: tuple = ()) -> tuple[list[tuple], int]:
-        with closing(sqlite3.connect(self.path, timeout=3)) as connection:
-            with connection:
-                cursor = connection.execute(sql, parameters)
-                return cursor.fetchall(), cursor.rowcount
+        with self.connect() as connection:
+            cursor = connection.execute(sql, parameters)
+            return cursor.fetchall(), cursor.rowcount
 
     async def save(self, workspace: Workspace) -> None:
         workspace.validate()

@@ -10,9 +10,9 @@ class DownloadHistory:
         self.repository = repository
 
     def list(self):
-        with self.repository._connect() as db:
+        with self.repository.connect() as db:
             rows = db.execute(
-                "SELECT revision, payload FROM downloads ORDER BY created DESC, id"
+                "SELECT revision,payload FROM downloads ORDER BY created DESC,id"
             ).fetchall()
         records = []
         for revision, payload in rows:
@@ -24,8 +24,7 @@ class DownloadHistory:
     def put_many(self, records):
         """Persist newer rows in one transaction; return conflicting DB copies."""
         stale = {}
-        with self.repository._connect() as db:
-            db.execute("BEGIN IMMEDIATE")
+        with self.repository.transaction(immediate=True) as db:
             for record in records:
                 revision = max(1, int(record.get("_revision", 1)))
                 payload_record = dict(record)
@@ -48,5 +47,5 @@ class DownloadHistory:
         return stale
 
     def remove(self, identity):
-        with self.repository._connect() as db:
+        with self.repository.connect() as db:
             db.execute("DELETE FROM downloads WHERE id=?", (identity,))

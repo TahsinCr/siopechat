@@ -3,14 +3,14 @@
 import hashlib
 import json
 import os
-import sqlite3
 import tempfile
 import threading
 import time
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Protocol
 from urllib.parse import unquote
+
+from utils.sqlite import SQLiteRepositoryBase
 
 V5_MIGRATION_BATCH_SIZE = 256
 
@@ -124,11 +124,11 @@ class Repository(Protocol):
     def close(self): ...
 
 
-class SQLiteRepository:
+class SQLiteRepository(SQLiteRepositoryBase):
     def __init__(self, path):
-        self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        with self._connect() as db:
+        super().__init__(path, timeout=5, error_message="Archive SQLite storage is unavailable")
+        self.prepare_private_database()
+        with self.connect() as db:
             exists = db.execute(
                 "SELECT 1 FROM sqlite_master WHERE name='schema_version'"
             ).fetchone()
@@ -136,7 +136,8 @@ class SQLiteRepository:
                 versions = db.execute("SELECT version FROM schema_version").fetchall()
                 if versions not in ([(1,)], [(2,)], [(3,)], [(4,)], [(5,)], [(6,)]):
                     raise OSError("Unsupported archive schema version")
-            db.executescript("""
+            db.executescript(
+                """
                 PRAGMA journal_mode=WAL;
                 CREATE TABLE IF NOT EXISTS schema_version(version INTEGER PRIMARY KEY);
                 INSERT INTO schema_version SELECT 1 WHERE NOT EXISTS(SELECT 1 FROM schema_version);
@@ -176,10 +177,10 @@ class SQLiteRepository:
                     PRIMARY KEY(account,kind,remote));
                 CREATE TABLE IF NOT EXISTS maintenance(
                     key TEXT PRIMARY KEY, value TEXT NOT NULL);
-            """)
+                """
+            )
         # Upgrade the existing archive atomically; conversation tables remain intact.
-        with self._connect() as db:
-            db.execute("BEGIN IMMEDIATE")
+        with self.transaction(immediate=True) as db:
             db.execute(
                 "CREATE TABLE IF NOT EXISTS downloads("
                 "id TEXT PRIMARY KEY, created REAL NOT NULL, payload TEXT NOT NULL)"
@@ -187,16 +188,14 @@ class SQLiteRepository:
             db.execute("UPDATE schema_version SET version=2 WHERE version=1")
         # Revisions let a process reject stale download-history writes without
         # changing the payload contract or overwriting another process's row.
-        with self._connect() as db:
-            db.execute("BEGIN IMMEDIATE")
+        with self.transaction(immediate=True) as db:
             columns = {row[1] for row in db.execute("PRAGMA table_info(downloads)")}
             if "revision" not in columns:
                 db.execute("ALTER TABLE downloads ADD COLUMN revision INTEGER NOT NULL DEFAULT 0")
             db.execute("UPDATE schema_version SET version=3 WHERE version=2")
         # Older versions duplicated complete histories in the listing metadata.
         # Migrate one record at a time; the canonical record and messages stay intact.
-        with self._connect() as db:
-            db.execute("BEGIN IMMEDIATE")
+        with self.transaction(immediate=True) as db:
             db.execute(
                 "CREATE TABLE IF NOT EXISTS conversation_metadata("
                 "account TEXT NOT NULL, remote TEXT NOT NULL, payload TEXT NOT NULL,"
@@ -244,8 +243,7 @@ class SQLiteRepository:
                 db.execute("UPDATE schema_version SET version=4 WHERE version=3")
         # v5 stops duplicating uploaded source bytes in the archive. Remove only
         # content-addressed archive paths; provider URIs and attachment metadata stay.
-        with self._connect() as db:
-            db.execute("BEGIN IMMEDIATE")
+        with self.transaction(immediate=True) as db:
             version = db.execute("SELECT version FROM schema_version").fetchone()[0]
             if version == 4:
                 for table, column in (
@@ -282,15 +280,13 @@ class SQLiteRepository:
                     "VALUES('uploaded_file_cleanup_pending','1')"
                 )
                 db.execute("UPDATE schema_version SET version=5 WHERE version=4")
-        with self._connect() as db:
-            db.execute("BEGIN IMMEDIATE")
+        with self.transaction(immediate=True) as db:
             version = db.execute("SELECT version FROM schema_version").fetchone()[0]
             if version == 5:
                 db.execute(
                     "CREATE TABLE pending_branches(account TEXT NOT NULL, remote TEXT NOT NULL, "
                     "created REAL NOT NULL, answered INTEGER NOT NULL DEFAULT 0, "
-                    "listed_general INTEGER NOT NULL DEFAULT 0, "
-                    "listed_project INTEGER NOT NULL DEFAULT 0, "
+                    "listed_general INTEGER NOT NULL DEFAULT 0, listed_project INTEGER NOT NULL DEFAULT 0, "
                     "PRIMARY KEY(account,remote))"
                 )
                 db.execute(
@@ -322,25 +318,12 @@ class SQLiteRepository:
                             (account, remote, time.time()),
                         )
                 db.execute("UPDATE schema_version SET version=6 WHERE version=5")
-        if os.name != "nt":
-            self.path.chmod(0o600)
 
-    @contextmanager
-    def _connect(self):
-        db = None
-        try:
-            db = sqlite3.connect(self.path, timeout=5)
-            db.execute("PRAGMA busy_timeout=5000")
-            with db:
-                yield db
-        except sqlite3.Error as error:
-            raise OSError("Archive SQLite storage is unavailable") from error
-        finally:
-            if db is not None:
-                db.close()
+    def configure_connection(self, connection):
+        connection.execute("PRAGMA busy_timeout=5000")
 
     def get(self, account, kind, remote):
-        with self._connect() as db:
+        with self.connect() as db:
             db.execute("BEGIN")
             row = db.execute(
                 "SELECT payload FROM records WHERE account=? AND kind=? AND remote=?",
@@ -377,7 +360,7 @@ class SQLiteRepository:
                 k: v for k, v in value.items() if k not in ("history_window", "history_version")
             }
         now = time.time()
-        with self._connect() as db:
+        with self.connect() as db:
             conversations = (
                 [value]
                 if kind == "conversation"
@@ -523,8 +506,7 @@ class SQLiteRepository:
         """Persist a provider-confirmed title across cached conversation listings."""
         title = title.strip()
         now = time.time()
-        with self._connect() as db:
-            db.execute("BEGIN IMMEDIATE")
+        with self.transaction(immediate=True) as db:
             rows = db.execute(
                 "SELECT kind,remote,payload FROM records "
                 "WHERE account=? AND kind IN ('chats','container_chats')",
@@ -624,8 +606,7 @@ class SQLiteRepository:
         """Reconcile only the bounded tail, never decode/rewrite the complete history."""
         from providers.history import merge_conversation
 
-        with self._connect() as db:
-            db.execute("BEGIN IMMEDIATE")
+        with self.transaction(immediate=True) as db:
             row = db.execute(
                 "SELECT payload FROM records WHERE account=? AND kind='conversation' AND remote=?",
                 (account, remote),
@@ -707,7 +688,7 @@ class SQLiteRepository:
             self._write_resources(db, account, "conversation", remote, value, append=True)
 
     def container_members(self, account, remote):
-        with self._connect() as db:
+        with self.connect() as db:
             values = {
                 row[0]
                 for row in db.execute(
@@ -725,13 +706,13 @@ class SQLiteRepository:
         return values
 
     def tombstones(self):
-        with self._connect() as db:
+        with self.connect() as db:
             return set(db.execute("SELECT account,kind,remote FROM tombstones"))
 
     def delete(self, account, kind, remote, *, children=None):
         """Remove normalized rows and every saved page reference in one transaction."""
         removed = [(account, kind, remote)]
-        with self._connect() as db:
+        with self.connect() as db:
             if kind == "container":
                 members = db.execute(
                     "SELECT conversation FROM memberships WHERE account=? AND container=?",
@@ -918,7 +899,7 @@ class SQLiteRepository:
             )
 
     def state(self, account, kind, remote, state, error=None):
-        with self._connect() as db:
+        with self.connect() as db:
             db.execute(
                 "INSERT OR REPLACE INTO synchronization VALUES(?,?,?,?,?,?)",
                 (account, kind, remote, state, time.time(), error),
@@ -939,7 +920,7 @@ class SQLiteRepository:
         """Stable remote-ID order; presentation sorting is explicitly owned by callers."""
         if not 1 <= limit <= 500 or offset < 0:
             raise ValueError("limit must be 1..500 and offset nonnegative")
-        with self._connect() as db:
+        with self.connect() as db:
             rows = db.execute(
                 f"SELECT metadata FROM {table} WHERE account=? ORDER BY remote LIMIT ? OFFSET ?",
                 (account, limit, offset),
@@ -949,7 +930,7 @@ class SQLiteRepository:
     def messages(self, account, remote, limit=100, offset=0):
         if not 1 <= limit <= 500 or offset < 0:
             raise ValueError("invalid message page")
-        with self._connect() as db:
+        with self.connect() as db:
             rows = db.execute(
                 "SELECT metadata FROM messages WHERE account=? AND conversation=? ORDER BY ordinal LIMIT ? OFFSET ?",
                 (account, remote, limit, offset),
@@ -960,7 +941,7 @@ class SQLiteRepository:
         """Return the first archived position of a provider message ID, if present."""
         if not message_id:
             return None
-        with self._connect() as db:
+        with self.connect() as db:
             row = db.execute(
                 "SELECT ordinal FROM messages WHERE account=? AND conversation=? AND remote=? "
                 "ORDER BY ordinal LIMIT 1",
@@ -974,7 +955,7 @@ class SQLiteRepository:
         if not ids:
             return ()
         positions = {}
-        with self._connect() as db:
+        with self.connect() as db:
             for offset in range(0, len(ids), 400):
                 batch = tuple(dict.fromkeys(ids[offset : offset + 400]))
                 if not batch:
@@ -993,14 +974,14 @@ class SQLiteRepository:
         return tuple(positions.get(message_id) for message_id in ids)
 
     def mark_pending_branch(self, account, remote):
-        with self._connect() as db:
+        with self.connect() as db:
             db.execute(
                 "INSERT OR REPLACE INTO pending_branches VALUES(?,?,?,0,0,0)",
                 (account, remote, time.time()),
             )
 
     def mark_branch_answered(self, account, remote):
-        with self._connect() as db:
+        with self.connect() as db:
             db.execute(
                 "UPDATE pending_branches SET answered=1 WHERE account=? AND remote=?",
                 (account, remote),
@@ -1008,7 +989,7 @@ class SQLiteRepository:
 
     def pending_branches(self, account, *, project=False):
         listed_column = "listed_project" if project else "listed_general"
-        with self._connect() as db:
+        with self.connect() as db:
             rows = db.execute(
                 "SELECT b.remote,c.title,c.container,c.model,c.metadata,r.payload "
                 "FROM pending_branches b JOIN conversations c "
@@ -1041,8 +1022,7 @@ class SQLiteRepository:
             return
         column = "listed_project" if project else "listed_general"
         placeholders = ",".join("?" for _ in values)
-        with self._connect() as db:
-            db.execute("BEGIN IMMEDIATE")
+        with self.transaction(immediate=True) as db:
             db.execute(
                 f"UPDATE pending_branches SET {column}=1 WHERE account=? "
                 f"AND remote IN ({placeholders})",
@@ -1056,7 +1036,7 @@ class SQLiteRepository:
             )
 
     def is_pending_branch(self, account, remote):
-        with self._connect() as db:
+        with self.connect() as db:
             return (
                 db.execute(
                     "SELECT 1 FROM pending_branches WHERE account=? AND remote=? AND answered=0",
@@ -1066,7 +1046,7 @@ class SQLiteRepository:
             )
 
     def superseded_message_ids(self, account, remote):
-        with self._connect() as db:
+        with self.connect() as db:
             rows = db.execute(
                 "SELECT message_id FROM superseded_messages WHERE account=? AND conversation=?",
                 (account, remote),
@@ -1074,7 +1054,7 @@ class SQLiteRepository:
         return {row[0] for row in rows}
 
     def response_version(self, account, remote, message_id, version):
-        with self._connect() as db:
+        with self.connect() as db:
             row = db.execute(
                 "SELECT group_id,current_index FROM response_variant_groups "
                 "WHERE account=? AND conversation=? AND current_message=?",
@@ -1117,7 +1097,7 @@ class SQLiteRepository:
         """Load only merge_conversation's leading overlap and bounded alignment tail."""
         if start < 0 or not 1 <= prefix <= 512 or not 1 <= tail <= 512:
             raise ValueError("invalid partial history window")
-        with self._connect() as db:
+        with self.connect() as db:
             head = db.execute(
                 "SELECT ordinal,metadata FROM messages "
                 "WHERE account=? AND conversation=? AND ordinal>=? "
@@ -1146,8 +1126,7 @@ class SQLiteRepository:
         value = dict(value)
         replacement_messages = list(value["messages"])
         now = time.time()
-        with self._connect() as db:
-            db.execute("BEGIN IMMEDIATE")
+        with self.transaction(immediate=True) as db:
             row = db.execute(
                 "SELECT payload FROM records WHERE account=? AND kind='conversation' AND remote=?",
                 (account, remote),
@@ -1360,7 +1339,7 @@ class SQLiteRepository:
             or (before is not None and before < 0)
         ):
             raise ValueError("invalid conversation window")
-        with self._connect() as db:
+        with self.connect() as db:
             db.execute("BEGIN")
             row = db.execute(
                 "SELECT c.metadata,r.digest FROM conversations c JOIN records r "
@@ -1462,7 +1441,7 @@ class SQLiteRepository:
             )
 
     def resources(self, account, owner_kind, owner):
-        with self._connect() as db:
+        with self.connect() as db:
             rows = db.execute(
                 "SELECT metadata FROM resources WHERE account=? AND owner_kind=? AND owner=? ORDER BY ordinal",
                 (account, owner_kind, owner),
@@ -1484,7 +1463,7 @@ class SQLiteRepository:
                 for item in value:
                     visit(item)
 
-        with self._connect() as db:
+        with self.connect() as db:
             for (payload,) in db.execute("SELECT payload FROM records"):
                 visit(json.loads(payload))
             for (payload,) in db.execute("SELECT metadata FROM messages"):
@@ -1500,14 +1479,14 @@ class SQLiteRepository:
         pass  # Connections are scoped to individual transactions, never held across remote work.
 
     def uploaded_file_cleanup_pending(self):
-        with self._connect() as db:
+        with self.connect() as db:
             row = db.execute(
                 "SELECT value FROM maintenance WHERE key='uploaded_file_cleanup_pending'"
             ).fetchone()
         return bool(row and row[0] == "1")
 
     def complete_uploaded_file_cleanup(self):
-        with self._connect() as db:
+        with self.connect() as db:
             db.execute("DELETE FROM maintenance WHERE key='uploaded_file_cleanup_pending'")
 
 
