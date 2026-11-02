@@ -478,8 +478,28 @@ class SidebarComponent:
 
     def filter_sidebar(self) -> None:
         if hasattr(self, "app"):
+            selected = (
+                self.sidebar_rows[self.sidebar_index]
+                if 0 <= self.sidebar_index < len(self.sidebar_rows)
+                else None
+            )
+            selected_key = (
+                (selected.get("kind"), selected.get("id"))
+                if selected and selected.get("id")
+                else None
+            )
             self._invalidate_sidebar_rows()
             self._build_sidebar_rows()
+            if selected_key:
+                self.sidebar_index = next(
+                    (
+                        index
+                        for index, row in enumerate(self.sidebar_rows)
+                        if (row.get("kind"), row.get("id")) == selected_key
+                    ),
+                    self.sidebar_index,
+                )
+            self.sidebar_index = min(max(0, self.sidebar_index), max(0, len(self.sidebar_rows) - 1))
             self.ensure_sidebar_selection_visible()
             self.app.invalidate()
 

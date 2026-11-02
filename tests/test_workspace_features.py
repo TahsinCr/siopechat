@@ -489,6 +489,24 @@ class WorkspaceTests(unittest.TestCase):
             self.assertFalse(v._synchronize_pending)
             v.apply_archive_updates.assert_called_once_with()
 
+    def test_conversation_sync_failure_uses_its_captured_title(self):
+        failures = []
+        with terminal() as (v, _):
+            v.title = "Chat that failed"
+            v.account_service = Mock()
+            v.refresh_sidebar = Mock()
+            v.apply_archive_updates = Mock()
+            v._read_in_background = lambda _read, _success, failure, **_kwargs: failures.append(
+                failure
+            )
+
+            v.synchronize("conversation")
+            v.title = "Another chat"
+            failures[0]("Provider unavailable")
+
+            self.assertIn("Chat that failed", v.status)
+            self.assertIn("Provider unavailable", v.status)
+
     def test_closed_temporary_tab_forgets_remote_context_locally(self):
         forgotten = Mock(return_value={"forgotten": True})
         with terminal(forget_temporary=forgotten) as (v, _):

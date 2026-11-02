@@ -299,9 +299,14 @@ def render_tab_bar(view):
             if tab.get("temporary")
             else ""
         )
-        label = fit_text(marker + title, max(0, tab_width - 4))
+        provider = str(tab.get("account_key") or view.account_key).split("/", 1)[0]
+        provider_style = ICONS.get(f"provider.{provider}", ICONS["provider.generic"])
+        provider_icon = provider_style.icon if tab.get("kind", "chat") == "chat" else ""
+        provider_prefix = provider_icon + " " if provider_icon else ""
+        label = fit_text(provider_prefix + marker + title, max(0, tab_width - 4))
         padding = max(0, tab_width - 4 - get_cwidth(label))
-        label = " " * (padding // 2) + label + " " * (padding - padding // 2)
+        left_padding = padding // 2
+        right_padding = padding - left_padding
         style = (
             "class:tab.active"
             if i == view.active_tab
@@ -312,9 +317,27 @@ def render_tab_bar(view):
             else "class:tab"
         )
         fragments.append(("class:tab.divider", "│"))
-        fragments.append(
-            ("class:tab.open " + style, label, on_click(lambda i=i: view.select_tab(i)))
-        )
+        click_tab = on_click(lambda i=i: view.select_tab(i))
+        if provider_prefix and label.startswith(provider_prefix):
+            fragments.extend(
+                [
+                    ("class:tab.open " + style, " " * left_padding, click_tab),
+                    (f"class:{provider_style.name} {style}", provider_icon, click_tab),
+                    (
+                        "class:tab.open " + style,
+                        " " + label[len(provider_prefix) :] + " " * right_padding,
+                        click_tab,
+                    ),
+                ]
+            )
+        else:
+            fragments.append(
+                (
+                    "class:tab.open " + style,
+                    " " * left_padding + label + " " * right_padding,
+                    click_tab,
+                )
+            )
         fragments.append(
             (
                 "class:tab.close " + style,

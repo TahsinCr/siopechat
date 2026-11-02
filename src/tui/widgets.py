@@ -443,6 +443,19 @@ class SidebarControl(UIControl):
         ]
 
     def mouse_handler(self, mouse_event):
+        if mouse_event.event_type in (
+            MouseEventType.SCROLL_UP,
+            MouseEventType.SCROLL_DOWN,
+        ):
+            self.view._build_sidebar_rows(force=False)
+            self.rows = self.view.sidebar_rows
+            if self.rows:
+                current = min(max(0, self.view.sidebar_index), len(self.rows) - 1)
+                delta = -3 if mouse_event.event_type == MouseEventType.SCROLL_UP else 3
+                self.view.sidebar_index = min(max(0, current + delta), len(self.rows) - 1)
+                self.view.ensure_sidebar_selection_visible()
+                self.view.app.invalidate()
+            return None
         if (
             mouse_event.button != MouseButton.LEFT
             or mouse_event.event_type != MouseEventType.MOUSE_UP

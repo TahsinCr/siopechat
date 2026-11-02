@@ -268,6 +268,78 @@ class UiControlsTests(unittest.TestCase):
             self.assertTrue(view.follow_output)
             self.assertTrue(view.app.mouse_support())
 
+    def test_sidebar_mouse_wheel_scrolls_long_lists_in_both_directions(self):
+        with terminal() as (view, _):
+            view.sidebar_items = [
+                {"id": str(index), "title": f"Conversation {index}"} for index in range(80)
+            ]
+            view._build_sidebar_rows()
+
+            def event(event_type):
+                return MouseEvent(Point(0, 0), event_type, MouseButton.NONE, frozenset())
+
+            for _ in range(30):
+                view.sidebar_control.mouse_handler(event(MouseEventType.SCROLL_DOWN))
+
+            self.assertGreater(view.sidebar_index, 0)
+            self.assertGreater(view.sidebar_window.vertical_scroll, 0)
+            scrolled_index = view.sidebar_index
+
+            view.sidebar_control.mouse_handler(event(MouseEventType.SCROLL_UP))
+
+            self.assertEqual(view.sidebar_index, scrolled_index - 3)
+
+    def test_sidebar_refresh_preserves_selected_chat_identity(self):
+        chats = [
+            {"id": "new", "title": "New"},
+            {"id": "one", "title": "One"},
+            {"id": "two", "title": "Two"},
+        ]
+
+        def fetch(cursor, *, on_account_page):
+            page = {"items": chats, "cursor": None}
+            on_account_page({"key": "chatgpt/default"}, page)
+            return page
+
+        with terminal(list_history_page=fetch) as (view, _):
+            view.sidebar_items = [
+                {"id": "one", "title": "One"},
+                {"id": "two", "title": "Two"},
+                {"id": "three", "title": "Three"},
+            ]
+            view._build_sidebar_rows()
+            view.sidebar_index = next(
+                index for index, row in enumerate(view.sidebar_rows) if row.get("id") == "two"
+            )
+            view.refresh_projects = lambda: None
+            view._dispatch_ui = lambda callback: callback()
+            view._reads.submit = lambda work: (work(), True)[1]
+
+            view.refresh_sidebar()
+
+            self.assertEqual(view.sidebar_rows[view.sidebar_index].get("id"), "two")
+
+    def test_chat_tabs_show_their_provider_icon_before_the_title(self):
+        expected = (("chatgpt", "◎"), ("gemini", "✦"), ("claude", "✳"))
+        with terminal() as (view, _):
+            view.title = "Sample chat"
+            tab = view.tabs[view.active_tab]
+
+            for provider, icon in expected:
+                tab["account_key"] = f"{provider}/default"
+                fragments = view.render_tabs()
+                icon_position = next(
+                    index
+                    for index, fragment in enumerate(fragments)
+                    if fragment[1] == icon and f"provider.{provider}" in fragment[0]
+                )
+                title_position = next(
+                    index
+                    for index, fragment in enumerate(fragments)
+                    if "Sample chat" in fragment[1]
+                )
+                self.assertLess(icon_position, title_position)
+
     def test_history_pagination_merges_and_stops_at_end(self):
         pages = Mock(return_value={"items": [{"id": "two", "title": "Older"}], "cursor": None})
         with terminal(list_history_page=pages) as (view, _):

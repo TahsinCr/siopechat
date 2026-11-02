@@ -88,12 +88,18 @@ class ArchiveComponent:
             return
         self._synchronize_pending = True
         key, cid = self.account_key, self.conversation_id
+        conversation_title = self.title if scope == "conversation" else ""
         self.status = self.tr("Eşitleniyor…")
 
         def finish(error=None):
             self._synchronize_pending = False
+            details = error
+            if error is not None and conversation_title:
+                details = f"{conversation_title}: {error}"
             self.status = (
-                self.tr("Eşitleme başlatıldı") if error is None else self.tr("Eşitleme: ") + error
+                self.tr("Eşitleme başlatıldı")
+                if error is None
+                else self.tr("Eşitleme: ") + str(details)
             )
             self.refresh_sidebar()
             self.apply_archive_updates()

@@ -11,6 +11,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.3b0` for `v1.5.
 ### Added
 
 - Copy or save the full visible conversation from the conversation toolbar as formatted text or JSON. Exports read archived messages in bounded SQLite windows, include unsaved transcript updates, and save through the configured download folder and history.
+- Show each conversation tab's provider icon before its title.
 
 ### Changed
 
@@ -19,6 +20,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.3b0` for `v1.5.
 
 ### Fixed
 
+- Let the mouse wheel move through long project and chat lists, keep the selected conversation attached to its identity while synchronized rows are reordered, and name the conversation when its sync fails.
 - Cancel provider reads and unfinished streams before draining TUI worker pools; allow text-finished responses up to one second for final confirmation, while preserving shielded archive writes.
 - Finish synchronous runtime cleanup when Ctrl+C arrives during shutdown, instead of leaving services open and printing an asyncio traceback.
 - Keep staged attachments owned by their originating tab when uploads or background sends finish or fail; release only the attachments belonging to closed or logged-out tabs.

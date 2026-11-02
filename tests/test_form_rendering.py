@@ -98,7 +98,7 @@ class FormsRenderTests(unittest.IsolatedAsyncioTestCase):
             v.new_tab()
             fragments = v.render_tabs()
             labels = [(style, text) for style, text, *_ in fragments if "class:tab.open" in style]
-            self.assertEqual(len(labels), 2)
+            self.assertEqual(len(labels), 4)
             active = next(style for style, _ in labels if "class:tab.active" in style)
             self.assertLess(active.index("class:tab.open"), active.index("class:tab.active"))
             style = Style.from_dict({"tab.open": "bold #ffffff", "tab.active": "#a9cfff"})
@@ -117,9 +117,9 @@ class FormsRenderTests(unittest.IsolatedAsyncioTestCase):
             labels = [
                 (style, text) for style, text, *_ in v.render_tabs() if "class:tab.open" in style
             ]
-            self.assertEqual(len(labels), 1)
-            self.assertIn("class:tab.active", labels[0][0])
-            self.assertIn("◫", labels[0][1])
+            self.assertEqual(len(labels), 2)
+            self.assertTrue(all("class:tab.active" in style for style, _ in labels))
+            self.assertIn("◫", "".join(text for _, text in labels))
 
     async def test_inline_project_editor_uses_available_width_on_resize(self):
         output = ResizableOutput()
