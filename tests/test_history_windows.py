@@ -465,6 +465,34 @@ class RenderReuseTests(unittest.TestCase):
         self.assertIsNone(jobs[1][0]())
         self.assertIsNone(queue._target)
 
+    def test_viewport_worker_refills_rows_evicted_after_a_completed_paint(self):
+        from tui.transcript import TranscriptPrefetch
+
+        class Layout:
+            line_count = 100
+
+            def __init__(self):
+                self.rows = set()
+
+            def cached_row(self, line):
+                return ((), None) if line in self.rows else None
+
+            def prefetch(self, start, stop, cancelled=None):
+                if not cancelled or not cancelled():
+                    self.rows.update(range(start, stop))
+
+        jobs = []
+        layout = Layout()
+        queue = TranscriptPrefetch(lambda *args: jobs.append(args), Mock())
+        queue.request(layout, 10, 5)
+        jobs[0][1](jobs[0][0]())
+        self.assertEqual(layout.rows.intersection(range(10, 15)), set(range(10, 15)))
+
+        layout.rows.clear()  # The bounded transcript cache evicted the visible page.
+        queue.request(layout, 10, 5)
+
+        self.assertEqual(len(jobs), 2)
+
     def test_prepend_reuses_geometry_and_rendered_rows_without_rich_conversion(self):
         from tui.markdown import MessageRenderer
         from tui.transcript import VirtualTranscript

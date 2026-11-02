@@ -402,8 +402,16 @@ class TranscriptPrefetch:
         top = min(max(0, top), max(0, layout.line_count - height))
         key = (id(layout), top, height)
         self._target = (key, layout)
-        if self._running is not None or self._done == key:
+        if self._running is not None:
             return
+        if self._done == key:
+            cached_row = getattr(layout, "cached_row", None)
+            if cached_row is None or all(
+                cached_row(line) is not None
+                for line in range(top, min(layout.line_count, top + height))
+            ):
+                return
+            self._done = None
         token, generation = object(), self._generation
         self._running = token
 

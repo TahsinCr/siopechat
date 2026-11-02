@@ -4,9 +4,11 @@ All notable changes to SiopeChat are documented here.
 
 The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
-Python distributions use the corresponding PEP 440 version (`1.5.3b0` for `v1.5.3-beta`).
+Python distributions use the corresponding PEP 440 version (`1.5.4b0` for `v1.5.4-beta`).
 
 ## [Unreleased]
+
+## [1.5.4-beta] - 2026-11-02
 
 ### Added
 
@@ -21,6 +23,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.3b0` for `v1.5.
 
 ### Fixed
 
+- Refill evicted visible transcript rows after a completed render so restored tabs do not remain blank.
 - Keep ChatGPT history sync working across both conversation routes, and load only the active branch when the response uses a message map.
 - Clear the cached-history syncing status when provider synchronization finishes and briefly confirm completion only after the archive reports the conversation ready.
 - Show ChatGPT sync HTTP status codes without exposing conversation IDs in the status line.

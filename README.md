@@ -1,4 +1,4 @@
-[![Version: v1.5.3-beta][version-shield]](CHANGELOG.md)
+[![Version: v1.5.4-beta][version-shield]](CHANGELOG.md)
 [![Python 3.11+][python-shield]](https://www.python.org/downloads/)
 [![GPL-3.0-only][license-shield]](LICENSE)
 
@@ -34,7 +34,7 @@ Bring your chats, projects and model comparisons together in one terminal worksp
 | --- | --- | --- |
 | Download generated files from replies and track progress in the built-in download manager. | Use the command palette, configurable shortcuts, mouse controls and local extensions. | Choose the English, Turkish or Russian interface. |
 
-> **v1.5.3-beta** opens archived chats and cached model catalogs sooner while provider history syncs in the background. Replies finish in the UI as soon as text generation ends, follow-ups can be queued, and history loading and cleanup no longer hold up the interface. The release also improves provider request reuse, keyboard navigation, retry and account actions, split-view history, and download safety.
+> **v1.5.4-beta** adds conversation export as text or JSON, restores drafts and queued prompts across restarts, and lets you retry earlier Gemini replies. It also improves ChatGPT history and SSE handling, provider cache recovery, tab and attachment cleanup, long-chat rendering, sidebar navigation, and shutdown reliability.
 
 ## Smoother Chats
 
@@ -44,13 +44,13 @@ Bring your chats, projects and model comparisons together in one terminal worksp
 | **ChatGPT** | Reuse eligible conversation snapshots and messages captured from completed streams to avoid duplicate history requests. Prepare Sentinel headers before the next send. In the recorded offline benchmark, native Python Sentinel initial-proof generation had a **0.329 ms median**: about **10.7× faster** than a reused QuickJS-NG context and **12.6× faster** than an already-running Node/V8 process that creates a fresh VM for each sample. |
 | **Gemini** | Route Flash requests correctly, preserve the provider's default thinking policy, reuse valid continuation IDs, and avoid repeating the activity RPC within five minutes. Earlier limited live trials recorded first-text latency dropping from **65–110 s to 1.89–3.80 s**. These are reported ranges, not the results of a controlled benchmark or a guarantee for every model and account. |
 
-**About these figures:** ChatGPT timings measure local proof generation, not a full reply. Gemini figures are limited live ranges without paired samples or p95; shared UI improvements have no measured multiplier. Results vary with network, model and server load. See the [changelog](CHANGELOG.md). Python package version: `1.5.3b0`.
+**About these figures:** ChatGPT timings measure local proof generation, not a full reply. Gemini figures are limited live ranges without paired samples or p95; shared UI improvements have no measured multiplier. Results vary with network, model and server load. See the [changelog](CHANGELOG.md). Python package version: `1.5.4b0`.
 
 ## Install and sign in
 
 ### Requirements
 
-Use **Python 3.11+** and a Unicode-capable terminal; true color and mouse support are recommended. The installers check your Python version. You can import an existing sign-in from a supported browser profile as described below. Routine chat operations use HTTP, so the browser does not need to stay open.
+Install Git and use **Python 3.11+** with a Unicode-capable terminal; true color and mouse support are recommended. The installers check your Python version. You can import an existing sign-in from a supported browser profile as described below. Routine chat operations use HTTP, so the browser does not need to stay open.
 
 ChatGPT's supported Sentinel checks run in Python using the bundled `SentinelSpec` profile. **No Node.js or JavaScript engine is required.**
 
@@ -73,7 +73,14 @@ The last row includes process startup; launching an otherwise idle Node process 
 
 ### Install and launch
 
-Run these commands from the repository directory. Linux and macOS use the same pair. Install once, then use the launcher each time you start SiopeChat.
+Clone the repository and enter its directory:
+
+```sh
+git clone https://github.com/TahsinCr/siopechat.git
+cd siopechat
+```
+
+Then install and launch SiopeChat with the commands for your operating system. Linux and macOS use the same pair. Install once; use the launcher for later starts.
 
 **Linux / macOS**
 
@@ -329,6 +336,6 @@ When filing an issue, include the version, provider, operation, terminal, OS and
 
 Copyright © TahsinCr. Licensed under [GPL-3.0-only](LICENSE). Vendored components retain their own notices in `src/utils/`.
 
-[version-shield]: https://img.shields.io/badge/version-v1.5.3--beta-b7a3e3.svg?style=for-the-badge
+[version-shield]: https://img.shields.io/badge/version-v1.5.4--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge

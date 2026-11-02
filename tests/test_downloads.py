@@ -55,7 +55,7 @@ class DownloadTests(unittest.TestCase):
         )
 
         export = Path(saved["path"])
-        self.assertEqual(export.parent, self.root / "exports")
+        self.assertEqual(export.parent.resolve(), (self.root / "exports").resolve())
         self.assertEqual(export.read_text(), '{"messages":[{}]}')
         self.assertEqual(service.snapshot()[0]["state"], "completed")
         self.assertEqual(service.snapshot()[0]["path"], str(export))

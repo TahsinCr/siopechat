@@ -1,4 +1,4 @@
-[![Sürüm: v1.5.3-beta][version-shield]](CHANGELOG.md)
+[![Sürüm: v1.5.4-beta][version-shield]](CHANGELOG.md)
 [![Python 3.11+][python-shield]](https://www.python.org/downloads/)
 [![GPL-3.0-only][license-shield]](LICENSE)
 
@@ -34,7 +34,7 @@ Sohbetlerinizi, projelerinizi ve farklı modellerin yanıtlarını tek bir termi
 | --- | --- | --- |
 | Yanıtlarda üretilen dosyaları indirin; ilerlemeyi indirme yöneticisinde izleyin. | Komut paleti, değiştirilebilir kısayollar, fare kontrolleri ve yerel eklentileri kullanın. | İngilizce, Türkçe veya Rusça arayüzü seçin. |
 
-> **v1.5.3-beta**, kayıtlı sohbetleri ve önbellekteki model kataloglarını daha erken gösterirken sağlayıcı geçmişini arka planda eşitler. Metin üretimi biter bitmez yanıt tamamlanmış gösterilir ve sonraki mesaj kuyruğa alınabilir; geçmiş yükleme ve temizlik işleri arayüzü bekletmez. Sağlayıcı isteklerinin yeniden kullanımı, klavye gezintisi, yeniden deneme ve hesap aksiyonları, bölünmüş görünümde geçmiş ve indirme güvenliği de iyileştirildi.
+> **v1.5.4-beta**, sohbetleri metin veya JSON olarak kopyalayıp kaydetme, uygulama yeniden açıldığında taslakları ve sıradaki mesajı geri yükleme ve Gemini'de önceki yanıtları yeniden üretme özelliklerini getiriyor. ChatGPT geçmiş eşitlemesi ve SSE ayrıştırması da iyileştirildi; sağlayıcı önbellekleri, sekme ve ek yönetimi, uzun sohbetlerin gösterimi, kenar çubuğu gezintisi ve uygulamanın kapanış akışı daha güvenilir hale getirildi.
 
 ## Daha Akıcı Sohbet
 
@@ -44,13 +44,13 @@ Sohbetlerinizi, projelerinizi ve farklı modellerin yanıtlarını tek bir termi
 | **ChatGPT** | Uygun sohbet anlık görüntüleri ve tamamlanan akışlardan alınmış mesajlar yeniden kullanılarak yinelenen geçmiş istekleri azaltılır. Sentinel başlıkları sonraki gönderimden önce hazırlanır. Kayıtlı çevrimdışı ölçümde Sentinel başlangıç kanıtı üretiminin saf Python medyanı **0,329 ms** oldu: bu aşama, yeniden kullanılan QuickJS-NG bağlamından yaklaşık **10,7 kat**, açık Node/V8 sürecinde her örnek için yeni VM oluşturan yoldan **12,6 kat daha kısa** sürdü. |
 | **Gemini** | Flash modelleri için istek yönlendirmesi düzeltildi; sağlayıcının varsayılan düşünme politikası korunuyor. Geçerli sohbet devam kimlikleri yeniden kullanılıyor ve etkinlik RPC çağrısı beş dakika içinde yinelenmiyor. Önceki sınırlı canlı denemelerde ilk metne ulaşma süresinin **65–110 saniye aralığından 1,89–3,80 saniye aralığına** düştüğü kaydedildi. Bunlar kontrollü benchmark sonuçları değil, kayıtlı süre aralıklarıdır; her model ve hesap için garanti edilmez. |
 
-**Rakamlar hakkında:** ChatGPT süreleri tam yanıtı değil, yerel kanıt üretimini ölçer. Gemini değerleri eşleştirilmiş örnek ve p95 içermeyen sınırlı canlı gözlemlerdir; ortak arayüz iyileştirmeleri için ölçülmüş bir katsayı yoktur. Sonuçlar ağ, model ve sunucu yüküne göre değişir. Ayrıntılar [değişiklik günlüğünde](CHANGELOG.md). Python paket sürümü: `1.5.3b0`.
+**Rakamlar hakkında:** ChatGPT süreleri tam yanıtı değil, yerel kanıt üretimini ölçer. Gemini değerleri eşleştirilmiş örnek ve p95 içermeyen sınırlı canlı gözlemlerdir; ortak arayüz iyileştirmeleri için ölçülmüş bir katsayı yoktur. Sonuçlar ağ, model ve sunucu yüküne göre değişir. Ayrıntılar [değişiklik günlüğünde](CHANGELOG.md). Python paket sürümü: `1.5.4b0`.
 
 ## Kurulum ve giriş
 
 ### Gereksinimler
 
-Python **3.11+** ve Unicode destekli bir terminal gerekir; gerçek renk ve fare desteği önerilir. Kurulum araçları Python sürümünü denetler. Aşağıda anlatıldığı gibi, mevcut oturumunuzu desteklenen bir tarayıcı profilinden aktarabilirsiniz. Günlük sohbet işlemleri HTTP üzerinden yürür; tarayıcının açık kalması gerekmez.
+Git ve Python **3.11+** kurulu olmalıdır. Unicode destekli bir terminal gerekir; gerçek renk ve fare desteği önerilir. Kurulum araçları Python sürümünü denetler. Aşağıda anlatıldığı gibi, mevcut oturumunuzu desteklenen bir tarayıcı profilinden aktarabilirsiniz. Günlük sohbet işlemleri HTTP üzerinden yürür; tarayıcının açık kalması gerekmez.
 
 ChatGPT’nin desteklenen Sentinel kontrolleri, paketteki `SentinelSpec` profiliyle Python’da çalışır. **Node.js veya JavaScript motoru gerekmez.**
 
@@ -73,7 +73,14 @@ Son satır süreç başlatma maliyetini de içerir; boşta bir Node sürecini ba
 
 ### Kurulum ve başlatma
 
-Komutları depo dizininde çalıştırın. Linux ve macOS aynı komutları kullanır. Kurulumu bir kez yapın; SiopeChat'i her açışınızda başlatma komutunu çalıştırın.
+Önce depoyu klonlayıp proje dizinine girin:
+
+```sh
+git clone https://github.com/TahsinCr/siopechat.git
+cd siopechat
+```
+
+Ardından işletim sisteminize uygun komutlarla kurup başlatın. Linux ve macOS aynı komutları kullanır. Kurulumu bir kez yapın; sonraki açılışlarda yalnızca başlatıcıyı çalıştırın.
 
 **Linux / macOS**
 
@@ -329,6 +336,6 @@ Hata bildirirken sürümü, sağlayıcıyı, işlemi, terminali, işletim sistem
 
 Telif hakkı © TahsinCr. [GPL-3.0-only](LICENSE) ile lisanslanmıştır. Dahil edilen üçüncü taraf bileşenlerin bildirimleri `src/utils/` altında korunur.
 
-[version-shield]: https://img.shields.io/badge/version-v1.5.3--beta-b7a3e3.svg?style=for-the-badge
+[version-shield]: https://img.shields.io/badge/version-v1.5.4--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge
