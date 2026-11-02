@@ -661,6 +661,17 @@ class ArchiveIntegrationTests(unittest.TestCase):
             conversation_id, self.gemini, force=True, window=True
         )
 
+    def test_sync_failure_status_shows_only_chatgpt_http_code(self):
+        failure = {
+            "account": "chatgpt/default",
+            "error": "ChatGPT returned HTTP 403 for GET /backend-api/conversations/private-id",
+        }
+        with terminal(account_service=self.accounts) as (view, _):
+            detail = view.sync_failure_detail([failure])
+
+        self.assertEqual(detail, "ChatGPT HTTP 403")
+        self.assertNotIn("private-id", detail)
+
     def test_cached_resume_refreshes_provider_when_archive_is_disabled(self):
         conversation_id = f"@{self.gemini}/c_cached"
         self.accounts.cached_window = Mock(

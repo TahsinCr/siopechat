@@ -22,6 +22,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.3b0` for `v1.5.
 ### Fixed
 
 - Keep ChatGPT history sync working across both conversation routes, and load only the active branch when the response uses a message map.
+- Show ChatGPT sync HTTP status codes without exposing conversation IDs in the status line.
 - Let the mouse wheel move through long project and chat lists, keep the selected conversation attached to its identity while synchronized rows are reordered, and name the conversation when its sync fails.
 - Cancel provider reads and unfinished streams before draining TUI worker pools; allow text-finished responses up to one second for final confirmation, while preserving shielded archive writes.
 - Finish synchronous runtime cleanup when Ctrl+C arrives during shutdown, instead of leaving services open and printing an asyncio traceback.

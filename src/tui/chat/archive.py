@@ -61,22 +61,37 @@ class ArchiveComponent:
         return self._sync_state_rows
 
     def sync_failure_detail(self, failures):
-        if not failures or not all(
-            "provider rate limit" in str(item.get("error") or "").casefold() for item in failures
-        ):
+        if not failures:
             return None
-        providers = {
-            str(item.get("account", "")).split("/", 1)[0]
-            for item in failures
-            if item.get("account")
-        }
-        if len(providers) == 1:
-            provider = next(iter(providers))
-            name = {"chatgpt": "ChatGPT", "claude": "Claude", "gemini": "Gemini"}.get(
-                provider, provider
-            )
-            return self.tr("{0} hız sınırı").format(name)
-        return self.tr("Sağlayıcı hız sınırı")
+        errors = [str(item.get("error") or "").casefold() for item in failures]
+        if all("provider rate limit" in error for error in errors):
+            providers = {
+                str(item.get("account", "")).split("/", 1)[0]
+                for item in failures
+                if item.get("account")
+            }
+            if len(providers) == 1:
+                provider = next(iter(providers))
+                name = {
+                    "chatgpt": "ChatGPT",
+                    "claude": "Claude",
+                    "gemini": "Gemini",
+                }.get(provider, provider)
+                return self.tr("{0} hız sınırı").format(name)
+            return self.tr("Sağlayıcı hız sınırı")
+
+        marker = "chatgpt returned http "
+        if all(marker in error for error in errors):
+            statuses = {error.partition(marker)[2].split(maxsplit=1)[0] for error in errors}
+            if all(len(status) == 3 and status.isdecimal() for status in statuses):
+                if len(statuses) == 1:
+                    return self.tr("ChatGPT HTTP {0}").format(next(iter(statuses)))
+                return self.tr("ChatGPT HTTP errors")
+
+        if all("oturum yenilenemedi" in error for error in errors):
+            return self.tr("ChatGPT session verification failed")
+
+        return None
 
     def synchronize(self, scope="all"):
         if getattr(self, "_synchronize_pending", False):
