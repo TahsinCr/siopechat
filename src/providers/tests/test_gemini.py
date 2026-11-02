@@ -861,19 +861,16 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
             sync_activity=AsyncMock(),
         )
         provider._connect = AsyncMock(return_value=client)
-        turn_2 = [
-            [None, "r_2"],
-            None,
-            [["Question 2", 0, None, [{"name": "file2.txt"}]]],
-            [[["rc_2", ["Answer 2"]]]],
+        turns = [
+            [
+                [None, f"r_{number}"],
+                None,
+                [[f"Question {number}", 0, None, [{"name": f"file{number}.txt"}]]],
+                [[[f"rc_{number}", [f"Answer {number}"]]]],
+            ]
+            for number in (3, 2, 1)
         ]
-        turn_1 = [
-            [None, "r_1"],
-            None,
-            [["Question 1", 0, None, [{"name": "file1.txt"}]]],
-            [[["rc_1", ["Answer 1"]]]],
-        ]
-        provider.rpc = SimpleNamespace(call=AsyncMock(return_value=[[[turn_2, turn_1]]]))
+        provider.rpc = SimpleNamespace(call=AsyncMock(return_value=[[turns]]))
 
         captured = []
 
@@ -889,46 +886,40 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
                 "response_complete": True,
             }
 
-        with patch("providers.gemini.transport.generate", fake_generate):
-            _ = [
-                e
-                async for e in provider.stream(
-                    SendRequest(
-                        "gemini",
-                        "test",
-                        "local",
-                        "",
-                        conversation_id="conv_1",
-                        action=MessageAction.RETRY,
-                        message_id="r_2:model",
-                        model="gemini-flash",
+        async def retry(message_id):
+            with patch("providers.gemini.transport.generate", fake_generate):
+                return [
+                    event
+                    async for event in provider.stream(
+                        SendRequest(
+                            "gemini",
+                            "test",
+                            "local",
+                            "",
+                            conversation_id="conv_1",
+                            action=MessageAction.RETRY,
+                            message_id=message_id,
+                            model="gemini-flash",
+                        )
                     )
-                )
-            ]
-        req, meta, files = captured[-1]
-        self.assertEqual(req.action, MessageAction.RETRY)
-        self.assertEqual(req.prompt, "Question 2")
-        self.assertEqual(meta[:3], ["conv_1", "r_1", "rc_1"])
-        self.assertEqual(files, [{"name": "file2.txt"}])
+                ]
 
-        with patch("providers.gemini.transport.generate", fake_generate):
-            _ = [
-                e
-                async for e in provider.stream(
-                    SendRequest(
-                        "gemini",
-                        "test",
-                        "local",
-                        "",
-                        conversation_id="conv_1",
-                        action=MessageAction.RETRY,
-                        message_id="r_1:model",
-                        model="gemini-flash",
-                    )
-                )
-            ]
-        req, meta, files = captured[-1]
-        self.assertEqual(req.action, MessageAction.EDIT)
-        self.assertEqual(req.prompt, "Question 1")
-        self.assertEqual(meta[:3], ["conv_1", "", ""])
-        self.assertEqual(files, [{"name": "file1.txt"}])
+        cases = (
+            (
+                "r_3:model",
+                MessageAction.RETRY,
+                "Question 3",
+                ["conv_1", "r_2", "rc_2"],
+                "file3.txt",
+            ),
+            ("r_2:model", MessageAction.EDIT, "Question 2", ["conv_1", "r_1", "rc_1"], "file2.txt"),
+            ("r_1:model", MessageAction.EDIT, "Question 1", ["conv_1", "", ""], "file1.txt"),
+        )
+        for message_id, action, prompt, parent, filename in cases:
+            with self.subTest(message_id=message_id):
+                await retry(message_id)
+                request, metadata, files = captured[-1]
+                self.assertEqual(request.action, action)
+                self.assertEqual(request.prompt, prompt)
+                self.assertEqual(metadata[:3], parent)
+                self.assertEqual(files, [{"name": filename}])
