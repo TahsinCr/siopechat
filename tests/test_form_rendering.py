@@ -97,9 +97,13 @@ class FormsRenderTests(unittest.IsolatedAsyncioTestCase):
         with terminal() as (v, _):
             v.new_tab()
             fragments = v.render_tabs()
-            labels = [(style, text) for style, text, *_ in fragments if "class:tab.open" in style]
-            self.assertEqual(len(labels), 4)
-            active = next(style for style, _ in labels if "class:tab.active" in style)
+            labels = [
+                fragment
+                for fragment in fragments
+                if len(fragment) > 2 and "class:tab.open" in fragment[0]
+            ]
+            self.assertEqual(len({id(fragment[2]) for fragment in labels}), 2)
+            active = next(style for style, *_ in labels if "class:tab.active" in style)
             self.assertLess(active.index("class:tab.open"), active.index("class:tab.active"))
             style = Style.from_dict({"tab.open": "bold #ffffff", "tab.active": "#a9cfff"})
             self.assertEqual(style.get_attrs_for_style_str(active).color, "a9cfff")
@@ -115,11 +119,13 @@ class FormsRenderTests(unittest.IsolatedAsyncioTestCase):
             v.select_tab(0)
             v.layout_controller.attach()
             labels = [
-                (style, text) for style, text, *_ in v.render_tabs() if "class:tab.open" in style
+                fragment
+                for fragment in v.render_tabs()
+                if len(fragment) > 2 and "class:tab.open" in fragment[0]
             ]
-            self.assertEqual(len(labels), 2)
-            self.assertTrue(all("class:tab.active" in style for style, _ in labels))
-            self.assertIn("◫", "".join(text for _, text in labels))
+            self.assertEqual(len({id(fragment[2]) for fragment in labels}), 1)
+            self.assertTrue(all("class:tab.active" in style for style, *_ in labels))
+            self.assertIn("◫", "".join(text for _, text, *_ in labels))
 
     async def test_inline_project_editor_uses_available_width_on_resize(self):
         output = ResizableOutput()
