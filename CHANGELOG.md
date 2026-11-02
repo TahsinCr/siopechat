@@ -10,6 +10,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.3b0` for `v1.5.
 
 ### Added
 
+- Offer retry on all Gemini assistant responses matching Claude and ChatGPT. Retrying earlier turns seamlessly branches from the parent turn using the original turn prompt and attachments, switching to native retry once the regenerated response becomes the latest turn.
 - Copy or save the full visible conversation from the conversation toolbar as formatted text or JSON. Exports read archived messages in bounded SQLite windows, include unsaved transcript updates, and save through the configured download folder and history.
 - Show each conversation tab's provider icon before its title.
 

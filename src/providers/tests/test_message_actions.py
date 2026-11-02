@@ -219,7 +219,9 @@ class GeminiActionsTests(unittest.TestCase):
             self.assertEqual(body[2], ["c_fixture", "r_parent", "rc_parent"])
             self.assertEqual((body[18], body[32], body[72]), (mode, 1, reason))
 
-    def test_history_keeps_sources_separate_from_thoughts_and_only_latest_retry_is_offered(self):
+    def test_history_keeps_sources_separate_from_thoughts_and_retry_is_offered_for_all_answers(
+        self,
+    ):
         turns = []
         for number in (2, 1):
             candidate = [None] * 38
@@ -239,7 +241,7 @@ class GeminiActionsTests(unittest.TestCase):
             for message in result.messages
             if message.role == "assistant" and message.channel != "analysis"
         ]
-        self.assertEqual(final[0].actions, ("branch",))
+        self.assertEqual(final[0].actions, ("retry", "branch"))
         self.assertEqual(final[1].actions, ("retry", "branch"))
         self.assertEqual(
             final[1].metadata["sources"],

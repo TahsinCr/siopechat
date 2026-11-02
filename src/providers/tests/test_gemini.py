@@ -10,7 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
-from providers import ReplaceText, SendRequest
+from providers import MessageAction, ReplaceText, SendRequest
 from providers.errors import AccountPaused, ProviderError
 from providers.gemini import GeminiProvider
 from providers.gemini.session import GeminiSession
@@ -853,3 +853,82 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(fast_model.metadata["number"])
         self.assertEqual(lite_model.metadata["selector_id"], "remote-lite")
         self.assertEqual(lite_model.metadata["number"], 42)
+
+    async def test_retry_earlier_turn_uses_edit_controls_and_preserves_prompt_and_files(self):
+        provider = GeminiProvider(Path("unused"), "test")
+        client = SimpleNamespace(
+            models=(Model("gemini-flash", "Flash"),),
+            sync_activity=AsyncMock(),
+        )
+        provider._connect = AsyncMock(return_value=client)
+        turn_2 = [
+            [None, "r_2"],
+            None,
+            [["Question 2", 0, None, [{"name": "file2.txt"}]]],
+            [[["rc_2", ["Answer 2"]]]],
+        ]
+        turn_1 = [
+            [None, "r_1"],
+            None,
+            [["Question 1", 0, None, [{"name": "file1.txt"}]]],
+            [[["rc_1", ["Answer 1"]]]],
+        ]
+        provider.rpc = SimpleNamespace(call=AsyncMock(return_value=[[[turn_2, turn_1]]]))
+
+        captured = []
+
+        async def fake_generate(_client, request, metadata, _context, files=None, **_kwargs):
+            captured.append((request, metadata, files))
+            yield {
+                "cid": "conv_1",
+                "metadata": ["conv_1", "r_new", "rc_new"],
+                "text": "new answer",
+                "thoughts": "",
+                "files": [],
+                "sources": (),
+                "response_complete": True,
+            }
+
+        with patch("providers.gemini.transport.generate", fake_generate):
+            _ = [
+                e
+                async for e in provider.stream(
+                    SendRequest(
+                        "gemini",
+                        "test",
+                        "local",
+                        "",
+                        conversation_id="conv_1",
+                        action=MessageAction.RETRY,
+                        message_id="r_2:model",
+                        model="gemini-flash",
+                    )
+                )
+            ]
+        req, meta, files = captured[-1]
+        self.assertEqual(req.action, MessageAction.RETRY)
+        self.assertEqual(req.prompt, "Question 2")
+        self.assertEqual(meta[:3], ["conv_1", "r_1", "rc_1"])
+        self.assertEqual(files, [{"name": "file2.txt"}])
+
+        with patch("providers.gemini.transport.generate", fake_generate):
+            _ = [
+                e
+                async for e in provider.stream(
+                    SendRequest(
+                        "gemini",
+                        "test",
+                        "local",
+                        "",
+                        conversation_id="conv_1",
+                        action=MessageAction.RETRY,
+                        message_id="r_1:model",
+                        model="gemini-flash",
+                    )
+                )
+            ]
+        req, meta, files = captured[-1]
+        self.assertEqual(req.action, MessageAction.EDIT)
+        self.assertEqual(req.prompt, "Question 1")
+        self.assertEqual(meta[:3], ["conv_1", "", ""])
+        self.assertEqual(files, [{"name": "file1.txt"}])

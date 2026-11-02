@@ -479,7 +479,13 @@ class GeminiProvider(ProjectEditing, OptionalFeatures):
                                     "Gemini message attachments cannot be preserved"
                                 )
                             if request.action == MessageAction.RETRY:
-                                request = replace(request, prompt=nested(original, 2, 0, 0) or "")
+                                request = replace(
+                                    request,
+                                    prompt=nested(original, 2, 0, 0) or "",
+                                    action=MessageAction.EDIT
+                                    if selected_index > 0
+                                    else MessageAction.RETRY,
+                                )
                             turn = (
                                 turns[selected_index + 1]
                                 if selected_index + 1 < len(turns)

@@ -192,9 +192,7 @@ def history(data, origin, cid):
                             for image in images
                         ),
                     },
-                    actions=actions_for(
-                        "assistant", latest=turn_index == len(turns) - 1, branch=True
-                    ),
+                    actions=actions_for("assistant", branch=True),
                 )
             )
     return Conversation(
