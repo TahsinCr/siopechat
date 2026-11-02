@@ -187,15 +187,15 @@ class BackendService:
             raise ChatGPTWebError("daemon message was not an object")
         return value
 
+    @staticmethod
+    def _encode_json(value: dict[str, Any]) -> bytes:
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
     def send_json(self, connection: socket.socket, value: dict[str, Any]) -> None:
-        connection.sendall(
-            json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        )
+        connection.sendall(self._encode_json(value))
 
     def send_json_line(self, connection: socket.socket, value: dict[str, Any]) -> None:
-        connection.sendall(
-            (json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
-        )
+        connection.sendall(self._encode_json(value) + b"\n")
 
     def daemon_request(self, socket_path: Path, request: dict[str, Any]) -> dict[str, Any]:
         connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
