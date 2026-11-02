@@ -265,48 +265,10 @@ class Downloads:
                 raise ValueError("İki indirme sürüyor; tamamlanınca yeniden deneyin")
             self._active.add(identity)
         record_id = uuid.uuid4().hex
-
-        last_saved = 0.0
-
-        def report(name, size, total):
-            nonlocal last_saved
-            now = time.monotonic()
-            persist = now - last_saved >= 1
-            if persist:
-                last_saved = now
-            self._update(
-                record_id, persist=persist, state="downloading", name=name, size=size, total=total
-            )
-            if progress:
-                progress(name, size, total)
+        report = self._progress_callback(record_id, progress)
 
         try:
-            try:
-                with self._store_lock:
-                    self._history()
-            except (OSError, LookupError):
-                pass  # A disabled/unavailable archive cannot stop file delivery.
-            with self._history_lock:
-                self._records[record_id] = dict(
-                    id=record_id,
-                    account=key,
-                    conversation_id=conversation_id,
-                    title=title,
-                    created=time.time(),
-                    updated=time.time(),
-                    state="preparing",
-                    name="",
-                    path=None,
-                    size=0,
-                    total=None,
-                    chat_deleted=False,
-                    error="",
-                    _revision=0,
-                )
-                self._dirty_records.add(record_id)
-                self.revision += 1
-                self.model_revision += 1
-            self._update(record_id, persist=True)
+            self._create_record(record_id, key, conversation_id, title)
             source = self.accounts.resolve_download(key, url, conversation_id, message_id)
             if force_download:
                 from dataclasses import replace
@@ -346,51 +308,8 @@ class Downloads:
             raise ValueError("İki indirme sürüyor; tamamlanınca yeniden deneyin")
         record_id = uuid.uuid4().hex
         try:
-            try:
-                with self._store_lock:
-                    self._history()
-            except (OSError, LookupError):
-                pass
-            now = time.time()
-            with self._history_lock:
-                self._records[record_id] = dict(
-                    id=record_id,
-                    account=key,
-                    conversation_id=conversation_id,
-                    title=title,
-                    created=now,
-                    updated=now,
-                    state="preparing",
-                    name="",
-                    path=None,
-                    size=0,
-                    total=None,
-                    chat_deleted=False,
-                    error="",
-                    _revision=0,
-                )
-                self._dirty_records.add(record_id)
-                self.revision += 1
-                self.model_revision += 1
-            self._update(record_id, persist=True)
-
-            last_saved = 0.0
-
-            def report(name, size, total):
-                nonlocal last_saved
-                now = time.monotonic()
-                persist = now - last_saved >= 1
-                if persist:
-                    last_saved = now
-                self._update(
-                    record_id,
-                    persist=persist,
-                    state="downloading",
-                    name=name,
-                    size=size,
-                    total=total,
-                )
-
+            self._create_record(record_id, key, conversation_id, title)
+            report = self._progress_callback(record_id)
             result = self._save_chunks(chunks, filename, report)
             self._update(
                 record_id,
@@ -408,6 +327,57 @@ class Downloads:
             raise
         finally:
             self._gate.release()
+
+    def _create_record(self, record_id, key, conversation_id, title):
+        try:
+            with self._store_lock:
+                self._history()
+        except (OSError, LookupError):
+            pass  # A disabled/unavailable archive cannot stop file delivery.
+        now = time.time()
+        with self._history_lock:
+            self._records[record_id] = dict(
+                id=record_id,
+                account=key,
+                conversation_id=conversation_id,
+                title=title,
+                created=now,
+                updated=now,
+                state="preparing",
+                name="",
+                path=None,
+                size=0,
+                total=None,
+                chat_deleted=False,
+                error="",
+                _revision=0,
+            )
+            self._dirty_records.add(record_id)
+            self.revision += 1
+            self.model_revision += 1
+        self._update(record_id, persist=True)
+
+    def _progress_callback(self, record_id, callback=None):
+        last_saved = 0.0
+
+        def report(name, size, total):
+            nonlocal last_saved
+            now = time.monotonic()
+            persist = now - last_saved >= 1
+            if persist:
+                last_saved = now
+            self._update(
+                record_id,
+                persist=persist,
+                state="downloading",
+                name=name,
+                size=size,
+                total=total,
+            )
+            if callback:
+                callback(name, size, total)
+
+        return report
 
     def remove_page(self, identity):
         with self._store_lock:
