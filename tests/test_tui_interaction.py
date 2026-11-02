@@ -74,6 +74,30 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
         view.refresh_provider_catalog.assert_called_once_with()
         view.refresh_sidebar.assert_called_once_with()
 
+    async def test_shutdown_cancels_provider_work_before_draining_tui_workers(self):
+        with terminal() as (view, _pipe):
+            steps = []
+            view.account_service = Mock()
+            view.account_service.begin_shutdown.side_effect = lambda: steps.append("cancel")
+            view._persist_session = Mock(side_effect=lambda: steps.append("persist"))
+            view.action_cleanup = Mock(side_effect=lambda: steps.append("actions"))
+            close_background_work = view.close_background_work
+
+            def close_workers(*, wait=False):
+                steps.append(("workers", wait))
+                close_background_work(wait=wait)
+
+            view.close_background_work = close_workers
+            view.app.run = lambda **_kwargs: None
+
+            with patch("prompt_toolkit.patch_stdout.patch_stdout", return_value=nullcontext()):
+                view.run()
+
+            self.assertEqual(
+                steps,
+                [("workers", False), "persist", "cancel", ("workers", True), "actions"],
+            )
+
     async def test_settings_tab_can_switch_reopen_and_close_with_global_keys(self):
         with terminal(settings_rows=lambda: []) as (view, pipe):
             view._read_in_background = immediate

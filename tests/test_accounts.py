@@ -12,7 +12,7 @@ from dataclasses import asdict
 from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, call, patch
 
 from accounts import Accounts, identity, origin
 from providers import Capability, ConversationBound, ReplaceText, TextDelta
@@ -225,6 +225,53 @@ class AccountTests(unittest.TestCase):
         self.assertTrue(self.accounts.closed)
         self.assertFalse(thread.is_alive())
 
+    def test_begin_shutdown_releases_threads_waiting_for_provider_reads(self):
+        started, cancelled = Event(), Event()
+
+        async def blocked_read():
+            started.set()
+            try:
+                await asyncio.sleep(30)
+            finally:
+                cancelled.set()
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pending = pool.submit(self.accounts.call, blocked_read())
+            self.assertTrue(started.wait(1))
+            self.accounts.begin_shutdown()
+            with self.assertRaises(CancelledError):
+                pending.result(timeout=1)
+
+        self.assertTrue(cancelled.wait(1))
+
+    def test_begin_shutdown_cancels_active_provider_stream_promptly(self):
+        started, cancelled = Event(), Event()
+
+        async def stream(_request):
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+            yield TextDelta("unreachable")
+
+        provider = Mock()
+        provider.close = AsyncMock()
+        provider.stream = stream
+        self.accounts._providers[self.gemini] = provider
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pending = pool.submit(
+                self.accounts.send, self.gemini, None, "Question", [], Mock(), Mock()
+            )
+            self.assertTrue(started.wait(1))
+            self.accounts.begin_shutdown()
+            with self.assertRaises(CancelledError):
+                pending.result(timeout=1)
+
+        self.assertTrue(cancelled.wait(1))
+        self.assertEqual(self.accounts._sending.get(self.gemini), 0)
+
     def test_shutdown_drains_background_persistence_before_stopping_loop(self):
         persisted = Event()
 
@@ -257,7 +304,9 @@ class AccountTests(unittest.TestCase):
             ):
                 self.accounts.close()
             loop.close.assert_not_called()
-            loop.call_soon_threadsafe.assert_called_once_with(loop.stop)
+            loop.call_soon_threadsafe.assert_has_calls(
+                [call(self.api.tasks.begin_shutdown), call(loop.stop)]
+            )
             self.assertIs(self.accounts._loop, loop)
             self.assertIs(self.accounts._thread, thread)
         finally:
@@ -280,7 +329,7 @@ class AccountTests(unittest.TestCase):
                 self.assertRaisesRegex(RuntimeError, "remains open"),
             ):
                 self.accounts.close()
-            loop.call_soon_threadsafe.assert_not_called()
+            loop.call_soon_threadsafe.assert_called_once_with(self.api.tasks.begin_shutdown)
             loop.close.assert_not_called()
             thread.join.assert_not_called()
             self.assertIs(self.accounts._loop, loop)

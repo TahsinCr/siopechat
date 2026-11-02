@@ -68,6 +68,49 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
             release.set()
             await runtime.close()
 
+    async def test_shutdown_graces_completed_text_before_cancelling_provider(self):
+        release = asyncio.Event()
+        received = asyncio.Event()
+        persisted = []
+
+        class Provider:
+            id = "gpt"
+            capabilities = frozenset({Capability.CHAT})
+
+            async def stream(self, _request):
+                yield TextDelta("finished answer")
+                yield ResponseComplete()
+                await release.wait()
+
+        runtime = TaskService(ProviderRegistry())
+        runtime.providers.register(Provider())
+
+        async def persist(snapshot):
+            persisted.append(snapshot.text)
+
+        try:
+            job_id = runtime.submit(
+                request(),
+                on_event=lambda event: (
+                    received.set() if isinstance(event, ResponseComplete) else None
+                ),
+                on_complete=persist,
+            )
+            await asyncio.wait_for(received.wait(), 1)
+            runtime.begin_shutdown()
+            self.assertEqual(runtime.snapshot(job_id).state, JobState.STREAMING)
+            with self.assertRaisesRegex(RuntimeError, "runtime is closed"):
+                runtime.submit(request())
+            asyncio.get_running_loop().call_later(0.01, release.set)
+
+            await runtime.close()
+
+            self.assertEqual(runtime.snapshot(job_id).state, JobState.COMPLETED)
+            self.assertEqual(persisted, ["finished answer"])
+        finally:
+            release.set()
+            await runtime.close()
+
     def test_registry_account_factory_preserves_identity_and_isolates_instances(self):
         from types import SimpleNamespace
 

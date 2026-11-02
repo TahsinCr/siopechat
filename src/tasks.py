@@ -28,6 +28,7 @@ from providers.registry import ProviderRegistry
 from utils.events import EventBus
 
 _LOG = logging.getLogger(__name__)
+_SHUTDOWN_RESPONSE_GRACE_SECONDS = 1.0
 
 
 class JobState(str, Enum):
@@ -82,6 +83,7 @@ class _Job:
     version: int = 0
     task: asyncio.Task | None = None
     cancel_requested: bool = False
+    response_complete_seen: bool = False
     event_sink: Callable | None = None
     complete: Callable | None = None
     guard: Callable | None = None
@@ -119,6 +121,7 @@ class TaskService:
         self._blocked: dict[tuple[str, str], float | None] = {}
         self._subscribers: dict[asyncio.Queue[JobChanged], object] = {}
         self._closed = False
+        self._shutdown_requested = False
         self._loop: asyncio.AbstractEventLoop | None = None
 
     def _check_loop(self) -> None:
@@ -130,7 +133,7 @@ class TaskService:
 
     def subscribe(self, capacity: int = 64) -> asyncio.Queue[JobChanged]:
         self._check_loop()
-        if self._closed:
+        if self._closed or self._shutdown_requested:
             raise RuntimeError("runtime is closed")
         if capacity < 1:
             raise ValueError("capacity must be positive")
@@ -218,7 +221,7 @@ class TaskService:
         self, request: SendRequest, *, on_event=None, on_complete=None, guard=None, queue_chat=False
     ) -> str:
         self._check_loop()
-        if self._closed:
+        if self._closed or self._shutdown_requested:
             raise RuntimeError("runtime is closed")
         if not all((request.provider_id, request.account_id, request.chat_id)):
             raise ValueError("provider, account and local chat IDs are required")
@@ -311,6 +314,7 @@ class TaskService:
                             job.conversation_id = event.conversation_id
                             self._deliver_event(job, event)
                         elif isinstance(event, ResponseComplete):
+                            job.response_complete_seen = True
                             self._deliver_event(job, event)
                         elif isinstance(event, MessageMetadata):
                             job.metadata = event
@@ -467,6 +471,16 @@ class TaskService:
                 self._changed(job_id, JobState.CANCELLED)
         return self._snapshot(job_id, job)
 
+    def begin_shutdown(self) -> None:
+        """Stop accepting jobs and cancel work that has not finished producing text."""
+        if self._closed:
+            return
+        self._check_loop()
+        self._shutdown_requested = True
+        for job_id, job in tuple(self._jobs.items()):
+            if job.state not in TERMINAL and not job.response_complete_seen:
+                self._request_cancel(job_id)
+
     def forget(self, job_id: str) -> None:
         self._check_loop()
         if self._jobs[job_id].state not in TERMINAL:
@@ -481,6 +495,14 @@ class TaskService:
         # Cancel all queued tasks before yielding: releasing one account gate
         # must not start another queued send during shutdown.
         pending = [(key, job) for key, job in self._jobs.items() if job.state not in TERMINAL]
+        completed_text = [
+            job.task for _, job in pending if job.response_complete_seen and job.task is not None
+        ]
+        if completed_text:
+            # Let the provider's final acknowledgement arrive for text already
+            # shown as complete. Its persistence callback is shielded below.
+            await asyncio.wait(completed_text, timeout=_SHUTDOWN_RESPONSE_GRACE_SECONDS)
+            pending = [(job_id, job) for job_id, job in pending if job.state not in TERMINAL]
         for job_id, job in pending:
             self._request_cancel(job_id)
         await asyncio.gather(*(job.task for _, job in pending), return_exceptions=True)

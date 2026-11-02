@@ -65,6 +65,7 @@ class Accounts(
         self._loop = None
         self._thread = None
         self._lock = threading.Lock()
+        self._active_calls = set()
         self._active_pending = {}
         self._active_values = {}
         self._active_writer_running = False
@@ -361,7 +362,15 @@ class Accounts(
                 return await coroutine
             return await asyncio.wait_for(coroutine, timeout)
 
-        future = asyncio.run_coroutine_threadsafe(bounded(), self._loop)
+        with self._lock:
+            if (self.closing or self.closed) and not _closing:
+                coroutine.close()
+                raise RuntimeError("Hesap hizmeti kapalı")
+            future = asyncio.run_coroutine_threadsafe(bounded(), self._loop)
+            if not _closing:
+                self._active_calls.add(future)
+        if not _closing:
+            future.add_done_callback(self._forget_active_call)
         try:
             return future.result(timeout=timeout + 1)
         except (TimeoutError, asyncio.TimeoutError, FutureTimeout):
@@ -369,6 +378,26 @@ class Accounts(
             raise TimeoutError(
                 "Sağlayıcı işlemi zaman aşımına uğradı; yeniden deneyebilirsiniz"
             ) from None
+
+    def _forget_active_call(self, future):
+        with self._lock:
+            self._active_calls.discard(future)
+
+    def begin_shutdown(self):
+        """Stop new provider work and release threads waiting on provider calls."""
+        with self._lock:
+            if self.closed:
+                return
+            self.closing = True
+            loop = self._loop
+            calls = tuple(self._active_calls)
+        for future in calls:
+            future.cancel()
+        if loop is not None and loop.is_running():
+            try:
+                loop.call_soon_threadsafe(self.api.tasks.begin_shutdown)
+            except RuntimeError:
+                pass
 
     def _call_cancellable(self, coroutine, timeout, cancel_event):
         if cancel_event.is_set():
@@ -718,7 +747,8 @@ class Accounts(
         with self._lock:
             if self.closed:
                 return
-            self.closing = True
+        self.begin_shutdown()
+        with self._lock:
             loop, thread = self._loop, self._thread
         if loop is None or thread is None:
             with self._lock:

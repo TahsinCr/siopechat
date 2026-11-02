@@ -19,6 +19,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.3b0` for `v1.5.
 
 ### Fixed
 
+- Cancel provider reads and unfinished streams before draining TUI worker pools; allow text-finished responses up to one second for final confirmation, while preserving shielded archive writes.
 - Finish synchronous runtime cleanup when Ctrl+C arrives during shutdown, instead of leaving services open and printing an asyncio traceback.
 - Keep staged attachments owned by their originating tab when uploads or background sends finish or fail; release only the attachments belonging to closed or logged-out tabs.
 - Remove first-render timing callbacks when a stream finishes without rendering in its tab, while retaining measurement when active text still needs its first render.
