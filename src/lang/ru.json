@@ -276,6 +276,7 @@
   "ui.{0} hız sınırı": "ограничение скорости {0}",
   "ui.Sağlayıcı hız sınırı": "Ограничение скорости провайдера",
   "ui.Kayıtlı geçmiş · arka planda eşitleniyor": "Сохранённая история · синхронизация в фоне",
+  "ui.Sohbet eşitlemesi tamamlandı": "Синхронизация чата завершена",
   "ui.Load failed: {0}": "Ошибка загрузки: {0}",
   "ui.Sohbetler yükleniyor…": "Загрузка чатов…",
   "ui.Sohbetler eşitleniyor…": "Обновление чатов проекта…",

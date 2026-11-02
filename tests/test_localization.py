@@ -100,14 +100,15 @@ class LocalizationTests(unittest.TestCase):
 
     def test_temporary_status_label_is_rendered_in_each_bundled_locale(self):
         expected = {
-            "en": ("Temporary", "Off"),
-            "tr": ("Geçici", "Kapalı"),
-            "ru": ("Временный", "Выкл."),
+            "en": ("Temporary", "Off", "Conversation sync complete"),
+            "tr": ("Geçici", "Kapalı", "Sohbet eşitlemesi tamamlandı"),
+            "ru": ("Временный", "Выкл.", "Синхронизация чата завершена"),
         }
         with interaction.terminal() as (view, _):
             view.provider_features = frozenset({Capability.TEMPORARY})
-            for locale, (label, state) in expected.items():
+            for locale, (label, state, sync_complete) in expected.items():
                 view.translations = catalog().merged(locale)
+                self.assertEqual(view.tr("Sohbet eşitlemesi tamamlandı"), sync_complete, locale)
                 temporary_control = next(
                     fragment
                     for fragment in view.render_chat_header()

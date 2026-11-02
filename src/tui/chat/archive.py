@@ -309,8 +309,14 @@ class ArchiveComponent:
             if tab.get("history_load_complete") and not (state and state["state"] == "syncing"):
                 tab.pop("history_load_pending", None)
                 tab.pop("history_load_complete", None)
-                if i == self.active_tab and not tab.get("messages"):
-                    self.status = ""
+                if i == self.active_tab and self.status == self.tr(
+                    "Kayıtlı geçmiş · arka planda eşitleniyor"
+                ):
+                    if state and state["state"] == "ready" and not tab.get("busy"):
+                        self.status = ""
+                        self.show_temporary_status(self.tr("Sohbet eşitlemesi tamamlandı"))
+                    elif not tab.get("messages"):
+                        self.status = ""
             tab["syncing"] = bool(state and state["state"] == "syncing") or bool(
                 tab.get("history_load_pending")
             )

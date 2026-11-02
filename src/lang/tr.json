@@ -276,6 +276,7 @@
   "ui.{0} hız sınırı": "{0} hız sınırı",
   "ui.Sağlayıcı hız sınırı": "Sağlayıcı hız sınırı",
   "ui.Kayıtlı geçmiş · arka planda eşitleniyor": "Kayıtlı geçmiş · arka planda eşitleniyor",
+  "ui.Sohbet eşitlemesi tamamlandı": "Sohbet eşitlemesi tamamlandı",
   "ui.Load failed: {0}": "Yükleme başarısız: {0}",
   "ui.Sohbetler yükleniyor…": "Sohbetler yükleniyor…",
   "ui.Sohbetler eşitleniyor…": "Proje sohbetleri eşitleniyor…",

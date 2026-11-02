@@ -276,6 +276,7 @@
   "ui.{0} hız sınırı": "{0} rate limit",
   "ui.Sağlayıcı hız sınırı": "Provider rate limit",
   "ui.Kayıtlı geçmiş · arka planda eşitleniyor": "Saved history · synchronizing in background",
+  "ui.Sohbet eşitlemesi tamamlandı": "Conversation sync complete",
   "ui.Load failed: {0}": "Load failed: {0}",
   "ui.Sohbetler yükleniyor…": "Loading conversations…",
   "ui.Sohbetler eşitleniyor…": "Refreshing project conversations…",

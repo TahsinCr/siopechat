@@ -241,6 +241,51 @@ class ArchiveIntegrationTests(unittest.TestCase):
             )
             self.assertEqual(view.input.text, "Next draft")
 
+    def test_cached_history_sync_status_confirms_only_after_archive_is_ready(self):
+        archive = self.api.get("archive")
+        account, remote = "chatgpt/default", "cached-sync"
+        archive.put(account, "conversation", remote, {"messages": []})
+        archive._state((account, "conversation", remote), "syncing")
+
+        with terminal(account_service=self.accounts) as (view, _):
+            tab = view.tabs[view.active_tab]
+            tab.update(
+                conversation_id=f"@{account}/{remote}",
+                history_load_pending=True,
+                history_load_complete=True,
+                messages=[{"role": "assistant", "text": "Cached reply"}],
+            )
+            syncing_status = view.tr("Kayıtlı geçmiş · arka planda eşitleniyor")
+            view.status = syncing_status
+            view.show_temporary_status = Mock()
+
+            view.apply_archive_updates()
+
+            self.assertTrue(tab["history_load_complete"])
+            self.assertEqual(view.status, syncing_status)
+            view.show_temporary_status.assert_not_called()
+
+            archive._state((account, "conversation", remote), "ready")
+            view.apply_archive_updates()
+
+            self.assertNotIn("history_load_complete", tab)
+            self.assertNotIn("history_load_pending", tab)
+            self.assertEqual(view.status, "")
+            view.show_temporary_status.assert_called_once_with(
+                view.tr("Sohbet eşitlemesi tamamlandı")
+            )
+
+            newer_status = "Yeni işlem sürüyor"
+            view.status = newer_status
+            tab.update(history_load_pending=True, history_load_complete=True)
+            archive._state((account, "conversation", remote), "syncing")
+            view.apply_archive_updates()
+            archive._state((account, "conversation", remote), "ready")
+            view.apply_archive_updates()
+
+            self.assertEqual(view.status, newer_status)
+            view.show_temporary_status.assert_called_once()
+
     def test_archive_revision_refreshes_only_the_resident_transcript_window(self):
         archive = self.api.get("archive")
         account, remote = self.gemini, "long-window"
