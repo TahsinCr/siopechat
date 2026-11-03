@@ -76,7 +76,7 @@ Son satır süreç başlatma maliyetini de içerir; boşta bir Node sürecini ba
 Önce depoyu klonlayıp proje dizinine girin:
 
 ```sh
-git clone https://github.com/TahsinCr/siopechat.git
+git clone --recurse-submodules https://github.com/TahsinCr/siopechat.git
 cd siopechat
 ```
 

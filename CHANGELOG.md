@@ -8,6 +8,10 @@ Python distributions use the corresponding PEP 440 version (`1.5.4b0` for `v1.5.
 
 ## [Unreleased]
 
+### Changed
+
+- Extract the provider package into the public `webai-provider` repository and pin SiopeChat to its `v1.5.4-beta` compatibility snapshot. Clone, install and CI workflows initialize the submodule automatically.
+
 ## [1.5.4-beta] - 2026-11-02
 
 ### Added

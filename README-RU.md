@@ -76,7 +76,7 @@
 Сначала клонируйте репозиторий и перейдите в его каталог:
 
 ```sh
-git clone https://github.com/TahsinCr/siopechat.git
+git clone --recurse-submodules https://github.com/TahsinCr/siopechat.git
 cd siopechat
 ```
 

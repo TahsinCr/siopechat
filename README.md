@@ -76,7 +76,7 @@ The last row includes process startup; launching an otherwise idle Node process 
 Clone the repository and enter its directory:
 
 ```sh
-git clone https://github.com/TahsinCr/siopechat.git
+git clone --recurse-submodules https://github.com/TahsinCr/siopechat.git
 cd siopechat
 ```
 
@@ -311,7 +311,7 @@ Message sends are serialized per account through `TaskService`. Cancellation rel
 
 ### Use the provider library independently
 
-Install it with `python -m pip install ./src/providers` in your chosen environment. `ProviderClient` manages account adapters, streams and connection cleanup; `Backend` exposes models, chats, projects, sources, uploads and download resolution. The application uses the same `create_provider` factory. See the [provider guide](src/providers/README.md) for examples and standalone tests.
+Install it with `python -m pip install ./src/providers` in your chosen environment. `ProviderClient` manages account adapters, streams and connection cleanup; `Backend` exposes models, chats, projects, sources, uploads and download resolution. The application uses the same `create_provider` factory. See the [provider guide](https://github.com/TahsinCr/webai-provider/blob/v1.5.4-beta/README.md) for examples and standalone tests.
 
 Transports, browser-profile discovery and local CDP access are implemented in Python. Gemini uses the bundled HTTPS transport without a separate Gemini SDK. ChatGPT handles supported Sentinel challenges with its Python runtime and bundled profile. Changed or unsupported server requirements need explicit compatibility checks; offline fixtures do not cover every live challenge.
 
