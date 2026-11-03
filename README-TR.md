@@ -107,6 +107,22 @@ Son kullanıcı kurulumu `pyproject.toml` içindeki sürüm aralıklarını pip 
 
 </details>
 
+### SiopeChat'i güncelleme
+
+Sağlayıcı deposu, SiopeChat'in seçtiği commit'e sabitlenmiş bir Git submodule'dur.
+Uygulamayı güncelledikten sonra aynı sağlayıcı commit'ini eşitleyin:
+
+```sh
+git pull --ff-only
+git submodule update --init --recursive
+```
+
+İlk klonlama sırasında `--recurse-submodules` kullanılmadıysa kurulum betiği
+sağlayıcı submodule'ünü başlatır. `webai-provider/main` üzerindeki yeni bir
+commit, SiopeChat kendi submodule işaretçisini güncellediğinde uygulamaya geçer.
+Güncelleme bağımlılıkları değiştirdiyse işletim sisteminize uygun kurulum
+betiğini (`./install.sh` veya `./install.ps1`) yeniden çalıştırın.
+
 ### Hesap bağlama
 
 Yeni kurulumlarda hesap listesi boştur. **Ayarlar → Hesaplar** bölümünden hesap ekleyin veya seçin, ardından **Profil ile doğrula** seçeneğini kullanın. Önce varsayılan tarayıcınızda en son kullandığınız profile geçip sağlayıcıya giriş yapın. SiopeChat tarayıcıyı açmadan oturumu aktarır ve doğrular. Sohbet, geçmiş, model ve proje işlemleri HTTP üzerinden yürür. Oturumun süresi dolarsa normal tarayıcınızda yeniden giriş yapıp doğrulamayı tekrarlayın.
@@ -311,7 +327,7 @@ Gönderimler `TaskService` üzerinden her hesap için sıraya alınır. İptal d
 
 ### Sağlayıcı kütüphanesini bağımsız kullanma
 
-Seçtiğiniz ortamda `python -m pip install ./src/providers` ile kurun. `ProviderClient` hesap adaptörlerini, akışları ve bağlantı temizliğini yönetir. `Backend`; model, sohbet, proje, kaynak, dosya yükleme ve indirme çözümleme işlemlerini sunar. Uygulama da aynı `create_provider` fonksiyonunu kullanır. Örnekler ve bağımsız testler için [sağlayıcı kılavuzuna](src/providers/README.md) bakın.
+Bağımsız kullanım için `python -m pip install ./src/providers` komutunu SiopeChat'ten ayrı bir ortamda çalıştırın. `ProviderClient` hesap adaptörlerini, akışları ve bağlantı temizliğini; `Backend` ise model, sohbet, proje, kaynak, dosya yükleme ve indirme çözümleme işlemlerini sunar. Bağımsız dağıtımın adı `webai-provider`, Python içe aktarma paketi `providers`'tır. SiopeChat şu anda aynı içe aktarma paketini kendi wheel'ine de koyar; bu nedenle iki dağıtım aynı ortama kurulmamalıdır. Sağlayıcı çalışma zamanı bağımlılıkları SiopeChat'in bağımlılıklarında tutulur. Örnekler ve bağımsız testler için [sağlayıcı kılavuzuna](https://github.com/TahsinCr/webai-provider/blob/v1.0-beta/README-TR.md) bakın.
 
 Taşıma katmanları, tarayıcı profili keşfi ve yerel CDP erişimi Python ile uygulanmıştır. Gemini, ek bir Gemini SDK’sı gerektirmeden paketteki HTTPS taşıma katmanını kullanır. ChatGPT’nin desteklenen Sentinel kontrolleri Python çalışma zamanı ve paketteki profille yürütülür. Değişen veya desteklenmeyen sunucu gereksinimleri ayrıca doğrulanmalıdır; çevrimdışı test verileri canlı kontrollerin tümünü kapsamaz.
 
@@ -334,7 +350,7 @@ Hata bildirirken sürümü, sağlayıcıyı, işlemi, terminali, işletim sistem
 
 ## Lisans
 
-Telif hakkı © TahsinCr. [GPL-3.0-only](LICENSE) ile lisanslanmıştır. Dahil edilen üçüncü taraf bileşenlerin bildirimleri `src/utils/` altında korunur.
+Telif hakkı © TahsinCr. [GPL-3.0-only](LICENSE) ile lisanslanmıştır; proje bildirimi için [COPYRIGHT](COPYRIGHT) dosyasına bakın. Dahil edilen üçüncü taraf bileşenlerin bildirimleri `src/utils/` altında korunur.
 
 [version-shield]: https://img.shields.io/badge/version-v1.5.4--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white

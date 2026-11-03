@@ -107,6 +107,21 @@ The installer uses the dependency ranges in `pyproject.toml` with pip, so uv is 
 
 </details>
 
+### Update SiopeChat
+
+The provider is a Git submodule pinned to the commit selected by SiopeChat.
+After pulling an application update, synchronize that exact provider commit:
+
+```sh
+git pull --ff-only
+git submodule update --init --recursive
+```
+
+The installer initializes the provider submodule if the first clone omitted
+`--recurse-submodules`. A newer commit on `webai-provider/main` becomes part of
+SiopeChat when the application records that provider commit. If an update changes
+dependencies, rerun `./install.sh` or `./install.ps1` for your platform.
+
 ### Connect an account
 
 New installations start with no accounts. Under **Settings → Accounts**, add or select an account, then choose **Verify from profile**. First, sign in to the provider in the most recently used profile of your default browser. SiopeChat imports and verifies that session without opening a browser. Chat, history, model and project operations then use HTTP. If the session expires, sign in again in your usual browser and verify the session again.
@@ -311,7 +326,7 @@ Message sends are serialized per account through `TaskService`. Cancellation rel
 
 ### Use the provider library independently
 
-Install it with `python -m pip install ./src/providers` in your chosen environment. `ProviderClient` manages account adapters, streams and connection cleanup; `Backend` exposes models, chats, projects, sources, uploads and download resolution. The application uses the same `create_provider` factory. See the [provider guide](https://github.com/TahsinCr/webai-provider/blob/v1.5.4-beta/README.md) for examples and standalone tests.
+For standalone use, install it with `python -m pip install ./src/providers` in an environment separate from SiopeChat. `ProviderClient` manages account adapters, streams and connection cleanup; `Backend` exposes models, chats, projects, sources, uploads and download resolution. The standalone distribution is named `webai-provider` and imports as `providers`. SiopeChat currently bundles the same import package in its wheel, so the two distributions must not be installed into one environment. Its runtime dependencies therefore remain declared by SiopeChat. See the [provider guide](https://github.com/TahsinCr/webai-provider/blob/v1.0-beta/README.md) for examples and standalone tests.
 
 Transports, browser-profile discovery and local CDP access are implemented in Python. Gemini uses the bundled HTTPS transport without a separate Gemini SDK. ChatGPT handles supported Sentinel challenges with its Python runtime and bundled profile. Changed or unsupported server requirements need explicit compatibility checks; offline fixtures do not cover every live challenge.
 
@@ -334,7 +349,7 @@ When filing an issue, include the version, provider, operation, terminal, OS and
 
 ## License
 
-Copyright © TahsinCr. Licensed under [GPL-3.0-only](LICENSE). Vendored components retain their own notices in `src/utils/`.
+Copyright © TahsinCr. Licensed under [GPL-3.0-only](LICENSE); see [COPYRIGHT](COPYRIGHT) for the project notice. Vendored components retain their own notices in `src/utils/`.
 
 [version-shield]: https://img.shields.io/badge/version-v1.5.4--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white

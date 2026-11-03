@@ -8,7 +8,7 @@ version = "1.5.4b0"
 description = "Provider-oriented terminal workspace for AI web sessions"
 requires-python = ">=3.11"
 license = "GPL-3.0-only"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "COPYRIGHT"]
 authors = [{name = "TahsinCr"}]
 readme = "README.md"
 classifiers = [
