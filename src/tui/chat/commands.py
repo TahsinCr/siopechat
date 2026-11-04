@@ -23,6 +23,14 @@ from ..widgets import (
 )
 
 
+def _model_title(model) -> str:
+    metadata = model.metadata if isinstance(model.metadata, dict) else {}
+    for value in (model.chat_title, model.title, metadata.get("modeName")):
+        if isinstance(value, str) and value.strip() and value.strip().casefold() != "model":
+            return value.strip()
+    return str(model.id).replace("_", " ").replace("-", " ").title()
+
+
 class CommandComponent:
     def dispatch_action(self, action_id):
         handler = self.action_handlers.get(action_id)
@@ -248,7 +256,7 @@ class CommandComponent:
                             "id": f"model.select:{model.id}"
                             if key == self.account_key
                             else f"model.account:{key}:{model.id}",
-                            "title": self.tr("Model · {0}").format(model.chat_title or model.title)
+                            "title": self.tr("Model · {0}").format(_model_title(model))
                             + (
                                 f" {ICONS['complete'].icon}"
                                 if key == self.account_key and model.id == self.model

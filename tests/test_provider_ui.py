@@ -8,12 +8,35 @@ from unittest.mock import Mock, patch
 
 from providers.chatgpt.discovery import model_catalog
 from providers.chatgpt.errors import SentinelCompatibilityError
+from providers.models import FeatureState, Model, ModelCatalog
 from providers.tests.fixtures import CATALOG
 from tests.account_fixture import configured_application as create_application
 from tests.tui_support import immediate, terminal
 
 
 class ProviderUiTests(unittest.TestCase):
+    def test_model_picker_falls_back_to_cached_model_metadata_and_id(self):
+        catalog = ModelCatalog(
+            FeatureState.AVAILABLE,
+            (
+                Model("grok-420", "Model", metadata={"modeName": "Model"}),
+                Model(
+                    "grok-4-1-thinking-1129",
+                    "",
+                    metadata={"modeName": "Grok 4.1 Thinking"},
+                ),
+            ),
+            default_model="grok-420",
+        )
+        with terminal(load_catalog=lambda: catalog) as (view, _pipe):
+            view._read_in_background = immediate
+            view.refresh_provider_catalog()
+            view.handle_command("/model")
+            titles = {item["title"] for item in view.palette_items}
+
+        self.assertTrue(any(title.startswith("Model · Grok 420") for title in titles))
+        self.assertIn("Model · Grok 4.1 Thinking", titles)
+
     def test_sentinel_failure_says_message_was_not_sent_and_finishes_the_turn(self):
         with terminal() as (view, _pipe):
             view.messages = [
