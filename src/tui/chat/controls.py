@@ -211,13 +211,6 @@ class ControlsComponent:
             if purpose in ("edit", "delete")
             or origin(project_id, self.account_key)[0] == self.account_key
         ]
-        self.palette_items.append(
-            {
-                "id": "command.temporary",
-                "title": self.tr("Yeni geçici sohbet"),
-                "detail": self.tr("Yerel kayıt yok"),
-            }
-        )
         if self.project_cursor:
             self.palette_items.append(
                 {"id": "project.more", "title": self.tr("Daha fazla proje…"), "detail": ""}

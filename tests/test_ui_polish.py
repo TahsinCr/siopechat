@@ -143,6 +143,7 @@ class PolishTests(unittest.TestCase):
             self.assertIn("Work", project[1])
             click(project)
             self.assertIn("project.select:", [i["id"] for i in v.palette_items])
+            self.assertNotIn("command.temporary", [i["id"] for i in v.palette_items])
             self.assertIn("Hesaplar", "".join(f[1] for f in v.render_footer()))
             style = v.app.style
             self.assertEqual(

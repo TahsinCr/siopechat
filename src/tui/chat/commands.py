@@ -379,9 +379,6 @@ class CommandComponent:
             self.refresh_projects(more=True)
             self.open_project_picker(getattr(self, "project_picker_purpose", "select"))
             return
-        if action_id == "command.temporary":
-            self.new_temporary_chat()
-            return
         if action_id.startswith("model.account:"):
             key, model_id = action_id[len("model.account:") :].split(":", 1)
             if self.conversation_id or self.messages:
