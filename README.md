@@ -1,5 +1,5 @@
 [![Version: v1.5.4-beta][version-shield]](CHANGELOG.md)
-[![Python 3.11+][python-shield]](https://www.python.org/downloads/)
+[![Python 3.10+][python-shield]](https://www.python.org/downloads/)
 [![GPL-3.0-only][license-shield]](LICENSE)
 
 **English** | [Türkçe](README-TR.md) | [Русский](README-RU.md)
@@ -50,7 +50,9 @@ Bring your chats, projects and model comparisons together in one terminal worksp
 
 ### Requirements
 
-Install Git and use **Python 3.11+** with a Unicode-capable terminal; true color and mouse support are recommended. The installers check your Python version. You can import an existing sign-in from a supported browser profile as described below. Routine chat operations use HTTP, so the browser does not need to stay open.
+Install Git and use **Python 3.10+** with a Unicode-capable terminal; true color and mouse support are recommended. The installers check your Python version. You can import an existing sign-in from a supported browser profile as described below. Routine chat operations use HTTP, so the browser does not need to stay open.
+
+By default, settings, accounts, conversation archives, and downloads are stored in your per-user application data directory. Set `SIOPECHAT_HOME` to use another location.
 
 ChatGPT's supported Sentinel checks run in Python using the bundled `SentinelSpec` profile. **No Node.js or JavaScript engine is required.**
 
@@ -96,7 +98,7 @@ Then install and launch SiopeChat with the commands for your operating system. L
 .\siopechat.ps1
 ```
 
-The installer checks for Python 3.11+, reuses a compatible virtual environment or creates `python/`, and installs the dependencies.
+The installer checks for Python 3.10+, reuses a compatible virtual environment or creates `python/`, and installs the dependencies.
 
 <details>
 <summary>Virtual environments and dependency details</summary>
@@ -290,7 +292,7 @@ Archive lists use a stable order by remote ID; the UI applies its own sorting. `
 
 ### Set up and validate
 
-Use Python 3.11+ for application development. With [uv](https://docs.astral.sh/uv/) installed, run these commands from the repository root. Select the project's existing `python/` environment so development and the launchers use the same dependencies:
+Use Python 3.10+ for application development. With [uv](https://docs.astral.sh/uv/) installed, run these commands from the repository root. Select the project's existing `python/` environment so development and the launchers use the same dependencies:
 
 ```sh
 # Linux / macOS
@@ -306,7 +308,7 @@ In Windows PowerShell, set `$env:UV_PROJECT_ENVIRONMENT = "python"`, run `uv syn
 
 `run_tests.py` runs the application suite, an isolated copy of the provider tests, and the provider package smoke check. Tests use fakes and fixtures; personal account sessions are not required. The runner prefers an active virtual environment, then project environments (`python/` before `.venv/`), then uv, and finally the interpreter that invoked it. Run it through the intended interpreter explicitly to avoid ambiguity.
 
-Lint, formatting and distribution builds are separate checks. GitHub Actions tests the application on Linux, Windows and macOS with Python 3.11/3.14, and the provider package separately with Python 3.10/3.14. Offline success does not prove live-provider compatibility or real-terminal behavior.
+Lint, formatting and distribution builds are separate checks. GitHub Actions tests the application on Linux, Windows and macOS with Python 3.10/3.14, and the provider package separately with Python 3.10/3.14. Offline success does not prove live-provider compatibility or real-terminal behavior.
 
 ### Find the right layer
 
@@ -352,5 +354,5 @@ When filing an issue, include the version, provider, operation, terminal, OS and
 Copyright © TahsinCr. Licensed under [GPL-3.0-only](LICENSE); see [COPYRIGHT](COPYRIGHT) for the project notice. Vendored components retain their own notices in `src/utils/`.
 
 [version-shield]: https://img.shields.io/badge/version-v1.5.4--beta-b7a3e3.svg?style=for-the-badge
-[python-shield]: https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
+[python-shield]: https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge

@@ -1,5 +1,6 @@
+import tempfile
 import unittest
-from pathlib import PurePosixPath, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from unittest.mock import patch
 
 from utils import paths as platform
@@ -13,6 +14,53 @@ class TestPosixPath(PurePosixPath):
 
 
 class PlatformSupportTests(unittest.TestCase):
+    def test_application_root_defaults_to_user_data_and_honors_override(self):
+        with (
+            patch.dict(platform.os.environ, {}, clear=True),
+            patch.object(platform, "user_data_dir", return_value=Path("/tmp/siopechat-data")),
+        ):
+            self.assertEqual(platform.application_root(), Path("/tmp/siopechat-data"))
+
+        with tempfile.TemporaryDirectory() as folder:
+            configured = Path(folder) / "custom-data"
+            with patch.dict(platform.os.environ, {"SIOPECHAT_HOME": str(configured)}, clear=True):
+                self.assertEqual(platform.application_root(), configured.resolve())
+
+    def test_checkout_user_data_is_copied_once_without_deleting_source(self):
+        with tempfile.TemporaryDirectory() as folder:
+            checkout = Path(folder) / "checkout"
+            root = Path(folder) / "user-data"
+            (checkout / "src").mkdir(parents=True)
+            (checkout / "pyproject.toml").touch()
+            (checkout / "src" / "bootstrap.py").touch()
+            (checkout / "data").mkdir()
+            (checkout / "data" / "accounts.sqlite3").write_bytes(b"account data")
+            (checkout / "downloads").mkdir()
+            (checkout / "downloads" / "saved.txt").write_text("download", encoding="utf-8")
+            (checkout / "config.json").write_text('{"theme":"dark"}', encoding="utf-8")
+
+            with patch.dict(platform.os.environ, {}, clear=True):
+                platform.migrate_checkout_data(checkout, root)
+                (root / "config.json").write_text('{"theme":"light"}', encoding="utf-8")
+                platform.migrate_checkout_data(checkout, root)
+
+            self.assertEqual((root / "data" / "accounts.sqlite3").read_bytes(), b"account data")
+            self.assertEqual((root / "downloads" / "saved.txt").read_text(), "download")
+            self.assertEqual((root / "config.json").read_text(), '{"theme":"light"}')
+            self.assertTrue((checkout / "data" / "accounts.sqlite3").is_file())
+
+    def test_checkout_data_migration_is_disabled_by_explicit_home(self):
+        with tempfile.TemporaryDirectory() as folder:
+            checkout = Path(folder) / "checkout"
+            root = Path(folder) / "user-data"
+            (checkout / "src").mkdir(parents=True)
+            (checkout / "pyproject.toml").touch()
+            (checkout / "src" / "bootstrap.py").touch()
+            (checkout / "config.json").touch()
+            with patch.dict(platform.os.environ, {"SIOPECHAT_HOME": str(root)}, clear=True):
+                platform.migrate_checkout_data(checkout, root)
+            self.assertFalse(root.exists())
+
     def test_windows_paths_and_detached_process_flags(self):
         with (
             patch.object(platform.os, "name", "nt"),

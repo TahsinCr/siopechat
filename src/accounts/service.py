@@ -7,10 +7,14 @@ import json
 import threading
 import time
 import uuid
-from builtins import ExceptionGroup
 from concurrent.futures import CancelledError, Future
 from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import asdict, replace
+
+try:
+    from builtins import ExceptionGroup
+except ImportError:  # Python 3.10
+    from exceptiongroup import ExceptionGroup
 
 from providers.chatgpt import BrowserSession, SessionPaths
 from providers.errors import AccountPaused

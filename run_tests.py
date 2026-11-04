@@ -45,10 +45,12 @@ def main() -> int:
     commands = [
         [*python, "-m", "unittest", "discover", "-s", "tests", "-v"],
     ]
-    for command in commands:
-        result = subprocess.run(command, cwd=ROOT, env=env, check=False)
-        if result.returncode:
-            return result.returncode
+    with tempfile.TemporaryDirectory(prefix="siopechat-test-data-") as test_home:
+        env["SIOPECHAT_HOME"] = test_home
+        for command in commands:
+            result = subprocess.run(command, cwd=ROOT, env=env, check=False)
+            if result.returncode:
+                return result.returncode
 
     with tempfile.TemporaryDirectory(prefix="siopechat-provider-tests-") as folder:
         isolated_root = Path(folder)

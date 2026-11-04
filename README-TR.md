@@ -1,5 +1,5 @@
 [![Sürüm: v1.5.4-beta][version-shield]](CHANGELOG.md)
-[![Python 3.11+][python-shield]](https://www.python.org/downloads/)
+[![Python 3.10+][python-shield]](https://www.python.org/downloads/)
 [![GPL-3.0-only][license-shield]](LICENSE)
 
 [English](README.md) | **Türkçe** | [Русский](README-RU.md)
@@ -50,7 +50,9 @@ Sohbetlerinizi, projelerinizi ve farklı modellerin yanıtlarını tek bir termi
 
 ### Gereksinimler
 
-Git ve Python **3.11+** kurulu olmalıdır. Unicode destekli bir terminal gerekir; gerçek renk ve fare desteği önerilir. Kurulum araçları Python sürümünü denetler. Aşağıda anlatıldığı gibi, mevcut oturumunuzu desteklenen bir tarayıcı profilinden aktarabilirsiniz. Günlük sohbet işlemleri HTTP üzerinden yürür; tarayıcının açık kalması gerekmez.
+Git ve Python **3.10+** kurulu olmalıdır. Unicode destekli bir terminal gerekir; gerçek renk ve fare desteği önerilir. Kurulum araçları Python sürümünü denetler. Aşağıda anlatıldığı gibi, mevcut oturumunuzu desteklenen bir tarayıcı profilinden aktarabilirsiniz. Günlük sohbet işlemleri HTTP üzerinden yürür; tarayıcının açık kalması gerekmez.
+
+Ayarlar, hesaplar, sohbet arşivleri ve indirilen dosyalar varsayılan olarak kullanıcıya özel uygulama verisi dizininde tutulur. Başka bir konum seçmek için `SIOPECHAT_HOME` değişkenini ayarlayın.
 
 ChatGPT’nin desteklenen Sentinel kontrolleri, paketteki `SentinelSpec` profiliyle Python’da çalışır. **Node.js veya JavaScript motoru gerekmez.**
 
@@ -96,7 +98,7 @@ Ardından işletim sisteminize uygun komutlarla kurup başlatın. Linux ve macOS
 .\siopechat.ps1
 ```
 
-Kurulum aracı Python 3.11+ sürümünü denetler, uyumlu bir sanal ortamı kullanır veya `python/` dizinini oluşturur ve bağımlılıkları kurar.
+Kurulum aracı Python 3.10+ sürümünü denetler, uyumlu bir sanal ortamı kullanır veya `python/` dizinini oluşturur ve bağımlılıkları kurar.
 
 <details>
 <summary>Sanal ortam ve bağımlılık ayrıntıları</summary>
@@ -291,7 +293,7 @@ Arşiv sorguları kayıtları uzak kimliklerine göre sabit bir sırayla döndü
 
 ### Ortamı hazırlama ve kontroller
 
-Uygulama geliştirmek için Python 3.11+ kullanın. [uv](https://docs.astral.sh/uv/) kuruluysa aşağıdaki komutları depo kökünde çalıştırın. Başlatıcılarla aynı bağımlılıkları kullanmak için projenin mevcut `python/` ortamını seçin:
+Uygulama geliştirmek için Python 3.10+ kullanın. [uv](https://docs.astral.sh/uv/) kuruluysa aşağıdaki komutları depo kökünde çalıştırın. Başlatıcılarla aynı bağımlılıkları kullanmak için projenin mevcut `python/` ortamını seçin:
 
 ```sh
 # Linux / macOS
@@ -307,7 +309,7 @@ Windows PowerShell’de `$env:UV_PROJECT_ENVIRONMENT = "python"` ayarından sonr
 
 `run_tests.py`; uygulama testlerini, sağlayıcı testlerinin yalıtılmış bir kopyasını ve sağlayıcı paketinin temel çalışma kontrolünü çalıştırır. Testler sahte istemciler ve örnek veriler kullanır; kişisel hesap oturumları gerekmez. Çalıştırıcı önce etkin sanal ortamı, ardından proje ortamlarını (`python/` ve `.venv/`), uv’yi ve son olarak kendisini başlatan yorumlayıcıyı seçer. Kullanılacak Python sürümünü kesinleştirmek için komutu doğrudan o yorumlayıcıyla çalıştırın.
 
-Kod denetimi, biçim kontrolü ve paket derlemesi ayrı adımlardır. GitHub Actions uygulamayı Linux, Windows ve macOS üzerinde Python 3.11 ve 3.14 ile; bağımsız sağlayıcı paketini ise ayrıca Python 3.10 ve 3.14 ile sınar. Çevrimdışı testlerin geçmesi, canlı sağlayıcı uyumluluğunu veya gerçek terminal davranışını tek başına doğrulamaz.
+Kod denetimi, biçim kontrolü ve paket derlemesi ayrı adımlardır. GitHub Actions uygulamayı Linux, Windows ve macOS üzerinde Python 3.10 ve 3.14 ile; bağımsız sağlayıcı paketini ise ayrıca Python 3.10 ve 3.14 ile sınar. Çevrimdışı testlerin geçmesi, canlı sağlayıcı uyumluluğunu veya gerçek terminal davranışını tek başına doğrulamaz.
 
 ### Hangi kod nerede?
 
@@ -353,5 +355,5 @@ Hata bildirirken sürümü, sağlayıcıyı, işlemi, terminali, işletim sistem
 Telif hakkı © TahsinCr. [GPL-3.0-only](LICENSE) ile lisanslanmıştır; proje bildirimi için [COPYRIGHT](COPYRIGHT) dosyasına bakın. Dahil edilen üçüncü taraf bileşenlerin bildirimleri `src/utils/` altında korunur.
 
 [version-shield]: https://img.shields.io/badge/version-v1.5.4--beta-b7a3e3.svg?style=for-the-badge
-[python-shield]: https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
+[python-shield]: https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge

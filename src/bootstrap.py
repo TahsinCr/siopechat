@@ -36,9 +36,13 @@ def create_application(root: Path | None = None):
     from lang import __file__ as language_file
     from providers import create_provider
     from settings import Settings, SettingsCatalog
-    from utils.paths import application_root
+    from utils.paths import application_root, migrate_checkout_data
 
-    root = Path(root) if root is not None else application_root()
+    if root is None:
+        root = application_root()
+        migrate_checkout_data(checkout, root)
+    else:
+        root = Path(root)
     settings = Settings(root / "config.json")
     api = ExtensionAPI(settings)
     api.provide("application", "paths", root)

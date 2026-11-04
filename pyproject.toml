@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "siopechat"
 version = "1.5.4b0"
 description = "Provider-oriented terminal workspace for AI web sessions"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = "GPL-3.0-only"
 license-files = ["LICENSE", "COPYRIGHT"]
 authors = [{name = "TahsinCr"}]
@@ -16,12 +16,14 @@ classifiers = [
     "Environment :: Console",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
+    "exceptiongroup>=1.2,<2; python_version < '3.11'",
     "httpx>=0.27,<1",
     "websocket-client>=1.8,<2",
     "browser-cookie3>=0.20.1,<0.21",
@@ -39,7 +41,7 @@ siopechat = "bootstrap:main"
 dev = ["build>=1,<2", "ruff>=0.11,<1", "twine>=6,<7"]
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py310"
 line-length = 100
 extend-exclude = [".serena"]
 

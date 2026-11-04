@@ -16,11 +16,11 @@ if [ -f "$ROOT/.gitmodules" ]; then
 fi
 
 python_supported() {
-    "$1" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1
+    "$1" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1
 }
 
 venv_supported() {
-    "$1" -c 'import sys; raise SystemExit(0 if sys.prefix != sys.base_prefix and sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1
+    "$1" -c 'import sys; raise SystemExit(0 if sys.prefix != sys.base_prefix and sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1
 }
 
 SYSTEM_PYTHON=
@@ -30,7 +30,7 @@ for PYTHON_COMMAND in python3 python; do
         break
     fi
 done
-[ -n "$SYSTEM_PYTHON" ] || fail "Python 3.11 or newer is required to create the environment."
+[ -n "$SYSTEM_PYTHON" ] || fail "Python 3.10 or newer is required to create the environment."
 
 CREATE_ENV=0
 if [ "${SIOPECHAT_VENV+x}" = x ]; then
@@ -41,7 +41,7 @@ if [ "${SIOPECHAT_VENV+x}" = x ]; then
     esac
     VENV_PYTHON="$VENV_DIR/bin/python"
     if [ -x "$VENV_PYTHON" ]; then
-        venv_supported "$VENV_PYTHON" || fail "The requested environment must be a Python 3.11+ virtual environment; it was left untouched."
+        venv_supported "$VENV_PYTHON" || fail "The requested environment must be a Python 3.10+ virtual environment; it was left untouched."
     elif [ -e "$VENV_DIR" ]; then
         fail "The requested environment exists but has no executable at $VENV_PYTHON; it was left untouched."
     else
@@ -75,7 +75,7 @@ fi
 [ -x "$VENV_PYTHON" ] || fail "The environment does not contain an executable at $VENV_PYTHON."
 if ! venv_supported "$VENV_PYTHON"; then
     PYTHON_VERSION=$("$VENV_PYTHON" --version 2>&1 || true)
-    fail "The selected environment must use Python 3.11 or newer (found ${PYTHON_VERSION:-an unusable interpreter})."
+    fail "The selected environment must use Python 3.10 or newer (found ${PYTHON_VERSION:-an unusable interpreter})."
 fi
 
 echo "Installing SiopeChat and its Python dependencies in $VENV_DIR"

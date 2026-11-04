@@ -6,9 +6,13 @@ import asyncio
 import inspect
 import signal
 import threading
-from builtins import ExceptionGroup
 from dataclasses import dataclass
 from typing import Any, Hashable
+
+try:
+    from builtins import ExceptionGroup
+except ImportError:  # Python 3.10
+    from exceptiongroup import ExceptionGroup
 
 from eventflow import EventBus
 
