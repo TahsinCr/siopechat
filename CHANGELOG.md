@@ -14,6 +14,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.4b0` for `v1.5.
 
 ### Changed
 
+- Display Grok's dynamically available chat modes with the provider name, clean its render and tool-card protocol markup and leading whitespace from thinking and answers, and format returned Grok model IDs as readable names.
 - Reduce repeated Grok history loading before follow-up sends while keeping retries on full active-branch validation.
 - Show confirmed ChatGPT and Grok generation activity in the conversation status without adding another network request; show elapsed time only when the provider supplies a valid start time.
 - Keep the Accounts footer indicator green while at least one account is active, and gray when none are active.

@@ -416,7 +416,15 @@ def _response_settings(message: dict[str, Any]) -> tuple[tuple[str, str], ...]:
         )
         if value:
             clean = "".join(char for char in value if ord(char) >= 32 and ord(char) != 127)
-            details.append((label, " ".join(clean.split())[:120]))
+            clean = " ".join(clean.split())[:120]
+            if label == "Model" and clean.casefold().startswith("grok-"):
+                parts = clean[5:].split("-")
+                version = parts.pop(0)
+                if version.isdigit() and parts and parts[0].isdigit():
+                    version += "." + parts.pop(0)
+                suffix = " ".join(part.title() for part in parts)
+                clean = f"Grok {version}" + (f" {suffix}" if suffix else "")
+            details.append((label, clean))
     return tuple(details)
 
 

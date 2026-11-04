@@ -25,6 +25,7 @@ class ProviderUiTests(unittest.TestCase):
                     "",
                     metadata={"modeName": "Grok 4.1 Thinking"},
                 ),
+                Model("fast", "Fast", chat_title="Grok · Fast"),
             ),
             default_model="grok-420",
         )
@@ -37,9 +38,23 @@ class ProviderUiTests(unittest.TestCase):
 
         self.assertTrue(any(title.startswith("Model · Grok 420") for title in titles))
         self.assertIn("Model · Grok 4.1 Thinking", titles)
+        self.assertIn("Model · Grok · Fast", titles)
         header = "".join(fragment[1] for fragment in view.render_chat_header())
         self.assertIn("Grok 4.1 Thinking", header)
         self.assertNotIn("Grok 4.1 Thinking", view.status)
+
+    def test_grok_response_model_ids_render_as_readable_names(self):
+        from src.tui.markdown import _response_settings
+
+        for model, title in (
+            ("grok-3", "Grok 3"),
+            ("grok-4-1-thinking-1129", "Grok 4.1 Thinking 1129"),
+        ):
+            with self.subTest(model=model):
+                self.assertEqual(
+                    _response_settings({"model": model}),
+                    (("Model", title),),
+                )
 
     def test_sentinel_failure_says_message_was_not_sent_and_finishes_the_turn(self):
         with terminal() as (view, _pipe):
