@@ -8,10 +8,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from eventflow import EventBus
 from prompt_toolkit.key_binding import KeyBindings
 
 from providers.registry import PROVIDERS
-from utils.events import EventBus
 from utils.files import atomic_json_write
 
 DEFAULT_KEYBINDINGS = {

@@ -4,7 +4,7 @@ import inspect
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from utils.events import EventBus
+from eventflow import EventBus
 
 
 @dataclass(frozen=True)

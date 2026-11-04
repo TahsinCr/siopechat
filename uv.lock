@@ -410,6 +410,15 @@ wheels = [
 ]
 
 [[package]]
+name = "flowevent"
+version = "1.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c5/83/af593d92a1d6f7c9975864a0464e101228bc191eb0a07c0a157ac63b9903/flowevent-1.3.0.tar.gz", hash = "sha256:d0cd217f1d3cf384dfe52aa9f614b49ec9645f8b41e76a91ca718f30c2972797", size = 233921, upload-time = "2026-11-02T20:32:00.632Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f3/37/41d539ecdc4fdd0f96f3e5dcbe531d3ce1eb8ad04d866c2b974cbb55ab2c/flowevent-1.3.0-py3-none-any.whl", hash = "sha256:1142b022768c874b1bcf656673a3011fad5194a94b99141b0fcc30fde30afdba", size = 101521, upload-time = "2026-11-02T20:31:58.133Z" },
+]
+
+[[package]]
 name = "h11"
 version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
@@ -892,6 +901,7 @@ source = { editable = "." }
 dependencies = [
     { name = "browser-cookie3" },
     { name = "curl-cffi" },
+    { name = "flowevent" },
     { name = "httpx" },
     { name = "lz4" },
     { name = "prompt-toolkit" },
@@ -910,6 +920,7 @@ dev = [
 requires-dist = [
     { name = "browser-cookie3", specifier = ">=0.20.1,<0.21" },
     { name = "curl-cffi", specifier = ">=0.16,<1" },
+    { name = "flowevent", specifier = ">=1.3,<2" },
     { name = "httpx", specifier = ">=0.27,<1" },
     { name = "lz4", specifier = ">=4.4.5,<5" },
     { name = "prompt-toolkit", specifier = ">=3.0,<4" },

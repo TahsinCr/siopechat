@@ -21,6 +21,8 @@ class ArchitectureTests(unittest.TestCase):
             "runtime",
             "views",
             "extension",
+            "utils",
+            "eventflow",
         }
         for path in files:
             for node in ast.walk(ast.parse(path.read_text())):
@@ -34,11 +36,6 @@ class ArchitectureTests(unittest.TestCase):
                     with self.subTest(file=str(path), module=module):
                         root_module = module.split(".")[0]
                         self.assertNotIn(root_module, forbidden)
-                        if root_module == "utils":
-                            self.assertTrue(
-                                module == "utils.events" or module.startswith("utils.events."),
-                                "providers may use the shared event utilities only",
-                            )
 
     def test_job_runtime_has_no_terminal_or_storage_dependencies(self):
         path = ROOT / "src/tasks.py"

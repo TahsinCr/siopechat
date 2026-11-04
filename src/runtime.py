@@ -10,7 +10,7 @@ from builtins import ExceptionGroup
 from dataclasses import dataclass
 from typing import Any, Hashable
 
-from utils.events import EventBus
+from eventflow import EventBus
 
 
 @dataclass(frozen=True)

@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from eventflow import EventBus
+
 from actions import Action, ActionChanged
 from bootstrap import create_application
 from extension import ExtensionAPI, ExtensionManager, ExtensionSpec
@@ -11,7 +13,6 @@ from runtime import Runtime, ServiceChanged
 from settings import Settings, SettingsChanged
 from tasks import JobChanged, JobState
 from tests.fakes import ControlledProvider, request
-from utils.events import EventBus
 
 
 class RuntimeSyncCloseTests(unittest.TestCase):

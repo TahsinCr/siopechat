@@ -14,13 +14,14 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any, Callable
 
+from eventflow import EventBus
+
 from actions import Action, ActionService
 from language import Catalog
 from providers import ProviderRegistry
 from runtime import Runtime
 from settings import SettingField, Settings
 from tasks import TaskService
-from utils.events import EventBus
 
 __all__ = [
     "Action",

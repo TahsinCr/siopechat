@@ -27,6 +27,7 @@ dependencies = [
     "browser-cookie3>=0.20.1,<0.21",
     "lz4>=4.4.5,<5",
     "curl-cffi>=0.16,<1",
+    "flowevent>=1.3,<2",
     "prompt-toolkit>=3.0,<4",
     "rich>=13,<15",
 ]
@@ -40,7 +41,7 @@ dev = ["build>=1,<2", "ruff>=0.11,<1", "twine>=6,<7"]
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-extend-exclude = [".serena", "src/utils/events"]
+extend-exclude = [".serena"]
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I"]
@@ -70,7 +71,6 @@ packages = [
     "providers.gemini",
     "providers.claude",
     "utils",
-    "utils.events",
     "lang",
     "extensions",
     "extensions.layout",
@@ -82,4 +82,3 @@ packages = [
 "lang" = ["*.json"]
 "extensions.layout" = ["languages/*.json", "manifest.json"]
 "extensions.archive" = ["manifest.json"]
-"utils" = ["LICENSE", "NOTICE"]

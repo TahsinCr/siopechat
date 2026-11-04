@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable
 
+from eventflow import EventBus
+
 from providers.api import (
     AccountPaused,
     Capability,
@@ -25,7 +27,6 @@ from providers.api import (
     TextDelta,
 )
 from providers.registry import ProviderRegistry
-from utils.events import EventBus
 
 _LOG = logging.getLogger(__name__)
 _SHUTDOWN_RESPONSE_GRACE_SECONDS = 1.0
