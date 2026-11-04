@@ -14,7 +14,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.4b0` for `v1.5.
 
 ### Changed
 
-- Resolve Grok's account-available chat options against its server model metadata, so names such as Grok 3 appear consistently with their mode. Cache both catalogs together, retain subscription filtering and exclude unsupported Build, Imagine and Voice workflows from the chat picker.
+- Resolve Grok's account-available chat options against its server model metadata, so names such as Grok 3 appear consistently with their mode across subscription tiers. Support server-defined model routes and their reasoning defaults, cache both catalogs together and exclude unsupported Build, Imagine and Voice workflows from the chat picker.
 - Clean Grok's render and tool-card protocol markup and leading whitespace from thinking and answers, and format returned Grok model IDs as readable names.
 - Reduce repeated Grok history loading before follow-up sends while keeping retries on full active-branch validation.
 - Show confirmed ChatGPT and Grok generation activity in the conversation status without adding another network request; show elapsed time only when the provider supplies a valid start time.
