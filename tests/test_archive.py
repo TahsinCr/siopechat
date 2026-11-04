@@ -32,6 +32,34 @@ class ArchiveTests(unittest.TestCase):
             self.assertLess(time.monotonic(), until)
             time.sleep(0.005)
 
+    def test_partial_history_uses_one_snapshot_during_concurrent_replacement(self):
+        account, remote = "chatgpt/a", "chat"
+        before = [{"id": str(i), "role": "assistant", "text": f"before-{i}"} for i in range(6)]
+        after = [dict(message, text=f"after-{i}") for i, message in enumerate(before)]
+        self.repository.put(account, "conversation", remote, {"messages": before})
+        connect = sqlite3.connect
+        repository = self.repository
+        replaced = False
+
+        class InterleavedConnection(sqlite3.Connection):
+            def execute(self, sql, parameters=()):
+                nonlocal replaced
+                if not replaced and "ORDER BY ordinal DESC LIMIT" in sql:
+                    replaced = True
+                    repository.put(account, "conversation", remote, {"messages": after})
+                return super().execute(sql, parameters)
+
+        with patch(
+            "utils.sqlite.sqlite3.connect",
+            side_effect=lambda *args, **kwargs: connect(
+                *args, **kwargs, factory=InterleavedConnection
+            ),
+        ):
+            window = repository.partial_history_window(account, remote, 0, prefix=2, tail=2)
+        self.assertTrue(replaced)
+        self.assertEqual(window, before[:2] + before[-2:])
+        self.assertEqual(repository.messages(account, remote), after)
+
     def test_account_isolation_roundtrip_reasoning_and_resources(self):
         path, digest = self.archive.files.save(b"file contents")
         value = {

@@ -323,8 +323,7 @@ class SQLiteRepository(SQLiteRepositoryBase):
         connection.execute("PRAGMA busy_timeout=5000")
 
     def get(self, account, kind, remote):
-        with self.connect() as db:
-            db.execute("BEGIN")
+        with self.transaction() as db:
             row = db.execute(
                 "SELECT payload FROM records WHERE account=? AND kind=? AND remote=?",
                 (account, kind, remote),
@@ -688,7 +687,7 @@ class SQLiteRepository(SQLiteRepositoryBase):
             self._write_resources(db, account, "conversation", remote, value, append=True)
 
     def container_members(self, account, remote):
-        with self.connect() as db:
+        with self.transaction() as db:
             values = {
                 row[0]
                 for row in db.execute(
@@ -955,7 +954,7 @@ class SQLiteRepository(SQLiteRepositoryBase):
         if not ids:
             return ()
         positions = {}
-        with self.connect() as db:
+        with self.transaction() as db:
             for offset in range(0, len(ids), 400):
                 batch = tuple(dict.fromkeys(ids[offset : offset + 400]))
                 if not batch:
@@ -1102,8 +1101,7 @@ class SQLiteRepository(SQLiteRepositoryBase):
         return None
 
     def response_version(self, account, remote, message_id, version):
-        with self.connect() as db:
-            db.execute("BEGIN")
+        with self.transaction() as db:
             row = db.execute(
                 "SELECT group_id,current_message,current_index FROM response_variant_groups "
                 "WHERE account=? AND conversation=? AND current_message=?",
@@ -1165,7 +1163,7 @@ class SQLiteRepository(SQLiteRepositoryBase):
         """Load only merge_conversation's leading overlap and bounded alignment tail."""
         if start < 0 or not 1 <= prefix <= 512 or not 1 <= tail <= 512:
             raise ValueError("invalid partial history window")
-        with self.connect() as db:
+        with self.transaction() as db:
             head = db.execute(
                 "SELECT ordinal,metadata FROM messages "
                 "WHERE account=? AND conversation=? AND ordinal>=? "
@@ -1465,8 +1463,7 @@ class SQLiteRepository(SQLiteRepositoryBase):
             or (before is not None and before < 0)
         ):
             raise ValueError("invalid conversation window")
-        with self.connect() as db:
-            db.execute("BEGIN")
+        with self.transaction() as db:
             row = db.execute(
                 "SELECT c.metadata,r.digest FROM conversations c JOIN records r "
                 "ON r.account=c.account AND r.remote=c.remote AND r.kind='conversation' "
@@ -1589,7 +1586,7 @@ class SQLiteRepository(SQLiteRepositoryBase):
                 for item in value:
                     visit(item)
 
-        with self.connect() as db:
+        with self.transaction() as db:
             for (payload,) in db.execute("SELECT payload FROM records"):
                 visit(json.loads(payload))
             for (payload,) in db.execute("SELECT metadata FROM messages"):

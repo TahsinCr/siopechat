@@ -44,6 +44,5 @@ class SQLiteRepositoryBase:
     @contextmanager
     def transaction(self, *, immediate=False):
         with self.connect() as connection:
-            if immediate:
-                connection.execute("BEGIN IMMEDIATE")
+            connection.execute("BEGIN IMMEDIATE" if immediate else "BEGIN")
             yield connection

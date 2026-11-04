@@ -10,6 +10,29 @@ from utils.sqlite import SQLiteRepositoryBase
 
 
 class SQLiteRepositoryBaseTests(unittest.TestCase):
+    def test_read_transaction_keeps_its_snapshot_while_a_writer_commits(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repository = SQLiteRepositoryBase(Path(folder) / "store.sqlite3")
+            with repository.connect() as connection:
+                connection.execute("PRAGMA journal_mode=WAL")
+                connection.execute("CREATE TABLE records(value TEXT)")
+                connection.execute("INSERT INTO records VALUES('before')")
+
+            with repository.transaction() as reader:
+                self.assertEqual(
+                    reader.execute("SELECT value FROM records").fetchone(), ("before",)
+                )
+                with repository.transaction(immediate=True) as writer:
+                    writer.execute("UPDATE records SET value='after'")
+                self.assertEqual(
+                    reader.execute("SELECT value FROM records").fetchone(), ("before",)
+                )
+
+            with repository.connect() as connection:
+                self.assertEqual(
+                    connection.execute("SELECT value FROM records").fetchone(), ("after",)
+                )
+
     def test_connection_is_closed_after_each_operation(self):
         with tempfile.TemporaryDirectory() as folder:
             repository = SQLiteRepositoryBase(Path(folder) / "store.sqlite3")
