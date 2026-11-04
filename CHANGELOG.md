@@ -27,7 +27,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.4b0` for `v1.5.
 ### Fixed
 
 - Update Grok project names and instructions using only the workspace's editable fields; cover create, delete, chat movement, text/file sources and source removal in provider contract tests.
-- Focus the downloads list after its history loads, so arrow-key selection and row actions are immediately available.
+- Focus the downloads list after its history loads only while its search field still owns focus, so row actions work without a background refresh stealing focus from another tab.
 - Keep Grok rate-limit cooldowns from marking a verified account as logged out when the next send is blocked.
 - Use the same readable Grok model names in the picker and selected chat header, without duplicating the choice as a status notification.
 - Keep account archives intact on logout, hide data until verification, and allow individual accounts to be disabled or re-enabled.

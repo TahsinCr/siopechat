@@ -227,6 +227,51 @@ class DownloadWorkspaceTests(unittest.IsolatedAsyncioTestCase):
             panel.move(1)
             self.assertEqual(panel.selected()["id"], "download")
 
+    async def test_download_refresh_does_not_steal_focus_after_tab_switch(self):
+        with terminal() as (view, _):
+            panel = view.downloads_panel
+            rows = [
+                dict(
+                    id="download",
+                    created=1,
+                    account="grok/default",
+                    name="result.txt",
+                    state="completed",
+                    size=12,
+                    conversation_id="chat",
+                    title="Source",
+                )
+            ]
+
+            class Service:
+                history_available = True
+                revision = model_revision = 1
+
+                def refresh(self):
+                    return rows
+
+                def snapshot_state(self):
+                    return self.revision, rows
+
+                def active_snapshot(self):
+                    return []
+
+            service = Service()
+            pending = []
+            panel.service = lambda: service
+            view._read_in_background = lambda work, complete, failed, **_: pending.append(
+                (work, complete)
+            )
+
+            panel.open()
+            view.switch_tab(-1)
+            focus = view.app.layout.current_control
+            work, complete = pending.pop()
+            complete(work())
+
+            self.assertNotEqual(view.tab_kind, "downloads")
+            self.assertIs(view.app.layout.current_control, focus)
+
     async def test_download_rows_format_only_terminal_requested_lines(self):
         from tui.downloads import _DownloadsRowsControl
 

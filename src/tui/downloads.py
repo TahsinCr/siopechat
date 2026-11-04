@@ -276,7 +276,12 @@ class DownloadsPanel:
             self.revision, self.records = service.snapshot_state()
             self.model_revision = getattr(service, "model_revision", self.revision)
             self.rebuild()
-            if self.rows and not self.search.text:
+            if (
+                self.rows
+                and not self.search.text
+                and self.view.tab_kind == "downloads"
+                and self.view.app.layout.current_control is self.search.control
+            ):
                 self.view.app.layout.focus(self.control)
 
         def failed(reason):
