@@ -1,4 +1,4 @@
-"""Content-free timing statistics for the ChatGPT send path."""
+"""Content-free timing statistics for provider send paths."""
 
 import asyncio
 import threading
@@ -19,15 +19,26 @@ class SendTimingTests(unittest.TestCase):
 
     def test_report_uses_median_and_nearest_rank_p95_without_request_data(self):
         for value in (1.0, 2.0, 3.0, 4.0, 100.0):
-            timing = SendTiming()
+            timing = SendTiming("chatgpt")
             timing.record("button_to_first_ui_frame_ms", int(value * 1_000_000))
             timing.increment("pre_send_conversation_cache_hit")
+            collect_send_timing(timing)
+        for _ in range(2):
+            timing = SendTiming("gemini")
+            timing.increment("pre_send_conversation_cache_hit")
+            collect_send_timing(timing)
+        for provider_id in ("gemini", "claude"):
+            timing = SendTiming(provider_id)
+            timing.record("button_to_first_ui_frame_ms", 7_000_000)
             collect_send_timing(timing)
 
         report = send_timing_report()
 
-        self.assertIn("button_to_first_ui_frame_ms | 5 | 3.000 | 100.000", report)
-        self.assertIn("pre_send_conversation_cache_hit | 5", report)
+        self.assertIn("chatgpt | button_to_first_ui_frame_ms | 5 | 3.000 | 100.000", report)
+        self.assertIn("chatgpt | pre_send_conversation_cache_hit | 5", report)
+        self.assertIn("gemini | pre_send_conversation_cache_hit | 2", report)
+        self.assertIn("gemini | button_to_first_ui_frame_ms | 1 | 7.000 | 7.000", report)
+        self.assertIn("claude | button_to_first_ui_frame_ms | 1 | 7.000 | 7.000", report)
         self.assertNotIn("session", report.lower())
         self.assertNotIn("token", report.lower())
         self.assertNotIn("prompt", report.lower())

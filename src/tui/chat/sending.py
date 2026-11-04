@@ -431,8 +431,8 @@ class SendingComponent:
             self._save_active_tab()
         self.app.invalidate()
         timing = (
-            SendTiming()
-            if tab.get("account_key", self.account_key).startswith("chatgpt") and timing_enabled()
+            SendTiming(tab.get("account_key", self.account_key).split("/", 1)[0])
+            if timing_enabled()
             else None
         )
         threading.Thread(

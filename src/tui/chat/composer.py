@@ -16,7 +16,7 @@ from ..styles import ICONS
 
 class ComposerComponent:
     def submit_prompt(self) -> None:
-        timing = SendTiming() if self.provider_id == "chatgpt" and timing_enabled() else None
+        timing = SendTiming(self.provider_id) if timing_enabled() else None
         prompt = self.input.text.strip()
         if prompt.startswith("/"):
             self.input.text = ""
