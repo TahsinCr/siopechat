@@ -337,6 +337,28 @@ class AccountTests(unittest.TestCase):
         finally:
             self.accounts._loop = self.accounts._thread = None
 
+    def test_timeout_closes_provider_coroutine_that_never_started(self):
+        self.accounts._start()
+        entered, release = Event(), Event()
+
+        def block_provider_loop():
+            entered.set()
+            release.wait(2)
+
+        self.accounts._loop.call_soon_threadsafe(block_provider_loop)
+        self.assertTrue(entered.wait(1))
+
+        async def pending():
+            return None
+
+        coroutine = pending()
+        try:
+            with self.assertRaises(TimeoutError):
+                self.accounts.call(coroutine, timeout=0.01)
+            self.assertIsNone(coroutine.cr_frame)
+        finally:
+            release.set()
+
     def test_verification_survives_closed_browser_and_account_service_restart(self):
         path = self.accounts.directory(self.gemini) / "cookies.json"
         path.parent.mkdir(parents=True, exist_ok=True)

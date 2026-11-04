@@ -423,7 +423,10 @@ class Accounts(
             coroutine.close()
             raise
 
+        started = threading.Event()
+
         async def bounded():
+            started.set()
             if _closing:
                 # Keep the shutdown coroutine in the run_coroutine_threadsafe
                 # task. wait_for() wraps it in a child task; Accounts.close()
@@ -445,9 +448,15 @@ class Accounts(
             return future.result(timeout=timeout + 1)
         except (TimeoutError, asyncio.TimeoutError, FutureTimeout):
             future.cancel()
+            if not started.is_set():
+                coroutine.close()
             raise TimeoutError(
                 "Sağlayıcı işlemi zaman aşımına uğradı; yeniden deneyebilirsiniz"
             ) from None
+        except CancelledError:
+            if not started.is_set():
+                coroutine.close()
+            raise
 
     def _forget_active_call(self, future):
         with self._lock:
