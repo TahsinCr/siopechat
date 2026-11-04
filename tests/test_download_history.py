@@ -188,6 +188,45 @@ class DownloadHistoryTests(unittest.TestCase):
 
 
 class DownloadWorkspaceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_download_open_focuses_loaded_rows_for_keyboard_selection(self):
+        with terminal() as (view, _):
+            panel = view.downloads_panel
+            rows = [
+                dict(
+                    id="download",
+                    created=1,
+                    account="grok/default",
+                    name="result.txt",
+                    state="completed",
+                    size=12,
+                    conversation_id="chat",
+                    title="Source",
+                )
+            ]
+
+            class Service:
+                history_available = True
+                revision = model_revision = 1
+
+                def refresh(self):
+                    return rows
+
+                def snapshot_state(self):
+                    return self.revision, rows
+
+                def active_snapshot(self):
+                    return []
+
+            service = Service()
+            panel.service = lambda: service
+            view._read_in_background = lambda work, complete, _failed, **_: complete(work())
+
+            panel.open()
+
+            self.assertIs(view.app.layout.current_control, panel.control)
+            panel.move(1)
+            self.assertEqual(panel.selected()["id"], "download")
+
     async def test_download_rows_format_only_terminal_requested_lines(self):
         from tui.downloads import _DownloadsRowsControl
 

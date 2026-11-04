@@ -256,7 +256,7 @@ class DownloadsPanel:
             view.tab_kind, view.title = "downloads", view.tr("İndirmeler")
             view._save_active_tab()
         view.settings_dialog.visible = view.session_dialog.visible = False
-        view.app.layout.focus(self.search)
+        view.app.layout.focus(self.control if self.rows else self.search)
         self.refresh()
 
     def refresh(self):
@@ -276,6 +276,8 @@ class DownloadsPanel:
             self.revision, self.records = service.snapshot_state()
             self.model_revision = getattr(service, "model_revision", self.revision)
             self.rebuild()
+            if self.rows and not self.search.text:
+                self.view.app.layout.focus(self.control)
 
         def failed(reason):
             self.pending = False
