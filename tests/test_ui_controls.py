@@ -34,6 +34,23 @@ class UiControlsTests(unittest.TestCase):
             self.assertIn(view.tr("Yanıt üretiliyor"), activity)
             self.assertRegex(activity, r"\b\d+m \d{2}s\b")
 
+    def test_accounts_footer_is_green_when_any_account_is_active(self):
+        with terminal() as (view, _):
+            view.account_service = Mock()
+            view.downloads_panel.footer_label = Mock(return_value="")
+            view.render_activity = lambda: []
+            view.account_service.active_accounts.return_value = [{"key": "gemini/personal"}]
+            active = next(
+                part for part in view.render_footer() if view.tr("Hesaplar") in part[1]
+            )
+            self.assertEqual(active[0], "class:connection.connected")
+
+            view.account_service.active_accounts.return_value = []
+            inactive = next(
+                part for part in view.render_footer() if view.tr("Hesaplar") in part[1]
+            )
+            self.assertEqual(inactive[0], "class:connection.disconnected")
+
     def test_remote_generation_uses_elapsed_time_only_when_provider_supplies_it(self):
         with terminal() as (view, _):
             tab = view.tabs[view.active_tab]

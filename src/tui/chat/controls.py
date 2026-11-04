@@ -428,6 +428,8 @@ class ControlsComponent:
         return FormattedText([("", " " * max(0, self.main_width() - used))] + controls)
 
     def render_footer(self):
+        active_accounts = getattr(self.account_service, "active_accounts", None)
+        has_active_account = bool(active_accounts and active_accounts())
         controls = [
             (
                 self.tr(" {0} Yardım ").format(self.shortcut("command.help")),
@@ -440,7 +442,7 @@ class ControlsComponent:
             ),
             (
                 f" {ICONS['running'].icon} " + self.tr("Hesaplar") + " "
-                if self.session_state.get("authenticated")
+                if has_active_account
                 else f" {ICONS['disabled'].icon} " + self.tr("Hesaplar") + " ",
                 self.session_dialog.open,
             ),
@@ -455,7 +457,7 @@ class ControlsComponent:
                 (
                     (
                         "class:connection.connected"
-                        if self.session_state.get("authenticated")
+                        if has_active_account
                         else "class:connection.disconnected"
                     )
                     if callback == self.session_dialog.open
