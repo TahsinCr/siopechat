@@ -14,6 +14,7 @@ from ..widgets import (
     fit_text,
     on_click,
 )
+from .models import model_title
 
 
 class ControlsComponent:
@@ -75,7 +76,7 @@ class ControlsComponent:
             return FormattedText([])
         selected = self.catalog.chat_model(self.model)
         model = (
-            (selected.chat_title or selected.title)
+            model_title(selected)
             if selected
             else self.model
             or (self.tr("Yükleniyor…") if self.catalog_loading else self.tr("Seçilmedi"))

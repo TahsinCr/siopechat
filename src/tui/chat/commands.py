@@ -21,14 +21,7 @@ from ..widgets import (
     fit_text,
     on_click,
 )
-
-
-def _model_title(model) -> str:
-    metadata = model.metadata if isinstance(model.metadata, dict) else {}
-    for value in (model.chat_title, model.title, metadata.get("modeName")):
-        if isinstance(value, str) and value.strip() and value.strip().casefold() != "model":
-            return value.strip()
-    return str(model.id).replace("_", " ").replace("-", " ").title()
+from .models import model_title
 
 
 class CommandComponent:
@@ -256,7 +249,7 @@ class CommandComponent:
                             "id": f"model.select:{model.id}"
                             if key == self.account_key
                             else f"model.account:{key}:{model.id}",
-                            "title": self.tr("Model · {0}").format(_model_title(model))
+                            "title": self.tr("Model · {0}").format(model_title(model))
                             + (
                                 f" {ICONS['complete'].icon}"
                                 if key == self.account_key and model.id == self.model
@@ -272,7 +265,7 @@ class CommandComponent:
                     "id": f"effort.select:{choice.id}",
                     "title": self.tr("Efor · {0}").format(choice.title)
                     + (f" {ICONS['complete'].icon}" if choice.id == self.effort else ""),
-                    "detail": f"{choice.id} · {selected.chat_title or selected.title}",
+                    "detail": f"{choice.id} · {model_title(selected)}",
                 }
                 for choice in selected.efforts
             )

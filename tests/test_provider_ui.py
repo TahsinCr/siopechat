@@ -33,9 +33,13 @@ class ProviderUiTests(unittest.TestCase):
             view.refresh_provider_catalog()
             view.handle_command("/model")
             titles = {item["title"] for item in view.palette_items}
+            view.select_model("grok-4-1-thinking-1129")
 
         self.assertTrue(any(title.startswith("Model · Grok 420") for title in titles))
         self.assertIn("Model · Grok 4.1 Thinking", titles)
+        header = "".join(fragment[1] for fragment in view.render_chat_header())
+        self.assertIn("Grok 4.1 Thinking", header)
+        self.assertNotIn("Grok 4.1 Thinking", view.status)
 
     def test_sentinel_failure_says_message_was_not_sent_and_finishes_the_turn(self):
         with terminal() as (view, _pipe):

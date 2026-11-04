@@ -8,6 +8,14 @@ from typing import Any
 from providers.models import FeatureState, ModelCatalog
 
 
+def model_title(model) -> str:
+    metadata = model.metadata if isinstance(model.metadata, dict) else {}
+    for value in (model.chat_title, model.title, metadata.get("modeName")):
+        if isinstance(value, str) and value.strip() and value.strip().casefold() != "model":
+            return value.strip()
+    return str(model.id).replace("_", " ").replace("-", " ").title()
+
+
 class ModelComponent:
     def refresh_provider_catalog(self, force=False) -> None:
         key = self.account_key
@@ -221,10 +229,6 @@ class ModelComponent:
             )
             self.remember_selection()
             self._save_active_tab()
-            self.status = self.tr("Model: {0} · efor: {1}").format(
-                selected.chat_title or selected.title,
-                self.effort or self.tr("sağlayıcı varsayılanı"),
-            )
         self.app.invalidate()
 
     def select_effort(self, effort: str | None) -> None:
