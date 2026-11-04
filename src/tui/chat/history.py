@@ -222,6 +222,7 @@ class HistoryComponent:
                 syncing=True,
                 history_load_pending=True,
                 history_load_complete=False,
+                remote_generation=None,
             )
             self._restore_active_tab(focus=False)
             self.status = self.tr("Geçmiş arka planda yükleniyor · mesaj yazabilirsiniz")
@@ -272,6 +273,15 @@ class HistoryComponent:
                     history_load_pending=is_cached and self.archive_service() is not None,
                     history_load_complete=False,
                 )
+                metadata = conversation.get("metadata")
+                generation = metadata.get("generation") if isinstance(metadata, dict) else None
+                target_tab["remote_generation"] = (
+                    generation
+                    if not is_cached
+                    and isinstance(generation, dict)
+                    and generation.get("active") is True
+                    else None
+                )
                 model = conversation.get("model") or conversation.get("default_model_slug")
                 if isinstance(model, str) and model:
                     if self.account_service:
@@ -312,6 +322,7 @@ class HistoryComponent:
                         ):
                             return
                         target_tab["syncing"] = False
+                        target_tab["remote_generation"] = None
                         target_tab.pop("history_load_pending", None)
                         target_tab.pop("history_load_complete", None)
                         if not target_tab.get("messages"):
@@ -328,6 +339,13 @@ class HistoryComponent:
                             or target_tab.get("load_token") != token
                         ):
                             return
+                        metadata = _result.get("metadata") if isinstance(_result, dict) else None
+                        generation = metadata.get("generation") if isinstance(metadata, dict) else None
+                        target_tab["remote_generation"] = (
+                            generation
+                            if isinstance(generation, dict) and generation.get("active") is True
+                            else None
+                        )
                         target_tab["history_load_complete"] = True
                         self.apply_archive_updates()
 

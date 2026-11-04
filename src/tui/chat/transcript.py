@@ -137,6 +137,24 @@ class TranscriptComponent:
                         )
                     ]
                 )
+        generation = active_tab.get("remote_generation")
+        if isinstance(generation, dict) and generation.get("active") is True:
+            frames = ICONS["spinner"].icon
+            frame = frames[int(time.monotonic() * 10) % len(frames)]
+            detail = ""
+            started_at = generation.get("started_at")
+            if isinstance(started_at, (int, float)) and not isinstance(started_at, bool):
+                elapsed = time.time() - started_at
+                if 0 <= elapsed < 31_536_000:
+                    detail = " · " + self.format_elapsed(elapsed)
+            return FormattedText(
+                [
+                    (
+                        "class:sidebar.running",
+                        f" {frame} {self.tr('Yanıt arka planda sürüyor')}{detail} ",
+                    )
+                ]
+            )
         pending = [
             label
             for label, active in (

@@ -85,6 +85,7 @@ class SendingComponent:
         if timing is not None:
             timing.record_elapsed("submit_to_send_worker_start_ms", timing.started_ns)
         target_tab = self.tabs[tab_index] if target_tab is None else target_tab
+        target_tab["remote_generation"] = None
 
         def is_active():
             return target_tab is self.tabs[self.active_tab]
