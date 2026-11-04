@@ -6,11 +6,11 @@
 
 # SiopeChat
 
-### ChatGPT, Gemini ve Claude web sohbetleri — tek terminalde.
+### ChatGPT, Gemini, Claude ve Grok web sohbetleri — tek terminalde.
 
 Sohbetlerinizi, projelerinizi ve farklı modellerin yanıtlarını tek bir terminal çalışma alanında toplayın. Sekmeler arasında geçin, yanıtları yan yana karşılaştırın ve terminalden ayrılmadan çalışmayı sürdürün.
 
-> SiopeChat; ChatGPT, Gemini ve Claude’un **web sohbetleri** için geliştirilmiş bağımsız, resmî olmayan bir istemcidir. Tarayıcıdaki oturumunuzu kullanır; API anahtarı gerektirmez. Aboneliğinizin model erişimi ve kullanım sınırları geçerlidir. Resmî geliştirici API’lerine, Codex’e veya Claude Code’a bağlanmaz. Sağlayıcı sitelerindeki değişiklikler uyumluluğu etkileyebilir.
+> SiopeChat; ChatGPT, Gemini, Claude ve Grok’un **web sohbetleri** için geliştirilmiş bağımsız, resmî olmayan bir istemcidir. Tarayıcıdaki oturumunuzu kullanır; API anahtarı gerektirmez. Aboneliğinizin model erişimi ve kullanım sınırları geçerlidir. Resmî geliştirici API’lerine, Codex’e veya Claude Code’a bağlanmaz. Sağlayıcı sitelerindeki değişiklikler uyumluluğu etkileyebilir.
 
 ![SiopeChat TUI ekran görüntüsü](assets/siopechat.png)
 
@@ -27,7 +27,7 @@ Sohbetlerinizi, projelerinizi ve farklı modellerin yanıtlarını tek bir termi
 
 | Sohbetler | Projeler ve bağlam | Yerel geçmiş |
 | --- | --- | --- |
-| Taslak ve kaydırma konumlarını koruyan sekmeler kullanın; bir grupta en fazla dört paneli karşılaştırın. | ChatGPT ve Claude projeleri ya da Gemini defterleriyle çalışın; sağlayıcının desteklediği talimat ve kaynakları yönetin. | Kayıtlı sohbetleri hemen açın, geçmişi arka planda eşitleyin. |
+| Taslak ve kaydırma konumlarını koruyan sekmeler kullanın; bir grupta en fazla dört paneli karşılaştırın. | ChatGPT ve Claude projeleri, Gemini defterleri ya da Grok çalışma alanlarıyla çalışın; sağlayıcının desteklediği talimat ve kaynakları yönetin. | Kayıtlı sohbetleri hemen açın, geçmişi arka planda eşitleyin. |
 | Hesaba göre model ve düşünme eforu seçin; desteklenen mesajları düzenleyin, yanıtı yeniden üretin veya sohbeti dallandırın. | Proje ve sohbetleri arayın, sıralayın ve sağlayıcı hesabına göre filtreleyin. | Sohbet geçmişini ve kaynak bilgilerini yerel SQLite arşivinde tutun. |
 
 | Dosyalar ve indirmeler | Kısayollar ve eklentiler | Diliniz |
@@ -40,7 +40,7 @@ Sohbetlerinizi, projelerinizi ve farklı modellerin yanıtlarını tek bir termi
 
 | Kapsam | Neler iyileşti? |
 | --- | --- |
-| **ChatGPT, Gemini ve Claude** | Kayıtlı sohbetler yerel arşivden açılır; sağlayıcı geçmişi arka planda eşitlenir. Geçerli model katalogları önbellekten kullanılır, büyük geçmişler ise arayüz olay döngüsünün dışında hazırlanır. Sağlayıcı metin üretiminin tamamlandığını bildirdiğinde yanıt tamamlanmış gösterilir ve süre sayacı durur; bağlantının kapanış işlemleri arka planda sürebilir. Mevcut gönderim tamamlanırken sonraki mesajı kuyruğa alabilirsiniz. |
+| **ChatGPT, Gemini, Claude ve Grok** | Kayıtlı sohbetler yerel arşivden açılır; sağlayıcı geçmişi arka planda eşitlenir. Geçerli model katalogları önbellekten kullanılır, büyük geçmişler ise arayüz olay döngüsünün dışında hazırlanır. Sağlayıcı metin üretiminin tamamlandığını bildirdiğinde yanıt tamamlanmış gösterilir ve süre sayacı durur; bağlantının kapanış işlemleri arka planda sürebilir. Mevcut gönderim tamamlanırken sonraki mesajı kuyruğa alabilirsiniz. |
 | **ChatGPT** | Uygun sohbet anlık görüntüleri ve tamamlanan akışlardan alınmış mesajlar yeniden kullanılarak yinelenen geçmiş istekleri azaltılır. Sentinel başlıkları sonraki gönderimden önce hazırlanır. Kayıtlı çevrimdışı ölçümde Sentinel başlangıç kanıtı üretiminin saf Python medyanı **0,329 ms** oldu: bu aşama, yeniden kullanılan QuickJS-NG bağlamından yaklaşık **10,7 kat**, açık Node/V8 sürecinde her örnek için yeni VM oluşturan yoldan **12,6 kat daha kısa** sürdü. |
 | **Gemini** | Flash modelleri için istek yönlendirmesi düzeltildi; sağlayıcının varsayılan düşünme politikası korunuyor. Geçerli sohbet devam kimlikleri yeniden kullanılıyor ve etkinlik RPC çağrısı beş dakika içinde yinelenmiyor. Önceki sınırlı canlı denemelerde ilk metne ulaşma süresinin **65–110 saniye aralığından 1,89–3,80 saniye aralığına** düştüğü kaydedildi. Bunlar kontrollü benchmark sonuçları değil, kayıtlı süre aralıklarıdır; her model ve hesap için garanti edilmez. |
 
@@ -212,6 +212,7 @@ Sohbeti yazma alanının yanındaki **Sil** düğmesiyle, projeyi `/project-dele
 | ChatGPT | Projeler, talimatlar, kaynaklar ve desteklenen sohbet taşıma işlemleri | Model, efor, geçici mod ve proje seçenekleri hesaba bağlıdır. |
 | Gemini | Ayrı bir proje türü olarak Gemini defterleri; defter bağlamında sohbet, talimat ve metin kaynakları | Mevcut sohbet deftere taşınamaz. Dosya/URL kaynağı içe aktarma sunulmuyor. Düşünme seçenekleri ve varsayılanlar hesabın Gemini web model politikasından alınır. |
 | Claude | Projeler, talimatlar, metin/dosya kaynakları ve desteklenen üyelik değişiklikleri | Projeler dışında geçici sohbet desteklenir; özel/varsayılan dışındaki gizlilik/bellek seçenekleri sunulmuyor. |
+| Grok | Çalışma alanları, talimatlar, 3 MiB’a kadar dosya kaynakları ve sohbet üyeliği; hesaba açık modeller, yeniden deneme, yayımlanan düşünme özetleri ve web arama kaynakları | Ortak efor seçenekleri, sohbet ekleri, mesaj düzenleme ve yerel sohbet dalları sunulmuyor. |
 
 Gemini defterleri mevcut Gemini oturumunuzu kullanır; ayrı NotebookLM girişi gerekmez. Sağlayıcıların proje türleri ve metaverileri birbirinden ayrı tutulur; kullanılabilir özellikler sağlayıcıya ve hesaba göre değişir.
 

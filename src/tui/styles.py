@@ -73,6 +73,7 @@ ICONS: dict[str, IconStyleItem] = {
     "provider.claude": IconStyleItem(
         name="provider.claude", color="#d99977", style="bold", icon="✳"
     ),
+    "provider.grok": IconStyleItem(name="provider.grok", color="#ffffff", style="bold", icon="𝕏"),
     "provider.generic": IconStyleItem(name="provider.generic", color="#b7c8db", icon="◈"),
     "copy": IconStyleItem(name="icon.copy", color="#aeb9c4", icon="⧉"),
     "edit": IconStyleItem(name="icon.edit", color="#aeb9c4", icon="✎"),

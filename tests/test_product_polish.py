@@ -41,7 +41,7 @@ class ProductServicesTests(unittest.TestCase):
         ]
         self.assertEqual(
             {r["section"] for r in rows},
-            {"providers.chatgpt", "providers.gemini", "providers.claude"},
+            {"providers.chatgpt", "providers.gemini", "providers.claude", "providers.grok"},
         )
         self.assertNotIn("default", self.api.settings.snapshot()["providers"])
 

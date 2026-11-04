@@ -203,7 +203,7 @@ class AccountsSessions:
             self._forget_verification(key)
             return dict(self.status(key), logged_out=True)
         if action == "verify":
-            if item["provider"] in ("gemini", "claude"):
+            if item["provider"] in ("gemini", "claude", "grok"):
                 session = self.session(key)
                 provider_id = item["provider"]
                 provider_url = PROVIDERS[provider_id][1]
@@ -213,28 +213,37 @@ class AccountsSessions:
                     raise RuntimeError(
                         "Hesabın açık giriş tarayıcısı bulunamadı; önce giriş yapın"
                     ) from error
-                host = urlsplit(provider_url).hostname or ""
-                allowed_claude_cookies = {
-                    "sessionKey",
-                    "lastActiveOrg",
-                    "anthropic-device-id",
-                    "__cf_bm",
-                    "cf_clearance",
-                }
-                cookies = {}
-                for cookie in browser_cookies:
-                    name = cookie.get("name")
-                    value = cookie.get("value")
-                    if not isinstance(name, str) or not name or not isinstance(value, str):
-                        continue
-                    domain = str(cookie.get("domain", "")).lstrip(".").lower()
-                    applies_to_provider = host == domain or host.endswith(f".{domain}")
-                    if applies_to_provider and (
-                        provider_id == "gemini" or name in allowed_claude_cookies
-                    ):
-                        cookies[name] = value
-                required = "__Secure-1PSID" if item["provider"] == "gemini" else "sessionKey"
-                if not cookies.get(required):
+                if provider_id == "grok":
+                    from providers.profiles import ProfileError, select_cookies
+
+                    try:
+                        cookies = select_cookies(browser_cookies, provider_id)
+                    except ProfileError as error:
+                        raise RuntimeError(str(error)) from error
+                    required = None
+                else:
+                    host = urlsplit(provider_url).hostname or ""
+                    allowed_claude_cookies = {
+                        "sessionKey",
+                        "lastActiveOrg",
+                        "anthropic-device-id",
+                        "__cf_bm",
+                        "cf_clearance",
+                    }
+                    cookies = {}
+                    for cookie in browser_cookies:
+                        name = cookie.get("name")
+                        value = cookie.get("value")
+                        if not isinstance(name, str) or not name or not isinstance(value, str):
+                            continue
+                        domain = str(cookie.get("domain", "")).lstrip(".").lower()
+                        applies_to_provider = host == domain or host.endswith(f".{domain}")
+                        if applies_to_provider and (
+                            provider_id == "gemini" or name in allowed_claude_cookies
+                        ):
+                            cookies[name] = value
+                    required = "__Secure-1PSID" if provider_id == "gemini" else "sessionKey"
+                if required and not cookies.get(required):
                     raise RuntimeError("Hesaba giriş tamamlanmamış")
                 directory = self.directory(key)
                 directory.mkdir(mode=0o700, parents=True, exist_ok=True)

@@ -70,6 +70,10 @@ def create_application(root: Path | None = None):
             "claude", account_id, **config
         ),
     )
+    api.providers.register(
+        create_provider("grok", credential_file=repository.credentials("grok/default")),
+        account_factory=lambda account_id, **config: create_provider("grok", account_id, **config),
+    )
     accounts = Accounts(api)
     api.provide("application", "accounts", accounts)
     api.tasks.provider_resolver = lambda provider, account: accounts.provider(

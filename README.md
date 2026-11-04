@@ -6,11 +6,11 @@
 
 # SiopeChat
 
-### ChatGPT, Gemini and Claude web chats — together in one terminal.
+### ChatGPT, Gemini, Claude and Grok web chats — together in one terminal.
 
 Bring your chats, projects and model comparisons together in one terminal workspace. Move between tabs, compare replies side by side, and keep working without leaving the terminal.
 
-> SiopeChat is an independent, unofficial client for ChatGPT, Gemini and Claude **web chats**. It uses your browser session, so no API key is required. Your plan's model access and usage limits still apply. It does not connect to official developer APIs, Codex or Claude Code. Changes to provider websites can affect compatibility.
+> SiopeChat is an independent, unofficial client for ChatGPT, Gemini, Claude and Grok **web chats**. It uses your browser session, so no API key is required. Your plan's model access and usage limits still apply. It does not connect to official developer APIs, Codex or Claude Code. Changes to provider websites can affect compatibility.
 
 ![SiopeChat TUI screenshot](assets/siopechat.png)
 
@@ -27,7 +27,7 @@ Bring your chats, projects and model comparisons together in one terminal worksp
 
 | Conversations | Projects and context | Local-first history |
 | --- | --- | --- |
-| Keep chats open in tabs, preserve drafts and scroll positions, or compare up to four panes in a group. | Use ChatGPT and Claude projects or Gemini notebooks, with provider-supported instructions and sources. | Open saved conversations immediately while history refreshes in the background. |
+| Keep chats open in tabs, preserve drafts and scroll positions, or compare up to four panes in a group. | Use ChatGPT and Claude projects, Gemini notebooks, or Grok workspaces with provider-supported instructions and sources. | Open saved conversations immediately while history refreshes in the background. |
 | Select models and effort per account; edit, retry or branch replies when the provider supports it. | Search and sort projects and chats, with filters for provider accounts. | Keep conversation history and resource metadata in a local SQLite archive. |
 
 | Files and downloads | Keyboard and extensions | Your language |
@@ -40,7 +40,7 @@ Bring your chats, projects and model comparisons together in one terminal worksp
 
 | Where it helps | What changed |
 | --- | --- |
-| **ChatGPT, Gemini and Claude** | Saved chats open from the local archive while provider history refreshes in the background. Valid model catalogs are reused, and large histories are prepared off the UI event loop. When a provider signals that text generation is complete, SiopeChat marks the reply complete and stops the timer; connection cleanup can continue in the background. You can queue a follow-up while the current send is finishing. |
+| **ChatGPT, Gemini, Claude and Grok** | Saved chats open from the local archive while provider history refreshes in the background. Valid model catalogs are reused, and large histories are prepared off the UI event loop. When a provider signals that text generation is complete, SiopeChat marks the reply complete and stops the timer; connection cleanup can continue in the background. You can queue a follow-up while the current send is finishing. |
 | **ChatGPT** | Reuse eligible conversation snapshots and messages captured from completed streams to avoid duplicate history requests. Prepare Sentinel headers before the next send. In the recorded offline benchmark, native Python Sentinel initial-proof generation had a **0.329 ms median**: about **10.7× faster** than a reused QuickJS-NG context and **12.6× faster** than an already-running Node/V8 process that creates a fresh VM for each sample. |
 | **Gemini** | Route Flash requests correctly, preserve the provider's default thinking policy, reuse valid continuation IDs, and avoid repeating the activity RPC within five minutes. Earlier limited live trials recorded first-text latency dropping from **65–110 s to 1.89–3.80 s**. These are reported ranges, not the results of a controlled benchmark or a guarantee for every model and account. |
 
@@ -211,6 +211,7 @@ Delete a chat with **Delete** beside the composer; use `/project-delete` or proj
 | ChatGPT | Projects, instructions, sources and supported chat moves | Models, effort, temporary mode and project options depend on the account. |
 | Gemini | Gemini notebooks shown as a distinct project type; notebook-context chats, instructions and text sources | Existing chats cannot be moved into notebooks. File/URL source import is not exposed. Thinking choices and defaults follow the account's native web model policy. |
 | Claude | Projects, instructions, text/file sources and supported membership changes | Incognito chats are supported outside projects; privacy/memory overrides beyond private/default are not exposed. |
+| Grok | Workspaces, instructions, file sources up to 3 MiB and conversation membership; account-available models, retry, published thinking summaries and web-search sources | Shared effort controls, chat attachments, message editing and native branches are not exposed. |
 
 Gemini notebooks use the Gemini account session; a separate NotebookLM login is not required. Provider project types and metadata remain distinct, and available features vary by provider and account.
 

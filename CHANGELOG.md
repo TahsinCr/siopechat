@@ -8,6 +8,10 @@ Python distributions use the corresponding PEP 440 version (`1.5.4b0` for `v1.5.
 
 ## [Unreleased]
 
+### Added
+
+- Add Grok web-session accounts with live account model discovery, streaming, published thinking summaries and web-search citations. Support Grok workspaces, instructions, file resources up to 3 MiB, chat membership changes, and retrying assistant replies; keep unsupported effort, chat attachment, message-edit and branch actions unavailable.
+
 ### Changed
 
 - Store default settings, account data, conversation archives, and downloads in the per-user application data directory instead of the source checkout. Copy existing checkout data on first launch and retain the originals; `SIOPECHAT_HOME` remains the explicit override.
