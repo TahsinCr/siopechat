@@ -23,7 +23,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.4b0` for `v1.5.
 
 ### Fixed
 
-- Verify browser-profile Grok cookies with the Grok provider instead of the Claude adapter.
+- Verify browser-profile Grok cookies with the Grok adapter and its authenticated user-settings resource.
 - Keep multi-query archive reads on one SQLite snapshot so concurrent synchronization cannot mix history revisions, message positions or file references.
 - Keep the latest answer and its toolbar rendered while only conversation loading or synchronization status changes.
 - Retry from the original user prompt, replacing the complete response turn and removing later turns. Answer-version navigation restores every visible reasoning and response message in that turn.
