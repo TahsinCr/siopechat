@@ -40,15 +40,11 @@ class UiControlsTests(unittest.TestCase):
             view.downloads_panel.footer_label = Mock(return_value="")
             view.render_activity = lambda: []
             view.account_service.active_accounts.return_value = [{"key": "gemini/personal"}]
-            active = next(
-                part for part in view.render_footer() if view.tr("Hesaplar") in part[1]
-            )
+            active = next(part for part in view.render_footer() if view.tr("Hesaplar") in part[1])
             self.assertEqual(active[0], "class:connection.connected")
 
             view.account_service.active_accounts.return_value = []
-            inactive = next(
-                part for part in view.render_footer() if view.tr("Hesaplar") in part[1]
-            )
+            inactive = next(part for part in view.render_footer() if view.tr("Hesaplar") in part[1])
             self.assertEqual(inactive[0], "class:connection.disconnected")
 
     def test_remote_generation_uses_elapsed_time_only_when_provider_supplies_it(self):

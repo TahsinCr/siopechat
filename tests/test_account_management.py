@@ -156,6 +156,7 @@ class AccountManagementTests(unittest.TestCase):
         archive.put(self.gemini, "chats", "", chat_page)
         self.verify_account(self.gemini)
         self.accounts.select(self.gemini)
+
         def cached_read(key, kind, remote, _fetch, *_args, **_kwargs):
             return archive.get(key, kind, remote or "")
 

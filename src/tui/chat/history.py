@@ -340,7 +340,9 @@ class HistoryComponent:
                         ):
                             return
                         metadata = _result.get("metadata") if isinstance(_result, dict) else None
-                        generation = metadata.get("generation") if isinstance(metadata, dict) else None
+                        generation = (
+                            metadata.get("generation") if isinstance(metadata, dict) else None
+                        )
                         target_tab["remote_generation"] = (
                             generation
                             if isinstance(generation, dict) and generation.get("active") is True
