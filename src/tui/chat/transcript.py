@@ -534,6 +534,7 @@ class TranscriptComponent:
                 self._virtual_transcript = tab.get("render_layout")
                 self._virtual_signature = tab.get("render_signature")
                 self._virtual_pending_signature = None
+                self._virtual_request_token = None
                 self._transcript_prefetch.clear()
                 layout = self._virtual_transcript
                 tab["render_used"] = time.monotonic()
@@ -607,7 +608,9 @@ class TranscriptComponent:
                     self._virtual_retry_handle = loop.call_later(delay, retry)
                     return
         self._virtual_last_request_at = time.monotonic()
+        request_token = object()
         self._virtual_pending_signature = signature
+        self._virtual_request_token = request_token
         conversation_id = tab.get("conversation_id")
         scroll = self.transcript_window.vertical_scroll
         tab_id = tab.get("tab_id")
@@ -625,7 +628,9 @@ class TranscriptComponent:
 
         with self.lock:
             if self._virtual_message_key(self.messages) != signature[5]:
-                self._virtual_pending_signature = None
+                if self._virtual_request_token is request_token:
+                    self._virtual_pending_signature = None
+                    self._virtual_request_token = None
                 return
             messages = tuple(
                 (message.get("role"), message.get("text", "")) for message in self.messages
@@ -688,9 +693,10 @@ class TranscriptComponent:
 
         def ready(value):
             release_payload()
-            if self._virtual_pending_signature == signature:
+            current_request = getattr(self, "_virtual_request_token", None) is request_token
+            if current_request:
                 self._virtual_pending_signature = None
-            if still_active() and tab.get("tab_id") == tab_id:
+            if current_request and still_active() and tab.get("tab_id") == tab_id:
                 self._virtual_failed_signature = None
                 previous = getattr(self, "_virtual_transcript", None)
                 previous_owner = next(
@@ -741,13 +747,19 @@ class TranscriptComponent:
                     )
                 )
 
-        def failed(_reason):
+        def failed(reason):
             release_payload()
-            if self._virtual_pending_signature == signature:
+            current_request = getattr(self, "_virtual_request_token", None) is request_token
+            if current_request:
                 self._virtual_pending_signature = None
-            self._virtual_failed_signature = signature
-            self._virtual_retry_after = time.monotonic() + 1
-            self.app.invalidate()
+                if still_active() and reason not in ("Superseded transcript", "Transcript closed"):
+                    self._virtual_failed_signature = signature
+                    self._virtual_retry_after = time.monotonic() + 1
+                elif self._virtual_failed_signature == signature:
+                    self._virtual_failed_signature = None
+                    self._virtual_retry_after = 0
+            if current_request:
+                self.app.invalidate()
 
         self._read_in_background(read, ready, failed, session_bound=False, cpu=True)
 

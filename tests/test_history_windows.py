@@ -397,6 +397,69 @@ class HistoryReadTests(unittest.TestCase):
 
 
 class RenderReuseTests(unittest.TestCase):
+    def test_late_old_tab_render_cannot_replace_returned_tabs_layout(self):
+        from tests.tui_support import terminal
+
+        with terminal() as (view, _):
+            jobs = []
+            view._read_in_background = lambda read, success, failure, **_kwargs: jobs.append(
+                (read, success, failure)
+            )
+            view.messages = [{"id": "answer", "role": "assistant", "text": "Visible answer"}]
+            view._save_active_tab()
+            view._virtual_transcript_rows(20)
+            old_request = jobs[0]
+            old_layout = old_request[0]()
+
+            view.new_tab()
+            view._virtual_transcript_rows(20)
+            view.select_tab(0)
+            view._virtual_transcript_rows(20)
+            current_request = jobs[-1]
+            current_layout = current_request[0]()
+            current_request[1](current_layout)
+            old_request[1](old_layout)
+
+            self.assertIs(view._virtual_transcript, current_layout)
+            self.assertTrue(old_layout._disposed)
+
+    def test_cancelled_old_tab_render_cannot_clear_returned_tabs_pending_render(self):
+        from tests.tui_support import terminal
+
+        with terminal() as (view, _):
+            jobs = []
+            view._read_in_background = lambda read, success, failure, **_kwargs: jobs.append(
+                (read, success, failure)
+            )
+            view.messages = [{"id": "answer", "role": "assistant", "text": "Visible answer"}]
+            view._save_active_tab()
+            view._virtual_transcript_rows(20)
+            old_request = jobs[0]
+
+            view.new_tab()
+            view._virtual_transcript_rows(20)
+            view.select_tab(0)
+            view._virtual_transcript_rows(20)
+            current_request = jobs[-1]
+            self.assertEqual(len(jobs), 3)
+            pending = view._virtual_pending_signature
+
+            old_request[2]("Superseded transcript")
+            self.assertEqual(view._virtual_pending_signature, pending)
+            view._virtual_transcript_rows(20)
+            self.assertEqual(len(jobs), 3)
+
+            layout = current_request[0]()
+            current_request[1](layout)
+            self.assertFalse(layout._disposed)
+            top = view.transcript_window.vertical_scroll
+            self.assertTrue(
+                all(
+                    layout.cached_row(line) is not None
+                    for line in range(top, min(layout.line_count, top + 20))
+                )
+            )
+
     def test_tab_switch_reuses_layout_and_close_releases_its_source(self):
         from tests.tui_support import immediate, terminal
 
