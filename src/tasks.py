@@ -46,7 +46,9 @@ TERMINAL = frozenset({JobState.COMPLETED, JobState.FAILED, JobState.CANCELLED})
 
 
 class _AccountBlocked(AccountPaused):
-    """Queued work observed an existing pause; do not change its recovery mode."""
+    """A send cooldown is active; this does not mean the account lost authentication."""
+
+    requires_verification = False
 
 
 @dataclass(frozen=True)

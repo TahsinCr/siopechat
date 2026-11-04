@@ -281,8 +281,9 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.gpt.release("one")
         self.assertEqual((await self.finish(first)).error_code, "rate_limited")
         self.assertEqual((await self.finish(queued)).error_code, "account_paused")
-        with self.assertRaises(AccountPaused):
+        with self.assertRaises(AccountPaused) as blocked:
             self.runtime.submit(request("three"))
+        self.assertFalse(blocked.exception.requires_verification)
         with self.assertRaises(AccountPaused):
             self.runtime.resume_account("gpt", "default")
         self.assertEqual(len(self.gpt.calls), 1)

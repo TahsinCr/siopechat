@@ -438,8 +438,9 @@ class AccountsSending:
 
         try:
             return completion.result()
-        except AccountPaused:
-            self._forget_verification(key)
+        except AccountPaused as error:
+            if getattr(error, "requires_verification", True):
+                self._forget_verification(key)
             raise
         finally:
             with self._lock:

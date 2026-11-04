@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, Mock, call, patch
 
 from accounts import Accounts, identity, origin
 from providers import Capability, ConversationBound, ReplaceText, TextDelta
-from providers.errors import AccountPaused
+from providers.errors import AccountPaused, ProviderError, RateLimited
 from providers.models import (
     Content,
     Conversation,
@@ -631,6 +631,36 @@ class AccountTests(unittest.TestCase):
         archived = self.accounts.cached(self.gemini, "same")
         self.assertEqual(archived["messages"][0]["text"], "Q")
         self.assertNotIn("Private", str(archived))
+
+    def test_rate_limit_cooldown_does_not_invalidate_account_verification(self):
+        self.accounts.credentials(self.gemini).save({"session": "verified test session"})
+        self.accounts._remember_verification(self.gemini)
+        calls = 0
+
+        async def stream(_request):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RateLimited()
+            yield ReplaceText("Answer")
+            yield ConversationBound("same")
+
+        provider = Mock()
+        provider.close = AsyncMock()
+        provider.stream = stream
+        self.accounts._providers[self.gemini] = provider
+
+        with self.assertRaises(RateLimited):
+            self.accounts.send(self.gemini, None, "Q", [], Mock(), Mock())
+        self.assertTrue(self.accounts.status(self.gemini)["authenticated"])
+
+        with self.assertRaises(ProviderError) as blocked:
+            self.accounts.send(self.gemini, None, "Q", [], Mock(), Mock())
+        self.assertIsInstance(blocked.exception, AccountPaused)
+        self.assertFalse(blocked.exception.requires_verification)
+        self.assertEqual(blocked.exception.code, "account_paused")
+        self.assertTrue(self.accounts.status(self.gemini)["authenticated"])
+        self.assertNotIn(self.gemini, self.accounts._verification_required)
 
     def test_view_callback_failure_does_not_truncate_archived_text_or_reasoning(self):
         async def stream(_request):
