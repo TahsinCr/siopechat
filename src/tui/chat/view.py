@@ -24,7 +24,7 @@ from providers.timing import send_timing_report, timing_enabled
 from settings import DEFAULT_KEYBINDINGS
 
 from ..bindings import key_bindings
-from ..layout import render_tab_bar, workspace_layout
+from ..layout import workspace_layout
 from ..markdown import (
     MessageRenderer,
     visible_chat_messages,
@@ -395,9 +395,6 @@ class ChatView(
 
     def render_prompt(self) -> FormattedText:
         return FormattedText([("class:prompt", " › ")])
-
-    def render_tabs(self):
-        return render_tab_bar(self)
 
     def run(self) -> None:
         def started() -> None:
