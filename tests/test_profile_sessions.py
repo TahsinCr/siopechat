@@ -31,7 +31,7 @@ class ProfileAccountTests(unittest.TestCase):
                 "accounts.sessions.import_cookies",
                 return_value=("chromium", {"__Secure-1PSID": "new"}),
             ),
-            patch("accounts.sessions.GeminiProvider", return_value=candidate),
+            patch("accounts.sessions.create_provider", return_value=candidate),
         ):
             with self.assertRaisesRegex(RuntimeError, "rejected"):
                 self.accounts.session_action(self.gemini, "verify_profile")
@@ -54,7 +54,7 @@ class ProfileAccountTests(unittest.TestCase):
                 "accounts.sessions.import_cookies",
                 return_value=("chromium", {"__Secure-1PSID": "new"}),
             ),
-            patch("accounts.sessions.GeminiProvider", return_value=candidate),
+            patch("accounts.sessions.create_provider", return_value=candidate),
             patch(
                 "providers.chatgpt.session.BrowserSession.launch",
                 side_effect=AssertionError("browser"),
@@ -69,6 +69,24 @@ class ProfileAccountTests(unittest.TestCase):
         if os.name != "nt":
             self.assertEqual(self.accounts.repository.path.stat().st_mode & 0o777, 0o600)
         old.close.assert_awaited_once()
+
+    def test_grok_profile_verification_uses_grok_provider_factory(self):
+        grok = self.accounts.add("grok", "Personal Grok")
+        candidate = Mock(
+            authenticate=AsyncMock(return_value=SessionStatus(SessionState.AUTHENTICATED, True)),
+            close=AsyncMock(),
+        )
+        with (
+            patch("accounts.sessions.import_cookies", return_value=("chromium", {"sso-rw": "new"})),
+            patch("accounts.sessions.create_provider", return_value=candidate) as create,
+        ):
+            state = self.accounts.session_action(grok, "verify_profile")
+
+        self.assertTrue(state["authenticated"])
+        self.assertEqual(create.call_args.args[:2], ("grok", self.accounts.item(grok)["id"]))
+        self.assertEqual(self.accounts.credentials(grok).load(), {"sso-rw": "new"})
+        candidate.authenticate.assert_awaited_once()
+        candidate.close.assert_awaited_once()
 
     def test_browser_verification_persists_only_provider_scoped_allowed_cookies(self):
         claude = self.accounts.add("claude", "Personal Claude")

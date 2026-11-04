@@ -14,12 +14,10 @@ from urllib.parse import urlsplit
 
 from providers.cdp import DevToolsError, open_provider_page, read_provider_cookies
 from providers.chatgpt import BrowserSession, ChatGPTProvider
-from providers.claude import ClaudeProvider
 from providers.errors import AccountPaused
-from providers.gemini import GeminiProvider
 from providers.models import SessionState
 from providers.profiles import import_cookies
-from providers.registry import PROVIDERS
+from providers.registry import PROVIDERS, create_provider
 from providers.session import read_session, save_session, session_exists
 
 
@@ -114,8 +112,11 @@ class AccountsSessions:
                         candidate = ChatGPTProvider(session, self.item(key)["id"])
                     else:
                         save_session(path, cookies)
-                        factory = GeminiProvider if kind == "gemini" else ClaudeProvider
-                        candidate = factory(path, self.item(key)["id"])
+                        candidate = create_provider(
+                            kind,
+                            self.item(key)["id"],
+                            credential_file=path,
+                        )
                     try:
                         state = await (
                             candidate.authenticate(capture_browser=False)
