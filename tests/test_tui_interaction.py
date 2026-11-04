@@ -53,6 +53,7 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
         with terminal() as (view, _pipe):
             service = Mock()
             view.account_service = service
+            selected_key = view.account_key
             submitted = []
             view._read_in_background = lambda read, *_args, **_kwargs: submitted.append(read)
             view.refresh_provider_catalog = Mock()
@@ -70,7 +71,9 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
                 view.run()
             stdout_patch.assert_called_once_with(raw=True)
 
-        self.assertIn(service.prepare_enabled, submitted)
+        service.prepare_enabled.assert_not_called()
+        submitted[-1]()
+        service.prepare_enabled.assert_called_once_with(selected_key=selected_key)
         view.refresh_provider_catalog.assert_called_once_with()
         view.refresh_sidebar.assert_called_once_with()
 

@@ -411,18 +411,31 @@ class AccountTests(unittest.TestCase):
             self.assertEqual(self.accounts.prepare_enabled(), {})
 
     def test_background_preparation_reports_each_account_without_raising(self):
-        item = {"key": self.gemini, "enabled": True}
-        provider = Mock()
-        provider.prepare = AsyncMock(side_effect=RuntimeError("offline"))
-        provider.close = AsyncMock()
+        selected_key, failed_key = "chatgpt/default", "claude/default"
+        items = [
+            {"key": selected_key, "enabled": True},
+            {"key": self.gemini, "enabled": True},
+            {"key": failed_key, "enabled": True},
+        ]
+        selected = SimpleNamespace(prepare=AsyncMock(), prepare_for_send=AsyncMock())
+        other = SimpleNamespace(prepare=AsyncMock(), prepare_for_send=AsyncMock())
+        failed = SimpleNamespace(
+            prepare=AsyncMock(side_effect=RuntimeError("offline")),
+            prepare_for_send=AsyncMock(),
+        )
+        providers = {selected_key: selected, self.gemini: other, failed_key: failed}
         with (
-            patch.object(self.accounts, "items", return_value=[item]),
+            patch.object(self.accounts, "items", return_value=items),
             patch("accounts.service.session_exists", return_value=True),
-            patch.object(self.accounts, "provider", return_value=provider),
+            patch.object(self.accounts, "provider", side_effect=providers.__getitem__),
         ):
-            failures = self.accounts.prepare_enabled()
-        self.assertEqual(failures, {self.gemini: "offline"})
-        provider.prepare.assert_awaited_once_with()
+            failures = self.accounts.prepare_enabled(selected_key=selected_key)
+        self.assertEqual(failures, {failed_key: "offline"})
+        selected.prepare.assert_awaited_once_with()
+        selected.prepare_for_send.assert_awaited_once_with()
+        other.prepare.assert_awaited_once_with()
+        other.prepare_for_send.assert_not_awaited()
+        failed.prepare_for_send.assert_not_awaited()
 
     def test_failed_refresh_preserves_last_usable_model_catalog(self):
         good = ModelCatalog(FeatureState.AVAILABLE, (Model("m", "Model"),))

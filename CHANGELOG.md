@@ -10,6 +10,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.4b0` for `v1.5.
 
 ### Changed
 
+- Start the selected ChatGPT account's existing Sentinel prewarm in the background during session preparation; verification and expiry checks remain unchanged.
 - Release the standalone `webai-provider` library as `v1.0-beta`, with [provider-only release notes](https://github.com/TahsinCr/webai-provider/blob/v1.0-beta/CHANGELOG.md), license metadata and independent CI checks. Pin SiopeChat to that exact provider commit and document recursive clone and update steps.
 - Replace the vendored `utils.events` module with [`flowevent`](https://github.com/TahsinCr/python-eventflow)'s `eventflow.EventBus`; remove the old event copy and its local license and notice files.
 - Reopen current archive and workspace databases without repeating schema writes or acquiring a writer lock. Consolidate archive membership and deletion SQL, remove unused repository APIs, and check account tombstones without decoding JSON.

@@ -479,7 +479,7 @@ class Accounts(
         self._catalogs.setdefault(key, (float("-inf"), catalog))
         return self._catalogs[key][1]
 
-    def prepare_enabled(self):
+    def prepare_enabled(self, selected_key=None):
         """Warm saved sessions for enabled accounts without blocking the UI.
 
         Failures are returned per account so one expired session cannot prevent
@@ -506,6 +506,9 @@ class Accounts(
                 return key, None
             try:
                 self.call(warmup(), MODEL_TIMEOUT)
+                prepare_for_send = getattr(provider, "prepare_for_send", None)
+                if key == selected_key and callable(prepare_for_send):
+                    self.call(prepare_for_send(), MODEL_TIMEOUT)
             except AccountPaused as error:
                 self._forget_verification(key)
                 return key, str(error)

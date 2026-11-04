@@ -421,7 +421,7 @@ class ChatView(
                         self.app.invalidate()
 
                 self._read_in_background(
-                    self.account_service.prepare_enabled,
+                    lambda: self.account_service.prepare_enabled(selected_key=self.account_key),
                     show_warmup_failures,
                     lambda _: None,
                     session_bound=False,
