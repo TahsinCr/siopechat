@@ -27,7 +27,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.4b0` for `v1.5.
 
 ### Fixed
 
-- Update Grok project names and instructions using only the workspace's editable fields; cover create, delete, chat movement, text/file sources and source removal in provider contract tests.
+- Apply partial Grok project updates without rereading unchanged fields, support instructions during creation, and delete uploaded project files by path. Reuse verified source metadata, reject duplicate uploads, and cover mutation confirmation, chat detachment and move rollback in provider tests.
 - Bound Grok stream lines before buffering and clear stale session state when a stream reports an expired login.
 - Focus the downloads list after its history loads only while its search field still owns focus, so row actions work without a background refresh stealing focus from another tab.
 - Keep Grok rate-limit cooldowns from marking a verified account as logged out when the next send is blocked.
