@@ -10,7 +10,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.4b0` for `v1.5.
 
 ### Added
 
-- Add Grok web-session accounts with live account model discovery, streaming, published thinking summaries and web-search citations. Support Grok workspaces, instructions, file resources up to 3 MiB, chat membership changes, and retrying assistant replies; keep unsupported effort, chat attachment, message-edit and branch actions unavailable.
+- Add Grok web-session accounts with live account model discovery, streaming, published thinking summaries and web-search citations. Support Grok workspaces, instructions, project resources up to 3 MiB, chat document attachments up to 3 MiB per file, chat membership changes, and retrying assistant replies; keep unsupported effort, image attachments, message editing and branching unavailable.
 
 ### Changed
 
@@ -27,6 +27,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.4b0` for `v1.5.
 - Verify browser-profile Grok cookies with the Grok adapter and its authenticated user-settings resource.
 - Keep multi-query archive reads on one SQLite snapshot so concurrent synchronization cannot mix history revisions, message positions or file references.
 - Keep the latest answer and its toolbar rendered while only conversation loading or synchronization status changes.
+- Display Claude web-search result links and published answer citations in the assistant response sources.
 - Retry from the original user prompt, replacing the complete response turn and removing later turns. Answer-version navigation restores every visible reasoning and response message in that turn.
 
 ## [1.5.4-beta] - 2026-11-02
