@@ -14,6 +14,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.4b0` for `v1.5.
 
 ### Changed
 
+- Reduce repeated Grok history loading before follow-up sends while keeping retries on full active-branch validation.
 - Store default settings, account data, conversation archives, and downloads in the per-user application data directory instead of the source checkout. Copy existing checkout data on first launch and retain the originals; `SIOPECHAT_HOME` remains the explicit override.
 - Support Python 3.10+ for the application, using the `exceptiongroup` backport only on Python 3.10.
 - Release the standalone `webai-provider` library as `v1.0-beta`, with [provider-only release notes](https://github.com/TahsinCr/webai-provider/blob/v1.0-beta/CHANGELOG.md), license metadata and independent CI checks. Pin SiopeChat to the signed tag target and document recursive clone and update steps; keep provider development on `main`.
