@@ -74,7 +74,14 @@ class TabComponent:
         if not isinstance(session, dict) or not isinstance(session.get("tabs"), list):
             return False
         available_accounts = (
-            {item["key"] for item in self.account_service.items()}
+            {
+                item["key"]
+                for item in (
+                    self.account_service.visible_accounts()
+                    if hasattr(self.account_service, "visible_accounts")
+                    else self.account_service.items()
+                )
+            }
             if self.account_service
             else {self.account_key}
         )

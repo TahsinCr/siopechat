@@ -59,6 +59,7 @@ class Accounts(
         self._credential_lock = threading.Lock()
         self.cdp_url = None
         self._verified = set()
+        self._verification_required = set()
         self._catalogs = {}
         self._catalog_tasks = {}
         self._catalog_versions = {}
@@ -78,6 +79,12 @@ class Accounts(
         self._legacy_cache_migration_complete = False
         for item in self.items():
             key = item["key"]
+            try:
+                marker = self.repository.get(key, "verification")
+                if marker and marker.get("requires_verification") is True:
+                    self._verification_required.add(key)
+            except (OSError, ValueError, AttributeError):
+                pass
             for kind, filename in (
                 ("catalog", "models.json"),
                 ("verification", "verification.json"),
@@ -103,10 +110,35 @@ class Accounts(
             dict(
                 item,
                 key=item["provider"] + "/" + item["id"],
-                enabled=config["providers"].get(item["provider"], {}).get("enabled", False),
+                account_enabled=item.get("enabled", True),
+                provider_enabled=config["providers"]
+                .get(item["provider"], {})
+                .get("enabled", False),
+                enabled=item.get("enabled", True)
+                and config["providers"].get(item["provider"], {}).get("enabled", False),
             )
             for item in config["accounts"]["items"]
         ]
+
+    def visible_accounts(self):
+        return [
+            item
+            for item in self.items()
+            if item["enabled"] and item["key"] not in self._verification_required
+        ]
+
+    def account_is_visible(self, key):
+        try:
+            item = self.item(key)
+        except ValueError:
+            return False
+        return item["enabled"] and key not in self._verification_required
+
+    def require_visible_account(self, key):
+        item = self.item(key)
+        if not item["enabled"] or key in self._verification_required:
+            raise ValueError("Hesap devre dışı veya yeniden doğrulanmalı")
+        return item
 
     def enabled(self, provider):
         return self.settings.snapshot()["providers"].get(provider, {}).get("enabled", False)
@@ -119,6 +151,29 @@ class Accounts(
                 raise ValueError("Önce bu sağlayıcıdaki yanıtları tamamlayın veya durdurun")
             self.settings.configure_provider(provider, enabled)
 
+    def set_account_enabled(self, key, enabled):
+        if type(enabled) is not bool:
+            raise ValueError("enabled must be a boolean")
+        self.item(key)
+        with self._lock:
+            if self._sending.get(key, 0) or key in self._session_changes:
+                raise RuntimeError("Önce devam eden işlemi tamamlayın veya durdurun")
+            self._session_changes.add(key)
+        try:
+            with self._catalog_io_lock:
+                self.settings.set_account_enabled(key, enabled)
+                if not enabled:
+                    self._catalog_versions[key] = self._catalog_versions.get(key, 0) + 1
+                    self._catalogs.pop(key, None)
+            if not enabled:
+                task = self._catalog_tasks.get(key)
+                if task and self._loop is not None and self._loop.is_running():
+                    self._loop.call_soon_threadsafe(task.cancel)
+        finally:
+            with self._lock:
+                self._session_changes.discard(key)
+        return self.item(key)
+
     def preference(self, key):
         return self.settings.snapshot()["accounts"].get("preferences", {}).get(key, {})
 
@@ -130,13 +185,23 @@ class Accounts(
         if self.closing or self.closed:
             return []
         data = self.settings.snapshot()["accounts"]
-        chosen = dict(data.get("selected", {}))
         legacy = data["active"]
-        if legacy:
-            chosen.setdefault(legacy.split("/")[0], legacy)
-        for item in self.items():
-            chosen.setdefault(item["provider"], item["key"])
-        return [self.item(key) for provider, key in chosen.items() if self.enabled(provider)]
+        grouped = {}
+        for item in self.visible_accounts():
+            grouped.setdefault(item["provider"], []).append(item)
+        selected = data.get("selected", {})
+        active = []
+        for provider, items in grouped.items():
+            keys = {item["key"] for item in items}
+            key = selected.get(provider)
+            if key not in keys:
+                key = (
+                    legacy
+                    if legacy.startswith(provider + "/") and legacy in keys
+                    else items[0]["key"]
+                )
+            active.append(next(item for item in items if item["key"] == key))
+        return active
 
     def archive(self):
         if self.closed:
@@ -190,6 +255,7 @@ class Accounts(
             "provider": provider,
             "id": uuid.uuid4().hex,
             "label": label.strip(),
+            "enabled": True,
             "port": next(
                 port
                 for port in range(9230, 65536)
@@ -211,7 +277,7 @@ class Accounts(
         self.item(key)
         if not self.enabled(key.split("/")[0]):
             raise ValueError("Sağlayıcı devre dışı; önce Ayarlar → Sağlayıcılar bölümünden açın")
-        selected = {item["provider"]: item["key"] for item in self.active_accounts()}
+        selected = dict(self.settings.snapshot()["accounts"].get("selected", {}))
         selected[key.split("/")[0]] = key
         self.settings.update("accounts", {"active": key, "selected": selected})
 
@@ -496,8 +562,8 @@ class Accounts(
             _LOG.warning("Account cache migration could not finish: %s", error)
         accounts = [
             item
-            for item in self.items()
-            if item["enabled"] and session_exists(self.credentials(item["key"]))
+            for item in self.visible_accounts()
+            if session_exists(self.credentials(item["key"]))
         ]
         if not accounts:
             return {}
@@ -675,8 +741,7 @@ class Accounts(
                 active_path.unlink(missing_ok=True)
 
     def models(self, key, force=False):
-        if not self.enabled(key.split("/")[0]):
-            raise ValueError("Sağlayıcı devre dışı")
+        self.require_visible_account(key)
 
         async def discover():
             cached = self._catalogs.get(key)

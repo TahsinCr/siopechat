@@ -147,6 +147,7 @@ class AccountTests(unittest.TestCase):
 
         service = SimpleNamespace(
             items=lambda: account_items,
+            visible_accounts=lambda: account_items,
             enabled=lambda _provider: True,
             status=lambda _key: {"saved_snapshot": True},
             archive=lambda: None,
@@ -365,7 +366,9 @@ class AccountTests(unittest.TestCase):
         with self.assertRaises(AccountPaused):
             self.accounts.models(self.gemini, force=True)
         self.assertFalse(self.accounts.status(self.gemini)["authenticated"])
-        self.assertFalse(self.accounts.repository.get(self.gemini, "verification") is not None)
+        self.assertTrue(
+            self.accounts.repository.get(self.gemini, "verification")["requires_verification"]
+        )
 
     def test_saved_model_catalog_cannot_verify_an_account(self):
         path = self.accounts.directory(self.gemini) / "cookies.json"

@@ -190,6 +190,11 @@ class Settings:
                     if key in DEFAULTS["application"]
                 }
             self._data = _merge(DEFAULTS, value)
+        items = self._data["accounts"].get("items")
+        if isinstance(items, list):
+            for item in items:
+                if isinstance(item, dict):
+                    item.setdefault("enabled", True)
         self._validate_document(self._data)
 
     @staticmethod
@@ -229,6 +234,7 @@ class Settings:
                 or not re.fullmatch("[A-Za-z0-9_-]+", item["id"])
                 or not isinstance(item.get("label"), str)
                 or not item["label"].strip()
+                or type(item.get("enabled", True)) is not bool
                 or type(item.get("port")) is not int
                 or not 1024 <= item["port"] <= 65535
             ):
@@ -364,6 +370,25 @@ class Settings:
             item["label"] = label.strip()
             self._commit(data)
         self._notify("accounts", {"key": key, "label": label.strip()})
+
+    def set_account_enabled(self, key, enabled):
+        if type(enabled) is not bool:
+            raise ValueError("enabled must be a boolean")
+        with self._lock:
+            data = self.snapshot()
+            item = next(
+                (
+                    item
+                    for item in data["accounts"]["items"]
+                    if item["provider"] + "/" + item["id"] == key
+                ),
+                None,
+            )
+            if item is None:
+                raise ValueError("Hesap bulunamadı")
+            item["enabled"] = enabled
+            self._commit(data)
+        self._notify("accounts", {"key": key, "enabled": enabled})
 
     def remove_account(self, key):
         """Remove metadata atomically, choosing another enabled account."""

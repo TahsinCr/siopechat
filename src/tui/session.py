@@ -39,6 +39,11 @@ class SessionDialog:
                 width=24,
                 handler=lambda: self.perform("verify_profile"),
             ),
+            "toggle_enabled": Button(
+                self.view.text("disable_account", "Hesabı devre dışı bırak"),
+                width=24,
+                handler=lambda: self.perform("toggle_enabled"),
+            ),
             "logout": Button(self.view.tr("Çıkış"), width=24, handler=self.logout),
             "remove": Button(self.view.tr("Hesabı sil"), width=24, handler=self.remove),
         }
@@ -48,7 +53,13 @@ class SessionDialog:
             height=1,
         )
         self.actions = VSplit(
-            [self.buttons["verify_profile"], self.buttons["logout"]], padding=1, height=1
+            [
+                self.buttons["verify_profile"],
+                self.buttons["toggle_enabled"],
+                self.buttons["logout"],
+            ],
+            padding=1,
+            height=1,
         )
         self.close_button = Button(self.view.tr("Kapat"), handler=self.close)
         keys = KeyBindings()
@@ -121,13 +132,35 @@ class SessionDialog:
                 self.view.tr("Sil"),
             ]
         else:
-            buttons = [self.buttons["verify_profile"], self.buttons["logout"]]
+            account = (
+                self.view.account_service.item(self.view.account_key)
+                if self.view.account_service and self.view.account_key
+                else {}
+            )
+            account_enabled = account.get(
+                "account_enabled", self.view.session_state.get("account_enabled", True)
+            )
+            toggle_label = self.view.text(
+                "disable_account" if account_enabled else "enable_account",
+                "Hesabı devre dışı bırak" if account_enabled else "Hesabı etkinleştir",
+            )
+            toggle_compact = self.view.text(
+                "disable_account_short" if account_enabled else "enable_account_short",
+                "Devre dışı" if account_enabled else "Etkinleştir",
+            )
+            buttons = [
+                self.buttons["verify_profile"],
+                self.buttons["toggle_enabled"],
+                self.buttons["logout"],
+            ]
             labels = [
                 self.view.text("verify_profile", "Profil ile doğrula"),
+                toggle_label,
                 self.view.tr("Oturumu unut") if self.confirm_logout else self.view.tr("Çıkış yap"),
             ]
             compact = [
                 self.view.tr("Doğrula"),
+                toggle_compact,
                 self.view.tr("Unut") if self.confirm_logout else self.view.tr("Çıkış"),
             ]
         # Both rows share column widths so their second buttons line up.
@@ -136,6 +169,8 @@ class SessionDialog:
             self.view.tr("Hesabı sil"),
             self.view.tr("Hesabı düzenle"),
             self.view.text("verify_profile", "Profil ile doğrula"),
+            self.view.text("disable_account", "Hesabı devre dışı bırak"),
+            self.view.text("enable_account", "Hesabı etkinleştir"),
             self.view.tr("Oturumu unut"),
             self.view.tr("Çıkış yap"),
         ]
@@ -146,7 +181,7 @@ class SessionDialog:
         symbols = (
             [ICONS["add"].icon, ICONS["edit"].icon, ICONS["close"].icon]
             if accounts
-            else [ICONS["complete"].icon, ICONS["power"].icon]
+            else [ICONS["complete"].icon, ICONS["power"].icon, ICONS["close"].icon]
         )
         labels = [
             label if get_cwidth(label) + 2 <= button_width else symbol
@@ -226,6 +261,7 @@ class SessionDialog:
         for key, button in self.buttons.items():
             label = {
                 "verify_profile": ("verify_profile", "Profil ile doğrula"),
+                "toggle_enabled": ("disable_account", "Hesabı devre dışı bırak"),
                 "logout": ("logout", self.view.tr("Çıkış yap")),
                 "remove": ("remove_account", self.view.tr("Hesabı sil")),
             }[key]
@@ -251,8 +287,13 @@ class SessionDialog:
             if state.get("saved_snapshot")
             else self.view.text("no", self.view.tr("yok"))
         )
+        enabled = (
+            self.view.text("account_status_enabled", "Etkin")
+            if state.get("account_enabled", True)
+            else self.view.text("account_status_disabled", "Devre dışı")
+        )
         transport = self.view.tr("Bağlantı: kayıtlı web oturumu")
-        return f"{self.view.session_state.get('account', 'ChatGPT')} · {verified}\n{self.view.text('saved_session', self.view.tr('Kayıtlı oturum'))}: {saved}\n{transport}"
+        return f"{self.view.session_state.get('account', 'ChatGPT')} · {verified} · {enabled}\n{self.view.text('saved_session', self.view.tr('Kayıtlı oturum'))}: {saved}\n{transport}"
 
     def render_help(self):
         return self.view.text(
@@ -276,7 +317,7 @@ class SessionDialog:
         account_busy = any(
             tab.get("busy") and tab.get("account_key", key) == key for tab in self.view.tabs
         )
-        if action in ("logout", "verify_profile", "remove") and (
+        if action in ("logout", "verify_profile", "remove", "toggle_enabled") and (
             account_busy
             or self.view.loading_conversation
             or self.view.uploading_image
@@ -331,6 +372,18 @@ class SessionDialog:
                 self.message = self.view.text(
                     "profile_verified", "Profil doğrulandı: {family}"
                 ).format(family=family_label)
+            elif action == "toggle_enabled":
+                if result["account_enabled"]:
+                    self.view.refresh_sidebar()
+                    if result["authenticated"]:
+                        self.view.refresh_provider_catalog()
+                    self.message = self.view.text("account_enabled_notice", "Hesap etkinleştirildi")
+                else:
+                    self.view.after_logout()
+                    self.view.session_state.update(result)
+                    self.message = self.view.text(
+                        "account_disabled_notice", "Hesap devre dışı bırakıldı"
+                    )
             else:
                 self.message = ""
             self.view.app.invalidate()

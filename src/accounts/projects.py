@@ -12,6 +12,7 @@ from .shared import identity, origin
 
 class AccountsProjects:
     def list_projects(self, key, cursor=None, force=False):
+        self.require_visible_account(key)
         provider = self.provider(key)
         if Capability.PROJECTS not in provider.capabilities:
             return {"items": [], "cursor": None}
@@ -31,9 +32,8 @@ class AccountsProjects:
         cursors = json.loads(cursor) if cursor else None
         accounts = [
             item
-            for item in self.items()
-            if self.enabled(item["provider"])
-            and (account_keys is None or item["key"] in account_keys)
+            for item in self.visible_accounts()
+            if (account_keys is None or item["key"] in account_keys)
             and (cursors is None or item["key"] in cursors)
         ]
         items, errors, failed, more = [], [], [], {}
@@ -92,18 +92,21 @@ class AccountsProjects:
         }
 
     def create_project(self, key, name, visibility="private", memory="default"):
+        self.require_visible_account(key)
         project = self.call(
             self.provider(key).create_project(name, visibility=visibility, memory=memory)
         )
         return self.store_project(key, project)
 
     def project_options(self, key, value=None):
+        self.require_visible_account(key)
         context, remote = origin(value, key)
         if context != key:
             raise ValueError("Proje seçili hesaba ait olmalı")
         return self.call(self.provider(key).project_options(remote), timeout=90)
 
     def project_details(self, key, value):
+        self.require_visible_account(key)
         context, remote = origin(value, key)
         if context != key or not remote:
             raise ValueError("Proje seçili hesaba ait olmalı")
@@ -151,6 +154,7 @@ class AccountsProjects:
         return record
 
     def change_project(self, key, value, operation="update", **values):
+        self.require_visible_account(key)
         context, remote = origin(value, key)
         if context != key or not remote:
             raise ValueError("Proje seçili hesaba ait olmalı")

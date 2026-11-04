@@ -23,7 +23,8 @@ Python distributions use the corresponding PEP 440 version (`1.5.4b0` for `v1.5.
 
 ### Fixed
 
-- Keep Grok model names readable when a saved catalog contains generic or empty titles.
+- Use the same readable Grok model names in the picker and selected chat header, without duplicating the choice as a status notification.
+- Keep account archives intact on logout, hide data until verification, and allow individual accounts to be disabled or re-enabled.
 - Remove the temporary-chat action from the project assignment picker while keeping it available in the chat controls.
 - Verify browser-profile Grok cookies with the Grok adapter and its authenticated user-settings resource.
 - Keep multi-query archive reads on one SQLite snapshot so concurrent synchronization cannot mix history revisions, message positions or file references.

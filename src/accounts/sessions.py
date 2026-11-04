@@ -36,6 +36,7 @@ class AccountsSessions:
 
     def _remember_verification(self, key, *, resume=False):
         self._verified.add(key)
+        self._verification_required.discard(key)
         if resume and self._loop is not None and self._loop.is_running():
 
             def resume_job_account():
@@ -55,7 +56,10 @@ class AccountsSessions:
 
     def _forget_verification(self, key):
         self._verified.discard(key)
-        self.repository.delete(key, "verification")
+        self._verification_required.add(key)
+        self.repository.put(
+            key, "verification", {"account_key": key, "requires_verification": True}
+        )
         transport = getattr(self._providers.get(key), "transport", None)
         if transport is not None:
             transport.authenticated = False
@@ -65,28 +69,37 @@ class AccountsSessions:
             return {
                 "saved_snapshot": False,
                 "authenticated": False,
+                "enabled": False,
+                "account_enabled": False,
+                "provider_enabled": False,
                 "account": "",
                 "provider": "",
                 "transport": "http",
             }
+        item = self.item(key)
         path = self.credentials(key)
         saved = session_exists(path)
-        verified = (
+        try:
+            marker = self.repository.get(key, "verification")
+        except (OSError, ValueError, AttributeError):
+            marker = None
+        requires_verification = key in self._verification_required or bool(
+            marker and marker.get("requires_verification") is True
+        )
+        verified = not requires_verification and (
             key in self._verified
             or getattr(getattr(self._providers.get(key), "transport", None), "authenticated", False)
             is True
+            or bool(marker and marker.get("account_key") == key)
         )
-        if not verified:
-            try:
-                marker = self.repository.get(key, "verification")
-                verified = bool(marker and marker.get("account_key") == key)
-            except (OSError, ValueError, AttributeError):
-                pass
         return {
             "saved_snapshot": saved,
             "authenticated": saved and verified,
+            "enabled": item["enabled"],
+            "account_enabled": item["account_enabled"],
+            "provider_enabled": item["provider_enabled"],
             "transport": "http",
-            "account": self.item(key)["label"],
+            "account": item["label"],
             "provider": key.split("/")[0],
         }
 
@@ -158,6 +171,9 @@ class AccountsSessions:
             return self.remove(key)
         if action == "verify_profile":
             return self._verify_profile(key)
+        if action == "toggle_enabled":
+            self.set_account_enabled(key, not item["account_enabled"])
+            return self.status(key)
         if action == "default_browser":
             # Browser stderr can contain Chromium diagnostics. Launch the
             # stdlib browser handler in a quiet child so it cannot corrupt the
@@ -191,7 +207,6 @@ class AccountsSessions:
             with self._catalog_io_lock:
                 self._catalog_versions[key] = self._catalog_versions.get(key, 0) + 1
                 self._catalogs.pop(key, None)
-                self.repository.delete(key, "catalog")
 
             async def forget():
                 task = self._catalog_tasks.get(key)

@@ -144,11 +144,12 @@ class ProjectArchiveTests(unittest.TestCase):
             api = create_application(Path(folder))
             try:
                 accounts = api.get("accounts")
-                key = "chatgpt/default"
+                key = accounts.add("chatgpt", "Test")
+                account_id = key.split("/", 1)[1]
                 source = Path(folder) / "source.pdf"
                 source.write_bytes(b"private source body")
                 project = Project(
-                    Origin("chatgpt", "default", "one"),
+                    Origin("chatgpt", account_id, "one"),
                     "Project",
                     resources=(Resource("source-1", "source.pdf", "application/pdf"),),
                 )
@@ -159,7 +160,7 @@ class ProjectArchiveTests(unittest.TestCase):
 
                 result = accounts.change_project(
                     key,
-                    "@chatgpt/default/one",
+                    f"@{key}/one",
                     "add_source",
                     kind="file",
                     path=str(source),

@@ -98,6 +98,7 @@ class PreferencesComponent:
         )
         self.session_epoch += 1
         self._account_catalogs.pop(self.account_key, None)
+        self._account_projects.pop(self.account_key, None)
         self._catalog_requests.pop(self.account_key, None)
         self._project_requests.pop(self.account_key, None)
         self.sidebar_refresh_generation += 1

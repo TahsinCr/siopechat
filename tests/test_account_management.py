@@ -1,9 +1,10 @@
 """Local account lifecycle and selection without remote mutations."""
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from settings import Settings
 from tests.account_fixture import configured_application as create_application
@@ -53,6 +54,139 @@ class AccountManagementTests(unittest.TestCase):
         self.addCleanup(self.api.runtime.close)
         self.accounts = self.api.get("accounts")
         self.gemini = self.accounts.add("gemini", "Gemini personal")
+
+    def verify_account(self, key):
+        self.accounts.credentials(key).save({"session": "verified test session"})
+        self.accounts._remember_verification(key)
+
+    def test_legacy_account_settings_default_to_enabled(self):
+        data = self.api.settings.snapshot()
+        data["accounts"]["items"][-1].pop("enabled")
+        self.api.settings.path.write_text(json.dumps(data), encoding="utf-8")
+
+        reloaded = Settings(self.api.settings.path)
+
+        self.assertTrue(reloaded.snapshot()["accounts"]["items"][-1]["enabled"])
+
+    def test_logout_preserves_archive_and_hides_it_until_reverification(self):
+        from providers import Capability
+
+        archive = self.api.get("archive")
+        chat_page = {
+            "items": [{"id": f"@{self.gemini}/chat", "title": "Saved chat"}],
+            "cursor": None,
+        }
+        project_page = {
+            "items": [{"id": f"@{self.gemini}/project", "name": "Saved project"}],
+            "cursor": None,
+        }
+        archive.put(self.gemini, "chats", "", chat_page)
+        archive.put(self.gemini, "containers", "", project_page)
+        archive.put(self.gemini, "conversation", "chat", {"title": "Saved chat", "messages": []})
+        self.accounts.repository.put(
+            self.gemini, "catalog", {"account_key": self.gemini, "catalog": {"models": []}}
+        )
+        self.verify_account(self.gemini)
+        self.accounts._providers[self.gemini] = Mock(
+            capabilities=frozenset({Capability.PROJECTS}),
+            forget_session=AsyncMock(),
+            close=AsyncMock(),
+            transport=Mock(authenticated=True),
+        )
+
+        def cached_read(key, kind, remote, _fetch, *_args, **_kwargs):
+            return archive.get(key, kind, remote or "")
+
+        with patch.object(self.accounts, "read_record", side_effect=cached_read):
+            self.assertEqual(
+                self.accounts.list_chats(account_keys={self.gemini})["items"], chat_page["items"]
+            )
+            self.assertEqual(
+                self.accounts.all_projects(account_keys={self.gemini})["items"],
+                project_page["items"],
+            )
+
+        self.accounts.session_action(self.gemini, "logout")
+
+        self.assertFalse(self.accounts.status(self.gemini)["authenticated"])
+        self.assertEqual(archive.get(self.gemini, "chats", ""), chat_page)
+        self.assertEqual(archive.get(self.gemini, "containers", ""), project_page)
+        self.assertEqual(archive.get(self.gemini, "conversation", "chat")["title"], "Saved chat")
+        self.assertIsNotNone(self.accounts.repository.get(self.gemini, "catalog"))
+        self.assertTrue(
+            self.accounts.repository.get(self.gemini, "verification")["requires_verification"]
+        )
+        self.assertIsNone(self.accounts.cached(self.gemini, "chat"))
+        with self.assertRaisesRegex(ValueError, "yeniden doğrulanmalı"):
+            self.accounts.load("chat", self.gemini)
+        with terminal(account_service=self.accounts) as (view, _):
+            view.restore_session(
+                {
+                    "tabs": [
+                        {
+                            "tab_id": "logged-out-tab",
+                            "account_key": self.gemini,
+                            "conversation_id": f"@{self.gemini}/chat",
+                        }
+                    ]
+                }
+            )
+            self.assertNotEqual(view.tabs[view.active_tab]["tab_id"], "logged-out-tab")
+            self.assertIsNone(view.tabs[view.active_tab]["conversation_id"])
+        with patch.object(self.accounts, "read_record", side_effect=cached_read):
+            self.assertEqual(self.accounts.list_chats(account_keys={self.gemini})["items"], [])
+            self.assertEqual(self.accounts.all_projects(account_keys={self.gemini})["items"], [])
+
+        self.accounts._remember_verification(self.gemini)
+        with patch.object(self.accounts, "read_record", side_effect=cached_read):
+            self.assertEqual(
+                self.accounts.list_chats(account_keys={self.gemini})["items"], chat_page["items"]
+            )
+            self.assertEqual(
+                self.accounts.all_projects(account_keys={self.gemini})["items"],
+                project_page["items"],
+            )
+
+    def test_account_can_be_disabled_and_reenabled_without_losing_archive_data(self):
+        archive = self.api.get("archive")
+        chat_page = {
+            "items": [{"id": f"@{self.gemini}/chat", "title": "Saved chat"}],
+            "cursor": None,
+        }
+        archive.put(self.gemini, "chats", "", chat_page)
+        self.verify_account(self.gemini)
+        self.accounts.select(self.gemini)
+        def cached_read(key, kind, remote, _fetch, *_args, **_kwargs):
+            return archive.get(key, kind, remote or "")
+
+        with terminal(account_service=self.accounts) as (view, _):
+            view._read_in_background = immediate
+            view.refresh_sidebar = Mock()
+            view.refresh_provider_catalog = Mock()
+            view.select_account(self.gemini)
+            view.session_dialog.activate(focus=False)
+            view.session_dialog.action_layout()
+            view.session_dialog.buttons["toggle_enabled"].handler()
+
+            self.assertFalse(self.accounts.item(self.gemini)["account_enabled"])
+            self.assertTrue(self.accounts.status(self.gemini)["authenticated"])
+            self.assertNotIn(self.gemini, {item["key"] for item in self.accounts.active_accounts()})
+            self.assertEqual(
+                self.api.settings.snapshot()["accounts"]["selected"]["gemini"], self.gemini
+            )
+            self.assertEqual(archive.get(self.gemini, "chats", ""), chat_page)
+            with patch.object(self.accounts, "read_record", side_effect=cached_read):
+                self.assertEqual(self.accounts.list_chats(account_keys={self.gemini})["items"], [])
+            self.assertIn("devre dışı", view.session_dialog.render_state().casefold())
+
+            view.session_dialog.action_layout()
+            view.session_dialog.buttons["toggle_enabled"].handler()
+
+        self.assertTrue(self.accounts.item(self.gemini)["account_enabled"])
+        with patch.object(self.accounts, "read_record", side_effect=cached_read):
+            self.assertEqual(
+                self.accounts.list_chats(account_keys={self.gemini})["items"], chat_page["items"]
+            )
 
     def test_rename_preserves_identity_credentials_and_preferences(self):
         key = self.gemini

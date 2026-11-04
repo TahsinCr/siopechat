@@ -21,7 +21,7 @@ from .shared import (
 
 class AccountsHistory:
     def cached(self, key, remote=None):
-        if not key:
+        if not key or not self.account_is_visible(key):
             return None
         archive = self.archive()
         if archive and remote is None:
@@ -45,6 +45,8 @@ class AccountsHistory:
         return self.cache(key).load_cached_conversation(remote)
 
     def active_conversation(self, key):
+        if not self.account_is_visible(key):
+            return None
         archive = self.archive()
         if archive:
             pointer = archive.get(key, "pointer", "active")
@@ -57,6 +59,8 @@ class AccountsHistory:
 
     def cached_window(self, key, remote=None, *, limit=None):
         """UI history reads use bounded SQL windows; other API callers retain full history."""
+        if not self.account_is_visible(key):
+            return None
         archive = self.archive()
         remote = remote or self.active_conversation(key)
         if not remote:
@@ -70,7 +74,7 @@ class AccountsHistory:
 
     def response_version(self, key, conversation_id, message_id, version):
         context, remote = origin(conversation_id, key)
-        if context != key or not remote:
+        if context != key or not remote or not self.account_is_visible(key):
             return None
         archive = self.archive()
         return archive.response_version(key, remote, message_id, version) if archive else None
@@ -294,9 +298,8 @@ class AccountsHistory:
         cursors = json.loads(cursor) if cursor else None
         accounts = [
             item
-            for item in self.items()
+            for item in self.visible_accounts()
             if (account_keys is None or item["key"] in account_keys)
-            and self.enabled(item["provider"])
             and (selected is None or item["provider"] in selected)
             and (cursors is None or item["key"] in cursors)
         ]
@@ -377,6 +380,7 @@ class AccountsHistory:
 
     def load(self, value, key, force=False, *, window=False, window_limit=None):
         key, remote = origin(value, key)
+        self.require_visible_account(key)
         archive = self.archive()
         if archive and archive.deleted(key, "conversation", remote):
             raise RemoteNotFound("Bu sohbet sağlayıcıdan silindi")
