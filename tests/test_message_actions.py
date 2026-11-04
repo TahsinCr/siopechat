@@ -779,6 +779,21 @@ class MessageToolbarTests(unittest.TestCase):
         self.assertEqual(exported["messages"][-1], {"role": "user", "text": "Live update"})
         self.assertNotIn("Private reasoning", copied[0])
 
+    def test_plain_text_export_separates_roles_without_changing_markdown(self):
+        messages = [
+            {"role": "user", "text": "# User heading\n\n## Context"},
+            {"role": "assistant", "text": "# Assistant\n\n## Thinking\n\n## Answer"},
+        ]
+        with terminal() as (view, _):
+            exported = "".join(view._conversation_export_chunks("Research", messages, "text"))
+
+        self.assertTrue(exported.startswith("╭─ Research ─╮"))
+        self.assertIn("━━━━━━━━━━━━ 01 · USER ━━━━━━━━━━━━\n\n# User heading", exported)
+        self.assertIn(
+            "━━━━━━━━━━━━ 02 · ASSISTANT ━━━━━━━━━━━━\n\n# Assistant\n\n## Thinking\n\n## Answer",
+            exported,
+        )
+
     def test_branch_is_added_to_sidebar_only_after_the_provider_lists_it(self):
         with terminal() as (view, _):
             key = "gemini/default"

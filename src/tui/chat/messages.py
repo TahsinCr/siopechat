@@ -544,13 +544,13 @@ class MessageComponent:
             return
 
         heading = " ".join(title.split())
-        yield f"# {heading}\n\n"
+        yield f"╭─ {heading} ─╮\n\n"
         for index, message in enumerate(messages):
             if index:
-                yield "\n\n---\n\n"
+                yield "\n\n"
             role = self.tr("User") if message["role"] == "user" else self.tr("Assistant")
             text = message["text"].strip()
-            yield f"## {role}\n\n{text}"
+            yield f"━━━━━━━━━━━━ {index + 1:02d} · {role.upper()} ━━━━━━━━━━━━\n\n{text}"
             if message.get("attachments"):
                 details = []
                 for item in message["attachments"]:
