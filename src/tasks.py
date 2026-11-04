@@ -45,10 +45,8 @@ class JobState(str, Enum):
 TERMINAL = frozenset({JobState.COMPLETED, JobState.FAILED, JobState.CANCELLED})
 
 
-class _AccountBlocked(AccountPaused):
-    """A send cooldown is active; this does not mean the account lost authentication."""
-
-    requires_verification = False
+class _AccountBlocked(RateLimited):
+    """A provider send cooldown is still active."""
 
 
 @dataclass(frozen=True)
@@ -122,6 +120,7 @@ class TaskService:
         self._chat_jobs: dict[tuple[str, str, str], int] = {}
         self._gates: dict[tuple[str, str], asyncio.Semaphore] = {}
         self._blocked: dict[tuple[str, str], float | None] = {}
+        self._paused_accounts: set[tuple[str, str]] = set()
         self._subscribers: dict[asyncio.Queue[JobChanged], object] = {}
         self._closed = False
         self._shutdown_requested = False
@@ -198,11 +197,14 @@ class TaskService:
             _LOG.warning("Detached failing task observer for job %s", job.request.chat_id)
 
     def _check_account(self, account: tuple[str, str]) -> None:
+        if account in self._paused_accounts:
+            raise AccountPaused("account requires verification or user action")
         if account not in self._blocked:
             return
         until = self._blocked[account]
         if until is None or self._clock() < until:
-            raise _AccountBlocked("account requires waiting or user action")
+            remaining = None if until is None else max(0.0, until - self._clock())
+            raise _AccountBlocked(remaining)
         del self._blocked[account]
 
     def _block_account(self, account: tuple[str, str], until: float | None) -> None:
@@ -216,9 +218,10 @@ class TaskService:
         self._check_loop()
         account = (provider_id, account_id)
         until = self._blocked.get(account)
-        if until is not None and self._clock() < until:
+        if account in self._blocked and until is not None and self._clock() < until:
             raise AccountPaused("server cooldown has not expired")
         self._blocked.pop(account, None)
+        self._paused_accounts.discard(account)
 
     def submit(
         self, request: SendRequest, *, on_event=None, on_complete=None, guard=None, queue_chat=False
@@ -382,13 +385,9 @@ class TaskService:
             self._block_account(account, until)
             job.error_code = "rate_limited"
             self._changed(job_id, JobState.FAILED)
-        except _AccountBlocked as error:
-            job.error = error
-            job.error_code = "account_paused"
-            self._changed(job_id, JobState.FAILED)
         except AccountPaused as error:
             job.error = error
-            self._block_account(account, None)
+            self._paused_accounts.add(account)
             job.error_code = "account_paused"
             self._changed(job_id, JobState.FAILED)
         except CompatibilityError as error:

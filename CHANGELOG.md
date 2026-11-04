@@ -31,7 +31,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.4b0` for `v1.5.
 - Apply partial Grok project updates without rereading unchanged fields, support instructions during creation, and delete uploaded project files by path. Reuse verified source metadata, reject duplicate uploads, and cover mutation confirmation, chat detachment and move rollback in provider tests.
 - Bound Grok stream lines before buffering and clear stale session state when a stream reports an expired login.
 - Focus the downloads list after its history loads only while its search field still owns focus, so row actions work without a background refresh stealing focus from another tab.
-- Keep Grok rate-limit cooldowns from marking a verified account as logged out when the next send is blocked.
+- Keep provider send cooldowns distinct from authentication failures; retry attempts stay rate-limited until the provider window expires without marking a verified account as logged out.
 - Parse server `Retry-After` dates in the provider package so rate-limit cooldowns can expire at the time the server specifies.
 - Use the same readable Grok model names in the picker and selected chat header, without duplicating the choice as a status notification.
 - Keep account archives intact on logout, hide data until verification, and allow individual accounts to be disabled or re-enabled.

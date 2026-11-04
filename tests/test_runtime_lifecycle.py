@@ -38,7 +38,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.provider.release("two")
         await self.runtime.wait(second)
         self.now += 10
-        with self.assertRaises(AccountPaused):
+        with self.assertRaises(RateLimited):
             self.runtime.submit(request("three"))
 
     async def test_rate_limit_cannot_clear_required_user_verification(self):

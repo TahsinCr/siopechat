@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, Mock, call, patch
 
 from accounts import Accounts, identity, origin
 from providers import Capability, ConversationBound, ReplaceText, TextDelta
-from providers.errors import AccountPaused, ProviderError, RateLimited
+from providers.errors import AccountPaused, RateLimited
 from providers.models import (
     Content,
     Conversation,
@@ -676,11 +676,9 @@ class AccountTests(unittest.TestCase):
             self.accounts.send(self.gemini, None, "Q", [], Mock(), Mock())
         self.assertTrue(self.accounts.status(self.gemini)["authenticated"])
 
-        with self.assertRaises(ProviderError) as blocked:
+        with self.assertRaises(RateLimited) as blocked:
             self.accounts.send(self.gemini, None, "Q", [], Mock(), Mock())
-        self.assertIsInstance(blocked.exception, AccountPaused)
-        self.assertFalse(blocked.exception.requires_verification)
-        self.assertEqual(blocked.exception.code, "account_paused")
+        self.assertEqual(blocked.exception.code, "rate_limited")
         self.assertTrue(self.accounts.status(self.gemini)["authenticated"])
         self.assertNotIn(self.gemini, self.accounts._verification_required)
 

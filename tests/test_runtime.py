@@ -280,10 +280,10 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         queued = self.runtime.submit(request("two"))
         self.gpt.release("one")
         self.assertEqual((await self.finish(first)).error_code, "rate_limited")
-        self.assertEqual((await self.finish(queued)).error_code, "account_paused")
-        with self.assertRaises(AccountPaused) as blocked:
+        self.assertEqual((await self.finish(queued)).error_code, "rate_limited")
+        with self.assertRaises(RateLimited) as blocked:
             self.runtime.submit(request("three"))
-        self.assertFalse(blocked.exception.requires_verification)
+        self.assertEqual(blocked.exception.retry_after, 30)
         with self.assertRaises(AccountPaused):
             self.runtime.resume_account("gpt", "default")
         self.assertEqual(len(self.gpt.calls), 1)
@@ -298,7 +298,7 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.gpt.release("one")
         await self.finish(self.runtime.submit(request()))
         self.now += 1_000_000
-        with self.assertRaises(AccountPaused):
+        with self.assertRaises(RateLimited):
             self.runtime.submit(request("two"))
         self.runtime.resume_account("gpt", "default")
         self.gpt.failure = None
@@ -360,7 +360,7 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         result = await self.finish(self.runtime.submit(request()))
         self.assertEqual(result.state, JobState.FAILED)
         self.assertEqual(result.error_code, "rate_limited")
-        with self.assertRaises(AccountPaused):
+        with self.assertRaises(RateLimited):
             self.runtime.submit(request("two"))
 
     async def test_notifications_are_bounded_and_state_can_be_resynchronized(self):
