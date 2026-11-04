@@ -18,8 +18,7 @@ class WorkspaceStore(SQLiteRepositoryBase):
     """
 
     def __init__(self, path: Path):
-        super().__init__(path, timeout=3)
-        self.path = Path(path).expanduser().resolve()
+        super().__init__(Path(path).expanduser().resolve(), timeout=3)
 
     @classmethod
     async def open(cls, path: Path) -> "WorkspaceStore":
@@ -29,10 +28,15 @@ class WorkspaceStore(SQLiteRepositoryBase):
 
     def _initialize(self) -> None:
         self.prepare_private_database()
+        with self.connect() as connection:
+            if connection.execute("PRAGMA user_version").fetchone()[0] == 1:
+                return
         with self.transaction(immediate=True) as connection:
             version = connection.execute("PRAGMA user_version").fetchone()[0]
             if version not in (0, 1):
                 raise ValueError("unsupported core database schema version")
+            if version == 1:
+                return
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS workspaces "
                 "(id TEXT PRIMARY KEY, name TEXT NOT NULL, body TEXT NOT NULL)"

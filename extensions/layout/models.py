@@ -1,7 +1,6 @@
 """Saved layout metadata. Saving a layout never starts or replays a chat job."""
 
 from dataclasses import dataclass
-from typing import Protocol
 
 
 def _text(value: object, label: str) -> None:
@@ -108,10 +107,3 @@ class Workspace:
         workspace = cls(groups=tuple(groups), **value)
         workspace.validate()
         return workspace
-
-
-class WorkspaceRepository(Protocol):
-    async def save(self, workspace: Workspace) -> None: ...
-    async def load(self, workspace_id: str) -> Workspace: ...
-    async def list(self) -> tuple[tuple[str, str], ...]: ...
-    async def delete(self, workspace_id: str) -> bool: ...

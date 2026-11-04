@@ -95,16 +95,6 @@ class AccountRepository(SQLiteRepositoryBase):
                 is not None
             )
 
-    def cache_records(self, key, kind):
-        if kind not in {"conversation", "pointer", "tombstone"}:
-            raise ValueError("Unsupported account cache record")
-        with self.connect() as db:
-            rows = db.execute(
-                "SELECT remote,payload FROM account_cache WHERE account_key=? AND kind=?",
-                (key, kind),
-            ).fetchall()
-        return [(remote, json.loads(payload)) for remote, payload in rows]
-
     def cache_pending_branches(self, key):
         with self.connect() as db:
             rows = db.execute(
@@ -164,7 +154,7 @@ class AccountRepository(SQLiteRepositoryBase):
             )
 
     def cache_is_deleted(self, key, remote):
-        return self.cache_get(key, "tombstone", remote) is not None
+        return self.cache_exists(key, "tombstone", remote)
 
     def cache_set_active(self, key, remote):
         if remote is None:

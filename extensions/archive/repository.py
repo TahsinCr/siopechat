@@ -7,7 +7,6 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import Protocol
 from urllib.parse import unquote
 
 from utils.sqlite import SQLiteRepositoryBase
@@ -85,45 +84,6 @@ def _strip_archive_blob_refs(value):
     return changed
 
 
-class Repository(Protocol):
-    def get(self, account, kind, remote): ...
-    def put(self, account, kind, remote, value): ...
-    def rename_conversation(self, account, remote, title): ...
-    def state(self, account, kind, remote, state, error=None): ...
-    def conversations(self, account, limit=50, offset=0): ...
-    def containers(self, account, limit=50, offset=0): ...
-    def messages(self, account, remote, limit=100, offset=0): ...
-    def append_turn(self, account, remote, value): ...
-    def message_ordinal(self, account, remote, message_id): ...
-    def message_ordinals(self, account, remote, message_ids): ...
-    def partial_history_window(self, account, remote, start, *, prefix, tail): ...
-    def replace_conversation_tail(
-        self, account, remote, start, value, *, retry_message_id=None, new_message_id=None
-    ): ...
-    def pending_branches(self, account, *, project=False): ...
-    def mark_pending_branch(self, account, remote): ...
-    def mark_branch_answered(self, account, remote): ...
-    def confirm_pending_branches(self, account, remotes, *, project=False): ...
-    def response_version(self, account, remote, message_id, version): ...
-    def conversation_window(
-        self,
-        account,
-        remote,
-        *,
-        start=None,
-        before=None,
-        visible_only=False,
-        limit=80,
-        max_chars=262144,
-    ): ...
-    def resources(self, account, owner_kind, owner): ...
-    def tombstones(self): ...
-    def uploaded_file_cleanup_pending(self): ...
-    def complete_uploaded_file_cleanup(self): ...
-    def delete(self, account, kind, remote): ...
-    def close(self): ...
-
-
 class SQLiteRepository(SQLiteRepositoryBase):
     def __init__(self, path):
         super().__init__(path, timeout=5, error_message="Archive SQLite storage is unavailable")
@@ -136,6 +96,8 @@ class SQLiteRepository(SQLiteRepositoryBase):
                 versions = db.execute("SELECT version FROM schema_version").fetchall()
                 if versions not in ([(1,)], [(2,)], [(3,)], [(4,)], [(5,)], [(6,)]):
                     raise OSError("Unsupported archive schema version")
+                if versions == [(6,)]:
+                    return
             db.executescript(
                 """
                 PRAGMA journal_mode=WAL;
@@ -319,9 +281,6 @@ class SQLiteRepository(SQLiteRepositoryBase):
                         )
                 db.execute("UPDATE schema_version SET version=6 WHERE version=5")
 
-    def configure_connection(self, connection):
-        connection.execute("PRAGMA busy_timeout=5000")
-
     def get(self, account, kind, remote):
         with self.transaction() as db:
             row = db.execute(
@@ -477,14 +436,7 @@ class SQLiteRepository(SQLiteRepositoryBase):
                         (account, remote, encode(value["metadata"])),
                     )
                 self._write_messages(db, account, remote, value.get("messages", []))
-                db.execute(
-                    "DELETE FROM memberships WHERE account=? AND conversation=?", (account, remote)
-                )
-                if value.get("project_id"):
-                    db.execute(
-                        "INSERT INTO memberships VALUES(?,?,?)",
-                        (account, remote, self._remote(account, value["project_id"])),
-                    )
+                self._write_membership(db, account, remote, value.get("project_id"))
             if kind == "container":
                 db.execute(
                     """INSERT OR REPLACE INTO containers VALUES(?,?,?,?,?,?)""",
@@ -669,22 +621,19 @@ class SQLiteRepository(SQLiteRepositoryBase):
                     header.get("title"),
                     header.get("project_id"),
                     header.get("model"),
-                    encode(
-                        conversation_header(
-                            {k: v for k, v in header.items() if k != "_archive_sql_messages"}
-                        )
-                    ),
+                    encode(conversation_header(header)),
                 ),
             )
-            db.execute(
-                "DELETE FROM memberships WHERE account=? AND conversation=?", (account, remote)
-            )
-            if header.get("project_id"):
-                db.execute(
-                    "INSERT OR IGNORE INTO memberships VALUES(?,?,?)",
-                    (account, remote, self._remote(account, header["project_id"])),
-                )
+            self._write_membership(db, account, remote, header.get("project_id"))
             self._write_resources(db, account, "conversation", remote, value, append=True)
+
+    def _write_membership(self, db, account, remote, project_id):
+        db.execute("DELETE FROM memberships WHERE account=? AND conversation=?", (account, remote))
+        if project_id:
+            db.execute(
+                "INSERT INTO memberships VALUES(?,?,?)",
+                (account, remote, self._remote(account, project_id)),
+            )
 
     def container_members(self, account, remote):
         with self.transaction() as db:
@@ -756,36 +705,19 @@ class SQLiteRepository(SQLiteRepositoryBase):
                     (account, target_kind, target),
                 )
                 if target_kind == "conversation":
-                    db.execute(
-                        "DELETE FROM conversation_metadata WHERE account=? AND remote=?",
-                        (account, target),
-                    )
-                    db.execute(
-                        "DELETE FROM conversations WHERE account=? AND remote=?", (account, target)
-                    )
-                    db.execute(
-                        "DELETE FROM messages WHERE account=? AND conversation=?", (account, target)
-                    )
-                    db.execute(
-                        "DELETE FROM memberships WHERE account=? AND conversation=?",
-                        (account, target),
-                    )
-                    db.execute(
-                        "DELETE FROM response_variants WHERE account=? AND conversation=?",
-                        (account, target),
-                    )
-                    db.execute(
-                        "DELETE FROM response_variant_groups WHERE account=? AND conversation=?",
-                        (account, target),
-                    )
-                    db.execute(
-                        "DELETE FROM superseded_messages WHERE account=? AND conversation=?",
-                        (account, target),
-                    )
-                    db.execute(
-                        "DELETE FROM pending_branches WHERE account=? AND remote=?",
-                        (account, target),
-                    )
+                    for table, column in (
+                        ("conversation_metadata", "remote"),
+                        ("conversations", "remote"),
+                        ("messages", "conversation"),
+                        ("memberships", "conversation"),
+                        ("response_variants", "conversation"),
+                        ("response_variant_groups", "conversation"),
+                        ("superseded_messages", "conversation"),
+                        ("pending_branches", "remote"),
+                    ):
+                        db.execute(
+                            f"DELETE FROM {table} WHERE account=? AND {column}=?", (account, target)
+                        )
                 db.execute(
                     "DELETE FROM synchronization WHERE account=? AND kind=? AND remote=?",
                     (account, target_kind, target),
@@ -957,8 +889,6 @@ class SQLiteRepository(SQLiteRepositoryBase):
         with self.transaction() as db:
             for offset in range(0, len(ids), 400):
                 batch = tuple(dict.fromkeys(ids[offset : offset + 400]))
-                if not batch:
-                    continue
                 placeholders = ",".join("?" for _ in batch)
                 rows = db.execute(
                     "SELECT remote,MIN(ordinal),COUNT(*) FROM messages "
@@ -1352,7 +1282,6 @@ class SQLiteRepository(SQLiteRepositoryBase):
                     (account, remote, encode(metadata)),
                 )
             else:
-                record_header.pop("_archive_sql_metadata", None)
                 db.execute(
                     "DELETE FROM conversation_metadata WHERE account=? AND remote=?",
                     (account, remote),
@@ -1376,14 +1305,7 @@ class SQLiteRepository(SQLiteRepositoryBase):
                     encode(conversation_header(header)),
                 ),
             )
-            db.execute(
-                "DELETE FROM memberships WHERE account=? AND conversation=?", (account, remote)
-            )
-            if header.get("project_id"):
-                db.execute(
-                    "INSERT OR IGNORE INTO memberships VALUES(?,?,?)",
-                    (account, remote, self._remote(account, header["project_id"])),
-                )
+            self._write_membership(db, account, remote, header.get("project_id"))
             self._write_resources(
                 db,
                 account,
@@ -1621,11 +1543,6 @@ class Files:
     def save(self, data):
         with self._lock:
             return self._save(data)
-
-    def save_file(self, source):
-        """Persist a local file without reading the complete attachment into memory."""
-        with Path(source).open("rb") as stream:
-            return self.save_stream(stream)
 
     def save_stream(self, stream):
         """Hash and publish a binary stream using bounded memory."""

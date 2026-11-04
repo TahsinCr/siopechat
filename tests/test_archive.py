@@ -277,6 +277,17 @@ class ArchiveTests(unittest.TestCase):
 
 
 class ArchiveMaintenanceTests(unittest.TestCase):
+    def test_current_archive_reopens_while_another_connection_holds_the_write_lock(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "archive.db"
+            repository = SQLiteRepository(path)
+            value = {"title": "Stored", "messages": []}
+            repository.put("chatgpt/a", "conversation", "chat", value)
+            with ThreadPoolExecutor(1) as pool:
+                with repository.transaction(immediate=True):
+                    reopened = pool.submit(SQLiteRepository, path).result(timeout=2)
+                    self.assertEqual(reopened.get("chatgpt/a", "conversation", "chat"), value)
+
     def test_future_schema_is_rejected_without_modification(self):
 
         with tempfile.TemporaryDirectory() as folder:

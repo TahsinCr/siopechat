@@ -59,6 +59,13 @@ class WorkspaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await reopened.load(saved.id), saved)
         self.assertEqual(await reopened.list(), (("research", "Araştırma"),))
 
+    async def test_current_workspace_reopens_while_another_connection_holds_the_write_lock(self):
+        saved = workspace()
+        await self.store.save(saved)
+        with self.store.transaction(immediate=True):
+            reopened = await asyncio.wait_for(WorkspaceStore.open(self.path), timeout=2)
+            self.assertEqual(await reopened.load(saved.id), saved)
+
     async def test_update_delete_and_missing_workspace(self):
         saved = workspace()
         await self.store.save(saved)
