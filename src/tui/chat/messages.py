@@ -649,6 +649,13 @@ class MessageComponent:
                 def ready():
                     if tab.get("response_version_loading") != message_id:
                         return
+                    if (
+                        tab.get("conversation_id") != conversation_id
+                        or tab.get("account_key") != account_key
+                    ):
+                        tab.pop("response_version_loading", None)
+                        tab.pop("response_version_target", None)
+                        return
                     latest = tab.get("response_version_target", requested)
                     if latest != requested:
                         load_version(latest)
@@ -667,37 +674,64 @@ class MessageComponent:
                     if target_index is None:
                         return
                     if error_reason is None:
-                        from ..markdown import visible_chat_message
+                        from ..markdown import visible_chat_messages
 
-                        alternate = visible_chat_message(result["message"])
-                        if alternate is None:
+                        raw_messages = [dict(item) for item in result["messages"]]
+                        primary_message_id = result["message"]["id"]
+                        display_ids = []
+                        for raw in raw_messages:
+                            if raw.get("id") == primary_message_id:
+                                raw["id"] = message_id
+                                raw["_response_version_index"] = result["index"]
+                                raw["_response_version_count"] = result["count"]
+                                raw["_response_version_current_index"] = result["current_index"]
+                            if raw.get("id"):
+                                display_ids.append(raw["id"])
+                        alternate_messages = visible_chat_messages(raw_messages)
+                        primary_visible = next(
+                            (
+                                item
+                                for item in alternate_messages
+                                if item.get("id") == message_id
+                                and item.get("_response_version_index") == result["index"]
+                            ),
+                            None,
+                        )
+                        if primary_visible is None:
                             error_reason = self.tr("Response version is unavailable")
                         else:
-                            displayed = dict(tab["messages"][target_index])
-                            displayed["text"] = alternate["text"]
-                            for field in (
-                                "_thinking_sources",
-                                "_response_settings",
-                                "_body_length",
-                                "_files",
-                            ):
-                                if field in alternate:
-                                    displayed[field] = alternate[field]
-                                else:
-                                    displayed.pop(field, None)
-                            displayed["_response_version_index"] = result["index"]
-                            displayed["_response_version_count"] = result["count"]
-                            displayed["_response_version_current_index"] = result.get(
-                                "current_index", result["count"]
+                            primary_visible["_response_variant_message_ids"] = tuple(display_ids)
+                            displayed_ids = set(
+                                tab["messages"][target_index].get(
+                                    "_response_variant_message_ids", result["current_message_ids"]
+                                )
                             )
-                            tab["messages"][target_index] = displayed
-                            if tab is self.tabs[self.active_tab]:
-                                self.messages = tab["messages"]
-                                tab["follow_output"] = True
-                                self.follow_output = True
-                                self.transcript_window.scroll_direction = 0
-                                self.transcript_window.vertical_scroll = 10**9
-                                tab["render_revision"] = tab.get("render_revision", 0) + 1
+                            insertion_point = next(
+                                (
+                                    position
+                                    for position, item in enumerate(tab["messages"])
+                                    if item.get("id") in displayed_ids
+                                ),
+                                target_index,
+                            )
+                            retained_before = sum(
+                                item.get("id") not in displayed_ids
+                                for item in tab["messages"][:insertion_point]
+                            )
+                            messages = [
+                                item
+                                for item in tab["messages"]
+                                if item.get("id") not in displayed_ids
+                            ]
+                            messages[retained_before:retained_before] = alternate_messages
+                            tab["messages"] = messages
+                    if error_reason is None and tab is self.tabs[self.active_tab]:
+                        self.messages = tab["messages"]
+                        tab["follow_output"] = True
+                        self.follow_output = True
+                        self.transcript_window.scroll_direction = 0
+                        self.transcript_window.vertical_scroll = 10**9
+                        tab["render_revision"] = tab.get("render_revision", 0) + 1
                     if error_reason:
                         self.status = self.tr("Response version could not be loaded: {0}").format(
                             error_reason
@@ -830,9 +864,20 @@ class MessageComponent:
         rollback = (tab.get("messages", []), tab.get("history_window"))
         start = index
         if action == "retry":
-            while start and self.messages[start - 1].get("role") == "reasoning":
-                start -= 1
-        messages = list(self.messages[:start])
+            prompt_index = next(
+                (
+                    position
+                    for position in range(index - 1, -1, -1)
+                    if tab["messages"][position].get("role") == "user"
+                ),
+                None,
+            )
+            if prompt_index is None:
+                self.status = self.tr("The selected conversation changed; try again")
+                self.app.invalidate()
+                return
+            start = prompt_index + 1
+        messages = list(tab["messages"][:start])
         if action == "edit":
             messages.append({"role": "user", "text": prompt.strip(), "local_pending": True})
         messages.append({"role": "assistant", "text": "", "local_pending": True})

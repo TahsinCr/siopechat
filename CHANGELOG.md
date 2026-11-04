@@ -12,6 +12,11 @@ Python distributions use the corresponding PEP 440 version (`1.5.4b0` for `v1.5.
 
 - Release the standalone `webai-provider` library as `v1.0-beta`, with [provider-only release notes](https://github.com/TahsinCr/webai-provider/blob/v1.0-beta/CHANGELOG.md), license metadata and independent CI checks. Pin SiopeChat to that exact provider commit and document recursive clone and update steps.
 
+### Fixed
+
+- Keep the latest answer and its toolbar rendered while only conversation loading or synchronization status changes.
+- Retry from the original user prompt, replacing the complete response turn and removing later turns. Answer-version navigation restores every visible reasoning and response message in that turn.
+
 ## [1.5.4-beta] - 2026-11-02
 
 ### Added

@@ -239,13 +239,24 @@ class TranscriptComponent:
                 self.busy_tab_index,
                 self.active_tab,
                 self.show_reasoning,
+                tuple(sorted(self.renderer.labels.items())),
                 tab.get("tab_id"),
                 tab.get("conversation_id"),
                 message_key,
                 revision,
                 load_state,
             )
-            if signature == getattr(self, "_transcript_signature", None):
+            previous_signature = getattr(self, "_transcript_signature", None)
+            if signature == previous_signature:
+                return self._transcript_cache
+            if (
+                self.messages
+                and getattr(self, "_transcript_cache", None) is not None
+                and previous_signature is not None
+                and signature[:-1] == previous_signature[:-1]
+                and signature[-1][2] == previous_signature[-1][2]
+            ):
+                self._transcript_signature = signature
                 return self._transcript_cache
             messages = [dict(message) for message in self.messages]
         self._transcript_roles = tuple(message.get("role") for message in messages)

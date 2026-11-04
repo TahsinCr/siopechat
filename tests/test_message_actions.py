@@ -240,6 +240,138 @@ class MutationArchiveTests(unittest.TestCase):
         )
         self.assertEqual([item["current_index"] for item in versions], [3, 3, 3])
 
+    def test_retry_versions_capture_the_complete_turn_and_discard_later_turns(self):
+        old_messages = [
+            {"id": "user-0", "role": "user", "text": "Earlier prompt"},
+            {"id": "answer-0", "role": "assistant", "text": "Earlier answer"},
+            {"id": "user-1", "role": "user", "text": "Retry this prompt"},
+            {"id": "thought-1", "role": "reasoning", "text": "Old thought"},
+            {
+                "id": "commentary-1",
+                "role": "assistant",
+                "channel": "commentary",
+                "text": "Old progress",
+            },
+            {
+                "id": "answer-1",
+                "role": "assistant",
+                "channel": "final",
+                "text": "Old answer",
+            },
+            {"id": "user-2", "role": "user", "text": "Later prompt"},
+            {"id": "answer-2", "role": "assistant", "text": "Later answer"},
+        ]
+        self.archive.put("chatgpt/default", "conversation", "chat", {"messages": old_messages})
+        new_messages = [
+            old_messages[0],
+            old_messages[1],
+            old_messages[2],
+            {"id": "thought-new", "role": "reasoning", "text": "New thought"},
+            {
+                "id": "commentary-new",
+                "role": "assistant",
+                "channel": "commentary",
+                "text": "New progress",
+            },
+            {
+                "id": "answer-new",
+                "role": "assistant",
+                "channel": "final",
+                "text": "New answer",
+            },
+            old_messages[6],
+            old_messages[7],
+        ]
+        self.archive.replace_history(
+            "chatgpt/default",
+            "chat",
+            {"messages": new_messages},
+            retry_message_id="answer-1",
+            new_message_id="answer-new",
+        )
+
+        current = self.archive.get("chatgpt/default", "conversation", "chat")["messages"]
+        self.assertEqual(
+            [message["id"] for message in current],
+            ["user-0", "answer-0", "user-1", "thought-new", "commentary-new", "answer-new"],
+        )
+        old_version = self.archive.response_version("chatgpt/default", "chat", "answer-new", 1)
+        new_version = self.archive.response_version("chatgpt/default", "chat", "answer-new", 2)
+        self.assertEqual(
+            [message["id"] for message in old_version["messages"]],
+            ["thought-1", "commentary-1", "answer-1"],
+        )
+        self.assertEqual(
+            [message["id"] for message in new_version["messages"]],
+            ["thought-new", "commentary-new", "answer-new"],
+        )
+        self.assertEqual(
+            new_version["current_message_ids"], tuple(message["id"] for message in current[3:])
+        )
+        window = self.archive.conversation_window("chatgpt/default", "chat", limit=20)
+        versioned = [
+            message for message in window["messages"] if "_response_version_index" in message
+        ]
+        self.assertEqual(
+            [
+                (
+                    message["id"],
+                    message["_response_version_index"],
+                    message["_response_version_count"],
+                )
+                for message in versioned
+            ],
+            [("answer-new", 2, 2)],
+        )
+
+    def test_partial_retry_keeps_prompt_and_replaces_the_archived_tail(self):
+        self.archive.put(
+            "gemini/account",
+            "conversation",
+            "chat",
+            {
+                "messages": [
+                    {"id": "user", "role": "user", "text": "Prompt"},
+                    {"id": "thought-old", "role": "reasoning", "text": "Old thought"},
+                    {"id": "answer-old", "role": "assistant", "text": "Old answer"},
+                    {"id": "later-user", "role": "user", "text": "Later prompt"},
+                    {"id": "later-answer", "role": "assistant", "text": "Later answer"},
+                ]
+            },
+        )
+        self.archive.replace_history(
+            "gemini/account",
+            "chat",
+            {
+                "history_complete": False,
+                "messages": [
+                    {"id": "thought-new", "role": "reasoning", "text": "New thought"},
+                    {"id": "answer-new", "role": "assistant", "text": "New answer"},
+                ],
+            },
+            retry_message_id="answer-old",
+            new_message_id="answer-new",
+        )
+
+        self.assertEqual(
+            [
+                message["id"]
+                for message in self.archive.get("gemini/account", "conversation", "chat")[
+                    "messages"
+                ]
+            ],
+            ["user", "thought-new", "answer-new"],
+        )
+        self.assertEqual(
+            [
+                message["id"]
+                for message in self.archive.response_version(
+                    "gemini/account", "chat", "answer-new", 1
+                )["messages"]
+            ],
+            ["thought-old", "answer-old"],
+        )
+
     def test_provider_refresh_keeps_locally_captured_retry_versions(self):
         self.archive.put(
             "chatgpt/default",
@@ -557,6 +689,35 @@ class MessageToolbarTests(unittest.TestCase):
             view.new_tab()
             view.message_toolbar_action(old_tab, old_message, "retry")
             view._submit_message_action.assert_not_called()
+
+    def test_retry_keeps_its_user_prompt_and_removes_all_later_turns(self):
+        messages = [
+            {"id": "user-0", "role": "user", "text": "Earlier prompt"},
+            {"id": "answer-0", "role": "assistant", "text": "Earlier answer"},
+            {"id": "user-1", "role": "user", "text": "Retry this prompt"},
+            {"id": "thought-1", "role": "reasoning", "text": "Old thought"},
+            {"id": "answer-1", "role": "assistant", "text": "Old answer"},
+            {"id": "user-2", "role": "user", "text": "Later prompt"},
+            {"id": "answer-2", "role": "assistant", "text": "Later answer"},
+        ]
+        with terminal(initial_messages=messages) as (view, _):
+            tab = view.tabs[view.active_tab]
+            target = view.messages[4]
+            with patch("tui.chat.messages.threading.Thread") as worker:
+                view._submit_message_action(tab, target, "retry", "Retry this prompt")
+
+            submitted = worker.call_args.kwargs["args"][3]
+            self.assertEqual(
+                [message.get("id") for message in submitted[:-1]],
+                ["user-0", "answer-0", "user-1"],
+            )
+            self.assertEqual(submitted[-1]["role"], "assistant")
+            self.assertTrue(submitted[-1]["local_pending"])
+            self.assertEqual(
+                [message.get("id") for message in view.messages[:-1]],
+                ["user-0", "answer-0", "user-1"],
+            )
+            worker.return_value.start.assert_called_once_with()
 
     def test_conversation_copy_reads_all_sql_pages_and_runs_in_background(self):
         folder = tempfile.TemporaryDirectory()

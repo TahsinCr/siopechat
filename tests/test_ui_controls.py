@@ -74,12 +74,15 @@ class UiControlsTests(unittest.TestCase):
 
             def response_version(self, account, conversation, message_id, version):
                 self.requested.append(version)
+                message = {
+                    "id": message_id,
+                    "role": "assistant",
+                    "text": f"version {version}",
+                }
                 return {
-                    "message": {
-                        "id": message_id,
-                        "role": "assistant",
-                        "text": f"version {version}",
-                    },
+                    "message": message,
+                    "messages": [message],
+                    "current_message_ids": (message_id,),
                     "index": version,
                     "count": 2,
                     "current_index": 2,
@@ -170,6 +173,131 @@ class UiControlsTests(unittest.TestCase):
                 self.assertNotIn("response_version_loading", tab)
 
             self.assertEqual(service.requested, [2, 1, 2, 1, 2, 1, 2])
+
+    def test_response_version_navigation_replaces_the_whole_output_turn(self):
+        class QueuedOperations:
+            def __init__(self):
+                self.pending = []
+
+            def submit(self, work):
+                self.pending.append(work)
+                return True
+
+            def close(self, *, wait=False):
+                self.pending.clear()
+
+        class ResponseVersions:
+            def __init__(self):
+                self.requested = []
+
+            def response_version(self, account, conversation, message_id, version):
+                self.requested.append((message_id, version))
+                suffix = "old" if version == 1 else "current"
+                return {
+                    "message": {
+                        "id": f"answer-{suffix}",
+                        "role": "assistant",
+                        "channel": "final",
+                        "text": f"{suffix} answer",
+                    },
+                    "messages": [
+                        {
+                            "id": f"thought-{suffix}",
+                            "role": "reasoning",
+                            "text": f"{suffix} thought",
+                        },
+                        {
+                            "id": f"commentary-{suffix}",
+                            "role": "assistant",
+                            "channel": "commentary",
+                            "text": f"{suffix} progress",
+                        },
+                        {
+                            "id": f"answer-{suffix}",
+                            "role": "assistant",
+                            "channel": "final",
+                            "text": f"{suffix} answer",
+                        },
+                    ],
+                    "current_message_ids": (
+                        "thought-current",
+                        "commentary-current",
+                        "answer-current",
+                    ),
+                    "index": version,
+                    "count": 2,
+                    "current_index": 2,
+                }
+
+        messages = [
+            {"id": "user-0", "role": "user", "text": "Earlier prompt"},
+            {"id": "answer-0", "role": "assistant", "text": "Earlier answer"},
+            {"id": "user-1", "role": "user", "text": "Prompt"},
+            {"id": "thought-current", "role": "reasoning", "text": "current thought"},
+            {
+                "id": "commentary-current",
+                "role": "assistant",
+                "channel": "commentary",
+                "text": "current progress",
+            },
+            {
+                "id": "answer-current",
+                "role": "assistant",
+                "channel": "final",
+                "text": "current answer",
+                "_response_version_index": 2,
+                "_response_version_count": 2,
+                "_response_version_current_index": 2,
+            },
+            {"id": "user-2", "role": "user", "text": "Later prompt"},
+            {"id": "answer-2", "role": "assistant", "text": "Later answer"},
+        ]
+        with terminal(initial_messages=messages) as (view, _):
+            tab = view.tabs[view.active_tab]
+            tab.update(conversation_id="chat", account_key="chatgpt/default")
+            operations = QueuedOperations()
+            service = ResponseVersions()
+            view._operations = operations
+            view.account_service = service
+
+            view._navigate_response_version(tab["tab_id"], view.messages[5], -1)
+            operations.pending.pop()()
+            self.assertEqual(
+                [message.get("id") for message in view.messages],
+                [
+                    "user-0",
+                    "answer-0",
+                    "user-1",
+                    "thought-old",
+                    "commentary-old",
+                    "answer-current",
+                    "user-2",
+                    "answer-2",
+                ],
+            )
+            self.assertEqual(
+                [message["text"] for message in view.messages[3:6]],
+                ["old thought", "old progress", "old answer"],
+            )
+            self.assertEqual(view.messages[5]["_response_version_index"], 1)
+            self.assertEqual(view.messages[5]["_response_version_current_index"], 2)
+
+            primary = next(
+                message for message in view.messages if message.get("id") == "answer-current"
+            )
+            view._navigate_response_version(tab["tab_id"], primary, 1)
+            operations.pending.pop()()
+            self.assertEqual(
+                [message["text"] for message in view.messages[3:6]],
+                ["current thought", "current progress", "current answer"],
+            )
+            self.assertEqual(view.messages[5]["_response_version_index"], 2)
+            self.assertEqual(service.requested, [("answer-current", 1), ("answer-current", 2)])
+            view._navigate_response_version(tab["tab_id"], view.messages[5], -1)
+            tab["conversation_id"] = "another-chat"
+            operations.pending.pop()()
+            self.assertEqual(view.messages[5]["text"], "current answer")
+            self.assertNotIn("response_version_loading", tab)
 
     def test_message_toolbar_fits_its_row_and_ignores_disabled_version_callbacks(self):
         message = {
@@ -441,6 +569,25 @@ class UiControlsTests(unittest.TestCase):
                 self.assertNotEqual(view.render_transcript(), first)
                 self.assertEqual(render.call_count, 2)
 
+    def test_transcript_loading_and_sync_flags_do_not_drop_the_answer_toolbar(self):
+        with terminal(
+            initial_messages=[{"id": "answer", "role": "assistant", "text": "Hello"}]
+        ) as (
+            view,
+            _,
+        ):
+            with patch.object(view.renderer, "render", wraps=view.renderer.render) as render:
+                first = view.render_transcript()
+                ranges = list(view.message_ranges)
+                view.tabs[view.active_tab].update(loading=True, syncing=True)
+                self.assertEqual(view.render_transcript(), first)
+                self.assertEqual(view.message_ranges, ranges)
+                self.assertEqual(render.call_count, 1)
+
+                view.tabs[view.active_tab]["load_error"] = "sync failed"
+                view.render_transcript()
+                self.assertEqual(render.call_count, 2)
+
     def test_settings_dialog_uses_real_schema_persists_and_applies_preferences(self):
         with tempfile.TemporaryDirectory() as folder:
             api = create_application(Path(folder))
@@ -578,12 +725,15 @@ class ToolbarMouseIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 return []
 
             def response_version(self, account, conversation, message_id, version):
+                message = {
+                    "id": message_id,
+                    "role": "assistant",
+                    "text": f"version {version}",
+                }
                 return {
-                    "message": {
-                        "id": message_id,
-                        "role": "assistant",
-                        "text": f"version {version}",
-                    },
+                    "message": message,
+                    "messages": [message],
+                    "current_message_ids": (message_id,),
                     "index": version,
                     "count": 2,
                     "current_index": 2,

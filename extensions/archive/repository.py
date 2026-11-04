@@ -1053,16 +1053,65 @@ class SQLiteRepository(SQLiteRepositoryBase):
             ).fetchall()
         return {row[0] for row in rows}
 
+    @staticmethod
+    def _response_turn(db, account, remote, message_id):
+        target = db.execute(
+            "SELECT ordinal,metadata FROM messages WHERE account=? AND conversation=? AND remote=? "
+            "ORDER BY ordinal DESC LIMIT 1",
+            (account, remote, message_id),
+        ).fetchone()
+        if target is None:
+            return None, []
+        prompt = db.execute(
+            "SELECT ordinal,metadata FROM messages WHERE account=? AND conversation=? "
+            "AND role='user' AND ordinal<? ORDER BY ordinal DESC LIMIT 1",
+            (account, remote, target[0]),
+        ).fetchone()
+        if prompt is None:
+            return None, [json.loads(target[1])]
+        prompt_message = json.loads(prompt[1])
+        next_prompt = db.execute(
+            "SELECT ordinal FROM messages WHERE account=? AND conversation=? "
+            "AND role='user' AND ordinal>? ORDER BY ordinal LIMIT 1",
+            (account, remote, prompt[0]),
+        ).fetchone()
+        rows = db.execute(
+            "SELECT metadata FROM messages WHERE account=? AND conversation=? AND ordinal>? "
+            "AND ordinal<? ORDER BY ordinal",
+            (
+                account,
+                remote,
+                prompt[0],
+                next_prompt[0] if next_prompt else 2**63 - 1,
+            ),
+        ).fetchall()
+        return prompt_message.get("id"), [json.loads(row[0]) for row in rows]
+
+    @staticmethod
+    def _response_primary_id(messages):
+        for message in reversed(messages):
+            if (
+                message.get("id")
+                and message.get("role") == "assistant"
+                and message.get("channel") not in ("analysis", "commentary")
+            ):
+                return message["id"]
+        for message in reversed(messages):
+            if message.get("id") and message.get("role") == "assistant":
+                return message["id"]
+        return None
+
     def response_version(self, account, remote, message_id, version):
         with self.connect() as db:
+            db.execute("BEGIN")
             row = db.execute(
-                "SELECT group_id,current_index FROM response_variant_groups "
+                "SELECT group_id,current_message,current_index FROM response_variant_groups "
                 "WHERE account=? AND conversation=? AND current_message=?",
                 (account, remote, message_id),
             ).fetchone()
             if row is None:
                 return None
-            group_id, current_index = row
+            group_id, current_message, current_index = row
             count = db.execute(
                 "SELECT COUNT(*)+1 FROM response_variants "
                 "WHERE account=? AND conversation=? AND group_id=?",
@@ -1071,23 +1120,42 @@ class SQLiteRepository(SQLiteRepositoryBase):
             if type(version) is not int or not 1 <= version <= count:
                 return None
             if version == current_index:
-                message = db.execute(
-                    "SELECT metadata FROM messages WHERE account=? AND conversation=? "
-                    "AND remote=? ORDER BY ordinal DESC LIMIT 1",
-                    (account, remote, message_id),
-                ).fetchone()
-                payload = message[0] if message else None
+                _, messages = self._response_turn(db, account, remote, current_message)
+                primary_message_id = current_message
+                current_messages = messages
             else:
-                message = db.execute(
+                stored = db.execute(
                     "SELECT payload FROM response_variants WHERE account=? AND conversation=? "
                     "AND group_id=? AND version_index=?",
                     (account, remote, group_id, version),
                 ).fetchone()
-                payload = message[0] if message else None
-        if not payload:
+                if not stored:
+                    return None
+                payload = json.loads(stored[0])
+                if isinstance(payload, dict) and isinstance(payload.get("messages"), list):
+                    messages = payload["messages"]
+                    primary_message_id = payload.get("primary_message_id")
+                elif isinstance(payload, list):
+                    messages = payload
+                    primary_message_id = None
+                else:
+                    # Read the single-message payloads written by earlier archive versions.
+                    messages = [payload]
+                    primary_message_id = payload.get("id") if isinstance(payload, dict) else None
+                _, current_messages = self._response_turn(db, account, remote, current_message)
+            if not messages:
+                return None
+            primary_message_id = primary_message_id or self._response_primary_id(messages)
+            primary_message = next(
+                (item for item in messages if item.get("id") == primary_message_id),
+                messages[-1],
+            )
+        if not primary_message:
             return None
         return {
-            "message": json.loads(payload),
+            "message": primary_message,
+            "messages": messages,
+            "current_message_ids": tuple(item["id"] for item in current_messages if item.get("id")),
             "index": version,
             "count": count,
             "current_index": current_index,
@@ -1134,14 +1202,19 @@ class SQLiteRepository(SQLiteRepositoryBase):
             if row is None:
                 return False
             if retry_message_id:
-                target_row = db.execute(
-                    "SELECT metadata FROM messages WHERE account=? AND conversation=? AND remote=? "
-                    "ORDER BY ordinal DESC LIMIT 1",
-                    (account, remote, retry_message_id),
-                ).fetchone()
-                if target_row is None:
+                user_message_id, previous_messages = self._response_turn(
+                    db, account, remote, retry_message_id
+                )
+                previous = next(
+                    (
+                        message
+                        for message in previous_messages
+                        if message.get("id") == retry_message_id
+                    ),
+                    None,
+                )
+                if previous is None:
                     raise ValueError("The retried response is missing from the archive")
-                previous = json.loads(target_row[0])
                 if previous.get("role") != "assistant":
                     raise ValueError("Only an assistant response can have alternate versions")
                 current = db.execute(
@@ -1149,7 +1222,16 @@ class SQLiteRepository(SQLiteRepositoryBase):
                     "WHERE account=? AND conversation=? AND current_message=?",
                     (account, remote, retry_message_id),
                 ).fetchone()
-                group_id, previous_index = current or (retry_message_id, 1)
+                if current is None and user_message_id:
+                    current = db.execute(
+                        "SELECT group_id,current_index FROM response_variant_groups "
+                        "WHERE account=? AND conversation=? AND group_id=?",
+                        (account, remote, user_message_id),
+                    ).fetchone()
+                group_id, previous_index = current or (
+                    user_message_id or retry_message_id,
+                    1,
+                )
                 version_count = db.execute(
                     "SELECT COUNT(*)+1 FROM response_variants "
                     "WHERE account=? AND conversation=? AND group_id=?",
@@ -1160,7 +1242,8 @@ class SQLiteRepository(SQLiteRepositoryBase):
                     (
                         message
                         for message in reversed(replacement_messages)
-                        if message.get("id") == new_message_id
+                        if message.get("id")
+                        and message.get("id") == new_message_id
                         and message.get("role") == "assistant"
                     ),
                     None,
@@ -1179,18 +1262,61 @@ class SQLiteRepository(SQLiteRepositoryBase):
                     )
                 if new_response is None:
                     raise ValueError("The provider did not return an identifiable new response")
+                new_response_index = max(
+                    index
+                    for index, message in enumerate(replacement_messages)
+                    if message is new_response
+                )
+                replacement_messages = replacement_messages[: new_response_index + 1]
+                value["messages"] = replacement_messages
+                prompt_index = next(
+                    (
+                        index
+                        for index in range(new_response_index - 1, -1, -1)
+                        if replacement_messages[index].get("role") == "user"
+                    ),
+                    None,
+                )
+                new_turn_messages = replacement_messages[
+                    (prompt_index + 1) if prompt_index is not None else 0 : new_response_index + 1
+                ]
                 db.execute(
                     "INSERT OR REPLACE INTO response_variants VALUES(?,?,?,?,?)",
-                    (account, remote, group_id, previous_index, encode(previous)),
+                    (account, remote, group_id, previous_index, encode(previous_messages)),
                 )
                 db.execute(
                     "INSERT OR REPLACE INTO response_variant_groups VALUES(?,?,?,?,?)",
                     (account, remote, group_id, new_response["id"], new_index),
                 )
-                db.execute(
+                active_ids = {
+                    message.get("id") for message in new_turn_messages if message.get("id")
+                }
+                old_ids = {
+                    message.get("id") for message in previous_messages if message.get("id")
+                } - active_ids
+                db.executemany(
                     "INSERT OR REPLACE INTO superseded_messages VALUES(?,?,?,?)",
-                    (account, remote, retry_message_id, group_id),
+                    ((account, remote, old_id, group_id) for old_id in sorted(old_ids)),
                 )
+                db.executemany(
+                    "DELETE FROM superseded_messages WHERE account=? AND conversation=? "
+                    "AND group_id=? AND message_id=?",
+                    ((account, remote, group_id, message_id) for message_id in active_ids),
+                )
+                if not value.get("history_complete", True):
+                    prompt_row = db.execute(
+                        "SELECT ordinal FROM messages WHERE account=? AND conversation=? "
+                        "AND remote=? ORDER BY ordinal DESC LIMIT 1",
+                        (account, remote, user_message_id),
+                    ).fetchone()
+                    if prompt_row:
+                        turn_start = prompt_row[0] + 1
+                        if (
+                            replacement_messages
+                            and replacement_messages[0].get("id") == user_message_id
+                        ):
+                            turn_start = prompt_row[0]
+                        start = min(start, turn_start)
             superseded = {
                 row[0]
                 for row in db.execute(
