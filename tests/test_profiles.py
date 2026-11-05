@@ -19,7 +19,8 @@ from providers.profiles import (
     import_cookies,
     select_cookies,
 )
-from providers.tests.fakes import cookie
+
+from tests.provider_fakes import cookie
 
 
 class ProfileTests(unittest.TestCase):

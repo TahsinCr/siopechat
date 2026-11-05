@@ -24,11 +24,8 @@ classifiers = [
 ]
 dependencies = [
     "exceptiongroup>=1.2,<2; python_version < '3.11'",
+    "webai-provider==1.1.0b0",
     "httpx>=0.27,<1",
-    "websocket-client>=1.8,<2",
-    "browser-cookie3>=0.20.1,<0.21",
-    "lz4>=4.4.5,<5",
-    "curl-cffi>=0.16,<1",
     "flowevent>=1.3,<2",
     "prompt-toolkit>=3.0,<4",
     "rich>=13,<15",
@@ -67,12 +64,6 @@ py-modules = [
 packages = [
     "accounts",
     "tui",
-    "providers",
-    "providers.chatgpt",
-    "providers.chatgpt.sentinel",
-    "providers.gemini",
-    "providers.claude",
-    "providers.grok",
     "utils",
     "lang",
     "extensions",

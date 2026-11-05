@@ -18,8 +18,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: recursive
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python }}
@@ -39,35 +37,6 @@ jobs:
         with:
           name: diagnostics-${{ matrix.os }}-${{ matrix.python }}
           path: dist/
-  providers-package:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ['3.10', '3.14']
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: recursive
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: ${{ matrix.python }}
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-        with:
-          cache-suffix: providers-package
-      - run: uv build src/providers --out-dir "$RUNNER_TEMP/provider-dist"
-      - run: uv venv "$RUNNER_TEMP/provider-venv" --python "${{ matrix.python }}"
-      - run: uv pip install --python "$RUNNER_TEMP/provider-venv/bin/python" "$RUNNER_TEMP/provider-dist"/*.whl
-      - run: |
-          "$RUNNER_TEMP/provider-venv/bin/python" -m unittest discover -s src/providers/tests -t src/providers -p 'test_*.py' -v
-      - run: |
-          "$RUNNER_TEMP/provider-venv/bin/python" src/providers/tests/package_smoke.py
-      - run: uv venv "$RUNNER_TEMP/provider-sdist-venv" --python "${{ matrix.python }}"
-      - run: uv pip install --python "$RUNNER_TEMP/provider-sdist-venv/bin/python" "$RUNNER_TEMP/provider-dist"/*.tar.gz
-      - run: |
-          "$RUNNER_TEMP/provider-sdist-venv/bin/python" -m unittest discover -s src/providers/tests -t src/providers -p 'test_*.py' -v
-      - run: |
-          "$RUNNER_TEMP/provider-sdist-venv/bin/python" src/providers/tests/package_smoke.py
   latest-dependencies:
     runs-on: ubuntu-latest
     env:
@@ -75,8 +44,6 @@ jobs:
       PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: recursive
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.14'

@@ -9,8 +9,9 @@ from unittest.mock import Mock, patch
 from providers.chatgpt.discovery import model_catalog
 from providers.chatgpt.errors import SentinelCompatibilityError
 from providers.models import FeatureState, Model, ModelCatalog
-from providers.tests.fixtures import CATALOG
+
 from tests.account_fixture import configured_application as create_application
+from tests.provider_fakes import CATALOG
 from tests.tui_support import immediate, terminal
 
 

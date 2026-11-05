@@ -1,17 +1,6 @@
 $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
 
-if (Test-Path -LiteralPath (Join-Path $Root '.gitmodules')) {
-    & git -C $Root rev-parse --show-toplevel *> $null
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Provider source is a Git submodule. Clone SiopeChat with --recurse-submodules.'
-    }
-    & git -C $Root submodule update --init --recursive
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Could not initialize the provider submodule.'
-    }
-}
-
 function Get-PythonVersion {
     param([string]$Interpreter, [switch]$UseLauncher)
     if ($UseLauncher) {

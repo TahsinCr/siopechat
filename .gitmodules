@@ -1,3 +1,0 @@
-[submodule "webai-provider"]
-	path = src/providers
-	url = https://github.com/TahsinCr/webai-provider.git

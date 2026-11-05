@@ -7,11 +7,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 import httpx
-
-from backend import BackendService
 from providers.chatgpt import BrowserSession, ChatGPTClient, SessionPaths
 from providers.models import ModelCatalog
-from providers.tests.fixtures import CATALOG
+
+from backend import BackendService
+from tests.provider_fakes import CATALOG
 
 PROJECT = {
     "gizmo": {

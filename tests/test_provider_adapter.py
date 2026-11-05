@@ -5,8 +5,9 @@ from pathlib import Path
 
 from providers import ProviderRegistry, SendRequest
 from providers.chatgpt import BrowserSession, ChatGPTProvider, SessionPaths
-from providers.tests.fakes import FakeClient
+
 from tasks import JobState, TaskService
+from tests.provider_fakes import FakeClient
 
 
 class ProviderAdapterTests(unittest.IsolatedAsyncioTestCase):

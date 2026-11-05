@@ -8,13 +8,6 @@ fail() {
     exit 1
 }
 
-if [ -f "$ROOT/.gitmodules" ]; then
-    git -C "$ROOT" rev-parse --show-toplevel >/dev/null 2>&1 ||
-        fail "Provider source is a Git submodule. Clone SiopeChat with --recurse-submodules."
-    git -C "$ROOT" submodule update --init --recursive ||
-        fail "Could not initialize the provider submodule."
-fi
-
 python_supported() {
     "$1" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1
 }

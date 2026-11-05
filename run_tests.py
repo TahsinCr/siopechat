@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run SiopeChat's application and provider tests from the repository root."""
+"""Run SiopeChat's application tests from the repository root."""
 
 from __future__ import annotations
 
@@ -49,35 +49,6 @@ def main() -> int:
         env["SIOPECHAT_HOME"] = test_home
         for command in commands:
             result = subprocess.run(command, cwd=ROOT, env=env, check=False)
-            if result.returncode:
-                return result.returncode
-
-    with tempfile.TemporaryDirectory(prefix="siopechat-provider-tests-") as folder:
-        isolated_root = Path(folder)
-        provider_root = isolated_root / "providers"
-        shutil.copytree(
-            ROOT / "src/providers",
-            provider_root,
-            ignore=shutil.ignore_patterns("__pycache__", "*.egg-info", "build", "dist"),
-        )
-        provider_env = os.environ.copy()
-        provider_env["PYTHONPATH"] = str(isolated_root)
-        provider_commands = [
-            [
-                *python,
-                "-m",
-                "unittest",
-                "discover",
-                "-s",
-                str(provider_root / "tests"),
-                "-t",
-                str(isolated_root),
-                "-v",
-            ],
-            [*python, str(provider_root / "tests/package_smoke.py")],
-        ]
-        for command in provider_commands:
-            result = subprocess.run(command, cwd=isolated_root, env=provider_env, check=False)
             if result.returncode:
                 return result.returncode
 

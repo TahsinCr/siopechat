@@ -2,9 +2,10 @@
 
 import unittest
 
-from accounts import Accounts
 from providers.gemini.notebooks import project_from_native
-from providers.tests.fixtures import notebook
+
+from accounts import Accounts
+from tests.provider_fakes import notebook
 
 
 class GeminiProjectMappingTests(unittest.TestCase):

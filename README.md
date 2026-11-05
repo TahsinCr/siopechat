@@ -78,7 +78,7 @@ The last row includes process startup; launching an otherwise idle Node process 
 Clone the repository and enter its directory:
 
 ```sh
-git clone --recurse-submodules https://github.com/TahsinCr/siopechat.git
+git clone https://github.com/TahsinCr/siopechat.git
 cd siopechat
 ```
 
@@ -111,18 +111,17 @@ The installer uses the dependency ranges in `pyproject.toml` with pip, so uv is 
 
 ### Update SiopeChat
 
-The provider is a Git submodule pinned to the commit selected by SiopeChat.
-After pulling an application update, synchronize that exact provider commit:
+SiopeChat installs the pinned `webai-provider==1.1.0b0` package from PyPI. No
+submodule initialization or synchronization is needed. After pulling an
+application update, rerun the installer if the dependency lock changed:
 
 ```sh
 git pull --ff-only
-git submodule update --init --recursive
 ```
 
-The installer initializes the provider submodule if the first clone omitted
-`--recurse-submodules`. A newer commit on `webai-provider/main` becomes part of
-SiopeChat when the application records that provider commit. If an update changes
-dependencies, rerun `./install.sh` or `./install.ps1` for your platform.
+The application controls the provider version through its dependency pin and
+lockfile. Use a SiopeChat update to move to a newer provider release, then run
+`./install.sh` or `./install.ps1` to install the updated dependencies.
 
 ### Connect an account
 
@@ -307,9 +306,9 @@ python/bin/python -m twine check dist/*
 
 In Windows PowerShell, set `$env:UV_PROJECT_ENVIRONMENT = "python"`, run `uv sync --locked --all-groups`, and replace `python/bin/python` with `./python/Scripts/python.exe` in the commands above.
 
-`run_tests.py` runs the application suite, an isolated copy of the provider tests, and the provider package smoke check. Tests use fakes and fixtures; personal account sessions are not required. The runner prefers an active virtual environment, then project environments (`python/` before `.venv/`), then uv, and finally the interpreter that invoked it. Run it through the intended interpreter explicitly to avoid ambiguity.
+`run_tests.py` runs the application suite. Tests use fakes and fixtures; personal account sessions are not required. The runner prefers an active virtual environment, then project environments (`python/` before `.venv/`), then uv, and finally the interpreter that invoked it. Run it through the intended interpreter explicitly to avoid ambiguity. Provider tests run in the independent provider repository.
 
-Lint, formatting and distribution builds are separate checks. GitHub Actions tests the application on Linux, Windows and macOS with Python 3.10/3.14, and the provider package separately with Python 3.10/3.14. Offline success does not prove live-provider compatibility or real-terminal behavior.
+Lint, formatting and distribution builds are separate checks. SiopeChat's GitHub Actions tests the application on Linux, Windows and macOS with Python 3.10/3.14; the provider repository runs its own package checks. Offline success does not prove live-provider compatibility or real-terminal behavior.
 
 ### Find the right layer
 
@@ -317,11 +316,11 @@ Lint, formatting and distribution builds are separate checks. GitHub Actions tes
 | --- | --- |
 | `src/bootstrap.py`, `src/cli.py` | Application setup and command-line entry points |
 | `src/accounts.py`, `src/tasks.py`, `src/runtime.py` | Account routing, task ownership and service lifecycle |
-| `src/providers/` | Independent web-session clients, transports and provider contracts |
+| PyPI `webai-provider` | Independent web-session clients, transports and provider contracts |
 | `src/tui/` | Terminal views, input handling and rendering |
 | `src/extension.py`, `src/tui/api.py` | Extension lifecycle and public TUI extension API |
 | `extensions/archive/`, `extensions/layout/` | Local history and saved workspace layouts |
-| `tests/`, `src/providers/tests/` | Application regressions and independent provider tests |
+| `tests/` | SiopeChat application regressions |
 
 Keep protocol details inside the owning provider. Provider code must not import the application database, settings, extensions or TUI. Extensions register services through `extension.py` and use `tui.api` for terminal contributions. Keep network requests and expensive Markdown work out of render callbacks.
 
@@ -329,7 +328,7 @@ Message sends are serialized per account through `TaskService`. Cancellation rel
 
 ### Use the provider library independently
 
-For standalone use, install it with `python -m pip install ./src/providers` in an environment separate from SiopeChat. `ProviderClient` manages account adapters, streams and connection cleanup; `Backend` exposes models, chats, projects, sources, uploads and download resolution. The standalone distribution is named `webai-provider` and imports as `providers`. SiopeChat currently bundles the same import package in its wheel, so the two distributions must not be installed into one environment. Its runtime dependencies therefore remain declared by SiopeChat. See the [provider guide](https://github.com/TahsinCr/webai-provider/blob/v1.0-beta/README.md) for examples and standalone tests.
+SiopeChat installs `webai-provider==1.1.0b0` from PyPI and imports it as `providers`; the application wheel no longer bundles that package. To use the library on its own, run `python -m pip install webai-provider==1.1.0b0`. `ProviderClient` manages account adapters, streams and connection cleanup; `Backend` exposes models, chats, projects, sources, uploads and download resolution. See the [provider guide](https://github.com/TahsinCr/webai-provider/blob/v1.1-beta/README.md) for API examples and standalone tests.
 
 Transports, browser-profile discovery and local CDP access are implemented in Python. Gemini uses the bundled HTTPS transport without a separate Gemini SDK. ChatGPT handles supported Sentinel challenges with its Python runtime and bundled profile. Changed or unsupported server requirements need explicit compatibility checks; offline fixtures do not cover every live challenge.
 

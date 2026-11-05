@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 from providers.models import SessionState, SessionStatus
+
 from tests.account_fixture import configured_application
 
 
@@ -172,7 +173,8 @@ class ProfileUiTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_chatgpt_profile_auth_never_contacts_debugging_browser(self):
         from providers.chatgpt import BrowserSession, ChatGPTProvider, SessionPaths
-        from providers.tests.fakes import FakeClient
+
+        from tests.provider_fakes import FakeClient
 
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

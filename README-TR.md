@@ -78,7 +78,7 @@ Son satır süreç başlatma maliyetini de içerir; boşta bir Node sürecini ba
 Önce depoyu klonlayıp proje dizinine girin:
 
 ```sh
-git clone --recurse-submodules https://github.com/TahsinCr/siopechat.git
+git clone https://github.com/TahsinCr/siopechat.git
 cd siopechat
 ```
 
@@ -111,19 +111,17 @@ Son kullanıcı kurulumu `pyproject.toml` içindeki sürüm aralıklarını pip 
 
 ### SiopeChat'i güncelleme
 
-Sağlayıcı deposu, SiopeChat'in seçtiği commit'e sabitlenmiş bir Git submodule'dur.
-Uygulamayı güncelledikten sonra aynı sağlayıcı commit'ini eşitleyin:
+SiopeChat, PyPI'daki `webai-provider==1.1.0b0` sürümünü sabit bağımlılık olarak
+kurar. Submodule başlatmanız veya eşitlemeniz gerekmez. Uygulamayı güncelledikten
+sonra bağımlılık kilidi değiştiyse kurulum betiğini yeniden çalıştırın:
 
 ```sh
 git pull --ff-only
-git submodule update --init --recursive
 ```
 
-İlk klonlama sırasında `--recurse-submodules` kullanılmadıysa kurulum betiği
-sağlayıcı submodule'ünü başlatır. `webai-provider/main` üzerindeki yeni bir
-commit, SiopeChat kendi submodule işaretçisini güncellediğinde uygulamaya geçer.
-Güncelleme bağımlılıkları değiştirdiyse işletim sisteminize uygun kurulum
-betiğini (`./install.sh` veya `./install.ps1`) yeniden çalıştırın.
+Sağlayıcı sürümünü uygulamanın bağımlılık sabitlemesi ve kilit dosyası belirler.
+Daha yeni sağlayıcı sürümüne geçmek için SiopeChat güncellemesini alın ve
+bağımlılıkları `./install.sh` veya `./install.ps1` ile kurun.
 
 ### Hesap bağlama
 
@@ -308,9 +306,9 @@ python/bin/python -m twine check dist/*
 
 Windows PowerShell’de `$env:UV_PROJECT_ENVIRONMENT = "python"` ayarından sonra `uv sync --locked --all-groups` çalıştırın. Diğer komutlarda `python/bin/python` yerine `./python/Scripts/python.exe` kullanın.
 
-`run_tests.py`; uygulama testlerini, sağlayıcı testlerinin yalıtılmış bir kopyasını ve sağlayıcı paketinin temel çalışma kontrolünü çalıştırır. Testler sahte istemciler ve örnek veriler kullanır; kişisel hesap oturumları gerekmez. Çalıştırıcı önce etkin sanal ortamı, ardından proje ortamlarını (`python/` ve `.venv/`), uv’yi ve son olarak kendisini başlatan yorumlayıcıyı seçer. Kullanılacak Python sürümünü kesinleştirmek için komutu doğrudan o yorumlayıcıyla çalıştırın.
+`run_tests.py` SiopeChat uygulama testlerini çalıştırır. Testler sahte istemciler ve örnek veriler kullanır; kişisel hesap oturumları gerekmez. Çalıştırıcı önce etkin sanal ortamı, ardından proje ortamlarını (`python/` ve `.venv/`), uv’yi ve son olarak kendisini başlatan yorumlayıcıyı seçer. Kullanılacak Python sürümünü kesinleştirmek için komutu doğrudan o yorumlayıcıyla çalıştırın. Provider testleri bağımsız provider deposunda çalışır.
 
-Kod denetimi, biçim kontrolü ve paket derlemesi ayrı adımlardır. GitHub Actions uygulamayı Linux, Windows ve macOS üzerinde Python 3.10 ve 3.14 ile; bağımsız sağlayıcı paketini ise ayrıca Python 3.10 ve 3.14 ile sınar. Çevrimdışı testlerin geçmesi, canlı sağlayıcı uyumluluğunu veya gerçek terminal davranışını tek başına doğrulamaz.
+Kod denetimi, biçim kontrolü ve paket derlemesi ayrı adımlardır. SiopeChat GitHub Actions uygulamayı Linux, Windows ve macOS üzerinde Python 3.10 ve 3.14 ile sınar; provider deposu kendi paket kontrollerini çalıştırır. Çevrimdışı testlerin geçmesi, canlı sağlayıcı uyumluluğunu veya gerçek terminal davranışını tek başına doğrulamaz.
 
 ### Hangi kod nerede?
 
@@ -318,11 +316,11 @@ Kod denetimi, biçim kontrolü ve paket derlemesi ayrı adımlardır. GitHub Act
 | --- | --- |
 | `src/bootstrap.py`, `src/cli.py` | Uygulamanın kurulumu ve komut satırı girişleri |
 | `src/accounts.py`, `src/tasks.py`, `src/runtime.py` | Hesap yönlendirme, görev sahipliği ve servis yaşam döngüsü |
-| `src/providers/` | Bağımsız web oturumu istemcileri, taşıma katmanları ve sağlayıcı sözleşmeleri |
+| PyPI `webai-provider` | Bağımsız web oturumu istemcileri, taşıma katmanları ve sağlayıcı sözleşmeleri |
 | `src/tui/` | Terminal görünümleri, kullanıcı girdisi ve çizim |
 | `src/extension.py`, `src/tui/api.py` | Eklenti yaşam döngüsü ve eklentilere açık terminal API’si |
 | `extensions/archive/`, `extensions/layout/` | Yerel geçmiş ve kaydedilmiş çalışma alanları |
-| `tests/`, `src/providers/tests/` | Uygulama regresyonları ve bağımsız sağlayıcı testleri |
+| `tests/` | SiopeChat uygulama regresyonları |
 
 Protokol ayrıntılarını ilgili sağlayıcıda tutun. Sağlayıcı kodu uygulamanın veritabanını, ayarlarını, eklentilerini veya terminal arayüzünü içe aktarmamalıdır. Eklentiler servislerini `extension.py` üzerinden kaydeder; terminal arayüzüne katkı için `tui.api` kullanır. Ağ isteklerini ve maliyetli Markdown işlemlerini çizim işlevlerinin dışında yürütün.
 
@@ -330,7 +328,7 @@ Gönderimler `TaskService` üzerinden her hesap için sıraya alınır. İptal d
 
 ### Sağlayıcı kütüphanesini bağımsız kullanma
 
-Bağımsız kullanım için `python -m pip install ./src/providers` komutunu SiopeChat'ten ayrı bir ortamda çalıştırın. `ProviderClient` hesap adaptörlerini, akışları ve bağlantı temizliğini; `Backend` ise model, sohbet, proje, kaynak, dosya yükleme ve indirme çözümleme işlemlerini sunar. Bağımsız dağıtımın adı `webai-provider`, Python içe aktarma paketi `providers`'tır. SiopeChat şu anda aynı içe aktarma paketini kendi wheel'ine de koyar; bu nedenle iki dağıtım aynı ortama kurulmamalıdır. Sağlayıcı çalışma zamanı bağımlılıkları SiopeChat'in bağımlılıklarında tutulur. Örnekler ve bağımsız testler için [sağlayıcı kılavuzuna](https://github.com/TahsinCr/webai-provider/blob/v1.0-beta/README-TR.md) bakın.
+SiopeChat, PyPI'dan `webai-provider==1.1.0b0` paketini kurar ve Python'da `providers` adıyla içe aktarır; uygulama wheel'i artık bu paketin dosyalarını içermez. Kütüphaneyi bağımsız kullanmak için `python -m pip install webai-provider==1.1.0b0` komutunu çalıştırın. `ProviderClient` hesap adaptörlerini, akışları ve bağlantı temizliğini; `Backend` ise model, sohbet, proje, kaynak, dosya yükleme ve indirme çözümleme işlemlerini sunar. API örnekleri ve bağımsız testler için [sağlayıcı kılavuzuna](https://github.com/TahsinCr/webai-provider/blob/v1.1-beta/README-TR.md) bakın.
 
 Taşıma katmanları, tarayıcı profili keşfi ve yerel CDP erişimi Python ile uygulanmıştır. Gemini, ek bir Gemini SDK’sı gerektirmeden paketteki HTTPS taşıma katmanını kullanır. ChatGPT’nin desteklenen Sentinel kontrolleri Python çalışma zamanı ve paketteki profille yürütülür. Değişen veya desteklenmeyen sunucu gereksinimleri ayrıca doğrulanmalıdır; çevrimdışı test verileri canlı kontrollerin tümünü kapsamaz.
 
