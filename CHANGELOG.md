@@ -27,6 +27,8 @@ Python distributions use the corresponding PEP 440 version (`1.5.4b0` for `v1.5.
 
 ### Fixed
 
+- Stream Grok responses concurrently outside the send preparation lock, parse multi-line SSE payloads while ignoring keep-alive comments, defer protocol text cleaning until stream reconciliation, and restore user file attachments when reopening Grok chats.
+- Guard virtual transcript failure signature checks against missing attributes when switching tabs.
 - Keep transcript render callbacks tied to their originating request, so cancellation after switching tabs cannot clear or stall the newly selected tab's render.
 - Preserve late Grok answer corrections after text completion, avoid duplicate completion notifications, and reduce protocol-filter overhead while preserving streamed output.
 - Apply partial Grok project updates without rereading unchanged fields, support instructions during creation, and delete uploaded project files by path. Reuse verified source metadata, reject duplicate uploads, and cover mutation confirmation, chat detachment and move rollback in provider tests.

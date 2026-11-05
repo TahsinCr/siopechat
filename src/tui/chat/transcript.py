@@ -755,7 +755,7 @@ class TranscriptComponent:
                 if still_active() and reason not in ("Superseded transcript", "Transcript closed"):
                     self._virtual_failed_signature = signature
                     self._virtual_retry_after = time.monotonic() + 1
-                elif self._virtual_failed_signature == signature:
+                elif getattr(self, "_virtual_failed_signature", None) == signature:
                     self._virtual_failed_signature = None
                     self._virtual_retry_after = 0
             if current_request:
