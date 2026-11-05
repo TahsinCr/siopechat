@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from providers.chatgpt import BrowserSession, SessionPaths
 from providers.projects import source_file
+
 from utils.files import atomic_json_write
 
 

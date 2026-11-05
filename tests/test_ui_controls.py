@@ -12,12 +12,12 @@ from unittest.mock import Mock, patch
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
 from prompt_toolkit.utils import get_cwidth
-
-from backend import BackendService
-from bootstrap import create_application
 from providers.chatgpt import BrowserSession, ChatGPTClient, SessionPaths
 from providers.chatgpt.errors import ChatGPTWebError
 from providers.models import Choice, FeatureState, Model, ModelCatalog
+
+from backend import BackendService
+from bootstrap import create_application
 from tests.tui_support import ResizableOutput, click, immediate, terminal, wait_until
 from tui.widgets import TranscriptControl
 
@@ -1080,14 +1080,13 @@ class SessionSecurityTests(unittest.TestCase):
 
     def test_logout_stops_daemon_before_removing_session(self):
         with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / "session.json"
-            path.write_text("session")
-            backend = BackendService()
+            backend = BackendService(Path(folder))
+            backend._session_credentials.save({"sessionKey": "fixture"})
             with (
-                patch.object(backend, "auth_store_path", return_value=path),
                 patch.object(backend, "daemon_is_ready", side_effect=[True, False]),
                 patch.object(backend, "daemon_request") as request,
             ):
-                backend.forget_session(Path(folder) / "socket")
+                result = backend.forget_session(Path(folder) / "socket")
                 request.assert_called_once()
-            self.assertFalse(path.exists())
+            self.assertTrue(result["logged_out"])
+            self.assertFalse(backend._session_credentials.exists())

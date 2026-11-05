@@ -1,6 +1,9 @@
 $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
 $Script = Join-Path $Root 'siopechat.py'
+if ([string]::IsNullOrEmpty($env:SIOPECHAT_PORTABLE)) {
+    $env:SIOPECHAT_PORTABLE = '1'
+}
 
 function Get-PythonVersion {
     param([string]$Interpreter)

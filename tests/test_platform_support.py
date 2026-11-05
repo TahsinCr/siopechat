@@ -1,133 +1,90 @@
+import os
 import tempfile
 import unittest
-from pathlib import Path, PurePosixPath, PureWindowsPath
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from utils import paths as platform
-from utils import process
-
-
-class TestPosixPath(PurePosixPath):
-    @classmethod
-    def home(cls):
-        return cls("/Users/test")
+from utils import paths, process
 
 
 class PlatformSupportTests(unittest.TestCase):
-    def test_application_root_defaults_to_user_data_and_honors_override(self):
+    def test_storage_paths_use_platform_defaults_and_explicit_portable_mode(self):
+        project = Path("/tmp/siopechat-project")
+        standard = SimpleNamespace(
+            user_config_path=Path("/user/config/siopechat"),
+            user_data_path=Path("/user/data/siopechat"),
+            user_state_path=Path("/user/state/siopechat"),
+            user_downloads_path=Path("/user/Downloads"),
+            user_cache_path=Path("/user/cache/siopechat"),
+            user_runtime_path=Path("/run/user/1000/siopechat"),
+        )
         with (
-            patch.dict(platform.os.environ, {}, clear=True),
-            patch.object(platform, "user_data_dir", return_value=Path("/tmp/siopechat-data")),
+            patch.dict(os.environ, {}, clear=True),
+            patch.object(paths, "project_root", return_value=project),
+            patch.object(paths, "_APP_DIRS", standard),
         ):
-            self.assertEqual(platform.application_root(), Path("/tmp/siopechat-data"))
+            self.assertEqual(paths.config_path(), standard.user_config_path / "config.json")
+            self.assertEqual(paths.data_dir(), standard.user_data_path)
+            self.assertEqual(paths.state_dir(), standard.user_state_path)
+            self.assertEqual(paths.downloads_dir(), standard.user_downloads_path)
+            self.assertEqual(paths.cache_dir(), standard.user_cache_path)
+            self.assertEqual(paths.runtime_dir(), standard.user_runtime_path)
 
-        with tempfile.TemporaryDirectory() as folder:
-            configured = Path(folder) / "custom-data"
-            with patch.dict(platform.os.environ, {"SIOPECHAT_HOME": str(configured)}, clear=True):
-                self.assertEqual(platform.application_root(), configured.resolve())
-
-    def test_checkout_user_data_is_copied_once_without_deleting_source(self):
-        with tempfile.TemporaryDirectory() as folder:
-            checkout = Path(folder) / "checkout"
-            root = Path(folder) / "user-data"
-            (checkout / "src").mkdir(parents=True)
-            (checkout / "pyproject.toml").touch()
-            (checkout / "src" / "bootstrap.py").touch()
-            (checkout / "data").mkdir()
-            (checkout / "data" / "accounts.sqlite3").write_bytes(b"account data")
-            (checkout / "downloads").mkdir()
-            (checkout / "downloads" / "saved.txt").write_text("download", encoding="utf-8")
-            (checkout / "config.json").write_text('{"theme":"dark"}', encoding="utf-8")
-
-            with patch.dict(platform.os.environ, {}, clear=True):
-                platform.migrate_checkout_data(checkout, root)
-                (root / "config.json").write_text('{"theme":"light"}', encoding="utf-8")
-                platform.migrate_checkout_data(checkout, root)
-
-            self.assertEqual((root / "data" / "accounts.sqlite3").read_bytes(), b"account data")
-            self.assertEqual((root / "downloads" / "saved.txt").read_text(), "download")
-            self.assertEqual((root / "config.json").read_text(), '{"theme":"light"}')
-            self.assertTrue((checkout / "data" / "accounts.sqlite3").is_file())
-
-    def test_checkout_data_migration_is_disabled_by_explicit_home(self):
-        with tempfile.TemporaryDirectory() as folder:
-            checkout = Path(folder) / "checkout"
-            root = Path(folder) / "user-data"
-            (checkout / "src").mkdir(parents=True)
-            (checkout / "pyproject.toml").touch()
-            (checkout / "src" / "bootstrap.py").touch()
-            (checkout / "config.json").touch()
-            with patch.dict(platform.os.environ, {"SIOPECHAT_HOME": str(root)}, clear=True):
-                platform.migrate_checkout_data(checkout, root)
-            self.assertFalse(root.exists())
-
-    def test_windows_paths_and_detached_process_flags(self):
         with (
-            patch.object(platform.os, "name", "nt"),
-            patch.object(platform.sys, "platform", "win32"),
-            patch.object(platform, "Path", PureWindowsPath),
-            patch.dict(
-                platform.os.environ, {"LOCALAPPDATA": "C:/Users/test/AppData/Local"}, clear=True
-            ),
-            patch.object(
-                platform.tempfile, "gettempdir", return_value="C:/Users/test/AppData/Local/Temp"
-            ),
-            patch.object(platform.getpass, "getuser", return_value="test-user"),
+            patch.dict(os.environ, {"SIOPECHAT_PORTABLE": "1"}, clear=True),
+            patch.object(paths, "project_root", return_value=project),
         ):
-            self.assertEqual(
-                platform.user_data_dir(), PureWindowsPath("C:/Users/test/AppData/Local/siopechat")
-            )
-            self.assertEqual(
-                platform.cache_dir(), PureWindowsPath("C:/Users/test/AppData/Local/siopechat/Cache")
-            )
-            self.assertEqual(
-                platform.runtime_dir(),
-                PureWindowsPath("C:/Users/test/AppData/Local/Temp/sc-test-user"),
-            )
+            self.assertEqual(paths.config_path(), project / "config.json")
+            self.assertEqual(paths.data_dir(), project / "data")
+            self.assertEqual(paths.state_dir(), project / "data")
+            self.assertEqual(paths.downloads_dir(), project / "downloads")
+            self.assertEqual(paths.cache_dir(), project / ".cache")
+            self.assertEqual(paths.runtime_dir(), project / ".runtime")
+
+    def test_each_storage_path_has_an_independent_environment_override(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / "project"
+            resolved_root = root.resolve()
+            external_data = Path(folder) / "external-data"
+            external_cache = Path(folder) / "external-cache"
+            overrides = {
+                "SIOPECHAT_CONFIG_PATH": "settings/app.json",
+                "SIOPECHAT_DATA_DIR": str(external_data),
+                "SIOPECHAT_STATE_DIR": "state",
+                "SIOPECHAT_DOWNLOADS_DIR": "files",
+                "SIOPECHAT_CACHE_DIR": str(external_cache),
+                "SIOPECHAT_RUNTIME_DIR": "run",
+            }
+            with patch.dict(os.environ, overrides, clear=True):
+                self.assertEqual(paths.config_path(root), resolved_root / "settings/app.json")
+                self.assertEqual(paths.data_dir(root), external_data.resolve())
+                self.assertEqual(paths.state_dir(root), resolved_root / "state")
+                self.assertEqual(paths.downloads_dir(root), resolved_root / "files")
+                self.assertEqual(paths.cache_dir(root), external_cache.resolve())
+                self.assertEqual(paths.runtime_dir(root), resolved_root / "run")
+
+    def test_runtime_directory_is_private_and_honors_its_override(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            with patch.dict(os.environ, {"SIOPECHAT_RUNTIME_DIR": str(root / "private-run")}):
+                runtime = paths.ensure_runtime_dir(paths.runtime_dir(root))
+            self.assertEqual(runtime, (root / "private-run").resolve())
+            if os.name != "nt":
+                self.assertEqual(runtime.stat().st_mode & 0o777, 0o700)
+
+    def test_windows_detached_process_flags(self):
+        with patch.object(process.os, "name", "nt"):
             self.assertEqual(process.detached_process_options(), {"creationflags": 0x208})
 
     def test_windows_permissions_use_inherited_acl(self):
+        path = Path("credentials.json")
         with (
-            patch.object(platform.os, "name", "nt"),
-            patch.object(platform, "Path", PureWindowsPath),
-            patch.object(platform.os, "chmod") as chmod,
+            patch.object(process.os, "name", "nt"),
+            patch.object(process.os, "chmod") as chmod,
         ):
-            process.set_private_permissions(PureWindowsPath("credentials.json"), 0o600)
+            process.set_private_permissions(path, 0o600)
         chmod.assert_not_called()
-
-    def test_unix_xdg_paths_use_package_name(self):
-        with (
-            patch.object(platform.os, "name", "posix"),
-            patch.object(platform.sys, "platform", "linux"),
-            patch.object(platform, "Path", TestPosixPath),
-            patch.dict(
-                platform.os.environ,
-                {
-                    "XDG_DATA_HOME": "/tmp/data",
-                    "XDG_STATE_HOME": "/tmp/state",
-                    "XDG_CACHE_HOME": "/tmp/cache",
-                },
-                clear=True,
-            ),
-        ):
-            self.assertEqual(platform.user_data_dir(), TestPosixPath("/tmp/data/siopechat"))
-            self.assertEqual(platform.state_dir(), TestPosixPath("/tmp/state/siopechat"))
-            self.assertEqual(platform.cache_dir(), TestPosixPath("/tmp/cache/siopechat"))
-
-    def test_macos_uses_native_data_directories(self):
-        with (
-            patch.object(platform.os, "name", "posix"),
-            patch.object(platform.sys, "platform", "darwin"),
-            patch.dict(platform.os.environ, {}, clear=True),
-            patch.object(platform, "Path", TestPosixPath),
-        ):
-            self.assertEqual(
-                platform.user_data_dir(),
-                TestPosixPath("/Users/test/Library/Application Support/siopechat"),
-            )
-            self.assertEqual(
-                platform.cache_dir(), TestPosixPath("/Users/test/Library/Caches/siopechat")
-            )
 
 
 if __name__ == "__main__":

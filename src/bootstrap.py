@@ -28,28 +28,49 @@ def create_application(root: Path | None = None):
     checkout = Path(__file__).resolve().parent.parent
     if (checkout / "extensions" / "__init__.py").is_file() and str(checkout) not in sys.path:
         sys.path.insert(0, str(checkout))
+    from providers import create_provider
+
     from accounts import Accounts
     from actions import Action
     from backend import BackendService
     from extension import ExtensionAPI, ExtensionManager, View
     from extensions import __file__ as extensions_file
     from lang import __file__ as language_file
-    from providers import create_provider
     from settings import Settings, SettingsCatalog
-    from utils.paths import application_root, migrate_checkout_data
+    from utils.paths import (
+        cache_dir,
+        config_path,
+        data_dir,
+        downloads_dir,
+        ensure_private_dir,
+        portable_mode,
+        project_root,
+        runtime_dir,
+        state_dir,
+    )
 
-    if root is None:
-        root = application_root()
-        migrate_checkout_data(checkout, root)
-    else:
-        root = Path(root)
-    settings = Settings(root / "config.json")
+    explicit_root = root is not None
+    root = Path(root).expanduser().resolve() if explicit_root else project_root()
+    storage_root = root if explicit_root or portable_mode() else None
+    data_root = data_dir(storage_root)
+    state_root = state_dir(storage_root)
+    downloads_root = downloads_dir(storage_root)
+    cache_root = cache_dir(storage_root)
+    runtime_root = runtime_dir(storage_root)
+    settings_path = config_path(storage_root)
+    settings = Settings(settings_path)
     api = ExtensionAPI(settings)
-    api.provide("application", "paths", root)
+    api.provide("application", "data_root", data_root)
+    api.provide("application", "state_root", state_root)
+    api.provide("application", "downloads_root", downloads_root)
+    api.provide("application", "cache_root", cache_root)
+    api.provide("application", "runtime_root", runtime_root)
     from accounts.repository import AccountRepository
 
-    repository = AccountRepository(root / "data" / "accounts.sqlite3")
-    backend = BackendService(root)
+    repository = AccountRepository(data_root / "accounts.sqlite3")
+    backend = BackendService(
+        root, data_root=data_root, runtime_root=runtime_root, repository=repository
+    )
     api.provide("application", "backend", backend)
     api.providers.register(
         create_provider("chatgpt", session=backend.create_session()),
@@ -81,7 +102,11 @@ def create_application(root: Path | None = None):
     )
     from downloads import Downloads
 
-    api.provide("application", "downloads", Downloads(settings, root, accounts))
+    api.provide(
+        "application",
+        "downloads",
+        Downloads(settings, root, accounts, default_directory=downloads_root),
+    )
     api.actions.register(
         "application", Action("accounts.list", "Hesapları listele", accounts.items)
     )
@@ -108,7 +133,8 @@ def create_application(root: Path | None = None):
     manager.load_directory(bundled_extensions)
     if (root / "extensions").resolve() != bundled_extensions.resolve():
         manager.load_directory(root / "extensions")
-    (root / "data").mkdir(parents=True, exist_ok=True)
+    for directory in (settings_path.parent, data_root, state_root, cache_root):
+        ensure_private_dir(directory)
     if not settings.path.exists():
         settings.save()
     # Stop provider work and finish accepted-response writes before extensions

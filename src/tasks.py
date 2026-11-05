@@ -11,7 +11,6 @@ from enum import Enum
 from typing import Callable
 
 from eventflow import EventBus
-
 from providers.api import (
     AccountPaused,
     Capability,

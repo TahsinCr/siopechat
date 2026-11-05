@@ -1,8 +1,9 @@
 """Account-scoped project forms, separate from conversation presentation."""
 
-from accounts import origin
 from providers import Capability
 from providers.registry import PROVIDERS
+
+from accounts import origin
 
 from .file_selection import browse_form_field
 from .styles import ICONS

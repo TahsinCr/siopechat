@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from providers import ProviderRegistry, ReplaceText, SendRequest, TextDelta
+
 from tasks import TaskService
 from tests.tui_support import immediate, terminal, wait_until
 

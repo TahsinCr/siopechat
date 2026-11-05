@@ -9,9 +9,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from providers import Capability
+
 from bootstrap import create_application
 from language import Catalog, literal
-from providers import Capability
 from settings import DEFAULTS
 from tests import tui_support as interaction
 from tests.tui_support import ResizableOutput, screen_text

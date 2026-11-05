@@ -7,9 +7,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import httpx
+from providers.session import WebSession, save_session
 
 from backend import BackendService
-from providers.session import WebSession, save_session
 
 
 class SessionTests(unittest.IsolatedAsyncioTestCase):
@@ -29,9 +29,20 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
         )
         self.addAsyncCleanup(self.session.close)
 
-    def test_custom_application_root_cannot_overwrite_real_session(self):
+    def test_custom_application_root_keeps_data_and_runtime_under_root(self):
+        root = Path(self.directory.name).resolve()
+        backend = BackendService(root)
+        self.assertEqual(backend.data_root, root / "data")
+        backend._session_credentials.save({"sessionKey": "fixture"})
+        self.assertTrue(backend._session_credentials.exists())
+        self.assertTrue(backend.create_session().paths.profile.is_relative_to(root))
+        self.assertEqual(backend.default_socket_path(), root / ".runtime" / "daemon.sock")
+
+    def test_daemon_status_reads_credentials_from_the_account_repository(self):
         backend = BackendService(Path(self.directory.name))
-        self.assertTrue(backend.auth_store_path().is_relative_to(Path(self.directory.name)))
-        self.assertTrue(
-            backend.create_session().paths.profile.is_relative_to(Path(self.directory.name))
-        )
+        client = SimpleNamespace(session=SimpleNamespace(is_ready=lambda: False))
+        status = backend.handle_daemon_command(client, {"command": "status"})[0]
+        self.assertFalse(status["session_saved"])
+        backend._session_credentials.save({"sessionKey": "fixture"})
+        status = backend.handle_daemon_command(client, {"command": "status"})[0]
+        self.assertTrue(status["session_saved"])

@@ -21,10 +21,18 @@ class ApplicationTests(unittest.TestCase):
 
     def test_source_entrypoint_works_outside_repository(self):
         with tempfile.TemporaryDirectory() as directory:
+            env = os.environ | {
+                "SIOPECHAT_CONFIG_PATH": str(Path(directory) / "config.json"),
+                "SIOPECHAT_DATA_DIR": str(Path(directory) / "data"),
+                "SIOPECHAT_STATE_DIR": str(Path(directory) / "state"),
+                "SIOPECHAT_DOWNLOADS_DIR": str(Path(directory) / "downloads"),
+                "SIOPECHAT_CACHE_DIR": str(Path(directory) / ".cache"),
+                "SIOPECHAT_RUNTIME_DIR": str(Path(directory) / ".runtime"),
+            }
             result = subprocess.run(
                 [sys.executable, str(ROOT / "siopechat.py"), "--help"],
                 cwd=directory,
-                env=os.environ | {"SIOPECHAT_HOME": directory},
+                env=env,
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -69,7 +77,8 @@ class ApplicationTests(unittest.TestCase):
         api.get.side_effect = lambda key: {
             "accounts": accounts,
             "backend": backend,
-            "paths": Path("unused-root"),
+            "data_root": Path("unused-root/data"),
+            "state_root": Path("unused-root/state"),
         }.get(key, Mock())
         with patch.object(chat, "run_tui") as run_tui:
             with patch.object(self.app, "cache_conversation") as cache:
@@ -95,7 +104,6 @@ class ApplicationTests(unittest.TestCase):
 
     def test_rate_limit_is_not_automatically_retried(self):
         import httpx
-
         from providers.chatgpt import ChatGPTClient
         from providers.errors import RateLimited
 

@@ -1,4 +1,4 @@
-[![Version: v1.5.4-beta][version-shield]](CHANGELOG.md)
+[![Version: v1.5.5-beta][version-shield]](CHANGELOG.md)
 [![Python 3.10+][python-shield]](https://www.python.org/downloads/)
 [![GPL-3.0-only][license-shield]](LICENSE)
 
@@ -34,7 +34,7 @@ Bring your chats, projects and model comparisons together in one terminal worksp
 | --- | --- | --- |
 | Download generated files from replies and track progress in the built-in download manager. | Use the command palette, configurable shortcuts, mouse controls and local extensions. | Choose the English, Turkish or Russian interface. |
 
-> **v1.5.4-beta** adds conversation export as text or JSON, restores drafts and queued prompts across restarts, and lets you retry earlier Gemini replies. It also improves ChatGPT history and SSE handling, provider cache recovery, tab and attachment cleanup, long-chat rendering, sidebar navigation, and shutdown reliability.
+> **v1.5.5-beta** adds Grok as a fourth web-chat provider, with account-specific model discovery, streaming replies, web-search citations, and support for workspaces and projects. Provider clients now come from a pinned PyPI package. The release also improves retries, history sync, project actions, tab rendering, downloads, and shutdown. The installed command uses platform-standard user directories; repository launchers default to portable project-local storage.
 
 ## Smoother Chats
 
@@ -44,7 +44,7 @@ Bring your chats, projects and model comparisons together in one terminal worksp
 | **ChatGPT** | Reuse eligible conversation snapshots and messages captured from completed streams to avoid duplicate history requests. Prepare Sentinel headers before the next send. In the recorded offline benchmark, native Python Sentinel initial-proof generation had a **0.329 ms median**: about **10.7× faster** than a reused QuickJS-NG context and **12.6× faster** than an already-running Node/V8 process that creates a fresh VM for each sample. |
 | **Gemini** | Route Flash requests correctly, preserve the provider's default thinking policy, reuse valid continuation IDs, and avoid repeating the activity RPC within five minutes. Earlier limited live trials recorded first-text latency dropping from **65–110 s to 1.89–3.80 s**. These are reported ranges, not the results of a controlled benchmark or a guarantee for every model and account. |
 
-**About these figures:** ChatGPT timings measure local proof generation, not a full reply. Gemini figures are limited live ranges without paired samples or p95; shared UI improvements have no measured multiplier. Results vary with network, model and server load. See the [changelog](CHANGELOG.md). Python package version: `1.5.4b0`.
+**About these figures:** ChatGPT timings measure local proof generation, not a full reply. Gemini figures are limited live ranges without paired samples or p95; shared UI improvements have no measured multiplier. Results vary with network, model and server load. See the [changelog](CHANGELOG.md). Python package version: `1.5.5b0`.
 
 ## Install and sign in
 
@@ -52,7 +52,7 @@ Bring your chats, projects and model comparisons together in one terminal worksp
 
 Install Git and use **Python 3.10+** with a Unicode-capable terminal; true color and mouse support are recommended. The installers check your Python version. You can import an existing sign-in from a supported browser profile as described below. Routine chat operations use HTTP, so the browser does not need to stay open.
 
-By default, settings, accounts, conversation archives, and downloads are stored in your per-user application data directory. Set `SIOPECHAT_HOME` to use another location.
+The installed `siopechat` command uses per-user configuration, data, state, cache and runtime directories supplied by the operating system, and saves downloaded files in your Downloads folder. Linux follows XDG directories; macOS uses Application Support and Caches; Windows uses AppData. Repository launchers (`siopechat.sh`, `siopechat.bat` and `siopechat.ps1`) set `SIOPECHAT_PORTABLE=1` by default and keep files beside the checkout in `config.json`, `data/`, `downloads/`, `.cache/` and `.runtime/`. Set `SIOPECHAT_PORTABLE=0` before launching to use the platform directories. Existing project-local files are left in place. Each location can also be overridden independently with the environment variables below; relative override paths resolve from the project root.
 
 ChatGPT's supported Sentinel checks run in Python using the bundled `SentinelSpec` profile. **No Node.js or JavaScript engine is required.**
 
@@ -111,7 +111,7 @@ The installer uses the dependency ranges in `pyproject.toml` with pip, so uv is 
 
 ### Update SiopeChat
 
-SiopeChat installs the pinned `webai-provider==1.1.0b0` package from PyPI. No
+SiopeChat installs the pinned `webai-provider==1.2.0b0` package from PyPI. No
 submodule initialization or synchronization is needed. After pulling an
 application update, rerun the installer if the dependency lock changed:
 
@@ -168,7 +168,7 @@ Generated files appear inside the assistant reply as clickable file cards with t
 
 ### Download manager
 
-Files download in the background to `downloads/` in the project directory. Change the folder in **Settings → General → Download folder**. Two transfers can run at once; existing files are preserved, and ordinary web links open in your browser. Protected downloads use the owning provider and account without sending credentials to other sites.
+Files download in the background to `downloads/` when using a repository launcher, or to your Downloads folder with the installed command. Change the folder in **Settings → General → Download folder**. Two transfers can run at once; existing files are preserved, and ordinary web links open in your browser. Protected downloads use the owning provider and account without sending credentials to other sites.
 
 Open **Downloads** between Help and Settings, use `/downloads`, or press **Alt+J** to view progress and source chats. Search, filter and sort the list; **Sync** checks file presence every ten seconds. **Delete file** keeps its history entry, while **Remove entry** leaves the file on disk. The archive extension keeps download history across restarts; without it, history lasts for the current session. Interrupted transfers are marked **Interrupted**. Downloads default to 512 MiB; you can change the limit or allow local-network downloads in settings.
 
@@ -191,7 +191,7 @@ Closing a conversation tab keeps its running response in the background. In the 
 | Esc, then S | Switch to another saved prompt when one is available |
 | F5 / F12 | Settings / accounts |
 
-Shortcut changes take effect immediately throughout the interface. Every binding can be edited under **Settings → Keyboard** or in the local `config.json`. The command palette exposes the same actions, including those provided by extensions.
+Shortcut changes take effect immediately throughout the interface. Every binding can be edited under **Settings → Keyboard** or in the local settings file. The command palette exposes the same actions, including those provided by extensions.
 
 Settings is a regular workspace tab: switch back to a conversation with Alt+Left/Right, reopen the same Settings tab with F5, or close it with Ctrl+W.
 
@@ -210,7 +210,7 @@ Delete a chat with **Delete** beside the composer; use `/project-delete` or proj
 | ChatGPT | Projects, instructions, sources and supported chat moves | Models, effort, temporary mode and project options depend on the account. |
 | Gemini | Gemini notebooks shown as a distinct project type; notebook-context chats, instructions and text sources | Existing chats cannot be moved into notebooks. File/URL source import is not exposed. Thinking choices and defaults follow the account's native web model policy. |
 | Claude | Projects, instructions, text/file sources and supported membership changes | Incognito chats are supported outside projects; privacy/memory overrides beyond private/default are not exposed. |
-| Grok | Workspaces, instructions, file sources up to 3 MiB and conversation membership; account-available models, retry, published thinking summaries and web-search sources | Shared effort controls, chat attachments, message editing and native branches are not exposed. |
+| Grok | Workspaces, instructions, file sources up to 3 MiB, chat attachments up to 3 MiB, user message editing and conversation membership; account-available models, retry, published thinking summaries and web-search sources | Shared effort controls and native branches are not exposed. |
 
 Gemini notebooks use the Gemini account session; a separate NotebookLM login is not required. Provider project types and metadata remain distinct, and available features vary by provider and account.
 
@@ -220,15 +220,25 @@ Attachments are limited locally to **20 MiB** per file; providers may have stric
 
 ### Settings and privacy
 
-`config.json` is created locally and excluded from Git. Defaults are defined in `src/settings.py`. Choose a language under **Settings → General → Language** (`en`, `tr`, `ru`), enable providers under **Providers**, and manage feature packages under **Extensions**. At least one provider must remain enabled.
+The settings file is created in your per-user configuration directory and is outside the repository. Defaults are defined in `src/settings.py`. Choose a language under **Settings → General → Language** (`en`, `tr`, `ru`), enable providers under **Providers**, and manage feature packages under **Extensions**. At least one provider must remain enabled.
 
-Set `SIOPECHAT_HOME` to use a different configuration/data directory. Keep configuration, account sessions and `data/` private; do not attach them to bug reports.
+Set an environment variable below to override only that path. `SIOPECHAT_DOWNLOADS_DIR` takes precedence over the Download folder setting; without it, the setting can select another folder. Keep configuration and account data private; do not attach them to bug reports.
+
+| Variable | Default | Contents |
+| --- | --- | --- |
+| `SIOPECHAT_PORTABLE` | `1` in repository launchers; unset for installed command | Set to `0` to use platform directories from a repository launcher |
+| `SIOPECHAT_CONFIG_PATH` | Platform user config directory | Application settings |
+| `SIOPECHAT_DATA_DIR` | Platform user data directory | Account records and archives |
+| `SIOPECHAT_STATE_DIR` | Platform user state directory | Open tabs, drafts and selected conversation |
+| `SIOPECHAT_DOWNLOADS_DIR` | User Downloads folder | Downloaded files |
+| `SIOPECHAT_CACHE_DIR` | Platform user cache directory | Reusable local cache |
+| `SIOPECHAT_RUNTIME_DIR` | Platform user runtime directory | Local sockets and temporary session files |
 
 ### Archive and file retention
 
-The archive extension stores conversations, ordered messages, published thinking, projects/notebooks, memberships and resource metadata in `data/archive.sqlite3`. Uploaded files are never copied into the archive: only provider identifiers and available file metadata are retained, never the local path or file contents. Upgrading from an older archive removes stored upload copies named by their content hash while preserving conversation and resource metadata. Downloaded files remain in the configured downloads folder; the archive keeps only their download-history metadata. Remote images and sources are retained as references, and not every remote file is downloaded automatically.
+The archive extension stores conversations, ordered messages, published thinking, projects/notebooks, memberships and resource metadata in `archive.sqlite3` inside the configured data directory. Uploaded files are never copied into the archive: only provider identifiers and available file metadata are retained, never the local path or file contents. Upgrading from an older archive removes stored upload copies named by their content hash while preserving conversation and resource metadata. Downloaded files remain in the configured downloads folder; the archive keeps only their download-history metadata. Remote images and sources are retained as references, and not every remote file is downloaded automatically.
 
-**Upgrade note:** The schema v5 migration permanently removes legacy upload copies. Before opening an older archive with this version, back up `data/archive.sqlite3` and `data/files/` together if you need those offline copies or may return to an older SiopeChat version. Adjust these paths if you use a custom `SIOPECHAT_HOME` directory.
+**Upgrade note:** The schema v5 migration permanently removes legacy upload copies. Before opening an older archive with this version, back up `archive.sqlite3` and `files/` from the configured data directory if you need those offline copies or may return to an older SiopeChat version.
 
 ### Loading, memory and synchronization
 
@@ -315,7 +325,7 @@ Lint, formatting and distribution builds are separate checks. SiopeChat's GitHub
 | Location | Responsibility |
 | --- | --- |
 | `src/bootstrap.py`, `src/cli.py` | Application setup and command-line entry points |
-| `src/accounts.py`, `src/tasks.py`, `src/runtime.py` | Account routing, task ownership and service lifecycle |
+| `src/accounts/`, `src/tasks.py`, `src/runtime.py` | Account routing, task ownership and service lifecycle |
 | PyPI `webai-provider` | Independent web-session clients, transports and provider contracts |
 | `src/tui/` | Terminal views, input handling and rendering |
 | `src/extension.py`, `src/tui/api.py` | Extension lifecycle and public TUI extension API |
@@ -328,7 +338,7 @@ Message sends are serialized per account through `TaskService`. Cancellation rel
 
 ### Use the provider library independently
 
-SiopeChat installs `webai-provider==1.1.0b0` from PyPI and imports it as `providers`; the application wheel no longer bundles that package. To use the library on its own, run `python -m pip install webai-provider==1.1.0b0`. `ProviderClient` manages account adapters, streams and connection cleanup; `Backend` exposes models, chats, projects, sources, uploads and download resolution. See the [provider guide](https://github.com/TahsinCr/webai-provider/blob/v1.1-beta/README.md) for API examples and standalone tests.
+SiopeChat installs `webai-provider==1.2.0b0` from PyPI and imports it as `providers`; the application wheel no longer bundles that package. To use the library on its own, run `python -m pip install webai-provider==1.2.0b0`. `ProviderClient` manages account adapters, streams and connection cleanup; `Backend` exposes models, chats, projects, sources, uploads and download resolution. See the [provider guide](https://github.com/TahsinCr/webai-provider/blob/v1.2-beta/README.md) for API examples and standalone tests.
 
 Transports, browser-profile discovery and local CDP access are implemented in Python. Gemini uses the bundled HTTPS transport without a separate Gemini SDK. ChatGPT handles supported Sentinel challenges with its Python runtime and bundled profile. Changed or unsupported server requirements need explicit compatibility checks; offline fixtures do not cover every live challenge.
 
@@ -336,12 +346,15 @@ Transports, browser-profile discovery and local CDP access are implemented in Py
 
 | File | Contents |
 | --- | --- |
-| `config.json` | Preferences, account labels and selection |
-| `data/accounts.sqlite3` | Account sessions, model catalogs, verification records and fallback conversation cache |
-| `data/archive.sqlite3` | Archived history, resource metadata, download records and local reply versions |
-| `data/workspaces.sqlite3` | Saved chat layouts |
+| User config directory / `config.json` | Preferences, account labels and selection |
+| User data directory / `accounts.sqlite3` | Account sessions, model catalogs, verification records and fallback conversation cache |
+| User state directory / `session.json` | Open tabs, drafts and selected conversation |
+| User data directory / `archive.sqlite3` | Archived history, resource metadata, download records and local reply versions |
+| User data directory / `workspaces.sqlite3` | Saved chat layouts |
+| User cache directory | Reusable local cache |
+| User runtime directory | Local daemon socket and short-lived session-validation files |
 
-These paths are relative to the configured application directory. Provider-specific fields remain JSON in the corresponding database. The provider library accepts credential storage from its caller and does not depend on these SQLite schemas. Account storage is not encrypted; on Unix, file permissions restrict access to its owner. Keep migrations transactional and preserve existing user data. See the upgrade warning above before opening an older archive.
+Paths follow the host platform's per-user conventions by default. Set `SIOPECHAT_PORTABLE=1` to keep them in the checkout; relative environment-variable values resolve from the project directory, while absolute values are used as given. Provider-specific fields remain JSON in the corresponding database. The provider library accepts credential storage from its caller and does not depend on these SQLite schemas. Account storage is not encrypted; on Unix, file permissions restrict access to its owner. Keep migrations transactional and preserve existing user data. See the upgrade warning above before opening an older archive.
 
 ### Measure performance and report issues
 
@@ -351,8 +364,8 @@ When filing an issue, include the version, provider, operation, terminal, OS and
 
 ## License
 
-Copyright © TahsinCr. Licensed under [GPL-3.0-only](LICENSE); see [COPYRIGHT](COPYRIGHT) for the project notice. Vendored components retain their own notices in `src/utils/`.
+Copyright © TahsinCr. Licensed under [GPL-3.0-only](LICENSE); see [COPYRIGHT](COPYRIGHT) for the project notice.
 
-[version-shield]: https://img.shields.io/badge/version-v1.5.4--beta-b7a3e3.svg?style=for-the-badge
+[version-shield]: https://img.shields.io/badge/version-v1.5.5--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge

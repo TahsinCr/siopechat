@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 
-from backend import BackendService
 from providers import (
     Capability,
 )
@@ -36,13 +35,9 @@ class AccountsHistory:
             value = archive.get(key, "conversation", remote)
             if value is not None:
                 return value
-        if remote and self.repository.cache_is_deleted(key, remote):
+        if not remote or self.repository.cache_is_deleted(key, remote):
             return None
-        if remote:
-            value = self.repository.cache_get(key, "conversation", remote)
-            if value is not None:
-                return value
-        return self.cache(key).load_cached_conversation(remote)
+        return self.repository.cache_get(key, "conversation", remote)
 
     def active_conversation(self, key):
         if not self.account_is_visible(key):
@@ -52,10 +47,7 @@ class AccountsHistory:
             pointer = archive.get(key, "pointer", "active")
             if pointer is not None:
                 return pointer.get("remote")
-        remote = self.repository.cache_active(key)
-        if remote:
-            return remote
-        return self.cache(key).active_conversation_id()
+        return self.repository.cache_active(key)
 
     def cached_window(self, key, remote=None, *, limit=None):
         """UI history reads use bounded SQL windows; other API callers retain full history."""
@@ -216,9 +208,6 @@ class AccountsHistory:
             self.repository.cache_set_active(key, None)
         else:
             self.repository.cache_set_active(key, remote)
-
-    def cache(self, key):
-        return BackendService(self.directory(key))
 
     def cache_conversation(self, key, conversation, *, make_active=True):
         remote = conversation.get("remote_id") or conversation.get("id")
@@ -469,13 +458,6 @@ class AccountsHistory:
                             self.repository.cache_delete(key, "tombstone", target)
                         else:
                             self.repository.cache_mark_deleted(key, target)
-                        legacy = self.cache(key)
-                        legacy.conversation_cache_path(target).unlink(missing_ok=True)
-                        legacy.conversation_cache_path(target).with_suffix(".deleted").unlink(
-                            missing_ok=True
-                        )
-                        if legacy.active_conversation_id() == target:
-                            legacy.set_active_conversation(None)
                         self._chat_projects.pop((key, target), None)
             except OSError as error:
                 raise RuntimeError(

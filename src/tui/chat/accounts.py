@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from accounts import origin
 from providers import Capability
 from providers.models import FeatureState, ModelCatalog
 from providers.registry import PROVIDERS
+
+from accounts import origin
 
 from ..library import SORT_OPTIONS
 from ..styles import ICONS
@@ -50,16 +51,10 @@ class AccountComponent:
         self.session_state = self.account_service.status(key)
         if not key:
             self.set_active_conversation = lambda value: None
-        elif hasattr(self.account_service, "set_active"):
-            self.set_active_conversation = lambda value: (
-                self.account_service.queue_active(key, value)
-                if hasattr(self.account_service, "queue_active")
-                else self.account_service.set_active(key, value)
-            )
         else:
-            self.set_active_conversation = lambda value: self.account_service.cache(
-                key
-            ).set_active_conversation(origin(value, key)[1])
+            self.set_active_conversation = lambda value: self.account_service.queue_active(
+                key, value
+            )
         self.list_conversations = lambda: self.account_service.list_chats(
             self.provider_filter, account_keys=self.account_filter
         )["items"]

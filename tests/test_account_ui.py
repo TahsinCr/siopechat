@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from providers.models import FeatureState, Model, ModelCatalog
+
 from tests import tui_support as interaction
 from tests.fakes import Accounts
 from tests.tui_support import immediate

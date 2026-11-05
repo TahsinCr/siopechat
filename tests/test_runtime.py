@@ -12,6 +12,7 @@ from providers import (
 )
 from providers.chatgpt.errors import SentinelCompatibilityError
 from providers.registry import ProviderRegistry
+
 from tasks import JobState, TaskService
 from tests.fakes import ControlledProvider, request
 
@@ -217,12 +218,13 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         async def persist(snapshot):
             persisted.append(snapshot)
 
-        job = self.runtime.submit(request(), on_event=broken_view, on_complete=persist)
-        await self.started(self.gpt)
-        self.gpt.release("one")
+        with self.assertLogs("tasks", level="WARNING") as logs:
+            job = self.runtime.submit(request(), on_event=broken_view, on_complete=persist)
+            await self.started(self.gpt)
+            self.gpt.release("one")
+            result = await self.finish(job)
 
-        result = await self.finish(job)
-
+        self.assertIn("Detached failing task observer", logs.output[0])
         self.assertEqual(result.state, JobState.COMPLETED)
         self.assertEqual(result.text, "partial response")
         self.assertEqual(len(persisted), 1)

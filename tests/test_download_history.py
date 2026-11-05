@@ -12,12 +12,12 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import httpx
+from providers.files import DownloadSource
 
 from bootstrap import create_application
 from downloads import Downloads
 from extensions.archive.repository import Files, SQLiteRepository
 from extensions.archive.sync import Archive
-from providers.files import DownloadSource
 from settings import Settings
 from tests.tui_support import immediate, terminal
 

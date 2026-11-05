@@ -7,7 +7,6 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -36,6 +35,16 @@ def python_command() -> list[str]:
 
 def main() -> int:
     env = os.environ.copy()
+    for key in (
+        "SIOPECHAT_CONFIG_PATH",
+        "SIOPECHAT_DATA_DIR",
+        "SIOPECHAT_STATE_DIR",
+        "SIOPECHAT_DOWNLOADS_DIR",
+        "SIOPECHAT_CACHE_DIR",
+        "SIOPECHAT_RUNTIME_DIR",
+    ):
+        env.pop(key, None)
+    env["SIOPECHAT_PORTABLE"] = "1"
     python_paths = [str(ROOT / "src"), str(ROOT)]
     if env.get("PYTHONPATH"):
         python_paths.append(env["PYTHONPATH"])
@@ -45,12 +54,10 @@ def main() -> int:
     commands = [
         [*python, "-m", "unittest", "discover", "-s", "tests", "-v"],
     ]
-    with tempfile.TemporaryDirectory(prefix="siopechat-test-data-") as test_home:
-        env["SIOPECHAT_HOME"] = test_home
-        for command in commands:
-            result = subprocess.run(command, cwd=ROOT, env=env, check=False)
-            if result.returncode:
-                return result.returncode
+    for command in commands:
+        result = subprocess.run(command, cwd=ROOT, env=env, check=False)
+        if result.returncode:
+            return result.returncode
 
     return 0
 

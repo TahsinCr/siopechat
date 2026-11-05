@@ -12,11 +12,11 @@ import httpx
 from prompt_toolkit.application.current import set_app
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
-
-from backend import BackendService
 from providers import Capability
 from providers.chatgpt import BrowserSession, ChatGPTClient, ChatGPTProvider, SessionPaths
 from providers.chatgpt.errors import ChatGPTWebError
+
+from backend import BackendService
 from tests import tui_support as interaction
 from tests.tui_support import ResizableOutput, click, immediate, terminal
 from tui.styles import ICONS

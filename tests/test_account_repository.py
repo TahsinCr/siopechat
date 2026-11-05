@@ -8,9 +8,10 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from pathlib import Path
 
-from accounts.repository import AccountRepository
 from providers.errors import AccountPaused
 from providers.session import delete_session, read_session, save_session, session_exists
+
+from accounts.repository import AccountRepository
 
 
 class RepositoryTests(unittest.TestCase):

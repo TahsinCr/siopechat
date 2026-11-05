@@ -6,9 +6,9 @@ from typing import Any
 
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.utils import get_cwidth
+from providers import Capability
 
 from accounts import origin
-from providers import Capability
 
 from ..library import build_sidebar_rows, merge_chat_listing
 from ..styles import ICONS

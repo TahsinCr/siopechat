@@ -1,107 +1,80 @@
-"""Resolve per-user application storage and platform runtime paths."""
+"""Resolve standard user storage paths with independent portable overrides."""
 
-import getpass
 import os
-import shutil
-import sys
-import tempfile
 from pathlib import Path
 
-_APPLICATION_NAME = "siopechat"
+from platformdirs import PlatformDirs
+
+_APP_DIRS = PlatformDirs("siopechat", appauthor=False)
+_PORTABLE_VALUES = {"1", "true", "yes", "on"}
 
 
-def _xdg_path(variable: str, fallback: Path) -> Path:
-    configured = os.environ.get(variable)
-    return (Path(configured) if configured else fallback) / _APPLICATION_NAME
+def project_root() -> Path:
+    return Path(__file__).resolve().parents[2]
 
 
-def _local_app_data() -> Path:
-    configured = os.environ.get("LOCALAPPDATA")
-    root = Path(configured) if configured else Path.home() / "AppData" / "Local"
-    return root / _APPLICATION_NAME
+def _root(root: Path | None) -> Path:
+    return Path(root).expanduser().resolve() if root is not None else project_root()
 
 
-def user_data_dir() -> Path:
-    """Return the per-user data location, independent of the launch directory."""
-    if os.name == "nt":
-        return _local_app_data()
-    if sys.platform == "darwin" and not os.environ.get("XDG_DATA_HOME"):
-        return Path.home() / "Library" / "Application Support" / _APPLICATION_NAME
-    return _xdg_path("XDG_DATA_HOME", Path.home() / ".local" / "share")
+def portable_mode() -> bool:
+    return os.environ.get("SIOPECHAT_PORTABLE", "").strip().casefold() in _PORTABLE_VALUES
 
 
-def state_dir() -> Path:
-    if os.name == "nt":
-        return _local_app_data()
-    if sys.platform == "darwin" and not os.environ.get("XDG_STATE_HOME"):
-        return Path.home() / "Library" / "Application Support" / _APPLICATION_NAME
-    return _xdg_path("XDG_STATE_HOME", Path.home() / ".local" / "state")
+def _default(root: Path | None, portable_name: str, standard: Path) -> Path:
+    return _root(root) / portable_name if root is not None or portable_mode() else standard
 
 
-def cache_dir() -> Path:
-    if os.name == "nt":
-        return _local_app_data() / "Cache"
-    if sys.platform == "darwin" and not os.environ.get("XDG_CACHE_HOME"):
-        return Path.home() / "Library" / "Caches" / _APPLICATION_NAME
-    return _xdg_path("XDG_CACHE_HOME", Path.home() / ".cache")
+def _path(variable: str, default: Path, root: Path | None) -> Path:
+    value = os.environ.get(variable)
+    if not value:
+        return default
+    path = Path(value).expanduser()
+    return (path if path.is_absolute() else _root(root) / path).resolve()
 
 
-def runtime_dir() -> Path:
-    if os.name == "nt":
-        # AF_UNIX paths on Windows are short; TEMP already has per-user ACLs.
-        return Path(tempfile.gettempdir()) / f"sc-{getpass.getuser()[:16]}"
-    configured = os.environ.get("XDG_RUNTIME_DIR")
-    if configured:
-        return Path(configured) / _APPLICATION_NAME
-    return Path(tempfile.gettempdir()) / f"{_APPLICATION_NAME}-{os.getuid()}"
+def config_path(root: Path | None = None) -> Path:
+    default = _default(root, "config.json", _APP_DIRS.user_config_path / "config.json")
+    return _path("SIOPECHAT_CONFIG_PATH", default, root)
 
 
-def application_root() -> Path:
-    """Return the stable per-user storage root, unless explicitly overridden."""
-    configured = os.environ.get("SIOPECHAT_HOME")
-    return Path(configured).expanduser().resolve() if configured else user_data_dir()
+def data_dir(root: Path | None = None) -> Path:
+    default = _default(root, "data", _APP_DIRS.user_data_path)
+    return _path("SIOPECHAT_DATA_DIR", default, root)
 
 
-def migrate_checkout_data(checkout: Path, root: Path) -> None:
-    """Copy legacy source-checkout data into per-user storage without deleting it."""
-    if os.environ.get("SIOPECHAT_HOME"):
-        return
+def state_dir(root: Path | None = None) -> Path:
+    default = _default(root, "data", _APP_DIRS.user_state_path)
+    return _path("SIOPECHAT_STATE_DIR", default, root)
 
-    checkout = Path(checkout).resolve()
-    root = Path(root).resolve()
-    if (
-        checkout == root
-        or not (checkout / "pyproject.toml").is_file()
-        or not (checkout / "src" / "bootstrap.py").is_file()
-    ):
-        return
 
-    sources = ("config.json", "data", "downloads")
-    if not any((checkout / name).exists() for name in sources):
-        return
+def downloads_dir(root: Path | None = None) -> Path:
+    default = _default(root, "downloads", _APP_DIRS.user_downloads_path)
+    return _path("SIOPECHAT_DOWNLOADS_DIR", default, root)
 
-    root.mkdir(parents=True, exist_ok=True)
-    for name in sources:
-        source = checkout / name
-        destination = root / name
-        if not source.exists() or source.is_symlink() or destination.exists():
-            continue
 
-        staging = Path(tempfile.mkdtemp(prefix=f".{name}-migration-", dir=root))
-        try:
-            if source.is_dir():
-                shutil.copytree(source, staging, dirs_exist_ok=True, symlinks=True)
-                try:
-                    os.rename(staging, destination)
-                except OSError:
-                    if not destination.exists():
-                        raise
-            else:
-                staged_file = staging / name
-                shutil.copy2(source, staged_file)
-                try:
-                    os.link(staged_file, destination)
-                except FileExistsError:
-                    pass
-        finally:
-            shutil.rmtree(staging, ignore_errors=True)
+def cache_dir(root: Path | None = None) -> Path:
+    default = _default(root, ".cache", _APP_DIRS.user_cache_path)
+    return _path("SIOPECHAT_CACHE_DIR", default, root)
+
+
+def runtime_dir(root: Path | None = None) -> Path:
+    default = _default(root, ".runtime", _APP_DIRS.user_runtime_path)
+    return _path("SIOPECHAT_RUNTIME_DIR", default, root)
+
+
+def ensure_private_dir(path: Path) -> Path:
+    path = Path(path)
+    created = not path.exists()
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if created and os.name != "nt":
+        path.chmod(0o700)
+    return path
+
+
+def ensure_runtime_dir(path: Path | None = None) -> Path:
+    path = Path(path) if path is not None else runtime_dir()
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if os.name != "nt":
+        path.chmod(0o700)
+    return path

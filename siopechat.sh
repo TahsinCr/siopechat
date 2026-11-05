@@ -2,6 +2,8 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+: "${SIOPECHAT_PORTABLE:=1}"
+export SIOPECHAT_PORTABLE
 
 resolve_venv() {
     if [ "${SIOPECHAT_VENV+x}" = x ]; then

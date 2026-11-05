@@ -20,6 +20,8 @@ from providers.profiles import import_cookies
 from providers.registry import PROVIDERS, create_provider
 from providers.session import read_session, save_session, session_exists
 
+from utils.paths import ensure_runtime_dir
+
 
 class AccountsSessions:
     def browser_connected(self, key):
@@ -114,7 +116,9 @@ class AccountsSessions:
 
             async def verify_candidate():
                 # Validate independently before replacing any working session.
-                with tempfile.TemporaryDirectory(prefix="siope-profile-") as folder:
+                with tempfile.TemporaryDirectory(
+                    prefix="siope-profile-", dir=ensure_runtime_dir(self.runtime_root)
+                ) as folder:
                     path = Path(folder) / "session.json"
                     kind = self.item(key)["provider"]
                     if kind == "chatgpt":

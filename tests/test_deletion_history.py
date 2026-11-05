@@ -9,13 +9,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
+from providers import Capability
+from providers.errors import RemoteNotFound
+from providers.history import merge_conversation
+
 from accounts import identity
 from bootstrap import create_application
 from extensions.archive.repository import Files, SQLiteRepository
 from extensions.archive.sync import Archive
-from providers import Capability
-from providers.errors import RemoteNotFound
-from providers.history import merge_conversation
 from tests.tui_support import terminal
 
 
@@ -140,20 +141,16 @@ class DeleteAndCacheTests(unittest.TestCase):
         )
         return chat
 
-    def test_remote_chat_delete_removes_all_page_references_and_blocks_legacy_resurrection(self):
+    def test_remote_chat_delete_removes_archive_and_fallback_history(self):
         chat = self.seed()
-        self.accounts.cache(self.key).cache_conversation(dict(chat, id="c_abc"))
+        self.accounts.repository.cache_put(
+            self.key, "conversation", "c_abc", dict(chat, id="c_abc")
+        )
         result = self.accounts.delete(chat["id"], self.key)
         self.provider.delete_chat.assert_awaited_once_with("c_abc")
         self.assertIn(chat["id"], result["removed"])
         self.assertIsNone(self.accounts.cached(self.key, "c_abc"))
-        self.assertIsNone(self.accounts.cache(self.key).load_cached_conversation("c_abc"))
-        self.assertFalse(
-            self.accounts.cache(self.key)
-            .conversation_cache_path("c_abc")
-            .with_suffix(".deleted")
-            .is_file()
-        )
+        self.assertIsNone(self.accounts.repository.cache_get(self.key, "conversation", "c_abc"))
         self.assertEqual(self.archive.get(self.key, "chats", "")["items"], [])
         self.archive.put(self.key, "chats", "", {"items": [chat]})
         self.assertEqual(self.archive.get(self.key, "chats", "")["items"], [])

@@ -759,6 +759,30 @@ wheels = [
 ]
 
 [[package]]
+name = "platformdirs"
+version = "4.12.4"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.11'",
+]
+sdist = { url = "https://files.pythonhosted.org/packages/90/a1/d5f9002a70298c64a789779077d8dd90c10aa1f47fe40c86802df874f2a6/platformdirs-4.12.4.tar.gz", hash = "sha256:63743c02414e755de4e31b8f68125c1407495b86c5a006e203c01ff8b9924250", size = 60010, upload-time = "2026-10-07T23:30:32.426Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f4/ba/223e00b885e960edd5d4b4d178c88acce019bd5b83786093681b8c393492/platformdirs-4.12.4-py3-none-any.whl", hash = "sha256:78bfb9db2a8471ed7eebe3c3c932da413911042994e699b384fbb4493fa872d7", size = 32596, upload-time = "2026-10-07T23:30:30.825Z" },
+]
+
+[[package]]
+name = "platformdirs"
+version = "4.14.5"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.11'",
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d7/9a/8475be631fb33ca1466915e70fd594c42a4e84b512db650eaa14f90fe75d/platformdirs-4.14.5.tar.gz", hash = "sha256:32e9921db7385aa8169bee4fe9501923e5715ba9fb7ea3b9c69b0d8e0639f7a1", size = 71464, upload-time = "2026-11-04T16:54:50.358Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7c/ae/ecbbbfd0e4343a6a521d49b3c8656fb4643dee2a4f6eaf941cf3280391a8/platformdirs-4.14.5-py3-none-any.whl", hash = "sha256:8e778c6fa421516f4d3369449f8df3b0e1b72c0e0005fe88e3ec772d0a14e750", size = 35402, upload-time = "2026-11-04T16:54:48.875Z" },
+]
+
+[[package]]
 name = "prompt-toolkit"
 version = "3.0.53"
 source = { registry = "https://pypi.org/simple" }
@@ -989,12 +1013,14 @@ wheels = [
 
 [[package]]
 name = "siopechat"
-version = "1.5.4b0"
+version = "1.5.5b0"
 source = { editable = "." }
 dependencies = [
     { name = "exceptiongroup", marker = "python_full_version < '3.11'" },
     { name = "flowevent" },
     { name = "httpx" },
+    { name = "platformdirs", version = "4.12.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "platformdirs", version = "4.14.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "prompt-toolkit" },
     { name = "rich" },
     { name = "webai-provider" },
@@ -1012,9 +1038,10 @@ requires-dist = [
     { name = "exceptiongroup", marker = "python_full_version < '3.11'", specifier = ">=1.2,<2" },
     { name = "flowevent", specifier = ">=1.3,<2" },
     { name = "httpx", specifier = ">=0.27,<1" },
+    { name = "platformdirs", specifier = ">=4,<5" },
     { name = "prompt-toolkit", specifier = ">=3.0,<4" },
     { name = "rich", specifier = ">=13,<15" },
-    { name = "webai-provider", specifier = "==1.1.0b0" },
+    { name = "webai-provider", specifier = "==1.2.0b0" },
 ]
 
 [package.metadata.requires-dev]
@@ -1172,7 +1199,7 @@ wheels = [
 
 [[package]]
 name = "webai-provider"
-version = "1.1.0b0"
+version = "1.2.0b0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "browser-cookie3" },
@@ -1181,9 +1208,9 @@ dependencies = [
     { name = "lz4" },
     { name = "websocket-client" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/82/a2/b4accc4f3140383095d075e21fe7534ba63ff2a289c635db7b7526fc7ae6/webai_provider-1.1.0b0.tar.gz", hash = "sha256:db18fc5326fa0fa10d43ae6144965579b47d12f7fb69cd1cedb351cac25fe3cc", size = 201903, upload-time = "2026-11-05T12:24:11.776Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0e/3f/6dc0043ec014148788b30ad0385ad3f9cc9b2075f2a76aa7b64e52a71e0a/webai_provider-1.2.0b0.tar.gz", hash = "sha256:f6bec44a18fb0785732d694edc64592571bac677b7030fb972f630e578cda0e1", size = 260058, upload-time = "2026-11-05T17:22:12.947Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/13/9a/50c27e3907bd9fe736d8c771721686e9be6e1846be49e20c6774f6929b6d/webai_provider-1.1.0b0-py3-none-any.whl", hash = "sha256:87360014b1b893b3eb6840611f3841ef12310e0d31ea501e98173bc8e48be70e", size = 153381, upload-time = "2026-11-05T12:24:09.214Z" },
+    { url = "https://files.pythonhosted.org/packages/7d/f5/a49c9e8cd145d227023dc4703d17b6c0aa587d7568ae2f31c9db7d50af39/webai_provider-1.2.0b0-py3-none-any.whl", hash = "sha256:99bc5d2c97317af3957ba69d80fe1d33cc7f6154384048371654009e6996cb3d", size = 163728, upload-time = "2026-11-05T17:22:10.388Z" },
 ]
 
 [[package]]

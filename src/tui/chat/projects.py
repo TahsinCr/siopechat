@@ -5,8 +5,9 @@ from __future__ import annotations
 import uuid
 from typing import Callable
 
-from accounts import origin
 from providers import Capability
+
+from accounts import origin
 
 from ..library import merge_chat_listing
 

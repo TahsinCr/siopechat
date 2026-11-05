@@ -1,7 +1,6 @@
 """Controllable offline providers shared by behavioral tests."""
 
 import asyncio
-from unittest.mock import Mock
 
 from providers import Capability, ConversationBound, SendRequest, TextDelta
 from providers.models import Choice, FeatureState, Model, ModelCatalog
@@ -28,7 +27,7 @@ class Accounts:
                 "icon": "✦",
             },
         ]
-        self.backend = Mock()
+        self.active_conversations = {}
 
     def capabilities(self, key):
         return (
@@ -49,8 +48,8 @@ class Accounts:
     def status(self, key):
         return {"saved_snapshot": False, "authenticated": False, "account": key}
 
-    def cache(self, key):
-        return self.backend
+    def queue_active(self, key, value):
+        self.active_conversations[key] = value
 
     def select(self, key):
         self.selected = key

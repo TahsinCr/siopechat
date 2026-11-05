@@ -21,8 +21,9 @@ from providers.chatgpt.constants import DEFAULT_CDP_URL
 from providers.chatgpt.errors import ChatGPTWebError
 from providers.chatgpt.formats import normalize_conversation
 from providers.errors import ProviderError
+
 from utils.files import atomic_json_write
-from utils.paths import application_root, runtime_dir, state_dir, user_data_dir
+from utils.paths import data_dir, project_root, runtime_dir
 from utils.process import acquire_exclusive, detached_process_options, set_private_permissions
 
 MAX_DAEMON_MESSAGE = 64 * 1024 * 1024
@@ -32,37 +33,33 @@ IPC_PROTOCOL = 6
 
 
 class BackendService:
-    def __init__(self, root: Path | None = None):
-        self.root = Path(root) if root is not None else application_root()
+    def __init__(
+        self,
+        root: Path | None = None,
+        *,
+        data_root: Path | None = None,
+        runtime_root: Path | None = None,
+        repository=None,
+    ):
+        explicit_root = root is not None
+        self.root = Path(root).expanduser().resolve() if explicit_root else project_root()
+        storage_root = self.root if explicit_root else None
+        self.data_root = Path(data_root) if data_root is not None else data_dir(storage_root)
+        self.runtime_root = (
+            Path(runtime_root) if runtime_root is not None else runtime_dir(storage_root)
+        )
+        if repository is None:
+            from accounts.repository import AccountRepository
+
+            repository = AccountRepository(self.data_root / "accounts.sqlite3")
+        self._session_credentials = repository.credentials("chatgpt/default")
         self._daemon_start_lock = threading.Lock()
 
-    def auth_store_path(self) -> Path:
-        return (
-            state_dir()
-            if self.root.resolve() == application_root().resolve()
-            else self.root / "data" / "session"
-        ) / "session.json"
-
     def create_session(self, cdp_url: str = DEFAULT_CDP_URL) -> BrowserSession:
-        from accounts.repository import AccountRepository
-        from providers.session import read_session
-
-        store = AccountRepository(self.root / "data" / "accounts.sqlite3").credentials(
-            "chatgpt/default"
-        )
-        legacy = self.auth_store_path()
-        if not store.exists() and legacy.is_file():
-            store.save(read_session(legacy))
-            legacy.unlink(missing_ok=True)
         return BrowserSession(
             SessionPaths(
-                store,
-                (
-                    user_data_dir()
-                    if self.root.resolve() == application_root().resolve()
-                    else self.root / "data" / "session"
-                )
-                / "chrome-profile",
+                self._session_credentials,
+                self.data_root / "session" / "chrome-profile",
             ),
             cdp_url,
         )
@@ -71,7 +68,7 @@ class BackendService:
         return ChatGPTClient(self.create_session(cdp_url))
 
     def conversation_cache_dir(self) -> Path:
-        return (self.root / "data") / "conversations"
+        return self.data_root / "conversations"
 
     def conversation_cache_path(self, conversation_id: str) -> Path:
         if not re.fullmatch("[A-Za-z0-9_-]+", conversation_id):
@@ -164,7 +161,7 @@ class BackendService:
         self.atomic_json_write(self.conversation_cache_path(conversation_id), cached)
 
     def default_socket_path(self) -> Path:
-        return runtime_dir() / "daemon.sock"
+        return self.runtime_root / "daemon.sock"
 
     def receive_json(
         self, connection: socket.socket, maximum: int | None = MAX_DAEMON_MESSAGE
@@ -329,7 +326,7 @@ class BackendService:
                             "daemon is still stopping; session has not been removed"
                         )
                     time.sleep(0.05)
-            self.auth_store_path().unlink(missing_ok=True)
+            self._session_credentials.delete()
         return {"logged_out": True, "browser_session_retained": True}
 
     @staticmethod
@@ -381,7 +378,7 @@ class BackendService:
             return (
                 {
                     "daemon": "running",
-                    "session_saved": self.auth_store_path().is_file(),
+                    "session_saved": self._session_credentials.exists(),
                     "chrome": "running" if client.session.is_ready() else "stopped",
                 },
                 False,

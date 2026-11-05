@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 from providers.attachments import policy_for
+
 from tui.attachments import AttachmentPicker
 
 

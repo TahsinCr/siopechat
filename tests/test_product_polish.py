@@ -8,8 +8,9 @@ import time
 import unittest
 from pathlib import Path
 
-from actions import Action
 from providers.models import Choice, FeatureState, Model, ModelCatalog
+
+from actions import Action
 from settings import DEFAULT_KEYBINDINGS, SettingsCatalog
 from tests import tui_support as interaction
 from tests.account_fixture import configured_application as create_application

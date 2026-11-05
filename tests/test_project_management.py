@@ -7,10 +7,11 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
-from bootstrap import create_application
 from providers import Capability
 from providers.models import Origin, Project, Resource
 from providers.projects import ProjectEditing, ProjectOptions
+
+from bootstrap import create_application
 from tests import tui_support as interaction
 from tests.fakes import Accounts
 from tests.tui_support import immediate, terminal

@@ -8,10 +8,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from extensions.archive.repository import Files, SQLiteRepository
-from extensions.archive.sync import Archive
 from providers import ConversationBound, MessageAction, MessageMetadata, ReplaceText
 from providers.models import Content, Conversation, Message, Origin
+
+from extensions.archive.repository import Files, SQLiteRepository
+from extensions.archive.sync import Archive
 from tests.account_fixture import configured_application
 from tests.tui_support import immediate, terminal
 from tui.markdown import transcript_fragments, visible_chat_message, visible_chat_messages
@@ -492,6 +493,93 @@ class MutationAccountsTests(unittest.TestCase):
                 self.assertEqual(saved["project_id"], "@chatgpt/default/g-p-work")
                 self.assertEqual(result["conversation_id"], "@chatgpt/default/chat")
                 self.assertEqual(result["history"]["messages"][-1]["text"], "New answer")
+            finally:
+                api.runtime.close()
+
+    def test_grok_confirmed_edit_replaces_archive_and_preserves_tree(self):
+        with tempfile.TemporaryDirectory() as folder:
+            api = configured_application(Path(folder))
+            try:
+                accounts = api.get("accounts")
+                grok = accounts.add("grok", "Grok Account")
+                accounts.select(grok)
+                archive = accounts.archive()
+                archive.put(
+                    grok,
+                    "conversation",
+                    "grok-chat",
+                    {
+                        "id": "grok-chat",
+                        "title": "Grok Chat",
+                        "messages": [
+                            {
+                                "id": "u0",
+                                "role": "user",
+                                "text": "Old question",
+                                "actions": ["edit"],
+                            },
+                            {
+                                "id": "a0",
+                                "role": "assistant",
+                                "text": "Old answer",
+                                "actions": ["retry"],
+                            },
+                        ],
+                    },
+                )
+                received = []
+
+                class GrokTestProvider:
+                    id, account_id = "grok", accounts.item(grok)["id"]
+
+                    async def stream(self, request):
+                        received.append(request)
+                        yield ConversationBound("grok-chat")
+                        yield ReplaceText("Edited answer", "final")
+                        yield MessageMetadata("a1", "u1", actions=("retry",))
+
+                    async def get_chat(self, remote):
+                        return Conversation(
+                            Origin("grok", accounts.item(grok)["id"], remote),
+                            "Grok Chat",
+                            (
+                                Message(
+                                    "u1",
+                                    "user",
+                                    (Content("text", "Edited question"),),
+                                    actions=("edit",),
+                                ),
+                                Message(
+                                    "a1",
+                                    "assistant",
+                                    (Content("text", "Edited answer"),),
+                                    actions=("retry",),
+                                ),
+                            ),
+                        )
+
+                    async def close(self):
+                        pass
+
+                accounts._providers[grok] = GrokTestProvider()
+                result = accounts.send(
+                    grok,
+                    "grok-chat",
+                    "Edited question",
+                    [],
+                    lambda event: None,
+                    lambda connection: None,
+                    action="edit",
+                    message_id="u0",
+                )
+                self.assertEqual(received[0].action, MessageAction.EDIT)
+                self.assertEqual(received[0].message_id, "u0")
+                saved = archive.get(grok, "conversation", "grok-chat")
+                self.assertEqual([m["id"] for m in saved["messages"]], ["u1", "a1"])
+                self.assertEqual(result["history"]["messages"][0]["text"], "Edited question")
+                self.assertEqual(result["history"]["messages"][1]["text"], "Edited answer")
+                self.assertEqual(result["history"]["messages"][0]["actions"], ["edit"])
+                self.assertEqual(result["history"]["messages"][1]["actions"], ["retry"])
             finally:
                 api.runtime.close()
 
@@ -1104,6 +1192,7 @@ class MessageToolbarTests(unittest.TestCase):
 
     def test_first_assistant_text_is_timed_at_the_ui_after_render_hook(self):
         from providers.timing import SendTiming
+
         from tui.chat.stream import _SendStream
 
         with terminal() as (view, _):
@@ -1130,6 +1219,7 @@ class MessageToolbarTests(unittest.TestCase):
 
     def test_unrendered_timing_callback_is_removed_when_stream_finishes(self):
         from providers.timing import SendTiming
+
         from tui.chat.stream import _SendStream
 
         with terminal() as (view, _):

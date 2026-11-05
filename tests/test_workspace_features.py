@@ -9,10 +9,10 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from prompt_toolkit.utils import get_cwidth
+from providers.chatgpt.formats import normalize_message
 
 from backend import BackendService
 from bootstrap import create_application
-from providers.chatgpt.formats import normalize_message
 from tests.tui_support import immediate, terminal
 from tui.markdown import visible_chat_message
 from tui.styles import ICONS

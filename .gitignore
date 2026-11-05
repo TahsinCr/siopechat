@@ -15,3 +15,5 @@ MEMORY.md
 /config.json
 
 /downloads/
+/.cache/
+/.runtime/

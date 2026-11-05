@@ -11,7 +11,7 @@ def activate(context):
     context.translations("en", {"enabled": "Local archive and synchronization"})
     context.translations("tr", {"enabled": "Yerel arşiv ve senkronizasyon"})
     context.translations("ru", {"enabled": "Локальный архив и синхронизация"})
-    root = context.api.get("paths") / "data"
+    root = context.api.get("data_root")
     service = Archive(
         SQLiteRepository(root / "archive.sqlite3"), Files(root / "files"), context.api.events
     )

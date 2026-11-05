@@ -43,8 +43,8 @@ def activate(context: ExtensionContext) -> None:
     for bundle in sorted((Path(__file__).parent / "languages").glob("*.json")):
         messages = json.loads(bundle.read_text(encoding="utf-8"))
         context.translations(bundle.stem, messages)
-    root = context.api.get("paths")
-    service = Workspaces(root / "data" / "workspaces.sqlite3")
+    data_root = context.api.get("data_root")
+    service = Workspaces(data_root / "workspaces.sqlite3")
     context.provide("workspaces", service)
     for command in ("list", "create", "show", "delete"):
 

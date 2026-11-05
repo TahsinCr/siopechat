@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from providers.claude import ClaudeProvider
 from providers.claude.records import conversation
+
 from tests.account_fixture import configured_application as create_application
 
 CHAT = "12345678-abcd-1234-abcd-123456789abc"

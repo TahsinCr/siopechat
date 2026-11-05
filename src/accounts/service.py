@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import threading
 import time
 import uuid
@@ -20,7 +19,7 @@ from providers.chatgpt import BrowserSession, SessionPaths
 from providers.errors import AccountPaused
 from providers.models import FeatureState, ModelCatalog
 from providers.registry import PROVIDERS
-from providers.session import read_session, session_exists
+from providers.session import session_exists
 
 from .history import AccountsHistory
 from .projects import AccountsProjects
@@ -52,8 +51,9 @@ class Accounts(
         self.closing = False
         self.closed = False
         self._chat_projects = {}
-        self.root = api.get("paths")
-        self.repository = AccountRepository(self.root / "data" / "accounts.sqlite3")
+        self.data_root = api.get("data_root")
+        self.runtime_root = api.get("runtime_root")
+        self.repository = AccountRepository(self.data_root / "accounts.sqlite3")
         self._providers = {}
         self._credential_stores = {}
         self._credential_lock = threading.Lock()
@@ -75,8 +75,8 @@ class Accounts(
         self._active_values = {}
         self._active_writer_running = False
         self._active_writer_task = None
-        self._legacy_cache_migration_lock = threading.Lock()
-        self._legacy_cache_migration_complete = False
+        self._cache_promotion_lock = threading.Lock()
+        self._cache_promotion_complete = False
         for item in self.items():
             key = item["key"]
             try:
@@ -85,24 +85,6 @@ class Accounts(
                     self._verification_required.add(key)
             except (OSError, ValueError, AttributeError):
                 pass
-            for kind, filename in (
-                ("catalog", "models.json"),
-                ("verification", "verification.json"),
-            ):
-                path = self.directory(key) / filename
-                if not path.is_file():
-                    continue
-                try:
-                    if path.stat().st_size > 256 * 1024:
-                        continue
-                    value = json.loads(path.read_text(encoding="utf-8"))
-                    if not isinstance(value, dict) or value.get("account_key") != key:
-                        continue
-                    if self.repository.get(key, kind) is None:
-                        self.repository.put(key, kind, value)
-                    path.unlink(missing_ok=True)
-                except (OSError, ValueError):
-                    continue
 
     def items(self):
         config = self.settings.snapshot()
@@ -341,7 +323,7 @@ class Accounts(
 
     def directory(self, key):
         self.item(key)
-        return self.root / "data" / "accounts" / key
+        return self.data_root / "accounts" / key
 
     def session(self, key):
         item = self.item(key)
@@ -366,21 +348,6 @@ class Accounts(
             if existing is not None:
                 return existing
             store = self.repository.credentials(key)
-            if not store.exists():
-                directory = self.directory(key)
-                if key == "chatgpt/default":
-                    old = self.api.get("backend").auth_store_path()
-                else:
-                    old = directory / (
-                        "session.json"
-                        if key.startswith("chatgpt/")
-                        else "native.json"
-                        if key.startswith("claude/")
-                        else "cookies.json"
-                    )
-                if old.is_file():
-                    store.save(read_session(old))
-                    old.unlink(missing_ok=True)
             self._credential_stores[key] = store
             return store
 
@@ -424,9 +391,14 @@ class Accounts(
             raise
 
         started = threading.Event()
+        startup_lock = threading.Lock()
+        cancelled_before_start = threading.Event()
 
         async def bounded():
-            started.set()
+            with startup_lock:
+                if cancelled_before_start.is_set():
+                    return None
+                started.set()
             if _closing:
                 # Keep the shutdown coroutine in the run_coroutine_threadsafe
                 # task. wait_for() wraps it in a child task; Accounts.close()
@@ -448,14 +420,18 @@ class Accounts(
             return future.result(timeout=timeout + 1)
         except (TimeoutError, asyncio.TimeoutError, FutureTimeout):
             future.cancel()
-            if not started.is_set():
-                coroutine.close()
+            with startup_lock:
+                if not started.is_set():
+                    cancelled_before_start.set()
+                    coroutine.close()
             raise TimeoutError(
                 "Sağlayıcı işlemi zaman aşımına uğradı; yeniden deneyebilirsiniz"
             ) from None
         except CancelledError:
-            if not started.is_set():
-                coroutine.close()
+            with startup_lock:
+                if not started.is_set():
+                    cancelled_before_start.set()
+                    coroutine.close()
             raise
 
     def _forget_active_call(self, future):
@@ -566,9 +542,9 @@ class Accounts(
         credentials are skipped rather than prompting or opening a browser.
         """
         try:
-            self._migrate_legacy_account_cache()
+            self._promote_fallback_cache()
         except Exception as error:
-            _LOG.warning("Account cache migration could not finish: %s", error)
+            _LOG.warning("Account cache promotion could not finish: %s", error)
         accounts = [
             item
             for item in self.visible_accounts()
@@ -601,31 +577,25 @@ class Accounts(
             results = pool.map(prepare, accounts)
             return {key: error for key, error in results if error}
 
-    def _migrate_legacy_account_cache(self):
-        """Move per-account JSON cache state to its existing SQLite owner.
-
-        Conversation history belongs to the archive when that extension is
-        available. The account database holds the same fallback records only
-        while the archive extension is disabled. Legacy files are removed only
-        after a durable destination record exists.
-        """
-        with self._legacy_cache_migration_lock:
-            if self._legacy_cache_migration_complete:
+    def _promote_fallback_cache(self):
+        """Move SQLite fallback history into the archive when it is available."""
+        archive = self.archive()
+        if archive is None:
+            return
+        with self._cache_promotion_lock:
+            if self._cache_promotion_complete:
                 return
             complete = True
             for item in self.items():
                 key = item["key"]
                 try:
-                    self._migrate_account_cache(key)
-                except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
+                    self._promote_account_history(archive, key)
+                except (OSError, ValueError, TypeError) as error:
                     complete = False
-                    _LOG.warning("Could not migrate local cache for %s: %s", key, error)
-            self._legacy_cache_migration_complete = complete
+                    _LOG.warning("Could not promote cached history for %s: %s", key, error)
+            self._cache_promotion_complete = complete
 
-    def _migrate_account_cache(self, key):
-        backend = self.cache(key)
-        archive = self.archive()
-
+    def _promote_account_history(self, archive, key):
         def cached_records(kind):
             after = ""
             while True:
@@ -645,109 +615,37 @@ class Accounts(
                 return False
             record = dict(conversation)
             record.update(id=identity(key, remote), remote_id=remote, context=key)
-            if archive:
-                if archive.deleted(key, "conversation", remote):
-                    return True
-                if archive.conversation_window(key, remote) is None:
-                    archive.put(key, "conversation", remote, record)
-                return archive.conversation_window(key, remote) is not None
-            if self.repository.cache_is_deleted(key, remote):
+            if archive.deleted(key, "conversation", remote):
                 return True
-            if not self.repository.cache_exists(key, "conversation", remote):
-                self.repository.cache_put(key, "conversation", remote, record)
-            return self.repository.cache_exists(key, "conversation", remote)
+            if archive.conversation_window(key, remote) is None:
+                archive.put(key, "conversation", remote, record)
+            return archive.conversation_window(key, remote) is not None
 
-        if archive:
-            # Bring forward fallback rows from runs where the archive extension
-            # was disabled, without replacing a newer canonical archive record.
-            for remote, _ in cached_records("tombstone"):
-                if not archive.deleted(key, "conversation", remote):
-                    archive.delete(key, "conversation", remote)
-                if archive.deleted(key, "conversation", remote):
-                    self.repository.cache_delete(key, "tombstone", remote)
-            for remote, conversation in cached_records("conversation"):
-                if save_conversation(remote, conversation):
-                    self.repository.cache_delete(key, "conversation", remote)
+        # Archive records are canonical; account-database rows are promoted
+        # only when absent and removed only after the archive confirms them.
+        for remote, _ in cached_records("tombstone"):
+            if not archive.deleted(key, "conversation", remote):
+                archive.delete(key, "conversation", remote)
+            if archive.deleted(key, "conversation", remote):
+                self.repository.cache_delete(key, "tombstone", remote)
+        for remote, conversation in cached_records("conversation"):
+            if save_conversation(remote, conversation):
+                self.repository.cache_delete(key, "conversation", remote)
 
-        cache_dir = backend.conversation_cache_dir()
-        if cache_dir.is_dir():
-            for marker in sorted(cache_dir.glob("*.deleted")):
-                remote = marker.stem
-                try:
-                    conversation_path = backend.conversation_cache_path(remote)
-                except Exception:
-                    continue
-                if archive:
-                    if not archive.deleted(key, "conversation", remote):
-                        archive.delete(key, "conversation", remote)
-                    durable = archive.deleted(key, "conversation", remote)
-                else:
-                    self.repository.cache_mark_deleted(key, remote)
-                    durable = self.repository.cache_is_deleted(key, remote)
-                if durable:
-                    conversation_path.unlink(missing_ok=True)
-                    marker.unlink(missing_ok=True)
-
-            for path in sorted(cache_dir.glob("*.json")):
-                remote = path.stem
-                try:
-                    backend.conversation_cache_path(remote)
-                    conversation = json.loads(path.read_text(encoding="utf-8"))
-                except (OSError, ValueError, json.JSONDecodeError):
-                    continue
-                if archive and archive.deleted(key, "conversation", remote):
-                    durable = True
-                else:
-                    durable = save_conversation(remote, conversation)
-                if durable:
-                    path.unlink(missing_ok=True)
-
-        active_path = backend.active_conversation_path()
-        legacy_remote = None
-        if active_path.is_file():
-            try:
-                pointer = json.loads(active_path.read_text(encoding="utf-8"))
-                candidate = pointer.get("conversation_id") if isinstance(pointer, dict) else None
-                if isinstance(candidate, str) and candidate:
-                    context, legacy_remote = origin(candidate, key)
-                    if context != key:
-                        legacy_remote = None
-            except (OSError, ValueError, json.JSONDecodeError):
-                legacy_remote = None
-
-        if archive:
+        current = archive.get(key, "pointer", "active")
+        fallback_remote = self.repository.cache_active(key)
+        if fallback_remote and archive.deleted(key, "conversation", fallback_remote):
+            self.repository.cache_set_active(key, None)
+            fallback_remote = None
+        target = current.get("remote") if isinstance(current, dict) else None
+        if target and archive.deleted(key, "conversation", target):
+            archive.put(key, "pointer", "active", {"remote": None})
             current = archive.get(key, "pointer", "active")
-            fallback_remote = self.repository.cache_active(key)
-            if fallback_remote and archive.deleted(key, "conversation", fallback_remote):
-                self.repository.cache_set_active(key, None)
-                fallback_remote = None
-            if legacy_remote and archive.deleted(key, "conversation", legacy_remote):
-                active_path.unlink(missing_ok=True)
-                legacy_remote = None
-            target = current.get("remote") if isinstance(current, dict) else None
-            if target and archive.deleted(key, "conversation", target):
-                target = None
-                archive.put(key, "pointer", "active", {"remote": None})
-                current = archive.get(key, "pointer", "active")
-            if current is None:
-                target = fallback_remote or legacy_remote
-                if target and archive.deleted(key, "conversation", target):
-                    target = None
-                if target:
-                    archive.put(key, "pointer", "active", {"remote": target})
-                    current = archive.get(key, "pointer", "active")
-            durable = current is not None or not (fallback_remote or legacy_remote)
-            if durable:
-                self.repository.cache_set_active(key, None)
-                if legacy_remote is not None:
-                    active_path.unlink(missing_ok=True)
-        else:
-            current = self.repository.cache_active(key)
-            if current is None and legacy_remote:
-                self.repository.cache_set_active(key, legacy_remote)
-                current = self.repository.cache_active(key)
-            if current is not None and legacy_remote is not None:
-                active_path.unlink(missing_ok=True)
+        if current is None and fallback_remote:
+            archive.put(key, "pointer", "active", {"remote": fallback_remote})
+            current = archive.get(key, "pointer", "active")
+        if current is not None or fallback_remote is None:
+            self.repository.cache_set_active(key, None)
 
     def models(self, key, force=False):
         self.require_visible_account(key)

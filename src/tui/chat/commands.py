@@ -10,10 +10,10 @@ from typing import Any
 
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.utils import get_cwidth
-
-from accounts import origin
 from providers import Capability
 from providers.models import FeatureState, ModelCatalog
+
+from accounts import origin
 
 from ..actions import action_order, action_title
 from ..styles import ICONS

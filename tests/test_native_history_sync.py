@@ -6,10 +6,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from bootstrap import create_application
 from providers.gemini import GeminiProvider
 from providers.gemini.history import conversations, history
 from providers.models import FeatureState, Model, ModelCatalog, Origin
+
+from bootstrap import create_application
 
 
 class NativeHistoryTests(unittest.IsolatedAsyncioTestCase):

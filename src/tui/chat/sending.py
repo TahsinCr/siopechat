@@ -7,8 +7,9 @@ import threading
 import time
 from typing import Any
 
-from accounts import identity, origin
 from providers.timing import SendTiming, collect_send_timing, timing_enabled, use_send_timing
+
+from accounts import identity, origin
 
 from ..markdown import (
     visible_chat_message,

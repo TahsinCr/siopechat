@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -187,3 +188,29 @@ class FoundationTests(unittest.TestCase):
         created = asyncio.run(api.actions.invoke("layout.create", name="Research"))
         loaded = asyncio.run(api.actions.invoke("layout.show", workspace_id=created["id"]))
         self.assertEqual(created, loaded)
+
+    def test_application_uses_independent_storage_path_overrides(self):
+        root = self.root.resolve()
+        overrides = {
+            "SIOPECHAT_CONFIG_PATH": str(root / "settings.json"),
+            "SIOPECHAT_DATA_DIR": str(root / "account-data"),
+            "SIOPECHAT_STATE_DIR": str(root / "state"),
+            "SIOPECHAT_DOWNLOADS_DIR": str(root / "saved-files"),
+            "SIOPECHAT_CACHE_DIR": str(root / "cache"),
+            "SIOPECHAT_RUNTIME_DIR": str(root / "runtime"),
+        }
+        with patch.dict(os.environ, overrides):
+            api = create_application(root)
+            try:
+                data_root = root / "account-data"
+                self.assertEqual(api.settings.path, root / "settings.json")
+                self.assertEqual(api.get("data_root"), data_root)
+                self.assertEqual(api.get("state_root"), root / "state")
+                self.assertEqual(api.get("accounts").data_root, data_root)
+                self.assertEqual(api.get("backend").data_root, data_root)
+                self.assertEqual(api.get("downloads").directory(), root / "saved-files")
+                self.assertEqual(api.get("cache_root"), root / "cache")
+                self.assertEqual(api.get("runtime_root"), root / "runtime")
+                self.assertEqual(api.get("workspaces").path, data_root / "workspaces.sqlite3")
+            finally:
+                api.runtime.close()

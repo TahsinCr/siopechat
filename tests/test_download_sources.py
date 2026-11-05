@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, Mock
 
 import httpx
-
 from providers.files import NativeDownloadClient, cookie_header
 
 

@@ -16,12 +16,24 @@ from urllib.parse import unquote as decode_id
 
 import httpx
 
+from utils.paths import downloads_dir
+
 
 class Downloads:
     def __init__(
-        self, settings, root, accounts, client_factory=httpx.Client, *, resolver=socket.getaddrinfo
+        self,
+        settings,
+        root,
+        accounts,
+        client_factory=httpx.Client,
+        *,
+        resolver=socket.getaddrinfo,
+        default_directory=None,
     ):
         self.settings, self.root, self.accounts = settings, Path(root), accounts
+        self.default_directory = (
+            Path(default_directory) if default_directory is not None else downloads_dir(self.root)
+        )
         self.client_factory = client_factory
         self.resolver = resolver
         self._gate = threading.BoundedSemaphore(2)
@@ -242,6 +254,10 @@ class Downloads:
 
     def directory(self):
         value = self.settings.snapshot()["application"].get("download_directory", "downloads")
+        if os.environ.get("SIOPECHAT_DOWNLOADS_DIR"):
+            return downloads_dir(self.root)
+        if not value or value == "downloads":
+            return self.default_directory
         path = Path(value).expanduser()
         return (path if path.is_absolute() else self.root / path).resolve()
 

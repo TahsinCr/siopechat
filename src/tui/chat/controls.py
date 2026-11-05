@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.utils import get_cwidth
+from providers import Capability
 
 from accounts import origin
-from providers import Capability
 
 from ..layout import render_tab_bar
 from ..styles import ICONS

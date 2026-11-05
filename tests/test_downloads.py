@@ -5,12 +5,12 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import httpx
+from providers.files import DownloadSource, NativeDownloadClient
 
 from downloads import Downloads
-from providers.files import DownloadSource, NativeDownloadClient
 from settings import Settings
 from tests.tui_support import terminal
 
@@ -292,6 +292,8 @@ class DownloadTests(unittest.TestCase):
         try:
             service = api.get("downloads")
             self.assertEqual(service.directory().resolve(), (self.root / "downloads").resolve())
+            with patch.dict(os.environ, {"SIOPECHAT_DOWNLOADS_DIR": "env-downloads"}):
+                self.assertEqual(service.directory(), (self.root / "env-downloads").resolve())
             for invalid in ("", "   ", "bad\0path"):
                 with self.assertRaises(ValueError):
                     api.settings.update("application", {"download_directory": invalid})

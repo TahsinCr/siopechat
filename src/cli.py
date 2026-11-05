@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-
 from providers.chatgpt.constants import DEFAULT_CDP_URL, DEFAULT_PAGE_SIZE
 from providers.chatgpt.errors import ChatGPTWebError
 from providers.chatgpt.formats import new_messages, normalize_conversation

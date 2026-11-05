@@ -1,4 +1,4 @@
-[![Sürüm: v1.5.4-beta][version-shield]](CHANGELOG.md)
+[![Sürüm: v1.5.5-beta][version-shield]](CHANGELOG.md)
 [![Python 3.10+][python-shield]](https://www.python.org/downloads/)
 [![GPL-3.0-only][license-shield]](LICENSE)
 
@@ -34,7 +34,7 @@ Sohbetlerinizi, projelerinizi ve farklı modellerin yanıtlarını tek bir termi
 | --- | --- | --- |
 | Yanıtlarda üretilen dosyaları indirin; ilerlemeyi indirme yöneticisinde izleyin. | Komut paleti, değiştirilebilir kısayollar, fare kontrolleri ve yerel eklentileri kullanın. | İngilizce, Türkçe veya Rusça arayüzü seçin. |
 
-> **v1.5.4-beta**, sohbetleri metin veya JSON olarak kopyalayıp kaydetme, uygulama yeniden açıldığında taslakları ve sıradaki mesajı geri yükleme ve Gemini'de önceki yanıtları yeniden üretme özelliklerini getiriyor. ChatGPT geçmiş eşitlemesi ve SSE ayrıştırması da iyileştirildi; sağlayıcı önbellekleri, sekme ve ek yönetimi, uzun sohbetlerin gösterimi, kenar çubuğu gezintisi ve uygulamanın kapanış akışı daha güvenilir hale getirildi.
+> **v1.5.5-beta** ile Grok, hesaba göre sunulan model listesi, akış yanıtları, web arama kaynakları ve çalışma alanı/proje desteğiyle dördüncü web sohbeti sağlayıcısı olarak eklendi. Sağlayıcı istemcileri sabitlenmiş PyPI paketinden kuruluyor. Yanıtları yeniden deneme, geçmiş eşitleme, proje işlemleri, sekme çizimi, indirmeler ve kapanış akışı da iyileştirildi. Kurulu komut işletim sisteminin kullanıcı dizinlerini, depo başlatıcıları ise varsayılan olarak proje içindeki taşınabilir depolamayı kullanıyor.
 
 ## Daha Akıcı Sohbet
 
@@ -44,7 +44,7 @@ Sohbetlerinizi, projelerinizi ve farklı modellerin yanıtlarını tek bir termi
 | **ChatGPT** | Uygun sohbet anlık görüntüleri ve tamamlanan akışlardan alınmış mesajlar yeniden kullanılarak yinelenen geçmiş istekleri azaltılır. Sentinel başlıkları sonraki gönderimden önce hazırlanır. Kayıtlı çevrimdışı ölçümde Sentinel başlangıç kanıtı üretiminin saf Python medyanı **0,329 ms** oldu: bu aşama, yeniden kullanılan QuickJS-NG bağlamından yaklaşık **10,7 kat**, açık Node/V8 sürecinde her örnek için yeni VM oluşturan yoldan **12,6 kat daha kısa** sürdü. |
 | **Gemini** | Flash modelleri için istek yönlendirmesi düzeltildi; sağlayıcının varsayılan düşünme politikası korunuyor. Geçerli sohbet devam kimlikleri yeniden kullanılıyor ve etkinlik RPC çağrısı beş dakika içinde yinelenmiyor. Önceki sınırlı canlı denemelerde ilk metne ulaşma süresinin **65–110 saniye aralığından 1,89–3,80 saniye aralığına** düştüğü kaydedildi. Bunlar kontrollü benchmark sonuçları değil, kayıtlı süre aralıklarıdır; her model ve hesap için garanti edilmez. |
 
-**Rakamlar hakkında:** ChatGPT süreleri tam yanıtı değil, yerel kanıt üretimini ölçer. Gemini değerleri eşleştirilmiş örnek ve p95 içermeyen sınırlı canlı gözlemlerdir; ortak arayüz iyileştirmeleri için ölçülmüş bir katsayı yoktur. Sonuçlar ağ, model ve sunucu yüküne göre değişir. Ayrıntılar [değişiklik günlüğünde](CHANGELOG.md). Python paket sürümü: `1.5.4b0`.
+**Rakamlar hakkında:** ChatGPT süreleri tam yanıtı değil, yerel kanıt üretimini ölçer. Gemini değerleri eşleştirilmiş örnek ve p95 içermeyen sınırlı canlı gözlemlerdir; ortak arayüz iyileştirmeleri için ölçülmüş bir katsayı yoktur. Sonuçlar ağ, model ve sunucu yüküne göre değişir. Ayrıntılar [değişiklik günlüğünde](CHANGELOG.md). Python paket sürümü: `1.5.5b0`.
 
 ## Kurulum ve giriş
 
@@ -52,7 +52,7 @@ Sohbetlerinizi, projelerinizi ve farklı modellerin yanıtlarını tek bir termi
 
 Git ve Python **3.10+** kurulu olmalıdır. Unicode destekli bir terminal gerekir; gerçek renk ve fare desteği önerilir. Kurulum araçları Python sürümünü denetler. Aşağıda anlatıldığı gibi, mevcut oturumunuzu desteklenen bir tarayıcı profilinden aktarabilirsiniz. Günlük sohbet işlemleri HTTP üzerinden yürür; tarayıcının açık kalması gerekmez.
 
-Ayarlar, hesaplar, sohbet arşivleri ve indirilen dosyalar varsayılan olarak kullanıcıya özel uygulama verisi dizininde tutulur. Başka bir konum seçmek için `SIOPECHAT_HOME` değişkenini ayarlayın.
+Kurulu `siopechat` komutu ayar, veri, durum, önbellek ve çalışma zamanı dosyalarını işletim sisteminin kullanıcı dizinlerinde tutar; indirmeleri kullanıcının İndirilenler klasörüne kaydeder. Linux’ta XDG, macOS’ta Application Support ve Caches, Windows’ta AppData dizinlerini izler. Depodaki `siopechat.sh`, `siopechat.bat` ve `siopechat.ps1` başlatıcıları varsayılan olarak `SIOPECHAT_PORTABLE=1` ayarlar; dosyaları proje içindeki `config.json`, `data/`, `downloads/`, `.cache/` ve `.runtime/` konumlarında tutar. Başlatmadan önce `SIOPECHAT_PORTABLE=0` ayarlayarak platform dizinlerini kullanabilirsiniz. Mevcut proje içi dosyalar taşınmaz. Aşağıdaki ortam değişkenleriyle her konumu ayrıca değiştirebilirsiniz; göreli geçersiz kılma yolları proje köküne göre çözülür.
 
 ChatGPT’nin desteklenen Sentinel kontrolleri, paketteki `SentinelSpec` profiliyle Python’da çalışır. **Node.js veya JavaScript motoru gerekmez.**
 
@@ -111,7 +111,7 @@ Son kullanıcı kurulumu `pyproject.toml` içindeki sürüm aralıklarını pip 
 
 ### SiopeChat'i güncelleme
 
-SiopeChat, PyPI'daki `webai-provider==1.1.0b0` sürümünü sabit bağımlılık olarak
+SiopeChat, PyPI'daki `webai-provider==1.2.0b0` sürümünü sabit bağımlılık olarak
 kurar. Submodule başlatmanız veya eşitlemeniz gerekmez. Uygulamayı güncelledikten
 sonra bağımlılık kilidi değiştiyse kurulum betiğini yeniden çalıştırın:
 
@@ -168,7 +168,7 @@ Her mesajın altında küçük bir araç çubuğu bulunur. Kopyalama yerel olara
 
 ### İndirme yöneticisi
 
-Dosyalar arka planda proje dizinindeki `downloads/` klasörüne iner; konumu **Ayarlar → Genel → İndirme klasörü** bölümünden değiştirebilirsiniz. Aynı anda iki aktarım çalışabilir, mevcut dosyaların üzerine yazılmaz. Normal web bağlantıları tarayıcıda açılır; korumalı dosyalar kaynak sağlayıcının ve hesabın oturumuyla, hesap bilgileri başka adreslere gönderilmeden indirilir.
+Depo başlatıcılarıyla dosyalar arka planda `downloads/` klasörüne; kurulu komutla kullanıcının İndirilenler klasörüne iner. Konumu **Ayarlar → Genel → İndirme klasörü** bölümünden değiştirebilirsiniz. Aynı anda iki aktarım çalışabilir, mevcut dosyaların üzerine yazılmaz. Normal web bağlantıları tarayıcıda açılır; korumalı dosyalar kaynak sağlayıcının ve hesabın oturumuyla, hesap bilgileri başka adreslere gönderilmeden indirilir.
 
 İlerlemeyi ve kaynak sohbeti **İndirmeler** sekmesinde, `/downloads` komutuyla veya **Alt+J** ile görebilirsiniz. Liste aranabilir, filtrelenebilir ve sıralanabilir. **Eşitle** dosyaların varlığını on saniyede bir denetler. **Dosyayı sil** geçmiş kaydını korur; **Kaydı kaldır** dosyayı diskte bırakır. Arşiv eklentisi geçmişi yeniden başlatmalar arasında saklar; eklenti kapalıysa yalnızca geçerli oturumda tutulur. Yarım kalan aktarımlar **Kesildi** olarak işaretlenir. Varsayılan sınır 512 MiB’tır; ayarlardan değiştirilebilir ve yerel ağ indirmeleri ayrıca açılabilir.
 
@@ -191,7 +191,7 @@ Sohbet sekmesini kapatmak, devam eden yanıtı durdurmaz. Sol listede yeşil **�
 | Esc, ardından S | Varsa diğer kayıtlı taslağa geç |
 | F5 / F12 | Ayarlar / hesaplar |
 
-Kısayol değişiklikleri arayüzün tamamında anında geçerli olur. Tüm tuş atamaları **Ayarlar → Kısayollar** bölümünden veya yerel `config.json` dosyasından değiştirilebilir. Komut paleti, eklentilerin eklediği aksiyonlar dahil aynı işlemleri sunar.
+Kısayol değişiklikleri arayüzün tamamında anında geçerli olur. Tüm tuş atamaları **Ayarlar → Kısayollar** bölümünden veya yerel ayar dosyasından değiştirilebilir. Komut paleti, eklentilerin eklediği aksiyonlar dahil aynı işlemleri sunar.
 
 Ayarlar normal bir çalışma alanı sekmesidir: Alt+Sol/Sağ ile sohbetlere geçebilir, F5 ile mevcut Ayarlar sekmesini yeniden açabilir ve Ctrl+W ile kapatabilirsiniz.
 
@@ -210,7 +210,7 @@ Sohbeti yazma alanının yanındaki **Sil** düğmesiyle, projeyi `/project-dele
 | ChatGPT | Projeler, talimatlar, kaynaklar ve desteklenen sohbet taşıma işlemleri | Model, efor, geçici mod ve proje seçenekleri hesaba bağlıdır. |
 | Gemini | Ayrı bir proje türü olarak Gemini defterleri; defter bağlamında sohbet, talimat ve metin kaynakları | Mevcut sohbet deftere taşınamaz. Dosya/URL kaynağı içe aktarma sunulmuyor. Düşünme seçenekleri ve varsayılanlar hesabın Gemini web model politikasından alınır. |
 | Claude | Projeler, talimatlar, metin/dosya kaynakları ve desteklenen üyelik değişiklikleri | Projeler dışında geçici sohbet desteklenir; özel/varsayılan dışındaki gizlilik/bellek seçenekleri sunulmuyor. |
-| Grok | Çalışma alanları, talimatlar, 3 MiB’a kadar dosya kaynakları ve sohbet üyeliği; hesaba açık modeller, yeniden deneme, yayımlanan düşünme özetleri ve web arama kaynakları | Ortak efor seçenekleri, sohbet ekleri, mesaj düzenleme ve yerel sohbet dalları sunulmuyor. |
+| Grok | Çalışma alanları, talimatlar, 3 MiB’a kadar dosya kaynakları, 3 MiB’a kadar sohbet ekleri, kullanıcı mesajı düzenleme ve sohbet üyeliği; hesaba açık modeller, yeniden deneme, yayımlanan düşünme özetleri ve web arama kaynakları | Ortak efor seçenekleri ve yerel sohbet dalları sunulmuyor. |
 
 Gemini defterleri mevcut Gemini oturumunuzu kullanır; ayrı NotebookLM girişi gerekmez. Sağlayıcıların proje türleri ve metaverileri birbirinden ayrı tutulur; kullanılabilir özellikler sağlayıcıya ve hesaba göre değişir.
 
@@ -220,15 +220,25 @@ Dosya eki başına yerel sınır **20 MiB**’dır; sağlayıcı daha düşük b
 
 ### Ayarlar ve gizlilik
 
-`config.json` yerelde oluşturulur ve Git kapsamı dışındadır. Varsayılanlar `src/settings.py` içinde tanımlıdır. Dil, **Ayarlar → Genel → Dil** bölümünden (`en`, `tr`, `ru`); sağlayıcılar **Sağlayıcılar**, özellik paketleri **Eklentiler** bölümünden yönetilir. En az bir sağlayıcı etkin kalmalıdır.
+Yapılandırma dosyası, depodan ayrı kullanıcı yapılandırma dizininde yerel olarak oluşturulur. Varsayılanlar `src/settings.py` içinde tanımlıdır. Dil, **Ayarlar → Genel → Dil** bölümünden (`en`, `tr`, `ru`); sağlayıcılar **Sağlayıcılar**, özellik paketleri **Eklentiler** bölümünden yönetilir. En az bir sağlayıcı etkin kalmalıdır.
 
-Farklı bir ayar/veri dizini için `SIOPECHAT_HOME` kullanın. Yapılandırmayı, hesap oturumlarını ve `data/` dizinini gizli tutun; hata raporlarına eklemeyin.
+Yalnızca bir konumu değiştirmek için ilgili ortam değişkenini ayarlayın. `SIOPECHAT_DOWNLOADS_DIR`, İndirme klasörü ayarından önceliklidir; bu değişken ayarlı değilse ayarlardan başka bir klasör seçilebilir. Yapılandırmayı ve hesap verilerini gizli tutun; hata raporlarına eklemeyin.
+
+| Değişken | Varsayılan | İçerik |
+| --- | --- | --- |
+| `SIOPECHAT_PORTABLE` | Depo başlatıcılarında `1`; kurulu komutta ayarlı değil | Depo başlatıcısında `0` yaparak platform dizinlerini kullanın |
+| `SIOPECHAT_CONFIG_PATH` | Platform kullanıcı yapılandırma dizini | Uygulama ayarları |
+| `SIOPECHAT_DATA_DIR` | Platform kullanıcı veri dizini | Hesap kayıtları ve arşivler |
+| `SIOPECHAT_STATE_DIR` | Platform kullanıcı durum dizini | Açık sekmeler, taslaklar ve seçili sohbet |
+| `SIOPECHAT_DOWNLOADS_DIR` | Kullanıcının İndirilenler klasörü | İndirilen dosyalar |
+| `SIOPECHAT_CACHE_DIR` | Platform kullanıcı önbellek dizini | Yeniden kullanılabilir yerel önbellek |
+| `SIOPECHAT_RUNTIME_DIR` | Platform kullanıcı çalışma zamanı dizini | Yerel soketler ve geçici oturum dosyaları |
 
 ### Arşiv ve dosya saklama
 
-Arşiv eklentisi sohbetleri, sıralı mesajları, yayımlanmış düşünme özetlerini, proje/defterleri, üyelikleri ve kaynak metaverilerini `data/archive.sqlite3` içinde tutar. Yüklenen dosyalar arşive kopyalanmaz; yalnızca sağlayıcı kimliği ve mevcut dosya metaverisi saklanır, yerel dosya yolu ve içerik tutulmaz. Eski arşivlerde, dosya içeriğine göre adlandırılmış yükleme kopyaları yükseltme sırasında kaldırılır; sohbet ve kaynak metaverileri korunur. İndirilen dosyalar seçilen klasörde kalır; arşiv yalnızca indirme geçmişinin metaverisini saklar. Uzak görsel ve kaynaklar başvuru olarak tutulur; her uzak dosya kendiliğinden indirilmez.
+Arşiv eklentisi sohbetleri, sıralı mesajları, yayımlanmış düşünme özetlerini, proje/defterleri, üyelikleri ve kaynak metaverilerini yapılandırılmış veri dizinindeki `archive.sqlite3` içinde tutar. Yüklenen dosyalar arşive kopyalanmaz; yalnızca sağlayıcı kimliği ve mevcut dosya metaverisi saklanır, yerel dosya yolu ve içerik tutulmaz. Eski arşivlerde, dosya içeriğine göre adlandırılmış yükleme kopyaları yükseltme sırasında kaldırılır; sohbet ve kaynak metaverileri korunur. İndirilen dosyalar seçilen klasörde kalır; arşiv yalnızca indirme geçmişinin metaverisini saklar. Uzak görsel ve kaynaklar başvuru olarak tutulur; her uzak dosya kendiliğinden indirilmez.
 
-**Yükseltme notu:** Şema v5 geçişi eski yükleme kopyalarını kalıcı olarak siler. Bu sürümle eski bir arşivi ilk kez açmadan önce, çevrimdışı kopyalara ihtiyacınız varsa veya eski bir SiopeChat sürümüne dönmeyi düşünüyorsanız `data/archive.sqlite3` dosyasını `data/files/` klasörüyle birlikte yedekleyin. Özel `SIOPECHAT_HOME` kullanıyorsanız yolları veri dizininize göre uyarlayın.
+**Yükseltme notu:** Şema v5 geçişi eski yükleme kopyalarını kalıcı olarak siler. Bu sürümle eski bir arşivi ilk kez açmadan önce, çevrimdışı kopyalara ihtiyacınız varsa veya eski bir SiopeChat sürümüne dönmeyi düşünüyorsanız yapılandırılmış veri dizinindeki `archive.sqlite3` dosyasını `files/` klasörüyle birlikte yedekleyin.
 
 ### Yükleme, bellek ve eşitleme
 
@@ -315,7 +325,7 @@ Kod denetimi, biçim kontrolü ve paket derlemesi ayrı adımlardır. SiopeChat 
 | Konum | Sorumluluk |
 | --- | --- |
 | `src/bootstrap.py`, `src/cli.py` | Uygulamanın kurulumu ve komut satırı girişleri |
-| `src/accounts.py`, `src/tasks.py`, `src/runtime.py` | Hesap yönlendirme, görev sahipliği ve servis yaşam döngüsü |
+| `src/accounts/`, `src/tasks.py`, `src/runtime.py` | Hesap yönlendirme, görev sahipliği ve servis yaşam döngüsü |
 | PyPI `webai-provider` | Bağımsız web oturumu istemcileri, taşıma katmanları ve sağlayıcı sözleşmeleri |
 | `src/tui/` | Terminal görünümleri, kullanıcı girdisi ve çizim |
 | `src/extension.py`, `src/tui/api.py` | Eklenti yaşam döngüsü ve eklentilere açık terminal API’si |
@@ -328,7 +338,7 @@ Gönderimler `TaskService` üzerinden her hesap için sıraya alınır. İptal d
 
 ### Sağlayıcı kütüphanesini bağımsız kullanma
 
-SiopeChat, PyPI'dan `webai-provider==1.1.0b0` paketini kurar ve Python'da `providers` adıyla içe aktarır; uygulama wheel'i artık bu paketin dosyalarını içermez. Kütüphaneyi bağımsız kullanmak için `python -m pip install webai-provider==1.1.0b0` komutunu çalıştırın. `ProviderClient` hesap adaptörlerini, akışları ve bağlantı temizliğini; `Backend` ise model, sohbet, proje, kaynak, dosya yükleme ve indirme çözümleme işlemlerini sunar. API örnekleri ve bağımsız testler için [sağlayıcı kılavuzuna](https://github.com/TahsinCr/webai-provider/blob/v1.1-beta/README-TR.md) bakın.
+SiopeChat, PyPI'dan `webai-provider==1.2.0b0` paketini kurar ve Python'da `providers` adıyla içe aktarır; uygulama wheel'i artık bu paketin dosyalarını içermez. Kütüphaneyi bağımsız kullanmak için `python -m pip install webai-provider==1.2.0b0` komutunu çalıştırın. `ProviderClient` hesap adaptörlerini, akışları ve bağlantı temizliğini; `Backend` ise model, sohbet, proje, kaynak, dosya yükleme ve indirme çözümleme işlemlerini sunar. API örnekleri ve bağımsız testler için [sağlayıcı kılavuzuna](https://github.com/TahsinCr/webai-provider/blob/v1.2-beta/README-TR.md) bakın.
 
 Taşıma katmanları, tarayıcı profili keşfi ve yerel CDP erişimi Python ile uygulanmıştır. Gemini, ek bir Gemini SDK’sı gerektirmeden paketteki HTTPS taşıma katmanını kullanır. ChatGPT’nin desteklenen Sentinel kontrolleri Python çalışma zamanı ve paketteki profille yürütülür. Değişen veya desteklenmeyen sunucu gereksinimleri ayrıca doğrulanmalıdır; çevrimdışı test verileri canlı kontrollerin tümünü kapsamaz.
 
@@ -336,12 +346,15 @@ Taşıma katmanları, tarayıcı profili keşfi ve yerel CDP erişimi Python ile
 
 | Dosya | İçerik |
 | --- | --- |
-| `config.json` | Tercihler, hesap adları ve seçimi |
-| `data/accounts.sqlite3` | Hesap oturumları, model katalogları, doğrulama kayıtları ve yedek sohbet önbelleği |
-| `data/archive.sqlite3` | Arşivlenmiş geçmiş, kaynak bilgileri, indirme kayıtları ve yerel yanıt sürümleri |
-| `data/workspaces.sqlite3` | Kaydedilmiş sohbet düzenleri |
+| Kullanıcı yapılandırma dizini / `config.json` | Tercihler, hesap adları ve seçimi |
+| Kullanıcı veri dizini / `accounts.sqlite3` | Hesap oturumları, model katalogları, doğrulama kayıtları ve yedek sohbet önbelleği |
+| Kullanıcı durum dizini / `session.json` | Açık sekmeler, taslaklar ve seçili sohbet |
+| Kullanıcı veri dizini / `archive.sqlite3` | Arşivlenmiş geçmiş, kaynak bilgileri, indirme kayıtları ve yerel yanıt sürümleri |
+| Kullanıcı veri dizini / `workspaces.sqlite3` | Kaydedilmiş sohbet düzenleri |
+| Kullanıcı önbellek dizini | Yeniden kullanılabilir yerel önbellek |
+| Kullanıcı çalışma zamanı dizini | Yerel servis soketi ve kısa ömürlü oturum doğrulama dosyaları |
 
-Bu yollar yapılandırılmış uygulama dizinine göredir. Sağlayıcıya özel alanlar ilgili veritabanında JSON biçiminde tutulur. Sağlayıcı kütüphanesi, çağıranın sağladığı kimlik bilgisi deposunu kullanır ve bu SQLite şemalarına bağımlı değildir. Hesap deposu şifrelenmez; Unix dosya izinleri erişimi dosya sahibiyle sınırlar. Şema geçişlerini transaction içinde yürütün ve mevcut kullanıcı verilerini koruyun. Eski bir arşivi açmadan önce yukarıdaki yükseltme uyarısını okuyun.
+Yollar varsayılan olarak işletim sisteminin kullanıcı dizinlerini izler. `SIOPECHAT_PORTABLE=1` ile depoda yerel depolama açılır; göreli ortam değişkeni değerleri proje dizinine göre çözülür, mutlak yollar doğrudan kullanılır. Sağlayıcıya özel alanlar ilgili veritabanında JSON biçiminde tutulur. Sağlayıcı kütüphanesi, çağıranın sağladığı kimlik bilgisi deposunu kullanır ve bu SQLite şemalarına bağımlı değildir. Hesap deposu şifrelenmez; Unix dosya izinleri erişimi dosya sahibiyle sınırlar. Şema geçişlerini transaction içinde yürütün ve mevcut kullanıcı verilerini koruyun. Eski bir arşivi açmadan önce yukarıdaki yükseltme uyarısını okuyun.
 
 ### Performans ölçümü ve hata bildirimi
 
@@ -351,8 +364,8 @@ Hata bildirirken sürümü, sağlayıcıyı, işlemi, terminali, işletim sistem
 
 ## Lisans
 
-Telif hakkı © TahsinCr. [GPL-3.0-only](LICENSE) ile lisanslanmıştır; proje bildirimi için [COPYRIGHT](COPYRIGHT) dosyasına bakın. Dahil edilen üçüncü taraf bileşenlerin bildirimleri `src/utils/` altında korunur.
+Telif hakkı © TahsinCr. Proje [GPL-3.0-only](LICENSE) ile lisanslanmıştır; telif bildirimi için [COPYRIGHT](COPYRIGHT) dosyasına bakın.
 
-[version-shield]: https://img.shields.io/badge/version-v1.5.4--beta-b7a3e3.svg?style=for-the-badge
+[version-shield]: https://img.shields.io/badge/version-v1.5.5--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge

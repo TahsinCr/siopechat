@@ -9,8 +9,9 @@ import time
 import uuid
 from datetime import datetime
 
-from accounts import origin
 from providers.messages import files_from
+
+from accounts import origin
 from utils import clipboard
 
 from ..markdown import (

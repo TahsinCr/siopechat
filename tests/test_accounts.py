@@ -14,7 +14,6 @@ from threading import Event
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, call, patch
 
-from accounts import Accounts, identity, origin
 from providers import Capability, ConversationBound, ReplaceText, TextDelta
 from providers.errors import AccountPaused, RateLimited
 from providers.models import (
@@ -27,6 +26,8 @@ from providers.models import (
     Origin,
     Page,
 )
+
+from accounts import Accounts, identity, origin
 from tests.account_fixture import configured_application as create_application
 
 
@@ -43,62 +44,50 @@ class AccountTests(unittest.TestCase):
         self.accounts = self.api.get("accounts")
         self.gemini = self.accounts.add("gemini", "Personal Gemini")
 
-    def test_legacy_account_json_moves_to_archive_before_source_is_removed(self):
-        backend = self.accounts.cache(self.gemini)
-        remote = "legacy-cache-chat"
-        conversation_path = backend.conversation_cache_path(remote)
-        backend.atomic_json_write(
-            conversation_path,
-            {
-                "id": remote,
-                "title": "Local history",
-                "messages": [{"id": "m1", "role": "user", "text": "saved"}],
-            },
+    def test_account_database_history_is_promoted_to_archive(self):
+        remote = "fallback-cache-chat"
+        self.accounts.repository.cache_put(
+            self.gemini,
+            "conversation",
+            remote,
+            {"id": remote, "title": "Fallback", "messages": [{"role": "user", "text": "saved"}]},
         )
-        backend.set_active_conversation(remote)
+        self.accounts.repository.cache_set_active(self.gemini, remote)
 
-        self.accounts._migrate_legacy_account_cache()
+        self.accounts._promote_fallback_cache()
 
         archive = self.accounts.archive()
-        self.assertEqual(archive.get(self.gemini, "conversation", remote)["title"], "Local history")
+        self.assertEqual(archive.get(self.gemini, "conversation", remote)["title"], "Fallback")
         self.assertEqual(archive.get(self.gemini, "pointer", "active"), {"remote": remote})
-        self.assertFalse(conversation_path.exists())
-        self.assertFalse(backend.active_conversation_path().exists())
+        self.assertFalse(self.accounts.repository.cache_exists(self.gemini, "conversation", remote))
+        self.assertIsNone(self.accounts.repository.cache_active(self.gemini))
 
-    def test_legacy_deleted_marker_migrates_as_tombstone(self):
-        backend = self.accounts.cache(self.gemini)
-        remote = "legacy-deleted-chat"
-        backend.cache_conversation(
-            {"id": remote, "title": "Deleted", "messages": [{"role": "user", "text": "old"}]}
-        )
-        marker = backend.conversation_cache_path(remote).with_suffix(".deleted")
-        backend.mark_conversation_deleted(remote)
+    def test_account_database_tombstone_is_promoted_to_archive(self):
+        remote = "fallback-deleted-chat"
+        self.accounts.repository.cache_mark_deleted(self.gemini, remote)
 
-        self.accounts._migrate_legacy_account_cache()
+        self.accounts._promote_fallback_cache()
 
         self.assertTrue(self.accounts.archive().deleted(self.gemini, "conversation", remote))
-        self.assertFalse(marker.exists())
+        self.assertFalse(self.accounts.repository.cache_is_deleted(self.gemini, remote))
         self.assertIsNone(self.accounts.archive().get(self.gemini, "conversation", remote))
 
-    def test_legacy_cache_uses_account_database_when_archive_is_disabled(self):
-        backend = self.accounts.cache(self.gemini)
+    def test_account_database_history_remains_readable_when_archive_is_disabled(self):
         remote = "fallback-cache-chat"
-        conversation_path = backend.conversation_cache_path(remote)
-        backend.atomic_json_write(
-            conversation_path,
+        self.accounts.repository.cache_put(
+            self.gemini,
+            "conversation",
+            remote,
             {
                 "id": remote,
                 "title": "Fallback",
                 "messages": [{"role": "assistant", "text": "kept"}],
             },
         )
-
+        self.accounts.repository.cache_set_active(self.gemini, remote)
         with patch.object(self.accounts, "archive", return_value=None):
-            self.accounts._migrate_account_cache(self.gemini)
-
-        cached = self.accounts.repository.cache_get(self.gemini, "conversation", remote)
-        self.assertEqual(cached["title"], "Fallback")
-        self.assertFalse(conversation_path.exists())
+            self.assertEqual(self.accounts.cached(self.gemini, remote)["title"], "Fallback")
+            self.assertEqual(self.accounts.active_conversation(self.gemini), remote)
 
     def test_shutdown_drains_active_pointer_to_archive_before_fallback_is_selected(self):
         self.accounts.set_active(self.gemini, "chat-before-close")
@@ -301,9 +290,11 @@ class AccountTests(unittest.TestCase):
         try:
             with (
                 patch.object(self.accounts, "call", side_effect=close_coroutine),
+                self.assertLogs("accounts", level="ERROR") as logs,
                 self.assertRaisesRegex(RuntimeError, "remains open"),
             ):
                 self.accounts.close()
+            self.assertIn("event loop did not stop", logs.output[-1])
             loop.close.assert_not_called()
             loop.call_soon_threadsafe.assert_has_calls(
                 [call(self.api.tasks.begin_shutdown), call(loop.stop)]
@@ -327,9 +318,11 @@ class AccountTests(unittest.TestCase):
         try:
             with (
                 patch.object(self.accounts, "call", side_effect=time_out),
+                self.assertLogs("accounts", level="ERROR") as logs,
                 self.assertRaisesRegex(RuntimeError, "remains open"),
             ):
                 self.accounts.close()
+            self.assertIn("cleanup timed out", logs.output[-1])
             loop.call_soon_threadsafe.assert_called_once_with(self.api.tasks.begin_shutdown)
             loop.close.assert_not_called()
             thread.join.assert_not_called()
@@ -339,6 +332,11 @@ class AccountTests(unittest.TestCase):
 
     def test_timeout_closes_provider_coroutine_that_never_started(self):
         self.accounts._start()
+        loop = self.accounts._loop
+        loop_errors = []
+        loop.call_soon_threadsafe(
+            loop.set_exception_handler, lambda _, context: loop_errors.append(context)
+        )
         entered, release = Event(), Event()
 
         def block_provider_loop():
@@ -358,11 +356,20 @@ class AccountTests(unittest.TestCase):
             self.assertIsNone(coroutine.cr_frame)
         finally:
             release.set()
+            drained = Event()
+
+            def drain(turns=5):
+                if turns:
+                    loop.call_soon(drain, turns - 1)
+                else:
+                    drained.set()
+
+            loop.call_soon_threadsafe(drain)
+            self.assertTrue(drained.wait(1))
+            self.assertEqual(loop_errors, [])
 
     def test_verification_survives_closed_browser_and_account_service_restart(self):
-        path = self.accounts.directory(self.gemini) / "cookies.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("{}")
+        self.accounts.credentials(self.gemini).save({"session": "verified test session"})
         self.accounts._remember_verification(self.gemini)
         restarted = Accounts(self.api)
         with patch.object(restarted, "browser_connected", return_value=False):
@@ -373,9 +380,7 @@ class AccountTests(unittest.TestCase):
         self.assertFalse(restarted.status(self.gemini)["authenticated"])
 
     def test_transport_failure_preserves_verification_but_auth_rejection_invalidates_it(self):
-        path = self.accounts.directory(self.gemini) / "cookies.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("{}")
+        self.accounts.credentials(self.gemini).save({"session": "verified test session"})
         self.accounts._remember_verification(self.gemini)
         provider = Mock()
         provider.models = AsyncMock(side_effect=RuntimeError("connection refused"))
@@ -393,9 +398,7 @@ class AccountTests(unittest.TestCase):
         )
 
     def test_saved_model_catalog_cannot_verify_an_account(self):
-        path = self.accounts.directory(self.gemini) / "cookies.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("{}")
+        self.accounts.credentials(self.gemini).save({"session": "unverified test session"})
         with patch.object(self.accounts, "browser_connected", return_value=True):
             state = self.accounts.status(self.gemini)
             self.assertFalse(state["authenticated"])
@@ -647,9 +650,8 @@ class AccountTests(unittest.TestCase):
         cached = self.accounts.cached(self.gemini, "same")
         self.assertEqual(cached["provider_id"], "gemini")
         self.assertIsNone(self.accounts.cached("chatgpt/default", "same"))
-        self.accounts.cache(self.gemini).conversation_cache_path("same").unlink(missing_ok=True)
         self.accounts.send(self.gemini, None, "Private", [], Mock(), Mock(), temporary=True)
-        # Removing the legacy JSON snapshot must not delete the durable archive.
+        # Temporary sends must not replace the durable archived conversation.
         archived = self.accounts.cached(self.gemini, "same")
         self.assertEqual(archived["messages"][0]["text"], "Q")
         self.assertNotIn("Private", str(archived))
@@ -702,9 +704,11 @@ class AccountTests(unittest.TestCase):
             calls += 1
             raise RuntimeError("view closed during stream")
 
-        self.accounts.send(self.gemini, None, "Question", [], failing_view, Mock())
-        messages = self.accounts.cached(self.gemini, "callback-case")["messages"]
+        with self.assertLogs("tasks", level="WARNING") as logs:
+            self.accounts.send(self.gemini, None, "Question", [], failing_view, Mock())
+            messages = self.accounts.cached(self.gemini, "callback-case")["messages"]
 
+        self.assertIn("Detached failing task observer", logs.output[0])
         self.assertEqual(calls, 1)
         self.assertEqual(
             [(message["role"], message["text"]) for message in messages],

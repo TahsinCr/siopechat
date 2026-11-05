@@ -10,11 +10,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
+from providers import ConversationBound, ReplaceText
+from providers.models import FeatureState, Model, ModelCatalog
+
 from accounts import identity
 from extensions.archive.repository import Files, SQLiteRepository, encode
 from extensions.archive.sync import Archive
-from providers import ConversationBound, ReplaceText
-from providers.models import FeatureState, Model, ModelCatalog
 from tests.account_fixture import configured_application as create_application
 from tests.tui_support import terminal
 

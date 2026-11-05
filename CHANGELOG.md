@@ -4,25 +4,26 @@ All notable changes to SiopeChat are documented here.
 
 The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
-Python distributions use the corresponding PEP 440 version (`1.5.4b0` for `v1.5.4-beta`).
+Python distributions use the corresponding PEP 440 version (`1.5.5b0` for `v1.5.5-beta`).
 
 ## [Unreleased]
 
+## [1.5.5-beta] - 2026-11-05
+
 ### Added
 
-- Add Grok web-session accounts with live account model discovery, streaming, published thinking summaries and web-search citations. Support Grok workspaces, instructions, project resources up to 3 MiB, chat document attachments up to 3 MiB per file, chat membership changes, and retrying assistant replies; keep unsupported effort, image attachments, message editing and branching unavailable.
+- Add Grok web-session accounts with live account model discovery, streaming, published thinking summaries and web-search citations. Support Grok workspaces, instructions, project resources up to 3 MiB, chat document and vision image attachments up to 3 MiB per file, user message editing (`MESSAGE_EDIT`), chat membership changes, and retrying assistant replies; keep unsupported effort and branching unavailable.
 
 ### Changed
 
-- Install the provider layer from PyPI as the pinned `webai-provider` dependency instead of bundling its source as a Git submodule; provider tests and CI now live with the independent package.
+- Install the standalone [webai-provider](https://github.com/TahsinCr/webai-provider) v1.2-beta release from PyPI as the pinned `webai-provider==1.2.0b0` dependency. Keep provider source, tests, CI and release history in its own repository instead of a SiopeChat Git submodule.
 - Resolve Grok's account-available chat options against its server model metadata, so names such as Grok 3 appear consistently with their mode across subscription tiers. Support server-defined model routes and their reasoning defaults, cache both catalogs together and exclude unsupported Build, Imagine and Voice workflows from the chat picker.
 - Clean Grok's render and tool-card protocol markup and leading whitespace from thinking and answers, and format returned Grok model IDs as readable names.
 - Reduce repeated Grok history loading before follow-up sends while keeping retries on full active-branch validation.
 - Show confirmed ChatGPT and Grok generation activity in the conversation status without adding another network request; show elapsed time only when the provider supplies a valid start time.
 - Keep the Accounts footer indicator green while at least one account is active, and gray when none are active.
-- Store default settings, account data, conversation archives, and downloads in the per-user application data directory instead of the source checkout. Copy existing checkout data on first launch and retain the originals; `SIOPECHAT_HOME` remains the explicit override.
+- Use project-local portable storage by default with repository launchers and platform-standard per-user directories with the installed command. Keep each path independently configurable, including application state.
 - Support Python 3.10+ for the application, using the `exceptiongroup` backport only on Python 3.10.
-- Release the standalone `webai-provider` library as `v1.0-beta`, with [provider-only release notes](https://github.com/TahsinCr/webai-provider/blob/v1.0-beta/CHANGELOG.md), license metadata and independent CI checks. Pin SiopeChat to the signed tag target and document recursive clone and update steps; keep provider development on `main`.
 - Replace the vendored `utils.events` module with [`flowevent`](https://github.com/TahsinCr/python-eventflow)'s `eventflow.EventBus`; remove the old event copy and its local license and notice files.
 - Reopen current archive and workspace databases without repeating schema writes or acquiring a writer lock. Consolidate archive membership and deletion SQL, remove unused repository APIs, and check account tombstones without decoding JSON.
 
@@ -45,6 +46,10 @@ Python distributions use the corresponding PEP 440 version (`1.5.4b0` for `v1.5.
 - Keep the latest answer and its toolbar rendered while only conversation loading or synchronization status changes.
 - Display Claude web-search result links and published answer citations in the assistant response sources.
 - Retry from the original user prompt, replacing the complete response turn and removing later turns. Answer-version navigation restores every visible reasoning and response message in that turn.
+
+### Removed
+
+- Remove obsolete file-based account credential, model-catalog and verification imports, the shared `SIOPECHAT_HOME` option and automatic storage migration.
 
 ## [1.5.4-beta] - 2026-11-02
 
@@ -359,7 +364,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.4b0` for `v1.5.
 
 ### Removed
 
-- Remove the obsolete account `models.json` snapshot compatibility test; SQLite-backed catalog caching and provider entitlement behavior remain covered.
+- Remove file-based account credential, model-catalog and verification imports; SQLite-backed records remain the single source of truth.
 - Remove settings-catalog row-presence assertions from the download-path behavior test; default, validation and changed-directory behavior remain covered.
 - Remove selectable application themes and theme contributions from the extension API; the CLI now uses one fixed default appearance and extensions must use API v3.
 

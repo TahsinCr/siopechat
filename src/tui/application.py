@@ -25,7 +25,7 @@ def run_fullscreen(
     key = accounts.active()
     if key != "chatgpt/default":
         cached_conversation, conversation_id = None, None
-    session_store = TabSessionStore(Path(api.get("paths")) / "data" / "session.json")
+    session_store = TabSessionStore(api.get("state_root") / "session.json")
     initial_session = (
         session_store.load() if conversation_id is None and cached_conversation is None else None
     )

@@ -17,10 +17,10 @@ from prompt_toolkit.layout import Layout, Window
 from prompt_toolkit.layout.margins import ConditionalMargin, ScrollbarMargin
 from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import TextArea
-
 from providers import Capability
 from providers.models import FeatureState, ModelCatalog
 from providers.timing import send_timing_report, timing_enabled
+
 from settings import DEFAULT_KEYBINDINGS
 
 from ..bindings import key_bindings
