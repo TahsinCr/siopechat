@@ -390,7 +390,11 @@ class SessionDialog:
 
         def failure(reason):
             self.loading = False
-            self.message = self.view.tr(str(reason))
+            code = getattr(reason, "code", None)
+            if code and self.view.text(code, ""):
+                self.message = self.view.text(code, str(reason))
+            else:
+                self.message = self.view.tr(str(reason))
             self.view.app.invalidate()
 
         self.view._read_in_background(

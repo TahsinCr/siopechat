@@ -14,7 +14,9 @@ from unittest.mock import Mock, patch
 
 from providers.profiles import (
     BrowserProfile,
+    ProfileDependencyError,
     ProfileError,
+    ProfileTimeoutError,
     default_profile,
     import_cookies,
     select_cookies,
@@ -247,8 +249,9 @@ class ProfileTests(unittest.TestCase):
                 side_effect=subprocess.TimeoutExpired("hidden", 25),
             ),
         ):
-            with self.assertRaisesRegex(ProfileError, "zaman aşımı"):
+            with self.assertRaises(ProfileTimeoutError) as error:
                 import_cookies("claude")
+            self.assertEqual(error.exception.code, "profile_timeout")
         with (
             patch("providers.profiles.default_profile", return_value=profile),
             patch(
@@ -301,9 +304,10 @@ class ProfileTests(unittest.TestCase):
                 return_value=Mock(returncode=3, stderr="private-value"),
             ),
         ):
-            with self.assertRaises(ProfileError) as error:
+            with self.assertRaises(ProfileDependencyError) as error:
                 import_cookies("claude")
-        self.assertIn("bağımlılıkları eksik", str(error.exception))
+            self.assertEqual(error.exception.code, "profile_dependency_missing")
+            self.assertIn("bağımlılıkları eksik", str(error.exception))
         self.assertNotIn("tarayıcıyı kapat", str(error.exception))
         self.assertNotIn("private-value", str(error.exception))
 
