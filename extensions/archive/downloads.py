@@ -29,6 +29,7 @@ class DownloadHistory:
                 revision = max(1, int(record.get("_revision", 1)))
                 payload_record = dict(record)
                 payload_record.pop("_revision", None)
+                before = db.total_changes
                 cursor = db.execute(
                     "INSERT INTO downloads(id,created,revision,payload) VALUES(?,?,?,?) "
                     "ON CONFLICT(id) DO UPDATE SET created=excluded.created, "
@@ -36,7 +37,7 @@ class DownloadHistory:
                     "WHERE excluded.revision > downloads.revision",
                     (record["id"], record["created"], revision, encode(payload_record)),
                 )
-                if cursor.rowcount == 0:
+                if cursor.rowcount == 0 or (db.total_changes - before) == 0:
                     row = db.execute(
                         "SELECT revision,payload FROM downloads WHERE id=?", (record["id"],)
                     ).fetchone()
