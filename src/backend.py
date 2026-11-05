@@ -16,11 +16,11 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from providers.chatgpt import BrowserSession, ChatGPTClient, SessionPaths
-from providers.chatgpt.constants import DEFAULT_CDP_URL
-from providers.chatgpt.errors import ChatGPTWebError
-from providers.chatgpt.formats import normalize_conversation
-from providers.errors import ProviderError
+from webai_provider.errors import ProviderError
+from webai_provider.providers.chatgpt import BrowserSession, ChatGPTClient, SessionPaths
+from webai_provider.providers.chatgpt.constants import DEFAULT_CDP_URL
+from webai_provider.providers.chatgpt.errors import ChatGPTWebError
+from webai_provider.providers.chatgpt.formats import normalize_conversation
 
 from utils.files import atomic_json_write
 from utils.paths import data_dir, project_root, runtime_dir
@@ -402,7 +402,7 @@ class BackendService:
             items = raw.get("items")
             if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
                 raise ChatGPTWebError("invalid history page response")
-            from providers.chatgpt.discovery import project_id
+            from webai_provider.providers.chatgpt.discovery import project_id
 
             total = raw.get("total")
             next_offset = offset + limit if type(total) is int else offset + len(items)

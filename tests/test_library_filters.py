@@ -5,9 +5,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from providers.gemini.history import conversations
-from providers.gemini.notebooks import project_from_native
-from providers.models import Conversation, Origin, Page
+from webai_provider.models import Conversation, Origin, Page
+from webai_provider.providers.gemini.history import conversations
+from webai_provider.providers.gemini.notebooks import project_from_native
 
 from tests.account_fixture import configured_application as create_application
 from tests.fakes import Accounts

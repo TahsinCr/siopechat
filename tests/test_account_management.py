@@ -69,7 +69,7 @@ class AccountManagementTests(unittest.TestCase):
         self.assertTrue(reloaded.snapshot()["accounts"]["items"][-1]["enabled"])
 
     def test_logout_preserves_archive_and_hides_it_until_reverification(self):
-        from providers import Capability
+        from webai_provider import Capability
 
         archive = self.api.get("archive")
         chat_page = {

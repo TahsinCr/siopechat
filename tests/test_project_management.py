@@ -7,9 +7,9 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
-from providers import Capability
-from providers.models import Origin, Project, Resource
-from providers.projects import ProjectEditing, ProjectOptions
+from webai_provider import Capability
+from webai_provider.models import Origin, Project, Resource
+from webai_provider.projects import ProjectEditing, ProjectOptions
 
 from bootstrap import create_application
 from tests import tui_support as interaction
@@ -27,7 +27,7 @@ class ProjectWriteTests(unittest.IsolatedAsyncioTestCase):
         new = replace(old, name="New", instructions="Instructions")
         provider.editor = Mock(write=AsyncMock())
         provider.get_project = AsyncMock(side_effect=[old, old, new])
-        with patch("providers.projects.asyncio.sleep", new=AsyncMock()):
+        with patch("webai_provider.projects.asyncio.sleep", new=AsyncMock()):
             self.assertEqual(await provider.update_project(new), new)
         provider.editor.write.assert_awaited_once()
         with self.assertRaisesRegex(ValueError, "başka"):

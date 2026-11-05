@@ -1,7 +1,7 @@
 """Account-scoped project forms, separate from conversation presentation."""
 
-from providers import Capability
-from providers.registry import PROVIDERS
+from webai_provider import Capability
+from webai_provider.registry import PROVIDERS
 
 from accounts import origin
 

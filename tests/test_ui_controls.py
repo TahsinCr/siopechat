@@ -12,9 +12,9 @@ from unittest.mock import Mock, patch
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
 from prompt_toolkit.utils import get_cwidth
-from providers.chatgpt import BrowserSession, ChatGPTClient, SessionPaths
-from providers.chatgpt.errors import ChatGPTWebError
-from providers.models import Choice, FeatureState, Model, ModelCatalog
+from webai_provider.models import Choice, FeatureState, Model, ModelCatalog
+from webai_provider.providers.chatgpt import BrowserSession, ChatGPTClient, SessionPaths
+from webai_provider.providers.chatgpt.errors import ChatGPTWebError
 
 from backend import BackendService
 from bootstrap import create_application
@@ -1040,7 +1040,9 @@ class SessionSecurityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             session = BrowserSession(SessionPaths(root / "session", root / "profile"))
-            with patch("providers.chatgpt.session.webbrowser.open", return_value=True) as opened:
+            with patch(
+                "webai_provider.providers.chatgpt.session.webbrowser.open", return_value=True
+            ) as opened:
                 result = session.open_login()
             opened.assert_called_once_with("https://chatgpt.com/", new=2)
             self.assertFalse(result["authenticated"])

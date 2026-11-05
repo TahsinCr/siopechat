@@ -28,7 +28,7 @@ def create_application(root: Path | None = None):
     checkout = Path(__file__).resolve().parent.parent
     if (checkout / "extensions" / "__init__.py").is_file() and str(checkout) not in sys.path:
         sys.path.insert(0, str(checkout))
-    from providers import create_provider
+    from webai_provider import create_provider
 
     from accounts import Accounts
     from actions import Action

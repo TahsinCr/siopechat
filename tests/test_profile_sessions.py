@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
-from providers.models import SessionState, SessionStatus
+from webai_provider.models import SessionState, SessionStatus
 
 from tests.account_fixture import configured_application
 
@@ -57,7 +57,7 @@ class ProfileAccountTests(unittest.TestCase):
             ),
             patch("accounts.sessions.create_provider", return_value=candidate),
             patch(
-                "providers.chatgpt.session.BrowserSession.launch",
+                "webai_provider.providers.chatgpt.session.BrowserSession.launch",
                 side_effect=AssertionError("browser"),
             ),
         ):
@@ -172,7 +172,7 @@ class ProfileUiTests(unittest.IsolatedAsyncioTestCase):
             view.refresh_provider_catalog.assert_called_once()
 
     async def test_chatgpt_profile_auth_never_contacts_debugging_browser(self):
-        from providers.chatgpt import BrowserSession, ChatGPTProvider, SessionPaths
+        from webai_provider.providers.chatgpt import BrowserSession, ChatGPTProvider, SessionPaths
 
         from tests.provider_fakes import FakeClient
 

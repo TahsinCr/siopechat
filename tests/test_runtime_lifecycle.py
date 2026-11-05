@@ -1,13 +1,13 @@
 import asyncio
 import unittest
 
-from providers import (
+from webai_provider import (
     AccountPaused,
     Capability,
     RateLimited,
     TextDelta,
 )
-from providers.registry import ProviderRegistry
+from webai_provider.registry import ProviderRegistry
 
 from tasks import JobState, TaskService
 from tests.fakes import ControlledProvider, request

@@ -9,8 +9,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
-from providers.chatgpt import BrowserSession, SessionPaths
-from providers.projects import source_file
+from webai_provider.projects import source_file
+from webai_provider.providers.chatgpt import BrowserSession, SessionPaths
 
 from utils.files import atomic_json_write
 

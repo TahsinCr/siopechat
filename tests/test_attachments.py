@@ -8,7 +8,7 @@ from threading import Event
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
-from providers.attachments import policy_for
+from webai_provider.attachments import policy_for
 
 from tui.attachments import AttachmentPicker
 

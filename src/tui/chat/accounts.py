@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from providers import Capability
-from providers.models import FeatureState, ModelCatalog
-from providers.registry import PROVIDERS
+from webai_provider import Capability
+from webai_provider.models import FeatureState, ModelCatalog
+from webai_provider.registry import PROVIDERS
 
 from accounts import origin
 

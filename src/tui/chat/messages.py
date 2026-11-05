@@ -9,7 +9,7 @@ import time
 import uuid
 from datetime import datetime
 
-from providers.messages import files_from
+from webai_provider.messages import files_from
 
 from accounts import origin
 from utils import clipboard
@@ -566,7 +566,7 @@ class MessageComponent:
                 yield f"{separator}{self.tr('Attachments')}: {', '.join(details)}"
 
     def _show_message_sources(self, message):
-        from providers.messages import sources_from
+        from webai_provider.messages import sources_from
 
         prepared_sources = message.get("_thinking_sources") or ()
         sources = sources_from({"sources": prepared_sources}) if prepared_sources else ()

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import httpx
-from providers.session import WebSession, save_session
+from webai_provider.session import WebSession, save_session
 
 from backend import BackendService
 

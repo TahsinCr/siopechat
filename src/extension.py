@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from eventflow import EventBus
-from providers import ProviderRegistry
+from webai_provider import ProviderRegistry
 
 from actions import Action, ActionService
 from language import Catalog

@@ -12,13 +12,13 @@ from dataclasses import replace
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from providers.cdp import DevToolsError, open_provider_page, read_provider_cookies
-from providers.chatgpt import BrowserSession, ChatGPTProvider
-from providers.errors import AccountPaused
-from providers.models import SessionState
-from providers.profiles import import_cookies
-from providers.registry import PROVIDERS, create_provider
-from providers.session import read_session, save_session, session_exists
+from webai_provider.cdp import DevToolsError, open_provider_page, read_provider_cookies
+from webai_provider.errors import AccountPaused
+from webai_provider.models import SessionState
+from webai_provider.profiles import import_cookies
+from webai_provider.providers.chatgpt import BrowserSession, ChatGPTProvider
+from webai_provider.registry import PROVIDERS, create_provider
+from webai_provider.session import read_session, save_session, session_exists
 
 from utils.paths import ensure_runtime_dir
 
@@ -234,7 +234,7 @@ class AccountsSessions:
                         "Hesabın açık giriş tarayıcısı bulunamadı; önce giriş yapın"
                     ) from error
                 if provider_id == "grok":
-                    from providers.profiles import ProfileError, select_cookies
+                    from webai_provider.profiles import ProfileError, select_cookies
 
                     try:
                         cookies = select_cookies(browser_cookies, provider_id)

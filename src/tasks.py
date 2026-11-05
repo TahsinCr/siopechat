@@ -11,7 +11,7 @@ from enum import Enum
 from typing import Callable
 
 from eventflow import EventBus
-from providers.api import (
+from webai_provider.api import (
     AccountPaused,
     Capability,
     CompatibilityError,
@@ -25,7 +25,7 @@ from providers.api import (
     SendRequest,
     TextDelta,
 )
-from providers.registry import ProviderRegistry
+from webai_provider.registry import ProviderRegistry
 
 _LOG = logging.getLogger(__name__)
 _SHUTDOWN_RESPONSE_GRACE_SECONDS = 1.0

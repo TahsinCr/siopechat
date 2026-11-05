@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime
 
 from prompt_toolkit.formatted_text import FormattedText
-from providers.history import merge_conversation
+from webai_provider.history import merge_conversation
 
 from accounts import origin
 

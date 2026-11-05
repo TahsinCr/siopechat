@@ -4,7 +4,7 @@ import asyncio
 import unittest
 from unittest.mock import patch
 
-from providers import ProviderRegistry, ReplaceText, SendRequest, TextDelta
+from webai_provider import ProviderRegistry, ReplaceText, SendRequest, TextDelta
 
 from tasks import TaskService
 from tests.tui_support import immediate, terminal, wait_until
@@ -75,7 +75,7 @@ class EditingTests(unittest.IsolatedAsyncioTestCase):
                 yield ReplaceText("Updated", channel="analysis")
                 yield TextDelta("Answer")
 
-        from providers import Capability
+        from webai_provider import Capability
 
         Provider.capabilities = frozenset([Capability.CHAT])
         registry = ProviderRegistry()

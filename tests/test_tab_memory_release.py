@@ -245,7 +245,7 @@ class TabMemoryReleaseTests(unittest.TestCase):
     def test_chatgpt_client_forget_conversation_clears_only_the_selected_cache(self):
         from unittest.mock import Mock
 
-        from providers.chatgpt.client import ChatGPTClient
+        from webai_provider.providers.chatgpt.client import ChatGPTClient
 
         client = ChatGPTClient(Mock(), authenticate=False)
         dummy_conv = {

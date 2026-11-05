@@ -8,7 +8,7 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from providers.timing import SendTiming
+from webai_provider.timing import SendTiming
 
 if TYPE_CHECKING:
     from .view import ChatView
@@ -184,7 +184,7 @@ class _SendStream:
                     for label, key in (("Model", "model"), ("Effort", "effort"))
                     if event.get(key)
                 )
-                from providers.messages import files_from
+                from webai_provider.messages import files_from
 
                 source_text = message_body_text(final)
                 files = files_from({"text": source_text, "files": event.get("files", ())})

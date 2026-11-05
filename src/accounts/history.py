@@ -5,10 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 
-from providers import (
+from webai_provider import (
     Capability,
 )
-from providers.errors import ProviderError, RemoteNotFound
+from webai_provider.errors import ProviderError, RemoteNotFound
 
 from .shared import (
     HISTORY_TIMEOUT,

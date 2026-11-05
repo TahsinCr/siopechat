@@ -6,9 +6,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from providers.gemini import GeminiProvider
-from providers.gemini.history import conversations, history
-from providers.models import FeatureState, Model, ModelCatalog, Origin
+from webai_provider.models import FeatureState, Model, ModelCatalog, Origin
+from webai_provider.providers.gemini import GeminiProvider
+from webai_provider.providers.gemini.history import conversations, history
 
 from bootstrap import create_application
 

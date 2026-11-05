@@ -4,20 +4,20 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from providers.contracts import confirm_deleted
-from providers.errors import ProviderError, RemoteNotFound
-from providers.gemini.rpc import NotebookRPC
+from webai_provider.contracts import confirm_deleted
+from webai_provider.errors import ProviderError, RemoteNotFound
+from webai_provider.providers.gemini.rpc import NotebookRPC
 
 
 class DeletionVerificationTests(unittest.IsolatedAsyncioTestCase):
     async def test_only_readback_retries_until_server_confirms_absence(self):
         read = AsyncMock(side_effect=[{"id": "present"}, RemoteNotFound("deleted")])
-        with patch("providers.contracts.asyncio.sleep", new_callable=AsyncMock):
+        with patch("webai_provider.contracts.asyncio.sleep", new_callable=AsyncMock):
             await confirm_deleted(read)
         self.assertEqual(read.await_count, 2)
 
     async def test_local_deletion_cannot_succeed_while_server_still_returns_the_record(self):
-        with patch("providers.contracts.asyncio.sleep", new_callable=AsyncMock):
+        with patch("webai_provider.contracts.asyncio.sleep", new_callable=AsyncMock):
             with self.assertRaisesRegex(ProviderError, "yerel kayıt korundu"):
                 await confirm_deleted(AsyncMock(return_value={"id": "present"}))
 

@@ -388,7 +388,7 @@ def join_reasoning_texts(texts):
 
 
 def _source_items(message: dict[str, Any]) -> tuple[dict[str, str], ...]:
-    from providers.messages import sources_from
+    from webai_provider.messages import sources_from
 
     return sources_from(message)
 
@@ -465,7 +465,7 @@ def visible_chat_message(message: dict[str, Any]) -> dict[str, Any] | None:
         )
     else:
         visible = False
-    from providers.messages import files_from
+    from webai_provider.messages import files_from
 
     files = files_from(message) if role == "assistant" and not reasoning else ()
     if not visible or not isinstance(text, str) or not (text or files):

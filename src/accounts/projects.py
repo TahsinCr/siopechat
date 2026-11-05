@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, replace
 
-from providers import Capability
+from webai_provider import Capability
 
 from .shared import identity, origin
 

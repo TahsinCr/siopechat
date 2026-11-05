@@ -7,10 +7,10 @@ import uuid
 from concurrent.futures import CancelledError
 from pathlib import Path
 
-from providers import (
+from webai_provider import (
     Capability,
 )
-from providers.chatgpt import ChatGPTClient
+from webai_provider.providers.chatgpt import ChatGPTClient
 
 from .shared import (
     HISTORY_TIMEOUT,
@@ -25,7 +25,7 @@ class AccountsTransfers:
             return [], []
         import mimetypes
 
-        from providers.attachments import fit_attachments
+        from webai_provider.attachments import fit_attachments
 
         policy = self.attachment_policy(key)
         if policy is None:
@@ -116,7 +116,7 @@ class AccountsTransfers:
     def resolve_download(self, key, url, conversation_id=None, message_id=None):
         from urllib.parse import urlsplit
 
-        from providers.files import DownloadSource
+        from webai_provider.files import DownloadSource
 
         context, remote = origin(conversation_id, key)
         if context != key:

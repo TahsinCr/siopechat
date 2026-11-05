@@ -7,7 +7,7 @@ import threading
 import time
 from typing import Any
 
-from providers.timing import SendTiming, collect_send_timing, timing_enabled, use_send_timing
+from webai_provider.timing import SendTiming, collect_send_timing, timing_enabled, use_send_timing
 
 from accounts import identity, origin
 
@@ -39,7 +39,7 @@ class SendingComponent:
                 continue
             author = message.get("author") or {}
             if author.get("role") == "assistant" and message.get("channel") == "analysis":
-                from providers.chatgpt.formats import normalize_message
+                from webai_provider.providers.chatgpt.formats import normalize_message
 
                 visible = visible_chat_message(normalize_message(message))
                 if visible and not any(

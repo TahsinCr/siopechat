@@ -9,9 +9,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
-from providers import Capability
-from providers.errors import RemoteNotFound
-from providers.history import merge_conversation
+from webai_provider import Capability
+from webai_provider.errors import RemoteNotFound
+from webai_provider.history import merge_conversation
 
 from accounts import identity
 from bootstrap import create_application
@@ -177,7 +177,7 @@ class DeleteAndCacheTests(unittest.TestCase):
 
     def test_project_delete_does_not_tombstone_surviving_or_unknown_chats(self):
 
-        from providers.errors import ProviderError
+        from webai_provider.errors import ProviderError
 
         for outcome in (SimpleNamespace(metadata={}), ProviderError("offline")):
             with self.subTest(outcome=outcome):
@@ -210,7 +210,7 @@ class DeleteAndCacheTests(unittest.TestCase):
         self.assertIsNone(self.accounts.cached(self.key, "c_abc"))
 
     def test_missing_delete_route_is_not_evidence_that_the_conversation_is_gone(self):
-        from providers.errors import ProviderError
+        from webai_provider.errors import ProviderError
 
         chat = self.seed()
         self.provider.delete_chat.side_effect = RemoteNotFound("missing route")

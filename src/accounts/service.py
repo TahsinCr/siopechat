@@ -15,11 +15,11 @@ try:
 except ImportError:  # Python 3.10
     from exceptiongroup import ExceptionGroup
 
-from providers.chatgpt import BrowserSession, SessionPaths
-from providers.errors import AccountPaused
-from providers.models import FeatureState, ModelCatalog
-from providers.registry import PROVIDERS
-from providers.session import session_exists
+from webai_provider.errors import AccountPaused
+from webai_provider.models import FeatureState, ModelCatalog
+from webai_provider.providers.chatgpt import BrowserSession, SessionPaths
+from webai_provider.registry import PROVIDERS
+from webai_provider.session import session_exists
 
 from .history import AccountsHistory
 from .projects import AccountsProjects

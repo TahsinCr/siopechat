@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import Mock
 
 from prompt_toolkit.styles import Style
-from providers import Capability
+from webai_provider import Capability
 
 from tests import tui_support as interaction
 from tests.fakes import Accounts

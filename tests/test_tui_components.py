@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 from prompt_toolkit.application import Application
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
-from providers.models import Choice, FeatureState, Model, ModelCatalog
+from webai_provider.models import Choice, FeatureState, Model, ModelCatalog
 
 from settings import DEFAULTS, Settings, keybinding_conflicts
 from tests.tui_support import terminal

@@ -10,8 +10,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
-from providers import ConversationBound, ReplaceText
-from providers.models import FeatureState, Model, ModelCatalog
+from webai_provider import ConversationBound, ReplaceText
+from webai_provider.models import FeatureState, Model, ModelCatalog
 
 from accounts import identity
 from extensions.archive.repository import Files, SQLiteRepository, encode
@@ -644,7 +644,7 @@ class AccountConcurrencyTests(unittest.TestCase):
             self.assertEqual(discovering.result(2).models[0].id, "fixture")
 
     def test_http_discovery_for_one_account_does_not_block_another(self):
-        from providers.models import FeatureState, Model, ModelCatalog
+        from webai_provider.models import FeatureState, Model, ModelCatalog
 
         release = threading.Event()
         catalog = ModelCatalog(FeatureState.AVAILABLE, (Model("fixture", "Fixture"),))

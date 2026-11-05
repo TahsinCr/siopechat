@@ -8,7 +8,7 @@ import uuid
 from concurrent.futures import CancelledError, Future
 from dataclasses import asdict
 
-from providers import (
+from webai_provider import (
     BranchContext,
     ConversationBound,
     MessageAction,
@@ -18,7 +18,7 @@ from providers import (
     SendRequest,
     TextDelta,
 )
-from providers.errors import AccountPaused, ProviderError, RemoteNotFound
+from webai_provider.errors import AccountPaused, ProviderError, RemoteNotFound
 
 from .shared import (
     identity,

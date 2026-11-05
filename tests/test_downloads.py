@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import httpx
-from providers.files import DownloadSource, NativeDownloadClient
+from webai_provider.files import DownloadSource, NativeDownloadClient
 
 from downloads import Downloads
 from settings import Settings

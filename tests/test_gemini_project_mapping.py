@@ -2,7 +2,7 @@
 
 import unittest
 
-from providers.gemini.notebooks import project_from_native
+from webai_provider.providers.gemini.notebooks import project_from_native
 
 from accounts import Accounts
 from tests.provider_fakes import notebook

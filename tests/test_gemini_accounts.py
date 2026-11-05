@@ -5,8 +5,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from providers import ConversationBound, ReplaceText
-from providers.gemini import GeminiProvider
+from webai_provider import ConversationBound, ReplaceText
+from webai_provider.providers.gemini import GeminiProvider
 
 
 class AccountNativeTests(unittest.TestCase):

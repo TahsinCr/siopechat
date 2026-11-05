@@ -4,7 +4,7 @@ import asyncio
 import threading
 import unittest
 
-from providers.timing import (
+from webai_provider.timing import (
     SendTiming,
     collect_send_timing,
     current_send_timing,

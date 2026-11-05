@@ -7,9 +7,9 @@ import threading
 import time
 import uuid
 
-from providers import Capability
-from providers.models import FeatureState
-from providers.timing import SendTiming, timing_enabled
+from webai_provider import Capability
+from webai_provider.models import FeatureState
+from webai_provider.timing import SendTiming, timing_enabled
 
 from ..styles import ICONS
 
