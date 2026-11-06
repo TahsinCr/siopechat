@@ -1,4 +1,4 @@
-[![Версия: v1.5.5-beta][version-shield]](CHANGELOG.md)
+[![Версия: v1.5.6-beta][version-shield]](CHANGELOG.md)
 [![Python 3.10+][python-shield]](https://www.python.org/downloads/)
 [![GPL-3.0-only][license-shield]](LICENSE)
 
@@ -366,6 +366,6 @@ SiopeChat устанавливает с PyPI `webai-provider==1.2.0b0` и имп
 
 Авторское право © TahsinCr. Проект распространяется по лицензии [GPL-3.0-only](LICENSE); сведения о правообладателе см. в файле [COPYRIGHT](COPYRIGHT).
 
-[version-shield]: https://img.shields.io/badge/version-v1.5.5--beta-b7a3e3.svg?style=for-the-badge
+[version-shield]: https://img.shields.io/badge/version-v1.5.6--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge

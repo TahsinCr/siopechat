@@ -4,9 +4,11 @@ All notable changes to SiopeChat are documented here.
 
 The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
-Python distributions use the corresponding PEP 440 version (`1.5.5b0` for `v1.5.5-beta`).
+Python distributions use the corresponding PEP 440 version (`1.5.6b0` for `v1.5.6-beta`).
 
 ## [Unreleased]
+
+## [1.5.6-beta] - 2026-11-06
 
 ### Added
 
@@ -18,6 +20,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.5b0` for `v1.5.
 - Eliminate deep module couplings to internal provider submodules (`webai_provider.auth`, `webai_provider.session`, `webai_provider.projects`, `webai_provider.profiles`).
 - Update all provider imports and test patch targets across application services, CLI, extensions, and test suites to the canonical `webai_provider` namespace.
 - Route utility imports (`attachments`, `cdp`, `files`, `history`, `timing`) to `webai_provider.utils` and `confirm_deleted` to `webai_provider.base`.
+- Bump pinned `webai-provider` dependency to `1.3.0b0` (`v1.3-beta`).
 
 ### Fixed
 

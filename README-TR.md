@@ -1,4 +1,4 @@
-[![Sürüm: v1.5.5-beta][version-shield]](CHANGELOG.md)
+[![Sürüm: v1.5.6-beta][version-shield]](CHANGELOG.md)
 [![Python 3.10+][python-shield]](https://www.python.org/downloads/)
 [![GPL-3.0-only][license-shield]](LICENSE)
 
@@ -366,6 +366,6 @@ Hata bildirirken sürümü, sağlayıcıyı, işlemi, terminali, işletim sistem
 
 Telif hakkı © TahsinCr. Proje [GPL-3.0-only](LICENSE) ile lisanslanmıştır; telif bildirimi için [COPYRIGHT](COPYRIGHT) dosyasına bakın.
 
-[version-shield]: https://img.shields.io/badge/version-v1.5.5--beta-b7a3e3.svg?style=for-the-badge
+[version-shield]: https://img.shields.io/badge/version-v1.5.6--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge

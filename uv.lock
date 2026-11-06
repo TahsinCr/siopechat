@@ -1013,7 +1013,7 @@ wheels = [
 
 [[package]]
 name = "siopechat"
-version = "1.5.5b0"
+version = "1.5.6b0"
 source = { editable = "." }
 dependencies = [
     { name = "exceptiongroup", marker = "python_full_version < '3.11'" },
@@ -1041,7 +1041,7 @@ requires-dist = [
     { name = "platformdirs", specifier = ">=4,<5" },
     { name = "prompt-toolkit", specifier = ">=3.0,<4" },
     { name = "rich", specifier = ">=13,<15" },
-    { name = "webai-provider", specifier = "==1.2.0b0" },
+    { name = "webai-provider", specifier = "==1.3.0b0" },
 ]
 
 [package.metadata.requires-dev]
@@ -1199,18 +1199,19 @@ wheels = [
 
 [[package]]
 name = "webai-provider"
-version = "1.2.0b0"
+version = "1.3.0b0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "browser-cookie3" },
     { name = "curl-cffi" },
+    { name = "flowevent" },
     { name = "httpx" },
     { name = "lz4" },
     { name = "websocket-client" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0e/3f/6dc0043ec014148788b30ad0385ad3f9cc9b2075f2a76aa7b64e52a71e0a/webai_provider-1.2.0b0.tar.gz", hash = "sha256:f6bec44a18fb0785732d694edc64592571bac677b7030fb972f630e578cda0e1", size = 260058, upload-time = "2026-11-05T17:22:12.947Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/54/fd/3073f4a12ba86f366fa1db20a454c968e2ac02c5aac8307bf146966fa87b/webai_provider-1.3.0b0.tar.gz", hash = "sha256:53b017624832fa0b572af6b3006e583b723236e8b9cfc3f085df0e382a89a0dc", size = 283981, upload-time = "2026-11-06T20:47:57.479Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7d/f5/a49c9e8cd145d227023dc4703d17b6c0aa587d7568ae2f31c9db7d50af39/webai_provider-1.2.0b0-py3-none-any.whl", hash = "sha256:99bc5d2c97317af3957ba69d80fe1d33cc7f6154384048371654009e6996cb3d", size = 163728, upload-time = "2026-11-05T17:22:10.388Z" },
+    { url = "https://files.pythonhosted.org/packages/e8/23/fbdab71c2f0e8eb0aba691507179dc36bc44886dd0da41abe6b2b01e9520/webai_provider-1.3.0b0-py3-none-any.whl", hash = "sha256:c8b0c28a3efd7256a30cedd20084ca42fb372b6a4e6e1ff0b237c28536cf3574", size = 186718, upload-time = "2026-11-06T20:47:54.398Z" },
 ]
 
 [[package]]
