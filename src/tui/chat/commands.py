@@ -271,7 +271,8 @@ class CommandComponent:
             self.palette_items.append(
                 {
                     "id": "effort.default",
-                    "title": self.tr("Efor · sağlayıcı varsayılanı"),
+                    "title": self.tr("Efor · sağlayıcı varsayılanı")
+                    + (f" {ICONS['complete'].icon}" if self.effort is None else ""),
                     "detail": self.tr("Ek efor tercihi gönderme"),
                 }
             )

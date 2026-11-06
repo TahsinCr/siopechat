@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from webai_provider.api import (
+    Choice,
     FeatureState,
     Model,
     ModelCatalog,
@@ -162,6 +163,34 @@ class ProviderUiTests(unittest.TestCase):
             view.select_model("account-thinking")
             view.select_effort("extended")
             self.assertEqual((view.model, view.effort), ("account-thinking", "extended"))
+
+    def test_optional_effort_model_defaults_to_none_and_palette_marks_default(self):
+        catalog = ModelCatalog(
+            FeatureState.AVAILABLE,
+            (
+                Model(
+                    "optional-model",
+                    "Optional",
+                    (Choice("standard", "Standard"), Choice("extended", "Extended")),
+                    None,
+                ),
+            ),
+        )
+        with terminal(load_catalog=lambda: catalog) as (view, _pipe):
+            view._read_in_background = immediate
+            view.refresh_provider_catalog()
+            view.select_model("optional-model")
+            self.assertEqual(view.model, "optional-model")
+            self.assertIsNone(view.effort)
+            view.handle_command("/effort")
+            default_item = next(
+                item for item in view.palette_items if item["id"] == "effort.default"
+            )
+            self.assertTrue(default_item["title"].endswith("✓"))
+            view.select_effort("standard")
+            self.assertEqual(view.effort, "standard")
+            view.select_effort(None)
+            self.assertIsNone(view.effort)
 
     def test_projects_load_lazily_page_chats_and_show_details_in_their_own_tab(self):
         detail = {
