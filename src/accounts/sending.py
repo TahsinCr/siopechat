@@ -8,17 +8,19 @@ import uuid
 from concurrent.futures import CancelledError, Future
 from dataclasses import asdict
 
-from webai_provider import (
+from webai_provider.api import (
+    AccountPaused,
     BranchContext,
     ConversationBound,
     MessageAction,
     MessageMetadata,
+    ProviderError,
+    RemoteNotFound,
     ReplaceText,
     ResponseComplete,
     SendRequest,
     TextDelta,
 )
-from webai_provider.errors import AccountPaused, ProviderError, RemoteNotFound
 
 from .shared import (
     identity,

@@ -5,7 +5,7 @@ import os
 import uuid
 from pathlib import Path
 
-from webai_provider.utils.attachments import fit_attachments
+from webai_provider.api import fit_attachments
 
 from .file_selection import browse_form_field
 

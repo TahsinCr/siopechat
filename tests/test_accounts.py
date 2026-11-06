@@ -14,17 +14,21 @@ from threading import Event
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, call, patch
 
-from webai_provider import Capability, ConversationBound, ReplaceText, TextDelta
-from webai_provider.errors import AccountPaused, RateLimited
-from webai_provider.models import (
+from webai_provider.api import (
+    AccountPaused,
+    Capability,
     Content,
     Conversation,
+    ConversationBound,
     FeatureState,
     Message,
     Model,
     ModelCatalog,
     Origin,
     Page,
+    RateLimited,
+    ReplaceText,
+    TextDelta,
 )
 
 from accounts import Accounts, identity, origin

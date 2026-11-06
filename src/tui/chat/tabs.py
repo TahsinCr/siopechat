@@ -7,7 +7,7 @@ import uuid
 from typing import Any
 
 from prompt_toolkit.layout.dimension import D
-from webai_provider.models import FeatureState, ModelCatalog
+from webai_provider.api import FeatureState, ModelCatalog
 
 from accounts import origin
 from utils.process import trim_memory

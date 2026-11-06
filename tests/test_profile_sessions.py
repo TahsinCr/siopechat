@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
-from webai_provider.models import SessionState, SessionStatus
+from webai_provider.api import SessionState, SessionStatus
 
 from tests.account_fixture import configured_application
 
@@ -172,7 +172,7 @@ class ProfileUiTests(unittest.IsolatedAsyncioTestCase):
             view.refresh_provider_catalog.assert_called_once()
 
     async def test_chatgpt_profile_auth_never_contacts_debugging_browser(self):
-        from webai_provider.providers.chatgpt import BrowserSession, ChatGPTProvider, SessionPaths
+        from webai_provider.api import BrowserSession, ChatGPTProvider, SessionPaths
 
         from tests.provider_fakes import FakeClient
 

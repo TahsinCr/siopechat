@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from webai_provider import Capability
+from webai_provider.api import Capability
 
 from bootstrap import create_application
 from language import Catalog, literal

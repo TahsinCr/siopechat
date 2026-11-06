@@ -10,7 +10,7 @@ from typing import Any
 
 from eventflow import EventBus
 from prompt_toolkit.key_binding import KeyBindings
-from webai_provider.registry import PROVIDERS
+from webai_provider.api import PROVIDERS
 
 from utils.files import atomic_json_write
 

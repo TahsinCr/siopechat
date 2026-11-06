@@ -17,9 +17,13 @@ from prompt_toolkit.layout import Layout, Window
 from prompt_toolkit.layout.margins import ConditionalMargin, ScrollbarMargin
 from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import TextArea
-from webai_provider import Capability
-from webai_provider.models import FeatureState, ModelCatalog
-from webai_provider.utils.timing import send_timing_report, timing_enabled
+from webai_provider.api import (
+    Capability,
+    FeatureState,
+    ModelCatalog,
+    send_timing_report,
+    timing_enabled,
+)
 
 from settings import DEFAULT_KEYBINDINGS
 

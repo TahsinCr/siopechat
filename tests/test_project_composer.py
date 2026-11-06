@@ -4,7 +4,7 @@ import asyncio
 import unittest
 from unittest.mock import Mock, patch
 
-from webai_provider.models import Choice, FeatureState, Model, ModelCatalog
+from webai_provider.api import Choice, FeatureState, Model, ModelCatalog
 
 from tests import tui_support as interaction
 from tests.fakes import Accounts

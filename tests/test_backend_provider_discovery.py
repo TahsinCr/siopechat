@@ -7,8 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import httpx
-from webai_provider.models import ModelCatalog
-from webai_provider.providers.chatgpt import BrowserSession, ChatGPTClient, SessionPaths
+from webai_provider.api import BrowserSession, ChatGPTClient, ModelCatalog, SessionPaths
 
 from backend import BackendService
 from tests.provider_fakes import CATALOG

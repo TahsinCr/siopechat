@@ -14,6 +14,8 @@ Python distributions use the corresponding PEP 440 version (`1.5.5b0` for `v1.5.
 
 ### Changed
 
+- Migrate 100% of provider imports across application services (`src/`), extensions (`extensions/`), and test suites (`tests/`) to consume strictly from the canonical public facade `webai_provider.api`.
+- Eliminate deep module couplings to internal provider submodules (`webai_provider.auth`, `webai_provider.session`, `webai_provider.projects`, `webai_provider.profiles`).
 - Update all provider imports and test patch targets across application services, CLI, extensions, and test suites to the canonical `webai_provider` namespace.
 - Route utility imports (`attachments`, `cdp`, `files`, `history`, `timing`) to `webai_provider.utils` and `confirm_deleted` to `webai_provider.base`.
 

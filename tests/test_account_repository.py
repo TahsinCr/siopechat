@@ -8,8 +8,13 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from pathlib import Path
 
-from webai_provider.errors import AccountPaused
-from webai_provider.session import delete_session, read_session, save_session, session_exists
+from webai_provider.api import (
+    AccountPaused,
+    delete_session,
+    read_session,
+    save_session,
+    session_exists,
+)
 
 from accounts.repository import AccountRepository
 

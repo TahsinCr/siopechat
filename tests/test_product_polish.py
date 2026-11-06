@@ -8,7 +8,7 @@ import time
 import unittest
 from pathlib import Path
 
-from webai_provider.models import Choice, FeatureState, Model, ModelCatalog
+from webai_provider.api import Choice, FeatureState, Model, ModelCatalog
 
 from actions import Action
 from settings import DEFAULT_KEYBINDINGS, SettingsCatalog

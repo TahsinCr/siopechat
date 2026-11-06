@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from webai_provider.profiles import (
+from webai_provider.api import (
     BrowserProfile,
     ProfileDependencyError,
     ProfileError,
@@ -43,9 +43,11 @@ class ProfileTests(unittest.TestCase):
         path = self.chromium(self.home / ".config/BraveSoftware/Brave-Origin")
         self.chromium(self.home / ".config/BraveSoftware/Brave-Browser")
         with (
-            patch("webai_provider.profiles._default_id", return_value="brave-origin.desktop"),
-            patch("webai_provider.profiles.sys.platform", "linux"),
-            patch("webai_provider.profiles.Path.home", return_value=self.home),
+            patch(
+                "webai_provider.accounts.profiles._default_id", return_value="brave-origin.desktop"
+            ),
+            patch("webai_provider.accounts.profiles.sys.platform", "linux"),
+            patch("webai_provider.accounts.profiles.Path.home", return_value=self.home),
             patch.dict(os.environ, {"XDG_CONFIG_HOME": str(self.home / ".config")}),
         ):
             result = default_profile()
@@ -60,9 +62,11 @@ class ProfileTests(unittest.TestCase):
         with (root / "Local State").open("wb") as stream:
             stream.truncate(8 * 1024 * 1024 + 1)
         with (
-            patch("webai_provider.profiles._default_id", return_value="brave-origin.desktop"),
-            patch("webai_provider.profiles.sys.platform", "linux"),
-            patch("webai_provider.profiles.Path.home", return_value=self.home),
+            patch(
+                "webai_provider.accounts.profiles._default_id", return_value="brave-origin.desktop"
+            ),
+            patch("webai_provider.accounts.profiles.sys.platform", "linux"),
+            patch("webai_provider.accounts.profiles.Path.home", return_value=self.home),
             patch.dict(os.environ, {"XDG_CONFIG_HOME": str(self.home / ".config")}),
         ):
             with self.assertRaises(ProfileError):
@@ -76,9 +80,9 @@ class ProfileTests(unittest.TestCase):
         for platform, name, root, browser in cases:
             path = self.chromium(self.home / root)
             with (
-                patch("webai_provider.profiles._default_id", return_value=name),
-                patch("webai_provider.profiles.sys.platform", platform),
-                patch("webai_provider.profiles.Path.home", return_value=self.home),
+                patch("webai_provider.accounts.profiles._default_id", return_value=name),
+                patch("webai_provider.accounts.profiles.sys.platform", platform),
+                patch("webai_provider.accounts.profiles.Path.home", return_value=self.home),
                 patch.dict(os.environ, {"LOCALAPPDATA": str(self.home)}),
             ):
                 profile = default_profile()
@@ -88,8 +92,8 @@ class ProfileTests(unittest.TestCase):
 
     def test_safari_profile_is_rejected_outside_macos(self):
         with (
-            patch("webai_provider.profiles._default_id", return_value="safari"),
-            patch("webai_provider.profiles.sys.platform", "linux"),
+            patch("webai_provider.accounts.profiles._default_id", return_value="safari"),
+            patch("webai_provider.accounts.profiles.sys.platform", "linux"),
         ):
             with self.assertRaisesRegex(ProfileError, "macOS"):
                 default_profile()
@@ -106,9 +110,12 @@ class ProfileTests(unittest.TestCase):
                 cookie_file.parent.mkdir(parents=True)
                 cookie_file.touch()
                 with (
-                    patch("webai_provider.profiles._default_id", return_value="com.apple.safari"),
-                    patch("webai_provider.profiles.sys.platform", "darwin"),
-                    patch("webai_provider.profiles.Path.home", return_value=home),
+                    patch(
+                        "webai_provider.accounts.profiles._default_id",
+                        return_value="com.apple.safari",
+                    ),
+                    patch("webai_provider.accounts.profiles.sys.platform", "darwin"),
+                    patch("webai_provider.accounts.profiles.Path.home", return_value=home),
                 ):
                     profile = default_profile()
                 self.assertEqual(profile, BrowserProfile("safari", "safari", cookie_file))
@@ -125,10 +132,10 @@ class ProfileTests(unittest.TestCase):
         cookie_file.touch()
         active_profile = subprocess.CompletedProcess(["defaults"], 0, profile_id + "\n", "")
         with (
-            patch("webai_provider.profiles._default_id", return_value="com.apple.safari"),
-            patch("webai_provider.profiles.sys.platform", "darwin"),
-            patch("webai_provider.profiles.Path.home", return_value=self.home),
-            patch("webai_provider.profiles.subprocess.run", return_value=active_profile),
+            patch("webai_provider.accounts.profiles._default_id", return_value="com.apple.safari"),
+            patch("webai_provider.accounts.profiles.sys.platform", "darwin"),
+            patch("webai_provider.accounts.profiles.Path.home", return_value=self.home),
+            patch("webai_provider.accounts.profiles.subprocess.run", return_value=active_profile),
         ):
             profile = default_profile()
         self.assertEqual(profile, BrowserProfile("safari", "safari", cookie_file))
@@ -143,16 +150,16 @@ class ProfileTests(unittest.TestCase):
         default_cookie.touch()
         active_profile = subprocess.CompletedProcess(["defaults"], 0, profile_id + "\n", "")
         with (
-            patch("webai_provider.profiles._default_id", return_value="com.apple.safari"),
-            patch("webai_provider.profiles.sys.platform", "darwin"),
-            patch("webai_provider.profiles.Path.home", return_value=self.home),
-            patch("webai_provider.profiles.subprocess.run", return_value=active_profile),
+            patch("webai_provider.accounts.profiles._default_id", return_value="com.apple.safari"),
+            patch("webai_provider.accounts.profiles.sys.platform", "darwin"),
+            patch("webai_provider.accounts.profiles.Path.home", return_value=self.home),
+            patch("webai_provider.accounts.profiles.subprocess.run", return_value=active_profile),
         ):
             with self.assertRaisesRegex(ProfileError, "Son kullanılan Safari profilinin"):
                 default_profile()
 
     def test_profile_worker_uses_safari_reader_and_provider_cookie_filter(self):
-        from webai_provider.profiles import _main
+        from webai_provider.accounts.profiles import _main
 
         cookie_file = self.home / "Cookies.binarycookies"
         cookie_file.touch()
@@ -211,9 +218,9 @@ class ProfileTests(unittest.TestCase):
                 (root / "chosen").mkdir()
                 (root / "chosen/cookies.sqlite").touch()
                 with (
-                    patch("webai_provider.profiles._default_id", return_value=name),
-                    patch("webai_provider.profiles.sys.platform", "linux"),
-                    patch("webai_provider.profiles.Path.home", return_value=home),
+                    patch("webai_provider.accounts.profiles._default_id", return_value=name),
+                    patch("webai_provider.accounts.profiles.sys.platform", "linux"),
+                    patch("webai_provider.accounts.profiles.Path.home", return_value=home),
                     patch.dict(os.environ, {"XDG_CONFIG_HOME": str(home / ".config")}),
                 ):
                     profile = default_profile()
@@ -222,7 +229,7 @@ class ProfileTests(unittest.TestCase):
                     self.assertIsNone(profile.cookie_backend)
 
     def test_firefox_does_not_guess_between_multiple_unselected_profiles(self):
-        from webai_provider.profiles import _firefox_profile
+        from webai_provider.accounts.profiles import _firefox_profile
 
         root = self.home / "firefox"
         root.mkdir()
@@ -243,9 +250,9 @@ class ProfileTests(unittest.TestCase):
     def test_keyring_timeout_and_unsafe_errors_are_sanitized(self):
         profile = BrowserProfile("chromium", "brave", self.home / "Cookies")
         with (
-            patch("webai_provider.profiles.default_profile", return_value=profile),
+            patch("webai_provider.accounts.profiles.default_profile", return_value=profile),
             patch(
-                "webai_provider.profiles.subprocess.run",
+                "webai_provider.accounts.profiles.subprocess.run",
                 side_effect=subprocess.TimeoutExpired("hidden", 25),
             ),
         ):
@@ -253,9 +260,9 @@ class ProfileTests(unittest.TestCase):
                 import_cookies("claude")
             self.assertEqual(error.exception.code, "profile_timeout")
         with (
-            patch("webai_provider.profiles.default_profile", return_value=profile),
+            patch("webai_provider.accounts.profiles.default_profile", return_value=profile),
             patch(
-                "webai_provider.profiles.subprocess.run",
+                "webai_provider.accounts.profiles.subprocess.run",
                 return_value=Mock(returncode=1, stderr="sensitive"),
             ),
         ):
@@ -264,7 +271,7 @@ class ProfileTests(unittest.TestCase):
             self.assertNotIn("sensitive", str(error.exception))
 
     def test_worker_errors_have_safe_distinct_categories(self):
-        from webai_provider.profiles import _failure_code, _main
+        from webai_provider.accounts.profiles import _failure_code, _main
 
         cases = [
             (ModuleNotFoundError("private-value"), 3),
@@ -298,9 +305,9 @@ class ProfileTests(unittest.TestCase):
     def test_dependency_failure_does_not_claim_keyring_or_browser_lock(self):
         profile = BrowserProfile("chromium", "brave", self.home / "Cookies")
         with (
-            patch("webai_provider.profiles.default_profile", return_value=profile),
+            patch("webai_provider.accounts.profiles.default_profile", return_value=profile),
             patch(
-                "webai_provider.profiles.subprocess.run",
+                "webai_provider.accounts.profiles.subprocess.run",
                 return_value=Mock(returncode=3, stderr="private-value"),
             ),
         ):
@@ -328,12 +335,12 @@ class ProfileTests(unittest.TestCase):
             db.commit()
         before = path.read_bytes()
         with patch(
-            "webai_provider.profiles.default_profile",
+            "webai_provider.accounts.profiles.default_profile",
             return_value=BrowserProfile("firefox", None, path),
         ):
             browser, values = import_cookies("claude")
         with patch(
-            "webai_provider.profiles.default_profile",
+            "webai_provider.accounts.profiles.default_profile",
             return_value=BrowserProfile("firefox", None, path),
         ):
             zen_browser, zen_values = import_cookies("claude")
@@ -344,7 +351,7 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(before, path.read_bytes())
 
     def test_firefox_locked_database_is_read_from_private_snapshot(self):
-        from webai_provider.profiles import _firefox_rows
+        from webai_provider.accounts.profiles import _firefox_rows
 
         path = self.home / "locked.sqlite"
         with contextlib.closing(sqlite3.connect(path)) as db:
@@ -363,7 +370,7 @@ class ProfileTests(unittest.TestCase):
             db.rollback()
 
     def test_firefox_snapshot_keeps_committed_wal_cookies(self):
-        from webai_provider.profiles import _firefox_rows
+        from webai_provider.accounts.profiles import _firefox_rows
 
         path = self.home / "wal.sqlite"
         with contextlib.closing(sqlite3.connect(path)) as db:
@@ -383,7 +390,7 @@ class ProfileTests(unittest.TestCase):
                     raise sqlite3.OperationalError("database is locked")
                 return original(database, **kwargs)
 
-            with patch("webai_provider.profiles.sqlite3.connect", side_effect=connect):
+            with patch("webai_provider.accounts.profiles.sqlite3.connect", side_effect=connect):
                 self.assertEqual(_firefox_rows(path, "claude")[0][5], "in-wal")
 
     def test_firefox_worker_imports_live_sessionstore_cookies_without_merging_containers(self):
@@ -420,14 +427,14 @@ class ProfileTests(unittest.TestCase):
         current.write_bytes(b"mozLz40\0" + lz4.block.compress(json.dumps(payload).encode()))
         for browser in ("firefox", "zen"):
             with patch(
-                "webai_provider.profiles.default_profile",
+                "webai_provider.accounts.profiles.default_profile",
                 return_value=BrowserProfile("firefox", None, path),
             ):
                 _, values = import_cookies("claude")
             self.assertEqual(values, {"sessionKey": "live-session"})
 
     def test_firefox_session_reader_uses_one_snapshot_and_legacy_windows(self):
-        from webai_provider.profiles import _firefox_session_cookies
+        from webai_provider.accounts.profiles import _firefox_session_cookies
 
         old = self.home / "sessionstore.js"
         old.write_text(
@@ -454,7 +461,7 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(_firefox_session_cookies(self.home, "claude"), [])
 
     def test_worker_failure_never_prints_library_exception(self):
-        from webai_provider.profiles import _main
+        from webai_provider.accounts.profiles import _main
 
         data = {
             "provider": "claude",

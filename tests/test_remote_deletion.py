@@ -4,8 +4,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from webai_provider.base import confirm_deleted
-from webai_provider.errors import ProviderError, RemoteNotFound
+from webai_provider.api import ProviderError, RemoteNotFound, confirm_deleted
 from webai_provider.providers.gemini.rpc import NotebookRPC
 
 

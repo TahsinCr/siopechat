@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from webai_provider.providers.claude import ClaudeProvider
+from webai_provider.api import ClaudeProvider
 from webai_provider.providers.claude.records import conversation
 
 from tests.account_fixture import configured_application as create_application

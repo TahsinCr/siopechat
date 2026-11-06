@@ -6,9 +6,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from webai_provider.models import FeatureState, Model, ModelCatalog
-from webai_provider.providers.chatgpt.discovery import model_catalog
-from webai_provider.providers.chatgpt.errors import SentinelCompatibilityError
+from webai_provider.api import (
+    FeatureState,
+    Model,
+    ModelCatalog,
+    SentinelCompatibilityError,
+    model_catalog,
+)
 
 from tests.account_fixture import configured_application as create_application
 from tests.provider_fakes import CATALOG

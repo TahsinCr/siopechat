@@ -3,8 +3,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from webai_provider import ProviderRegistry, SendRequest
-from webai_provider.providers.chatgpt import BrowserSession, ChatGPTProvider, SessionPaths
+from webai_provider.api import (
+    BrowserSession,
+    ChatGPTProvider,
+    ProviderRegistry,
+    SendRequest,
+    SessionPaths,
+)
 
 from tasks import JobState, TaskService
 from tests.provider_fakes import FakeClient

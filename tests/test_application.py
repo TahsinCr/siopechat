@@ -104,8 +104,7 @@ class ApplicationTests(unittest.TestCase):
 
     def test_rate_limit_is_not_automatically_retried(self):
         import httpx
-        from webai_provider.errors import RateLimited
-        from webai_provider.providers.chatgpt import ChatGPTClient
+        from webai_provider.api import ChatGPTClient, RateLimited
 
         calls = []
 

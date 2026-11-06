@@ -13,10 +13,14 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from webai_provider.errors import ProviderError
-from webai_provider.providers.chatgpt.constants import DEFAULT_CDP_URL, DEFAULT_PAGE_SIZE
-from webai_provider.providers.chatgpt.errors import ChatGPTWebError
-from webai_provider.providers.chatgpt.formats import new_messages, normalize_conversation
+from webai_provider.api import (
+    DEFAULT_CDP_URL,
+    DEFAULT_PAGE_SIZE,
+    ChatGPTWebError,
+    ProviderError,
+    new_messages,
+    normalize_conversation,
+)
 
 
 def print_conversation_list(items: list[dict[str, Any]], output: str) -> None:

@@ -2,8 +2,16 @@
 
 import asyncio
 
-from webai_provider import Capability, ConversationBound, SendRequest, TextDelta
-from webai_provider.models import Choice, FeatureState, Model, ModelCatalog
+from webai_provider.api import (
+    Capability,
+    Choice,
+    ConversationBound,
+    FeatureState,
+    Model,
+    ModelCatalog,
+    SendRequest,
+    TextDelta,
+)
 
 
 class Accounts:

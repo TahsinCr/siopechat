@@ -6,12 +6,12 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, Mock
 
 import httpx
-from webai_provider.utils.files import NativeDownloadClient, cookie_header
+from webai_provider.api import NativeDownloadClient, cookie_header
 
 
 class ProviderFileTests(unittest.IsolatedAsyncioTestCase):
     async def test_chatgpt_sandbox_uses_real_message_and_scoped_endpoint(self):
-        from webai_provider.providers.chatgpt import ChatGPTProvider
+        from webai_provider.api import ChatGPTProvider
 
         factory = MagicMock()
         client = factory.return_value.__enter__.return_value
@@ -45,7 +45,7 @@ class ProviderFileTests(unittest.IsolatedAsyncioTestCase):
             await provider.resolve_download("sandbox:/mnt/data/game.py", "chat", "unconfirmed")
 
     async def test_gemini_generated_placeholder_maps_only_to_provider_url(self):
-        from webai_provider.models import Origin
+        from webai_provider.api import Origin
         from webai_provider.providers.gemini.history import history
 
         alias = "http://googleusercontent.com/image_generation_content/6_786"
@@ -64,8 +64,14 @@ class ProviderFileTests(unittest.IsolatedAsyncioTestCase):
     async def test_gemini_alias_is_resolved_in_its_own_conversation(self):
         from unittest.mock import AsyncMock
 
-        from webai_provider.models import Content, Conversation, Message, Origin, Resource
-        from webai_provider.providers.gemini import GeminiProvider
+        from webai_provider.api import (
+            Content,
+            Conversation,
+            GeminiProvider,
+            Message,
+            Origin,
+            Resource,
+        )
 
         alias = "http://googleusercontent.com/image_generation_content/6_786"
         provider = GeminiProvider(Path("unused"))
@@ -115,7 +121,7 @@ class ProviderFileTests(unittest.IsolatedAsyncioTestCase):
 
 class AuthenticatedFileTests(unittest.IsolatedAsyncioTestCase):
     async def test_chatgpt_estuary_keeps_own_origin_auth_only(self):
-        from webai_provider.providers.chatgpt import ChatGPTProvider
+        from webai_provider.api import ChatGPTProvider
 
         factory = MagicMock()
         client = factory.return_value.__enter__.return_value
@@ -135,7 +141,7 @@ class AuthenticatedFileTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(bool(source.headers.get("cookie")), authorized)
 
     async def test_direct_chatgpt_estuary_link_uses_the_selected_account(self):
-        from webai_provider.providers.chatgpt import ChatGPTProvider
+        from webai_provider.api import ChatGPTProvider
 
         factory = MagicMock()
         client = factory.return_value.__enter__.return_value
@@ -149,7 +155,7 @@ class AuthenticatedFileTests(unittest.IsolatedAsyncioTestCase):
         client.get_conversation.assert_not_called()
 
     async def test_gemini_never_sends_cookies_to_arbitrary_cdn_subdomains(self):
-        from webai_provider.providers.gemini import GeminiProvider
+        from webai_provider.api import GeminiProvider
 
         provider = GeminiProvider(Path("unused"))
         provider._saved_cookies = {"__Secure-1PSID": "secret"}
@@ -161,8 +167,7 @@ class AuthenticatedFileTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(source is None or not source.headers.get("Cookie"))
 
     async def test_claude_output_download_is_scoped_to_account_and_conversation(self):
-        from webai_provider.providers.claude import ClaudeProvider
-        from webai_provider.session import save_session
+        from webai_provider.api import ClaudeProvider, save_session
 
         with tempfile.TemporaryDirectory() as folder:
             credentials = Path(folder) / "session.json"

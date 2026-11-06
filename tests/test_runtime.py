@@ -1,17 +1,17 @@
 import asyncio
 import unittest
 
-from webai_provider import (
+from webai_provider.api import (
     AccountPaused,
     Capability,
     CompatibilityError,
+    ProviderRegistry,
     RateLimited,
     ReplaceText,
     ResponseComplete,
+    SentinelCompatibilityError,
     TextDelta,
 )
-from webai_provider.providers.chatgpt.errors import SentinelCompatibilityError
-from webai_provider.registry import ProviderRegistry
 
 from tasks import JobState, TaskService
 from tests.fakes import ControlledProvider, request

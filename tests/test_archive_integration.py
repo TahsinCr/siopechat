@@ -11,8 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
-from webai_provider import Capability
-from webai_provider.models import Choice, FeatureState, Model, ModelCatalog
+from webai_provider.api import Capability, Choice, FeatureState, Model, ModelCatalog
 
 from extensions.archive.repository import Files, SQLiteRepository, encode
 from extensions.archive.sync import Archive
@@ -461,7 +460,7 @@ class ArchiveIntegrationTests(unittest.TestCase):
             self.assertEqual(view.messages, [])
 
     def test_completed_reply_does_not_turn_into_request_failure_if_archive_write_fails(self):
-        from webai_provider import ConversationBound, ReplaceText
+        from webai_provider.api import ConversationBound, ReplaceText
 
         async def stream(request):
             yield ReplaceText("Answer")
@@ -475,7 +474,7 @@ class ArchiveIntegrationTests(unittest.TestCase):
         self.assertTrue(result["cache_warning"])
 
     def test_successful_file_send_keeps_metadata_without_archiving_file_content(self):
-        from webai_provider import ConversationBound, ReplaceText
+        from webai_provider.api import ConversationBound, ReplaceText
 
         root = Path(self.folder.name)
         source = root / "notes.txt"
@@ -800,7 +799,7 @@ class ArchiveIntegrationTests(unittest.TestCase):
 
         async def get_chat(remote):
             await asyncio.to_thread(release.wait, 2)
-            from webai_provider.models import Conversation, Origin
+            from webai_provider.api import Conversation, Origin
 
             return Conversation(Origin("gemini", self.gemini.split("/")[1], remote), "Remote")
 

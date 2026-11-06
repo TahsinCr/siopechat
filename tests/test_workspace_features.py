@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from prompt_toolkit.utils import get_cwidth
-from webai_provider.providers.chatgpt.formats import normalize_message
+from webai_provider.api import normalize_message
 
 from backend import BackendService
 from bootstrap import create_application

@@ -19,13 +19,13 @@ from webai_provider.api import (
     MessageAction,
     MessageMetadata,
     ProviderError,
+    ProviderRegistry,
     RateLimited,
     ReplaceText,
     ResponseComplete,
     SendRequest,
     TextDelta,
 )
-from webai_provider.registry import ProviderRegistry
 
 _LOG = logging.getLogger(__name__)
 _SHUTDOWN_RESPONSE_GRACE_SECONDS = 1.0

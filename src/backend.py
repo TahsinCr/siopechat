@@ -16,11 +16,18 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from webai_provider.errors import ProviderError
-from webai_provider.providers.chatgpt import BrowserSession, ChatGPTClient, SessionPaths
-from webai_provider.providers.chatgpt.constants import DEFAULT_CDP_URL
-from webai_provider.providers.chatgpt.errors import ChatGPTWebError
-from webai_provider.providers.chatgpt.formats import normalize_conversation
+from webai_provider.api import (
+    DEFAULT_CDP_URL,
+    BrowserSession,
+    ChatGPTClient,
+    ChatGPTWebError,
+    ProviderError,
+    SessionPaths,
+    normalize_conversation,
+)
+from webai_provider.api import (
+    project_id as parse_project_id,
+)
 
 from utils.files import atomic_json_write
 from utils.paths import data_dir, project_root, runtime_dir
@@ -402,14 +409,13 @@ class BackendService:
             items = raw.get("items")
             if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
                 raise ChatGPTWebError("invalid history page response")
-            from webai_provider.providers.chatgpt.discovery import project_id
 
             total = raw.get("total")
             next_offset = offset + limit if type(total) is int else offset + len(items)
             has_more = next_offset < total if type(total) is int else len(items) == limit
             return (
                 {
-                    "items": [dict(item, project_id=project_id(item)) for item in items],
+                    "items": [dict(item, project_id=parse_project_id(item)) for item in items],
                     "cursor": str(next_offset) if has_more else None,
                 },
                 False,

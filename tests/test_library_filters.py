@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from webai_provider.models import Conversation, Origin, Page
+from webai_provider.api import Conversation, Origin, Page
 from webai_provider.providers.gemini.history import conversations
 from webai_provider.providers.gemini.notebooks import project_from_native
 

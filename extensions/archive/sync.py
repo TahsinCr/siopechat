@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from urllib.parse import unquote
 
-from webai_provider.utils.history import MERGE_WINDOW, merge_conversation
+from webai_provider.api import MERGE_WINDOW, merge_conversation
 
 from .adapters import MAPPINGS, Mapping
 from .repository import encode

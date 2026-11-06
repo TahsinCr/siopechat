@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from webai_provider.models import FeatureState, ModelCatalog
+from webai_provider.api import FeatureState, ModelCatalog
 
 from settings import DEFAULT_KEYBINDINGS
 

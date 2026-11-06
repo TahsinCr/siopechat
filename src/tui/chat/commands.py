@@ -10,8 +10,7 @@ from typing import Any
 
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.utils import get_cwidth
-from webai_provider import Capability
-from webai_provider.models import FeatureState, ModelCatalog
+from webai_provider.api import Capability, FeatureState, ModelCatalog
 
 from accounts import origin
 

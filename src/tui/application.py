@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from webai_provider.providers.chatgpt.constants import DEFAULT_CDP_URL
+from webai_provider.api import DEFAULT_CDP_URL
 
 
 def run_fullscreen(

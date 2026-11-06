@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from webai_provider.models import FeatureState, ModelCatalog
+from webai_provider.api import FeatureState, ModelCatalog
 
 
 def model_title(model) -> str:
