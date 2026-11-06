@@ -21,6 +21,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.5b0` for `v1.5.
 
 ### Fixed
 
+- Prevent duplicate sidebar chat rows during response streaming by canonicalizing incoming bound conversation identifiers and matching in-flight tabs against existing library items.
 - Verify database mutation when recording download history in the archive extension.
 
 ## [1.5.5-beta] - 2026-11-05

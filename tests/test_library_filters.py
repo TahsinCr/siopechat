@@ -111,3 +111,29 @@ class LibraryTests(unittest.TestCase):
                 accounts._providers["chatgpt/default"].list_chats.assert_not_called()
             finally:
                 app.runtime.close()
+
+    def test_busy_chat_with_raw_or_canonical_id_does_not_duplicate_sidebar_rows(self):
+        service = Accounts()
+        with terminal(account_service=service) as (view, _):
+            view.sidebar_collapsed = set()
+            view.account_key = "gemini/personal"
+            view.sidebar_items = [
+                {
+                    "id": "@gemini/personal/c_123",
+                    "title": "Test Chat",
+                    "provider_id": "gemini",
+                }
+            ]
+            view.tabs = [
+                {
+                    "conversation_id": "c_123",
+                    "title": "Test Chat",
+                    "account_key": "gemini/personal",
+                    "busy": True,
+                }
+            ]
+            view._build_sidebar_rows()
+            chat_rows = [x for x in view.sidebar_rows if x["kind"] == "chat"]
+            self.assertEqual(len(chat_rows), 1)
+            self.assertEqual(chat_rows[0]["title"], "Test Chat")
+            self.assertEqual(chat_rows[0]["id"], "@gemini/personal/c_123")

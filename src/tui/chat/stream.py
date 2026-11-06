@@ -153,6 +153,13 @@ class _SendStream:
         if event_type == "bound":
             cid = event.get("conversation_id")
             if cid:
+                account_key = self.target_tab.get("account_key") or getattr(
+                    self.view, "account_key", ""
+                )
+                if account_key and not str(cid).startswith("@"):
+                    from accounts import identity
+
+                    cid = identity(account_key, cid)
                 self.target_tab["conversation_id"] = cid
                 if self._is_active():
                     self.view.conversation_id = cid

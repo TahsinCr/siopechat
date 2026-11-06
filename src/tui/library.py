@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from accounts import origin
+from accounts import identity, origin
 
 SORT_OPTIONS = [
     ("time_desc", "Zaman · en yeni önce"),
@@ -82,8 +82,23 @@ def build_sidebar_rows(view) -> None:
         if not tab.get("busy") and not any(tab is item for item in view.background_tabs):
             continue
         key = tab.get("account_key", view.account_key)
-        identifier = tab.get("conversation_id") or "background:" + str(id(tab))
-        item = live_items.setdefault(identifier, {"id": identifier})
+        raw_id = tab.get("conversation_id")
+        identifier = (
+            identity(key, raw_id)
+            if raw_id
+            and not str(raw_id).startswith("@")
+            and not str(raw_id).startswith("background:")
+            else raw_id
+        ) or "background:" + str(id(tab))
+        matching_key = identifier
+        if matching_key not in live_items and raw_id:
+            for existing_id in live_items:
+                if existing_id == raw_id or (
+                    isinstance(existing_id, str) and existing_id.endswith("/" + str(raw_id))
+                ):
+                    matching_key = existing_id
+                    break
+        item = live_items.setdefault(matching_key, {"id": matching_key})
         now = datetime.now().timestamp()
         item.update(
             title=tab.get("title") or view.tr("New conversation"),
