@@ -15,6 +15,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.5b0` for `v1.5.
 ### Changed
 
 - Update all provider imports and test patch targets across application services, CLI, extensions, and test suites to the canonical `webai_provider` namespace.
+- Route utility imports (`attachments`, `cdp`, `files`, `history`, `timing`) to `webai_provider.utils` and `confirm_deleted` to `webai_provider.base`.
 
 ### Fixed
 

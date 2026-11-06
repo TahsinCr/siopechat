@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, Mock
 
 import httpx
-from webai_provider.files import NativeDownloadClient, cookie_header
+from webai_provider.utils.files import NativeDownloadClient, cookie_header
 
 
 class ProviderFileTests(unittest.IsolatedAsyncioTestCase):

@@ -8,7 +8,7 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from webai_provider.timing import SendTiming
+from webai_provider.utils.timing import SendTiming
 
 if TYPE_CHECKING:
     from .view import ChatView

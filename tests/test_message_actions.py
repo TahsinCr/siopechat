@@ -27,7 +27,7 @@ class MutationArchiveTests(unittest.TestCase):
         self.addCleanup(self.archive.close)
 
     def test_provider_refresh_keeps_reply_settings_and_files_through_sqlite_reload(self):
-        from webai_provider.history import merge_conversation
+        from webai_provider.utils.history import merge_conversation
 
         local = {
             "messages": [
@@ -1191,7 +1191,7 @@ class MessageToolbarTests(unittest.TestCase):
             self.assertEqual(view.messages[0]["_body_length"], len("Done"))
 
     def test_first_assistant_text_is_timed_at_the_ui_after_render_hook(self):
-        from webai_provider.timing import SendTiming
+        from webai_provider.utils.timing import SendTiming
 
         from tui.chat.stream import _SendStream
 
@@ -1218,7 +1218,7 @@ class MessageToolbarTests(unittest.TestCase):
             self.assertEqual(view.messages[-1]["text"], "First visible text")
 
     def test_unrendered_timing_callback_is_removed_when_stream_finishes(self):
-        from webai_provider.timing import SendTiming
+        from webai_provider.utils.timing import SendTiming
 
         from tui.chat.stream import _SendStream
 

@@ -7,7 +7,12 @@ import threading
 import time
 from typing import Any
 
-from webai_provider.timing import SendTiming, collect_send_timing, timing_enabled, use_send_timing
+from webai_provider.utils.timing import (
+    SendTiming,
+    collect_send_timing,
+    timing_enabled,
+    use_send_timing,
+)
 
 from accounts import identity, origin
 

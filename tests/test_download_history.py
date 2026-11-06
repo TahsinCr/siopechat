@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import httpx
-from webai_provider.files import DownloadSource
+from webai_provider.utils.files import DownloadSource
 
 from bootstrap import create_application
 from downloads import Downloads

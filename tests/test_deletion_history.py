@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from webai_provider import Capability
 from webai_provider.errors import RemoteNotFound
-from webai_provider.history import merge_conversation
+from webai_provider.utils.history import merge_conversation
 
 from accounts import identity
 from bootstrap import create_application
