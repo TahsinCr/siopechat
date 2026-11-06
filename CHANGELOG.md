@@ -8,6 +8,18 @@ Python distributions use the corresponding PEP 440 version (`1.5.5b0` for `v1.5.
 
 ## [Unreleased]
 
+### Added
+
+- Localize profile verification errors across English, Turkish, and Russian language packs using typed `webai_provider.errors.ProfileError` exception codes.
+
+### Changed
+
+- Update all provider imports and test patch targets across application services, CLI, extensions, and test suites to the canonical `webai_provider` namespace.
+
+### Fixed
+
+- Verify database mutation when recording download history in the archive extension.
+
 ## [1.5.5-beta] - 2026-11-05
 
 ### Added
