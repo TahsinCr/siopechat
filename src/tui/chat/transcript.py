@@ -589,7 +589,9 @@ class TranscriptComponent:
         pending = getattr(self, "_virtual_pending_signature", None)
         if pending is not None:
             return
-        if self.busy:
+        first_text_revision = tab.get("_first_text_render_revision")
+        first_text = first_text_revision is not None and signature[7] >= first_text_revision
+        if self.busy and not first_text:
             elapsed = time.monotonic() - getattr(self, "_virtual_last_request_at", 0)
             delay = 0.08 - elapsed
             if delay > 0:
@@ -607,6 +609,8 @@ class TranscriptComponent:
 
                     self._virtual_retry_handle = loop.call_later(delay, retry)
                     return
+        if first_text:
+            tab.pop("_first_text_render_revision", None)
         self._virtual_last_request_at = time.monotonic()
         request_token = object()
         self._virtual_pending_signature = signature

@@ -10,6 +10,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.6b0` for `v1.5.
 
 ### Changed
 
+- Draw the first visible assistant text without waiting for the streaming redraw intervals and time the frame that actually contains the answer.
 - Reuse the displayed project details in the edit form and save only changed fields.
 - Verify project chats in small batches after confirmed project deletion while preserving chats that still exist or cannot be verified.
 

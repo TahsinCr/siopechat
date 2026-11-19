@@ -33,6 +33,7 @@ class _SendStream:
         self.timing = timing
         self.stream_id = uuid.uuid4().hex
         self.target_tab["_active_stream_id"] = self.stream_id
+        self.target_tab.pop("_first_text_render_revision", None)
         self.rendered = ""
         self._final_pending: list[str] = []
         self._final_replace_pending = False
@@ -40,11 +41,13 @@ class _SendStream:
         self._last_refresh_ns = 0
         self.final_message_id = None
         self._first_final_text_at_ns = None
+        self._first_render_revision = None
         self._after_render_registered = False
         self._ui_first_text_recorded = False
         self._stream_finished = False
         self._refresh_lock = threading.Lock()
         self._refresh_pending = False
+        self._refresh_revision = 0
         self._refresh_status: str | None = None
         self._refresh_complete = False
 
@@ -57,6 +60,7 @@ class _SendStream:
         show_status: bool = False,
         status_message: str | None = None,
         mark_complete: bool = False,
+        immediate: bool = False,
     ) -> None:
         with self._refresh_lock:
             if status_message is not None:
@@ -64,28 +68,36 @@ class _SendStream:
             elif show_status and self._refresh_status is None:
                 self._refresh_status = "Streaming response…"
             self._refresh_complete = self._refresh_complete or mark_complete
-            if self._refresh_pending:
+            if self._refresh_pending and not immediate:
                 return
             self._refresh_pending = True
+            self._refresh_revision += 1
+            revision = self._refresh_revision
 
         def update_active_view() -> None:
-            now = time.perf_counter_ns()
-            delay_ns = 16_000_000 - (now - self._last_refresh_ns)
-            if self._last_refresh_ns and delay_ns > 0:
-                try:
-                    asyncio.get_running_loop().call_later(
-                        delay_ns / 1_000_000_000, update_active_view
-                    )
-                    return
-                except RuntimeError:
-                    pass
             with self._refresh_lock:
+                if revision != self._refresh_revision:
+                    return
+                delay_ns = 16_000_000 - (time.perf_counter_ns() - self._last_refresh_ns)
+                if not immediate and self._last_refresh_ns and delay_ns > 0:
+                    try:
+                        asyncio.get_running_loop().call_later(
+                            delay_ns / 1_000_000_000, update_active_view
+                        )
+                        return
+                    except RuntimeError:
+                        pass
                 update_status = self._refresh_status
                 self._refresh_status = None
                 update_complete = self._refresh_complete
                 self._refresh_complete = False
                 self._refresh_pending = False
             self.flush_pending_text()
+            if immediate:
+                render_revision = self.target_tab.get("render_revision", 0)
+                self._first_render_revision = render_revision
+                if self._is_active():
+                    self.target_tab["_first_text_render_revision"] = render_revision
             self._last_refresh_ns = time.perf_counter_ns()
             if (
                 update_complete
@@ -102,6 +114,7 @@ class _SendStream:
                 self.timing is not None
                 and self._first_final_text_at_ns is not None
                 and not self._after_render_registered
+                and not self._ui_first_text_recorded
                 and self._is_active()
             ):
                 self.view.app.after_render += self._after_first_text_render
@@ -259,14 +272,14 @@ class _SendStream:
             else:
                 self._final_pending[:] = [text]
                 self._final_replace_pending = True
-            if (
-                self.timing is not None
-                and self._first_final_text_at_ns is None
+            first_visible = (
+                self._first_final_text_at_ns is None
                 and event.get("channel") != "analysis"
-                and text.strip()
-            ):
+                and bool(text.strip())
+            )
+            if first_visible:
                 self._first_final_text_at_ns = time.perf_counter_ns()
-        self._schedule_refresh(show_status=True)
+        self._schedule_refresh(show_status=True, immediate=first_visible)
 
     def _after_first_text_render(self, app) -> None:
         if self._ui_first_text_recorded:
@@ -275,6 +288,28 @@ class _SendStream:
             if self._stream_finished:
                 self.cleanup_after_render()
             return
+        if app.is_running:
+            signature = getattr(self.view, "_virtual_signature", None)
+            if (
+                signature is None
+                or signature[0] != self.target_tab["tab_id"]
+                or signature[5][0] != id(self.messages)
+                or self._first_render_revision is None
+                or signature[7] < self._first_render_revision
+            ):
+                return
+            info = self.view.transcript_window.render_info
+            rows = self.view.transcript_control.rows
+            layout = getattr(self.view, "_virtual_transcript", None)
+            if info is None or layout is None or getattr(rows, "transcript", None) is not layout:
+                return
+            index = len(self.messages) - 1
+            for line in info.displayed_lines:
+                row = rows.paint_row(line)
+                if row is not None and row[1] == index and any(span[1].strip() for span in row[0]):
+                    break
+            else:
+                return
         now = time.perf_counter_ns()
         self._ui_first_text_recorded = True
         self.timing.record_elapsed("button_to_first_ui_frame_ms", self.timing.started_ns)

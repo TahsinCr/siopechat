@@ -8,6 +8,38 @@ from tui.chat.transcript import TranscriptComponent
 
 
 class ResponseCompleteUiTests(unittest.TestCase):
+    def test_first_visible_text_supersedes_an_older_throttled_refresh(self):
+        tab = {"busy": True}
+        callbacks = []
+        loop = SimpleNamespace(call_later=lambda _delay, callback: delayed.append(callback))
+        delayed = []
+        messages = [{"role": "assistant", "text": ""}]
+        view = SimpleNamespace(
+            tabs=[tab],
+            active_tab=0,
+            lock=threading.RLock(),
+            app=SimpleNamespace(invalidate=lambda: None),
+            tr=lambda value: value,
+            scroll_bottom=lambda **_kwargs: None,
+            _dispatch_ui=callbacks.append,
+        )
+        stream = _SendStream(view, tab, messages)
+        with (
+            patch("tui.chat.stream.asyncio.get_running_loop", return_value=loop),
+            patch("tui.chat.stream.time.perf_counter_ns", return_value=1_001_000_000),
+        ):
+            stream._last_refresh_ns = 1_000_000_000
+            stream.on_event({"type": "delta", "text": " "})
+            callbacks.pop()()
+            self.assertEqual(len(delayed), 1)
+            stream.on_event({"type": "delta", "text": "First visible text"})
+            callbacks.pop()()
+            self.assertEqual(messages[-1]["text"], " First visible text")
+            revision = tab["render_revision"]
+            delayed.pop()()
+        self.assertEqual(tab["render_revision"], revision)
+        self.assertFalse(delayed)
+
     def test_delayed_completion_does_not_complete_a_later_send(self):
         tab = {"busy": True, "completed_pending": False}
         callbacks = []
@@ -36,6 +68,7 @@ class ResponseCompleteUiTests(unittest.TestCase):
             stream.on_event({"type": "delta", "text": "first answer"})
             callbacks.pop()()
             stream.on_event({"type": "response_complete"})
+            callbacks.pop()()
 
         self.assertEqual(len(delayed), 1)
         tab.update(busy=False, generation_complete=False)
