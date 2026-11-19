@@ -324,7 +324,9 @@ class ProjectComponent:
             )
         return [{"role": "system", "text": text}]
 
-    def show_project_details(self, project_id: str | None = None) -> None:
+    def show_project_details(
+        self, project_id: str | None = None, *, read=None, on_loaded=None
+    ) -> None:
         if (
             not project_id
             and self.app.layout.current_control
@@ -338,7 +340,7 @@ class ProjectComponent:
             self.status = self.tr("Sol panelde bir proje seçip F9'a basın")
             self.app.invalidate()
             return
-        if self.get_project_callback is None:
+        if read is None and self.get_project_callback is None:
             self.status = self.tr("Sağlayıcının proje ayrıntısı bağlantısı kurulmamış")
             self.app.invalidate()
             return
@@ -372,6 +374,8 @@ class ProjectComponent:
             self.project_items[project_id] = project
             self._invalidate_sidebar_rows()
             update(self.project_messages(project)[0]["text"], project)
+            if on_loaded is not None:
+                on_loaded(project)
 
         def update(text, project):
             for index, tab in enumerate(self.tabs):
@@ -391,7 +395,7 @@ class ProjectComponent:
         project_snapshot = dict(self.current_project)
         read_project = self.get_project_callback
         self._read_in_background(
-            lambda: read_project(project_id),
+            read if read is not None else lambda: read_project(project_id),
             success,
             lambda reason: update(
                 self.tr("Proje bilgileri alınamadı: {0}\n\nF9 ile yeniden deneyin.").format(reason),

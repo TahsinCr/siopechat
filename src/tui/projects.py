@@ -111,7 +111,7 @@ class ProjectPanel:
                 return value
         return v.current_project.get("id")
 
-    def context(self, callback, value=None):
+    def context(self, callback, value=None, *, project=None):
         v = self.view
         value = value or self.selected()
         if not v.account_service or not value:
@@ -122,7 +122,8 @@ class ProjectPanel:
 
         def read():
             service = v.account_service
-            return service.project_details(key, value), service.project_options(key, value)
+            details = project if project is not None else service.project_details(key, value)
+            return details, service.project_options(key, value)
 
         self.work(
             self.view.tr("Proje seçenekleri okunuyor…"),
@@ -134,7 +135,10 @@ class ProjectPanel:
         if value is None:
             self.view.open_project_picker(purpose="edit")
             return
-        self.view.show_project_details(value)
+        service = self.view.account_service
+        if not service:
+            return
+        account, _ = origin(value, self.view.account_key)
 
         def show(key, value, project, options):
             if self.view.tab_kind != "project" or self.view.current_project.get("id") != value:
@@ -155,11 +159,16 @@ class ProjectPanel:
                 return
 
             def submit(values):
-                if "name" in values and not values["name"].strip():
+                changes = {
+                    name: text for name, text in values.items() if text != (project.get(name) or "")
+                }
+                if not changes:
+                    return
+                if "name" in changes and not changes["name"].strip():
                     raise ValueError(self.view.tr("Proje adı gerekir"))
                 return lambda: self.work(
                     self.view.tr("Proje kaydediliyor…"),
-                    lambda: self.view.account_service.change_project(key, value, **values),
+                    lambda: self.view.account_service.change_project(key, value, **changes),
                     self.updated,
                 )
 
@@ -170,7 +179,15 @@ class ProjectPanel:
                 inline_project=value,
             )
 
-        self.context(show, value)
+        def loaded(project):
+            if self.view.tab_kind == "project" and self.view.current_project.get("id") == value:
+                self.context(show, value, project=project)
+
+        self.view.show_project_details(
+            value,
+            read=lambda: service.project_details(account, value),
+            on_loaded=loaded,
+        )
 
     def add_source(self):
         def show(key, value, project, options):

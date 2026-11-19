@@ -8,6 +8,10 @@ Python distributions use the corresponding PEP 440 version (`1.5.6b0` for `v1.5.
 
 ## [Unreleased]
 
+### Changed
+
+- Reuse the displayed project details in the edit form and save only changed fields.
+
 ## [1.5.6-beta] - 2026-11-06
 
 ### Added

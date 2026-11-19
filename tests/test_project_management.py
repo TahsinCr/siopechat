@@ -45,19 +45,18 @@ class ProjectFormTests(unittest.IsolatedAsyncioTestCase):
             v.project_panel.edit()
             self.assertEqual(v.palette_items[0]["id"], "project.edit:" + value)
             project = {"id": value, "name": "Example", "instructions": "Instructions"}
-
-            def details(_):
-                v.tab_kind = "project"
-                v.current_project = project
-
-            v.show_project_details = Mock(side_effect=details)
-            v.project_panel.context = lambda callback, target: callback(
-                "chatgpt/default", target, project, ProjectOptions(fields=("name", "instructions"))
+            v._read_in_background = immediate
+            v.get_project_callback = Mock(side_effect=AssertionError("duplicate project read"))
+            service.project_details = Mock(return_value=project)
+            service.project_options = Mock(
+                return_value=ProjectOptions(fields=("name", "instructions"))
             )
             v.palette_filtered = v.palette_items
             v.palette_index = 0
             v.execute_palette_item()
-            v.show_project_details.assert_called_once_with(value)
+            service.project_details.assert_called_once_with("chatgpt/default", value)
+            service.project_options.assert_called_once_with("chatgpt/default", value)
+            v.get_project_callback.assert_not_called()
             self.assertEqual(v.forms.inline_project, value)
             self.assertEqual(set(v.forms.fields), {"name", "instructions"})
 
