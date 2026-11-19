@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from itertools import islice
 
 from webai_provider.api import (
     Capability,
@@ -496,16 +497,27 @@ class AccountsHistory:
                             "Sağlayıcı silmeyi doğrulamadı; uzak ve yerel kayıt korundu"
                         )
                 if kind == "container":
-                    confirmed_children = set()
-                    for child in members:
+
+                    async def confirm(child):
                         try:
                             chat = await provider.get_chat(child)
-                            if chat.metadata.get("is_visible") is False:
-                                confirmed_children.add(child)
+                            return child if chat.metadata.get("is_visible") is False else None
                         except RemoteNotFound:
-                            confirmed_children.add(child)
+                            return child
                         except ProviderError:
-                            pass
+                            return None
+
+                    confirmed_children = set()
+                    children = iter(members)
+                    while batch := tuple(islice(children, 4)):
+                        results = await asyncio.gather(
+                            *(confirm(child) for child in batch), return_exceptions=True
+                        )
+                        for child in results:
+                            if isinstance(child, BaseException):
+                                raise child
+                            if child is not None:
+                                confirmed_children.add(child)
                 return await asyncio.to_thread(cleanup)
 
         return self.call(remove(), timeout=60)

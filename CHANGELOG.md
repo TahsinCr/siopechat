@@ -11,6 +11,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.6b0` for `v1.5.
 ### Changed
 
 - Reuse the displayed project details in the edit form and save only changed fields.
+- Verify project chats in small batches after confirmed project deletion while preserving chats that still exist or cannot be verified.
 
 ## [1.5.6-beta] - 2026-11-06
 

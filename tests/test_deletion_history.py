@@ -1,5 +1,6 @@
 """Deletion, tombstone recovery and cached-history merging without remote traffic."""
 
+import asyncio
 import tempfile
 import threading
 import time
@@ -164,10 +165,29 @@ class DeleteAndCacheTests(unittest.TestCase):
 
     def test_project_delete_cascades_known_members_and_preserves_other_accounts(self):
         chat = self.seed()
-        self.provider.get_chat = AsyncMock(side_effect=RemoteNotFound("deleted upstream"))
+        for index in range(5):
+            remote = f"c_member_{index}"
+            self.archive.put(
+                self.key, "conversation", remote, dict(chat, id=identity(self.key, remote))
+            )
+        active = peak = 0
+
+        async def missing(_):
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            try:
+                await asyncio.sleep(0)
+                raise RemoteNotFound("deleted upstream")
+            finally:
+                active -= 1
+
+        self.provider.get_chat = AsyncMock(side_effect=missing)
         self.archive.put("chatgpt/default", "conversation", "c_abc", {"title": "other"})
         result = self.accounts.delete(identity(self.key, "notebooks/abcdef"), self.key, "container")
         self.assertIn(chat["id"], result["removed"])
+        self.assertEqual(self.provider.get_chat.await_count, 6)
+        self.assertEqual(peak, 4)
         self.assertIsNone(self.archive.get(self.key, "conversation", "c_abc"))
         self.assertEqual(
             self.archive.get("chatgpt/default", "conversation", "c_abc")["title"], "other"
