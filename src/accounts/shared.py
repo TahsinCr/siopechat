@@ -10,12 +10,12 @@ from typing import Any
 from urllib.parse import quote, unquote
 
 from webaiprovider import (
-    Account,
     Capability,
     MemoryCredentialStore,
     ModelRef,
-    Provider,
-    ProviderType,
+    WebAIAccount,
+    WebAIProvider,
+    WebAIProviderType,
 )
 from webaiprovider.resources.model.model import ModelCatalogState
 
@@ -25,10 +25,10 @@ HISTORY_TIMEOUT = 20
 _LOG = logging.getLogger("accounts")
 
 PROVIDERS: dict[str, tuple[str, str]] = {
-    ProviderType.CHATGPT.value: ("ChatGPT", "https://chatgpt.com/"),
-    ProviderType.GEMINI.value: ("Gemini", "https://gemini.google.com/"),
-    ProviderType.CLAUDE.value: ("Claude", "https://claude.ai/"),
-    ProviderType.GROK.value: ("Grok", "https://grok.com/"),
+    WebAIProviderType.CHATGPT.value: ("ChatGPT", "https://chatgpt.com/"),
+    WebAIProviderType.GEMINI.value: ("Gemini", "https://gemini.google.com/"),
+    WebAIProviderType.CLAUDE.value: ("Claude", "https://claude.ai/"),
+    WebAIProviderType.GROK.value: ("Grok", "https://grok.com/"),
 }
 
 
@@ -36,11 +36,11 @@ PROVIDERS: dict[str, tuple[str, str]] = {
 def provider_capabilities(provider_id: str) -> frozenset[Capability]:
     """Return declared static capabilities for a provider without opening a session."""
     try:
-        ptype = ProviderType.parse(provider_id)
+        ptype = WebAIProviderType.parse(provider_id)
     except ValueError:
         return frozenset()
-    provider = Provider(
-        Account(id="_capabilities", provider=ptype.value, credentials=MemoryCredentialStore()),
+    provider = WebAIProvider(
+        WebAIAccount(id="_capabilities", provider=ptype.value, credentials=MemoryCredentialStore()),
         type=ptype,
     )
     try:

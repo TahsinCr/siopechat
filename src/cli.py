@@ -10,7 +10,7 @@ import sqlite3
 import sys
 from typing import Any
 
-from webaiprovider import ChatGPTError, ProviderError, ProviderType
+from webaiprovider import ChatGPTError, WebAIProviderError, WebAIProviderType
 from webaiprovider.providers.chatgpt.constants import DEFAULT_CDP_URL, DEFAULT_PAGE_SIZE
 
 from accounts.shared import PROVIDERS, provider_capabilities
@@ -239,7 +239,7 @@ def _provider_main(app, argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("\n[interrupted]", file=sys.stderr)
         return 130
-    except (ProviderError, ValueError, RuntimeError) as error:
+    except (WebAIProviderError, ValueError, RuntimeError) as error:
         print(f"siopechat: {error}", file=sys.stderr)
         return 1
     return 0
@@ -320,7 +320,7 @@ async def _management(app, argv: list[str]) -> int:
                     "enabled": config.get(ptype.value, {}).get("enabled", True),
                     "capabilities": sorted(cap.value for cap in provider_capabilities(ptype.value)),
                 }
-                for ptype in ProviderType
+                for ptype in WebAIProviderType
             ]
             print(json.dumps(descriptions, ensure_ascii=False, indent=2))
             return 0

@@ -15,13 +15,13 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from webaiprovider import (
-    Account,
     AccountPaused,
-    ChatGPTProvider,
+    ChatGPTWebAIProvider,
     MemoryCredentialStore,
     ProfileError,
-    Provider,
-    ProviderType,
+    WebAIAccount,
+    WebAIProvider,
+    WebAIProviderType,
 )
 from webaiprovider.accounts import (
     import_cookies,
@@ -222,22 +222,24 @@ class AccountsSessions:
             if provider_id == "chatgpt":
                 session = BrowserSession(temp_store, cdp_url=self._cdp_url_for(key))
                 session.import_cookies(cookies)
-                candidate_account = Account(
+                candidate_account = WebAIAccount(
                     id=item["id"],
                     provider=provider_id,
                     credentials=temp_store,
                     name=item["label"],
                 )
-                candidate = ChatGPTProvider(candidate_account, session=session)
+                candidate = ChatGPTWebAIProvider(candidate_account, session=session)
             else:
                 save_session(temp_store, cookies)
-                candidate_account = Account(
+                candidate_account = WebAIAccount(
                     id=item["id"],
                     provider=provider_id,
                     credentials=temp_store,
                     name=item["label"],
                 )
-                candidate = Provider(candidate_account, type=ProviderType.parse(provider_id))
+                candidate = WebAIProvider(
+                    candidate_account, type=WebAIProviderType.parse(provider_id)
+                )
 
             try:
                 state = (

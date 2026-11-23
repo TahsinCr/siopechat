@@ -10,11 +10,11 @@ from typing import Any
 
 from webaiprovider import (
     Capability,
-    ProviderError,
     RemoteNotFound,
     Response,
     TextPart,
     ThinkingPart,
+    WebAIProviderError,
 )
 
 from .shared import (
@@ -557,7 +557,7 @@ class AccountsHistory:
                 except RemoteNotFound:
                     pass
                 else:
-                    raise ProviderError(
+                    raise WebAIProviderError(
                         "Sağlayıcı silmeyi doğrulamadı; uzak ve yerel kayıt korundu"
                     )
             if kind == "conversation":
@@ -570,7 +570,7 @@ class AccountsHistory:
                         return child if chat.metadata.get("is_visible") is False else None
                     except RemoteNotFound:
                         return child
-                    except ProviderError:
+                    except WebAIProviderError:
                         return None
 
                 confirmed_children = set()
@@ -630,7 +630,7 @@ class AccountsHistory:
                 branched = chat.branch(message_id)
             record = self.chat_record(key, branched)
             if record["remote_id"] == remote:
-                raise ProviderError("The provider did not create a separate conversation")
+                raise WebAIProviderError("The provider did not create a separate conversation")
             if not record["messages"] and source.get("messages"):
                 source_messages = list(source.get("messages") or ())
                 target_idx = next(

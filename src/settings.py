@@ -9,7 +9,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from eventflow import EventBus
+from flowevent import EventBus
 
 from accounts.shared import PROVIDERS
 from utils.files import atomic_json_write

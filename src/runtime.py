@@ -14,7 +14,7 @@ try:
 except ImportError:  # Python 3.10
     from exceptiongroup import ExceptionGroup
 
-from eventflow import EventBus
+from flowevent import EventBus
 
 
 @dataclass(frozen=True)

@@ -18,7 +18,6 @@ from webaiprovider import (
     OutputDelta,
     OutputEnd,
     OutputReplace,
-    ProviderError,
     RemoteNotFound,
     ResponsePartsResolved,
     SourceDiscovered,
@@ -29,6 +28,7 @@ from webaiprovider import (
     ThinkingPart,
     ThinkingReplace,
     VerificationBegin,
+    WebAIProviderError,
 )
 from webaiprovider.accounts import session_exists
 
@@ -397,7 +397,7 @@ class AccountsSending:
 
             remote_id = chat.remote_id or remote
             if not remote_id:
-                raise ProviderError("Sağlayıcı sohbet kimliği döndürmedi")
+                raise WebAIProviderError("Sağlayıcı sohbet kimliği döndürmedi")
             if not temporary:
                 self._cache_chat_handle(key, chat)
 

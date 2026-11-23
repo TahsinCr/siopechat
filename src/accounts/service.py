@@ -14,15 +14,15 @@ except ImportError:  # Python 3.10
     from exceptiongroup import ExceptionGroup
 
 from webaiprovider import (
-    Account,
     AccountPaused,
     Capability,
-    ChatGPTProvider,
+    ChatGPTWebAIProvider,
     EventEnvelope,
     LifecycleState,
     Project,
-    Provider,
-    ProviderType,
+    WebAIAccount,
+    WebAIProvider,
+    WebAIProviderType,
 )
 from webaiprovider.accounts import session_exists
 from webaiprovider.providers.chatgpt.auth import BrowserSession
@@ -61,8 +61,8 @@ class Accounts(
         self.data_root = api.get("data_root")
         self.runtime_root = api.get("runtime_root")
         self.repository = AccountRepository(self.data_root / "accounts.sqlite3")
-        self._providers: dict[str, Provider] = {}
-        self._accounts: dict[str, Account] = {}
+        self._providers: dict[str, WebAIProvider] = {}
+        self._accounts: dict[str, WebAIAccount] = {}
         self._event_subscriptions: dict[str, object] = {}
         self._provider_locks: dict[str, threading.RLock] = {}
         self._chats: OrderedDict[tuple[str, str], object] = OrderedDict()
@@ -119,12 +119,12 @@ class Accounts(
             return self.cdp_url
         return f"http://127.0.0.1:{item['port']}"
 
-    def _account_obj(self, key: str) -> Account:
+    def _account_obj(self, key: str) -> WebAIAccount:
         item = self.item(key)
         account = self._accounts.get(key)
         if account is not None and account.name == item["label"]:
             return account
-        account = Account(
+        account = WebAIAccount(
             id=item["id"],
             provider=item["provider"],
             credentials=self.credentials(key),
@@ -133,16 +133,16 @@ class Accounts(
         self._accounts[key] = account
         return account
 
-    def _build_provider(self, key: str, account: Account | None = None) -> Provider:
+    def _build_provider(self, key: str, account: WebAIAccount | None = None) -> WebAIProvider:
         item = self.item(key)
         resolved_account = account if account is not None else self._account_obj(key)
         provider_id = item["provider"]
         if provider_id == "chatgpt":
             session = BrowserSession(self.credentials(key), cdp_url=self._cdp_url_for(key))
-            return ChatGPTProvider(resolved_account, session=session)
-        return Provider(resolved_account, type=ProviderType.parse(provider_id))
+            return ChatGPTWebAIProvider(resolved_account, session=session)
+        return WebAIProvider(resolved_account, type=WebAIProviderType.parse(provider_id))
 
-    def _subscribe_provider(self, key: str, prov: Provider) -> None:
+    def _subscribe_provider(self, key: str, prov: WebAIProvider) -> None:
         previous = self._event_subscriptions.pop(key, None)
         if previous is not None and hasattr(previous, "cancel"):
             previous.cancel()
@@ -469,7 +469,7 @@ class Accounts(
     def capabilities(self, key: str) -> frozenset[Capability]:
         return self.provider(key).capabilities
 
-    def provider(self, key: str) -> Provider:
+    def provider(self, key: str) -> WebAIProvider:
         with self._provider_lock(key):
             if self.closing or self.closed:
                 raise RuntimeError("Hesap hizmeti kapalı")
@@ -484,7 +484,7 @@ class Accounts(
                 self._providers[key] = prov
             return prov
 
-    def open_provider(self, key: str) -> Provider:
+    def open_provider(self, key: str) -> WebAIProvider:
         with self._provider_lock(key):
             if self.closing or self.closed:
                 raise RuntimeError("Hesap hizmeti kapalı")
