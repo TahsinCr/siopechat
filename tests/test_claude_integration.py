@@ -5,8 +5,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from webai_provider.api import ClaudeProvider
-from webai_provider.providers.claude.records import conversation
+from webaiprovider import ClaudeProvider
+from webaiprovider.providers.claude.records import conversation
 
 from tests.account_fixture import configured_application as create_application
 
@@ -41,7 +41,6 @@ class ClaudeRecordsTests(unittest.TestCase):
                     }
                 ],
             },
-            "account",
         )
         messages = [
             {
@@ -66,21 +65,21 @@ class ClaudeRecordsTests(unittest.TestCase):
 
 class ClaudeAccountsTests(unittest.TestCase):
     def test_connect_opens_requested_login_page_in_existing_browser(self):
-        from unittest.mock import Mock
-
         with tempfile.TemporaryDirectory() as folder:
             api = create_application(Path(folder))
             try:
                 accounts = api.get("accounts")
                 key = accounts.add("claude", "Claude", browser_account="chatgpt/default")
-                session = Mock(cdp_url="http://127.0.0.1:9222")
-                session.launch.return_value = {"browser": "already_running"}
-                with (
-                    patch.object(accounts, "session", return_value=session),
-                    patch("accounts.sessions.open_provider_page") as open_page,
-                ):
+                with patch(
+                    "accounts.sessions._launch_or_open_cdp_browser",
+                    return_value={"opened": True},
+                ) as launch:
                     self.assertTrue(accounts.session_action(key, "connect_browser")["opened"])
-                    open_page.assert_called_once_with(session.cdp_url, "https://claude.ai/")
+                    launch.assert_called_once_with(
+                        accounts._cdp_url_for("chatgpt/default"),
+                        accounts.directory(key) / "chrome-profile",
+                        "https://claude.ai/",
+                    )
             finally:
                 api.runtime.close()
 
@@ -91,8 +90,8 @@ class ClaudeAccountsTests(unittest.TestCase):
                 accounts = api.get("accounts")
                 key = accounts.add("claude", "Claude", browser_account="chatgpt/default")
                 self.assertEqual(
-                    accounts.session(key).paths.profile,
-                    accounts.session("chatgpt/default").paths.profile,
+                    accounts._cdp_url_for(key),
+                    accounts._cdp_url_for("chatgpt/default"),
                 )
                 self.assertNotEqual(accounts.directory(key), accounts.directory("chatgpt/default"))
                 self.assertIsInstance(accounts.provider(key), ClaudeProvider)

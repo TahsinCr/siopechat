@@ -9,7 +9,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
-from webai_provider.api import BrowserSession, SessionPaths, source_file
+from webaiprovider.providers.chatgpt.auth import BrowserSession
+from webaiprovider.resources.project.types import source_file
 
 from utils.files import atomic_json_write
 
@@ -64,7 +65,7 @@ class AtomicPersistenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             path = root / "session.json"
-            session = BrowserSession(SessionPaths(path, root / "profile"))
+            session = BrowserSession(path)
             with ThreadPoolExecutor(max_workers=8) as workers:
                 list(
                     workers.map(

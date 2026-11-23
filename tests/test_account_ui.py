@@ -5,8 +5,9 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from webai_provider.api import FeatureState, Model, ModelCatalog
+from webaiprovider.resources.model.model import ModelCatalogState
 
+from accounts.shared import AccountCatalog, CatalogModel
 from tests import tui_support as interaction
 from tests.fakes import Accounts
 from tests.tui_support import immediate
@@ -22,7 +23,9 @@ class AccountUiTests(unittest.IsolatedAsyncioTestCase):
         ) as (v, pipe):
             v._read_in_background = immediate
             v.model = "gpt-model"
-            v.catalog = ModelCatalog(FeatureState.AVAILABLE, (Model("gpt-model", "GPT"),))
+            v.catalog = AccountCatalog(
+                ModelCatalogState.AVAILABLE, (CatalogModel("gpt-model", "GPT"),)
+            )
             v._save_active_tab()
             run = asyncio.create_task(v.app.run_async())
             try:
@@ -64,7 +67,7 @@ class AccountUiTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(v.tabs[-1]["account_key"], "chatgpt/default")
             v.select_account("gemini/personal")
             gemini = v.catalog
-            self.assertNotEqual(gemini.models[0].id, expected.models[0].id)
+            self.assertNotEqual(gemini.chat_models[0].id, expected.chat_models[0].id)
             v.new_tab()
             self.assertIs(v.catalog, gemini)
             self.assertEqual(v.tabs[-1]["account_key"], "gemini/personal")
@@ -86,16 +89,25 @@ class AccountUiTests(unittest.IsolatedAsyncioTestCase):
         )
         service.active_accounts = lambda: service.entries
         catalogs = {
-            "chatgpt/default": ModelCatalog(
-                FeatureState.AVAILABLE, (Model("g1", "GPT 1"), Model("g2", "GPT 2"))
+            "chatgpt/default": AccountCatalog(
+                ModelCatalogState.AVAILABLE,
+                (CatalogModel("g1", "GPT 1"), CatalogModel("g2", "GPT 2")),
             ),
-            "gemini/personal": ModelCatalog(
-                FeatureState.AVAILABLE,
-                (Model("gm1", "Gemini 1"), Model("gm2", "Gemini 2"), Model("gm3", "Gemini 3")),
+            "gemini/personal": AccountCatalog(
+                ModelCatalogState.AVAILABLE,
+                (
+                    CatalogModel("gm1", "Gemini 1"),
+                    CatalogModel("gm2", "Gemini 2"),
+                    CatalogModel("gm3", "Gemini 3"),
+                ),
             ),
-            "claude/work": ModelCatalog(
-                FeatureState.AVAILABLE,
-                (Model("c1", "Claude 1"), Model("c2", "Claude 2"), Model("c3", "Claude 3")),
+            "claude/work": AccountCatalog(
+                ModelCatalogState.AVAILABLE,
+                (
+                    CatalogModel("c1", "Claude 1"),
+                    CatalogModel("c2", "Claude 2"),
+                    CatalogModel("c3", "Claude 3"),
+                ),
             ),
         }
         service.models = lambda key: catalogs[key]
@@ -112,8 +124,8 @@ class AccountUiTests(unittest.IsolatedAsyncioTestCase):
         service = Accounts()
         service.active_accounts = lambda: service.entries
         service.archive = lambda: object()
-        service.cached_models = lambda _key: ModelCatalog(
-            FeatureState.AVAILABLE, (Model("gpt-test", "GPT test"),)
+        service.cached_models = lambda _key: AccountCatalog(
+            ModelCatalogState.AVAILABLE, (CatalogModel("gpt-test", "GPT test"),)
         )
         cached = {"title": "Cached history", "messages": [{"role": "user", "text": "Earlier"}]}
         service.cached_window = lambda _key, _remote, *, limit: cached
@@ -215,7 +227,9 @@ class AccountUiTests(unittest.IsolatedAsyncioTestCase):
     async def test_cached_catalog_selects_a_model_before_first_refresh_completes(self):
         service = Accounts()
         service.selected = "gemini/personal"
-        cached = ModelCatalog(FeatureState.AVAILABLE, (Model("gemini-flash", "Flash"),))
+        cached = AccountCatalog(
+            ModelCatalogState.AVAILABLE, (CatalogModel("gemini-flash", "Flash"),)
+        )
         service.cached_models = lambda key: cached if key.startswith("gemini/") else None
         with interaction.terminal(account_service=service) as (v, _):
             self.assertEqual(v.model, "gemini-flash")

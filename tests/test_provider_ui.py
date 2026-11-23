@@ -6,34 +6,54 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from webai_provider.api import (
-    Choice,
-    FeatureState,
-    Model,
-    ModelCatalog,
-    SentinelCompatibilityError,
-    model_catalog,
-)
+from webaiprovider import SentinelCompatibilityError
+from webaiprovider.providers.chatgpt.catalogs import parse_model_catalog
+from webaiprovider.resources.model.model import ModelCatalogState
 
+from accounts.shared import AccountCatalog, CatalogChoice, CatalogModel
 from tests.account_fixture import configured_application as create_application
 from tests.provider_fakes import CATALOG
 from tests.tui_support import immediate, terminal
 
 
+def _catalog_from_raw(raw):
+    parsed = parse_model_catalog(raw)
+    items = tuple(
+        CatalogModel(
+            id=m.id,
+            title=m.title or m.id,
+            efforts=tuple(
+                CatalogChoice(e.id, e.title, is_default=e.id == m.default_effort) for e in m.efforts
+            ),
+            default_effort=m.default_effort,
+            chat_title=m.chat_title,
+            is_default=m.id == parsed.default_model,
+            metadata=dict(m.metadata),
+        )
+        for m in parsed.models
+        if m.chat_selectable
+    )
+    default_item = next(
+        (m for m in items if m.id == parsed.default_model), items[0] if items else None
+    )
+    return AccountCatalog(parsed.state, items, default_item)
+
+
 class ProviderUiTests(unittest.TestCase):
     def test_model_picker_falls_back_to_cached_model_metadata_and_id(self):
-        catalog = ModelCatalog(
-            FeatureState.AVAILABLE,
+        first = CatalogModel("grok-420", "Model", metadata={"modeName": "Model"})
+        catalog = AccountCatalog(
+            ModelCatalogState.AVAILABLE,
             (
-                Model("grok-420", "Model", metadata={"modeName": "Model"}),
-                Model(
+                first,
+                CatalogModel(
                     "grok-4-1-thinking-1129",
                     "",
                     metadata={"modeName": "Grok 4.1 Thinking"},
                 ),
-                Model("fast", "Fast", chat_title="Grok · Fast"),
+                CatalogModel("fast", "Fast", chat_title="Grok · Fast"),
             ),
-            default_model="grok-420",
+            default_chat_model=first,
         )
         with terminal(load_catalog=lambda: catalog) as (view, _pipe):
             view._read_in_background = immediate
@@ -50,7 +70,7 @@ class ProviderUiTests(unittest.TestCase):
         self.assertNotIn("Grok 4.1 Thinking", view.status)
 
     def test_grok_response_model_ids_render_as_readable_names(self):
-        from src.tui.markdown import _response_settings
+        from tui.markdown import _response_settings
 
         for model, title in (
             ("grok-3", "Grok 3"),
@@ -100,7 +120,7 @@ class ProviderUiTests(unittest.TestCase):
             CATALOG,
             models=CATALOG["models"] + [{"slug": "internal-sol-wm", "title": "Internal Sol"}],
         )
-        with terminal(model="internal-sol-wm", load_catalog=lambda: model_catalog(raw)) as (
+        with terminal(model="internal-sol-wm", load_catalog=lambda: _catalog_from_raw(raw)) as (
             view,
             _pipe,
         ):
@@ -121,7 +141,7 @@ class ProviderUiTests(unittest.TestCase):
             self.assertIn("kataloğunda yok", view.status)
 
     def test_model_and_effort_pickers_use_only_account_catalog_and_keep_selection_per_tab(self):
-        with terminal(load_catalog=lambda: model_catalog(CATALOG)) as (view, _pipe):
+        with terminal(load_catalog=lambda: _catalog_from_raw(CATALOG)) as (view, _pipe):
             view._read_in_background = immediate
             view.refresh_provider_catalog()
             self.assertEqual(view.model, "account-thinking")
@@ -150,7 +170,7 @@ class ProviderUiTests(unittest.TestCase):
             self.assertEqual(view.input.text, "second draft")
 
     def test_model_and_effort_can_change_while_response_is_running(self):
-        with terminal(load_catalog=lambda: model_catalog(CATALOG)) as (view, _pipe):
+        with terminal(load_catalog=lambda: _catalog_from_raw(CATALOG)) as (view, _pipe):
             view._read_in_background = immediate
             view.refresh_provider_catalog()
             view.tabs[0]["busy"] = True
@@ -165,13 +185,13 @@ class ProviderUiTests(unittest.TestCase):
             self.assertEqual((view.model, view.effort), ("account-thinking", "extended"))
 
     def test_optional_effort_model_defaults_to_none_and_palette_marks_default(self):
-        catalog = ModelCatalog(
-            FeatureState.AVAILABLE,
+        catalog = AccountCatalog(
+            ModelCatalogState.AVAILABLE,
             (
-                Model(
+                CatalogModel(
                     "optional-model",
                     "Optional",
-                    (Choice("standard", "Standard"), Choice("extended", "Extended")),
+                    (CatalogChoice("standard", "Standard"), CatalogChoice("extended", "Extended")),
                     None,
                 ),
             ),
@@ -325,7 +345,7 @@ class ProviderUiTests(unittest.TestCase):
 
     def test_catalog_and_project_failures_keep_last_good_data_and_offer_retry(self):
         with terminal(
-            load_catalog=Mock(side_effect=[model_catalog(CATALOG), RuntimeError("offline")]),
+            load_catalog=Mock(side_effect=[_catalog_from_raw(CATALOG), RuntimeError("offline")]),
             list_projects=Mock(
                 side_effect=[
                     {"items": [{"id": "g-p-work", "name": "Work"}], "cursor": None},
@@ -338,7 +358,7 @@ class ProviderUiTests(unittest.TestCase):
             view.refresh_projects()
             view.refresh_provider_catalog()
             view.refresh_projects()
-            self.assertEqual(len(view.catalog.models), 2)
+            self.assertEqual(len(view.catalog.chat_models), 2)
             self.assertEqual(view.catalog_error, "offline")
             self.assertIn("g-p-work", view.project_items)
             self.assertIn("HTTP 403", str(view.render_sidebar()))
@@ -346,7 +366,7 @@ class ProviderUiTests(unittest.TestCase):
 
     def test_cached_model_and_project_metadata_are_restored_when_opening_chat(self):
         with terminal() as (view, _pipe):
-            view.catalog = model_catalog(CATALOG)
+            view.catalog = _catalog_from_raw(CATALOG)
             view.project_items["g-p-work"] = {"id": "g-p-work", "name": "Work"}
             view.load_conversation = lambda _: {
                 "id": "c1",
@@ -382,6 +402,7 @@ class ProviderUiTests(unittest.TestCase):
                 "conversation_id": "chat",
                 "conversation": {
                     "default_model_slug": "old-chat-default",
+                    "parts": [{"role": "assistant", "text": "answer"}],
                     "messages": [
                         {
                             "id": "reply",

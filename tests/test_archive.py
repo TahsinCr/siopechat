@@ -12,9 +12,9 @@ from contextlib import closing
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from extensions.archive import repository as archive_repository
-from extensions.archive.repository import Files, SQLiteRepository
-from extensions.archive.sync import Archive
+from archive import Files, SQLiteRepository
+from archive import repository as archive_repository
+from archive.sync import Archive
 
 
 class ArchiveTests(unittest.TestCase):
@@ -173,7 +173,7 @@ class ArchiveTests(unittest.TestCase):
         expected = hashlib.sha256(archive_repository.encode(value).encode()).hexdigest()
         original_encode = archive_repository.encode
 
-        with patch("extensions.archive.repository.encode", wraps=original_encode) as encode_value:
+        with patch("archive.repository.encode", wraps=original_encode) as encode_value:
             self.repository.put("chatgpt/a", "conversation", "long", value)
 
         self.assertFalse(any(call.args[0] is value for call in encode_value.call_args_list))
@@ -216,7 +216,7 @@ class ArchiveTests(unittest.TestCase):
     def test_cold_record_syncs_when_monotonic_uptime_is_under_one_minute(self):
         from unittest.mock import patch
 
-        with patch("extensions.archive.sync.time.monotonic", return_value=15):
+        with patch("archive.sync.time.monotonic", return_value=15):
             value = self.archive.read(
                 "gemini/a", "conversation", "cold", lambda: {"title": "remote"}
             )
@@ -329,9 +329,7 @@ class ArchiveMaintenanceTests(unittest.TestCase):
     def test_failed_content_fsync_does_not_publish_a_partial_archive_file(self):
         with tempfile.TemporaryDirectory() as folder:
             files = Files(Path(folder))
-            with patch(
-                "extensions.archive.repository.os.fsync", side_effect=OSError("disk failure")
-            ):
+            with patch("archive.repository.os.fsync", side_effect=OSError("disk failure")):
                 with self.assertRaises(OSError):
                     files.save(b"not durable")
             self.assertEqual([path for path in files.root.rglob("*") if path.is_file()], [])

@@ -12,8 +12,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from extensions.archive.repository import Files, SQLiteRepository, encode
-from extensions.archive.sync import Archive
+from archive import Archive, Files, SQLiteRepository
 from tests.history_support import message
 from tui.history import prepare_virtual_transcript
 from tui.paging import visible_window
@@ -218,31 +217,14 @@ class HistoryWindowTests(unittest.TestCase):
         self.assertNotIn("_archive_sql_messages", result)
         self.assertEqual(len(self.repo.resources("claude/a", "conversation", "chat")), 1)
 
-    def test_v3_migration_preserves_exact_history_and_source_references(self):
-        value = {
-            "title": "Legacy",
-            "messages": [dict(message(0), resource={"path": "old/path"})],
-            "metadata": {"native": {"messages": [message(0)]}},
-        }
+    def test_non_current_archive_schema_is_rejected_without_modification(self):
+        value = {"title": "Legacy", "messages": [message(0)]}
         self.repo.put("chatgpt/a", "conversation", "chat", value)
         with closing(sqlite3.connect(self.repo.path)) as db:
-            db.execute("UPDATE records SET payload=? WHERE kind='conversation'", (encode(value),))
-            db.execute("UPDATE conversations SET metadata=?", (encode(value),))
-            db.execute("DELETE FROM messages")
-            for table in (
-                "pending_branches",
-                "response_variant_groups",
-                "response_variants",
-                "superseded_messages",
-            ):
-                db.execute(f"DROP TABLE {table}")
             db.execute("UPDATE schema_version SET version=3")
             db.commit()
-        upgraded = SQLiteRepository(self.repo.path)
-        self.assertEqual(upgraded.get("chatgpt/a", "conversation", "chat"), value)
-        self.assertIn("old/path", upgraded.file_references())
-        with closing(sqlite3.connect(self.repo.path)) as db:
-            self.assertNotIn('"messages":', db.execute("SELECT payload FROM records").fetchone()[0])
+        with self.assertRaises(OSError):
+            SQLiteRepository(self.repo.path)
 
     def test_archived_pending_turns_do_not_accumulate_when_windows_change(self):
         old = [dict(message(i), local_pending=True, _archive_ordinal=i) for i in range(80)]
@@ -680,8 +662,8 @@ class RenderReuseTests(unittest.TestCase):
             self.assertFalse(second.renderer.cache)
 
     def test_closed_split_pane_drops_its_source_and_formatted_cache(self):
-        from extensions.layout.panes import SplitLayout, _Pane
         from tests.tui_support import terminal
+        from tui.workspaces.panes import SplitLayout, _Pane
 
         with terminal(layout_factory=SplitLayout) as (view, _):
             view.messages = [message(1)]

@@ -12,12 +12,11 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import httpx
-from webai_provider.api import DownloadSource
+from webaiprovider.transport.downloader import DownloadSource
 
+from archive import Archive, Files, SQLiteRepository
 from bootstrap import create_application
 from downloads import Downloads
-from extensions.archive.repository import Files, SQLiteRepository
-from extensions.archive.sync import Archive
 from settings import Settings
 from tests.tui_support import immediate, terminal
 
@@ -145,7 +144,7 @@ class DownloadHistoryTests(unittest.TestCase):
         self.assertEqual(self.service.active_snapshot(), [])
         self.assertEqual(self.service.snapshot()[0]["size"], 7)
 
-    def test_interrupted_record_and_schema_one_migrate_without_data_loss(self):
+    def test_interrupted_record_recovers_without_data_loss(self):
         self.archive.put("gemini/a", "conversation", "chat", {"title": "Saved", "messages": []})
         self.archive.downloads.put_many(
             [
@@ -161,24 +160,11 @@ class DownloadHistoryTests(unittest.TestCase):
                 )
             ]
         )
-        with closing(sqlite3.connect(self.repo.path)) as db:
-            for table in (
-                "pending_branches",
-                "response_variant_groups",
-                "response_variants",
-                "superseded_messages",
-            ):
-                db.execute(f"DROP TABLE {table}")
-            db.execute("UPDATE schema_version SET version=1")
-            db.commit()
         reopened = SQLiteRepository(self.repo.path)
         self.assertEqual(reopened.get("gemini/a", "conversation", "chat")["title"], "Saved")
         self.assertEqual(self.make_service().refresh()[0]["state"], "interrupted")
         with closing(sqlite3.connect(self.repo.path)) as db:
             self.assertEqual(db.execute("SELECT version FROM schema_version").fetchall(), [(6,)])
-            self.assertIn(
-                "revision", {row[1] for row in db.execute("PRAGMA table_info(downloads)")}
-            )
 
     def test_archive_failure_does_not_fail_saved_download(self):
         self.accounts.archive = Mock(side_effect=OSError("unavailable"))

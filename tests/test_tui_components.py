@@ -7,8 +7,9 @@ from unittest.mock import Mock, patch
 from prompt_toolkit.application import Application
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
-from webai_provider.api import Choice, FeatureState, Model, ModelCatalog
+from webaiprovider.resources.model.model import ModelCatalogState
 
+from accounts.shared import AccountCatalog, CatalogChoice, CatalogModel
 from settings import DEFAULTS, Settings, keybinding_conflicts
 from tests.tui_support import terminal
 from tui.chat import ChatView
@@ -388,15 +389,18 @@ class CliComponentTests(unittest.TestCase):
                 view.sidebar_index = 0
                 view.toggle_sidebar_group()
                 self.assertIn("section:projects", view.sidebar_collapsed)
-                view.catalog = ModelCatalog(
-                    FeatureState.AVAILABLE,
+                view.catalog = AccountCatalog(
+                    ModelCatalogState.AVAILABLE,
                     (
-                        Model(
+                        CatalogModel(
                             "gpt-account-model",
                             "Account model",
-                            (Choice("standard", "Standard"), Choice("extended", "Extended")),
+                            (
+                                CatalogChoice("standard", "Standard"),
+                                CatalogChoice("extended", "Extended"),
+                            ),
                         ),
-                        Model("another-model", "Another model"),
+                        CatalogModel("another-model", "Another model"),
                     ),
                 )
                 view.open_palette()

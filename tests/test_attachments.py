@@ -1,14 +1,13 @@
 """Attachment preflight and provider policy boundaries."""
 
-import asyncio
 import tempfile
 import unittest
 from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock, patch
 
-from webai_provider.api import policy_for
+from webaiprovider.resources.message.attachment import policy_for
 
 from tui.attachments import AttachmentPicker
 
@@ -360,9 +359,8 @@ class AttachmentPolicyTests(unittest.TestCase):
         service = object.__new__(Accounts)
         service._attachment_paths = {}
         service.attachment_policy = lambda _key: policy_for("claude")
-        provider = SimpleNamespace(conversation_attachment_count=AsyncMock(return_value=19))
-        service.provider = lambda _key: provider
-        service._call_cancellable = lambda coroutine, *_args: asyncio.run(coroutine)
+        provider = SimpleNamespace(conversation_attachment_count=Mock(return_value=19))
+        service.open_provider = lambda _key: provider
         service.attach_file = Mock()
         account = "claude/default"
         staged = [
@@ -379,7 +377,7 @@ class AttachmentPolicyTests(unittest.TestCase):
             account, staged, conversation_id="conversation", cancel_event=Event()
         )
 
-        provider.conversation_attachment_count.assert_awaited_once_with("conversation")
+        provider.conversation_attachment_count.assert_called_once_with("conversation")
         self.assertEqual([item["id"] for item in selected], ["file-0"])
         self.assertEqual([item["id"] for item in omitted], ["file-1", "file-2"])
         service.attach_file.assert_not_called()
@@ -390,9 +388,8 @@ class AttachmentPolicyTests(unittest.TestCase):
         service = object.__new__(Accounts)
         service._attachment_paths = {}
         service.attachment_policy = lambda _key: policy_for("claude")
-        provider = SimpleNamespace(conversation_attachment_count=AsyncMock(return_value=None))
-        service.provider = lambda _key: provider
-        service._call_cancellable = lambda coroutine, *_args: asyncio.run(coroutine)
+        provider = SimpleNamespace(conversation_attachment_count=Mock(return_value=None))
+        service.open_provider = lambda _key: provider
         service.attach_file = Mock(return_value={"id": "uploaded"})
         account = "claude/default"
 

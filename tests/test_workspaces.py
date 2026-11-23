@@ -8,8 +8,8 @@ from contextlib import closing
 from dataclasses import asdict, replace
 from pathlib import Path
 
-from extensions.layout.models import Tab, TabGroup, Workspace
-from extensions.layout.repository import WorkspaceStore
+from tui.workspaces.models import Tab, TabGroup, Workspace
+from tui.workspaces.repository import WorkspaceStore
 
 
 def workspace():

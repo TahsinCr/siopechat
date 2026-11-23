@@ -4,10 +4,8 @@ import asyncio
 import unittest
 from unittest.mock import patch
 
-from webai_provider.api import ProviderRegistry, ReplaceText, SendRequest, TextDelta
-
-from tasks import TaskService
 from tests.tui_support import immediate, terminal, wait_until
+from tui.chat.stream import _SendStream
 
 
 class EditingTests(unittest.IsolatedAsyncioTestCase):
@@ -65,30 +63,23 @@ class EditingTests(unittest.IsolatedAsyncioTestCase):
                     v.app.exit()
                 await run
 
-    async def test_task_snapshot_keeps_reasoning_out_of_answer(self):
-        class Provider:
-            id = "demo"
-            capabilities = frozenset()
+    async def test_stream_keeps_reasoning_out_of_answer(self):
+        with terminal() as (view, _):
+            messages = [{"role": "user", "text": "Question"}, {"role": "assistant", "text": ""}]
+            tab = view.tabs[0]
+            tab["messages"] = messages
+            view.messages = messages
+            view._dispatch_ui = lambda callback: callback()
+            stream = _SendStream(view, tab, messages)
 
-            async def stream(self, request):
-                yield TextDelta("Summary", channel="analysis")
-                yield ReplaceText("Updated", channel="analysis")
-                yield TextDelta("Answer")
+            stream.on_event({"type": "delta", "channel": "analysis", "text": "Summary"})
+            stream.on_event({"type": "replace", "channel": "analysis", "text": "Updated"})
+            stream.on_event({"type": "delta", "channel": "final", "text": "Answer"})
 
-        from webai_provider.api import Capability
-
-        Provider.capabilities = frozenset([Capability.CHAT])
-        registry = ProviderRegistry()
-        registry.register(Provider())
-        service = TaskService(registry)
-        try:
-            result = await service.wait(
-                service.submit(SendRequest("demo", "default", "chat", "Question"))
-            )
-            self.assertEqual(result.text, "Answer")
-            self.assertEqual(result.reasoning, "Updated")
-        finally:
-            await service.close()
+            assistant = [item for item in messages if item["role"] == "assistant"]
+            reasoning = [item for item in messages if item["role"] == "reasoning"]
+            self.assertEqual(assistant[-1]["text"], "Answer")
+            self.assertEqual(reasoning[-1]["text"], "Updated")
 
     async def test_message_click_select_all_and_copy(self):
         with (

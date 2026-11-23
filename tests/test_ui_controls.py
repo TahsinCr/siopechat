@@ -12,20 +12,16 @@ from unittest.mock import Mock, patch
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
 from prompt_toolkit.utils import get_cwidth
-from webai_provider.api import (
-    BrowserSession,
-    ChatGPTClient,
-    ChatGPTWebError,
-    Choice,
-    FeatureState,
-    Model,
-    ModelCatalog,
-    SessionPaths,
-)
+from webaiprovider import ChatGPTError
+from webaiprovider.providers.chatgpt.auth import BrowserSession
+from webaiprovider.providers.chatgpt.client import ChatGPTClient
+from webaiprovider.resources.model.model import ModelCatalogState
 
-from backend import BackendService
+from accounts.shared import AccountCatalog, CatalogChoice, CatalogModel
 from bootstrap import create_application
 from tests.tui_support import ResizableOutput, click, immediate, terminal, wait_until
+from tui.lang import load_catalog
+from tui.settings import SettingsPanel
 from tui.widgets import TranscriptControl
 
 
@@ -626,12 +622,13 @@ class UiControlsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             api = create_application(Path(folder))
             self.addCleanup(api.runtime.close)
+            languages = load_catalog()
 
             def preferences():
                 config = api.settings.snapshot()
                 return {
                     "settings": config,
-                    "translations": api.languages.merged(config["application"]["language"]),
+                    "translations": languages.merged(config["application"]["language"]),
                 }
 
             def change(section, key, value):
@@ -640,9 +637,11 @@ class UiControlsTests(unittest.TestCase):
                 )
                 return preferences()
 
+            panel = SettingsPanel(api, languages=languages)
             with terminal(
-                settings_rows=lambda: asyncio.run(api.actions.invoke("settings.show")),
+                settings_rows=panel.rows,
                 change_setting=change,
+                load_preferences=preferences,
             ) as (view, _):
                 view._read_in_background = immediate
                 view.settings_dialog.open()
@@ -689,8 +688,9 @@ class UiControlsTests(unittest.TestCase):
 
     def test_model_and_effort_use_separate_semantic_colors(self):
         with terminal() as (view, _):
-            view.catalog = ModelCatalog(
-                FeatureState.AVAILABLE, (Model("demo", "Example", (Choice("medium", "Orta"),)),)
+            view.catalog = AccountCatalog(
+                ModelCatalogState.AVAILABLE,
+                (CatalogModel("demo", "Example", (CatalogChoice("medium", "Orta"),)),),
             )
             view.model, view.effort = "demo", "medium"
             fragments = view.render_chat_header()
@@ -904,8 +904,9 @@ class DialogInputTests(unittest.IsolatedAsyncioTestCase):
                 {"role": "assistant", "text": "Answer"},
             ],
         ) as (view, _):
-            view.catalog = ModelCatalog(
-                FeatureState.AVAILABLE, (Model("demo", "Example", (Choice("medium", "Orta"),)),)
+            view.catalog = AccountCatalog(
+                ModelCatalogState.AVAILABLE,
+                (CatalogModel("demo", "Example", (CatalogChoice("medium", "Orta"),)),),
             )
             view.model, view.effort = "demo", "medium"
             run = asyncio.create_task(view.app.run_async())
@@ -1022,7 +1023,7 @@ class DialogInputTests(unittest.IsolatedAsyncioTestCase):
 
 class SessionSecurityTests(unittest.TestCase):
     def test_saved_session_preferred_without_capturing_browser(self):
-        session = Mock(cdp_url="http://127.0.0.1:9222")
+        session = Mock(cdp_url="http://127.0.0.1:9222", session_file=None)
         session.load.return_value = (
             "https://chatgpt.com/backend-api/conversations",
             {"authorization": "secret"},
@@ -1032,70 +1033,64 @@ class SessionSecurityTests(unittest.TestCase):
             session.is_ready.assert_not_called()
 
     def test_authenticated_requests_cannot_escape_provider_origin(self):
-        with ChatGPTClient(Mock(cdp_url="http://127.0.0.1:9222"), authenticate=False) as client:
-            with patch.object(client.http, "request") as request:
+        session = Mock(cdp_url="http://127.0.0.1:9222", session_file=None)
+        with ChatGPTClient(session, authenticate=False) as client:
+            with patch.object(client.transport, "send") as send:
                 for target in (
                     "http://chatgpt.com/backend-api/models",
                     "https://example.com/",
                     "https://chatgpt.com@evil.example/",
                 ):
-                    with self.assertRaises(ChatGPTWebError):
+                    with self.assertRaises(ChatGPTError):
                         client.request("GET", target)
-                request.assert_not_called()
+                send.assert_not_called()
 
     def test_default_browser_does_not_claim_session_import(self):
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
-            session = BrowserSession(SessionPaths(root / "session", root / "profile"))
-            with patch(
-                "webai_provider.providers.chatgpt.session.webbrowser.open", return_value=True
-            ) as opened:
-                result = session.open_login()
-            opened.assert_called_once_with("https://chatgpt.com/", new=2)
-            self.assertFalse(result["authenticated"])
-            self.assertFalse(session.paths.session_file.exists())
+            api = create_application(Path(folder))
+            try:
+                key = api.accounts.add("chatgpt", "ChatGPT")
+                with patch(
+                    "accounts.sessions.subprocess.run", return_value=Mock(returncode=0)
+                ) as ran:
+                    result = api.accounts.session_action(key, "default_browser")
+                self.assertEqual(result, {"opened": True})
+                cmd = ran.call_args.args[0]
+                self.assertIn("webbrowser", cmd)
+                self.assertIn("https://chatgpt.com/", cmd)
+                status = api.accounts.status(key)
+                self.assertFalse(status["authenticated"])
+                self.assertFalse(status["saved_snapshot"])
+            finally:
+                api.runtime.close()
 
-    def test_invalid_session_utf8_and_malformed_ipc_are_rejected(self):
+    def test_invalid_session_utf8_and_oversized_files_are_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            session = BrowserSession(SessionPaths(root / "session", root / "profile"))
-            session.paths.session_file.write_bytes(b"\xff")
-            with self.assertRaises(ChatGPTWebError):
+            session = BrowserSession(root / "session.json")
+            session.session_file.write_bytes(b"\xff")
+            with self.assertRaises(ChatGPTError):
                 session.load()
-            session.paths.session_file.write_bytes(b"x" * (2 * 1024 * 1024 + 1))
-            with self.assertRaises(ChatGPTWebError):
+            session.session_file.write_bytes(b"x" * (2 * 1024 * 1024 + 1))
+            with self.assertRaises(ChatGPTError):
                 session.load()
-        connection = Mock()
-        connection.recv.side_effect = [b"\xff", b""]
-        with self.assertRaises(ChatGPTWebError):
-            BackendService().receive_json(connection)
 
-    def test_history_ipc_validates_bounds_and_propagates_cursor(self):
-        backend = BackendService()
-        client = Mock()
-        client.list_page.return_value = {"items": [{"id": str(i)} for i in range(50)]}
-        result, _ = backend.handle_daemon_command(
-            client, {"command": "history_page", "offset": 50, "limit": 50}
-        )
-        self.assertEqual(result["cursor"], "100")
-        client.list_page.return_value["total"] = 100
-        result, _ = backend.handle_daemon_command(
-            client, {"command": "history_page", "offset": 50, "limit": 50}
-        )
-        self.assertIsNone(result["cursor"])
-        for args in ({"offset": -1}, {"limit": 101}, {"limit": True}):
-            with self.assertRaises(ChatGPTWebError):
-                backend.handle_daemon_command(client, {"command": "history_page", **args})
+    def test_history_pagination_validates_bounds(self):
+        session = Mock(cdp_url="http://127.0.0.1:9222", session_file=None)
+        with ChatGPTClient(session, authenticate=False) as client:
+            for args in ((-1, 50), (0, 0), (0, 101)):
+                with self.assertRaises((ChatGPTError, ValueError)):
+                    client._validate_list_page(*args)
 
-    def test_logout_stops_daemon_before_removing_session(self):
+    def test_logout_clears_credentials_and_marks_unverified(self):
         with tempfile.TemporaryDirectory() as folder:
-            backend = BackendService(Path(folder))
-            backend._session_credentials.save({"sessionKey": "fixture"})
-            with (
-                patch.object(backend, "daemon_is_ready", side_effect=[True, False]),
-                patch.object(backend, "daemon_request") as request,
-            ):
-                result = backend.forget_session(Path(folder) / "socket")
-                request.assert_called_once()
-            self.assertTrue(result["logged_out"])
-            self.assertFalse(backend._session_credentials.exists())
+            api = create_application(Path(folder))
+            try:
+                key = api.accounts.add("claude", "Claude")
+                api.accounts.credentials(key).save({"sessionKey": "fixture"})
+                api.accounts._remember_verification(key)
+                result = api.accounts.session_action(key, "logout")
+                self.assertTrue(result["logged_out"])
+                self.assertFalse(api.accounts.credentials(key).exists())
+            finally:
+                api.runtime.close()

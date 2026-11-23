@@ -4,17 +4,23 @@ import asyncio
 import hashlib
 import tempfile
 import threading
+import time
 import unittest
 from concurrent.futures import CancelledError, ThreadPoolExecutor
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock, patch
 
-from webai_provider.api import ConversationBound, FeatureState, Model, ModelCatalog, ReplaceText
+from webaiprovider.resources.message.protocol import (
+    ConversationBound,
+    ResponseComplete,
+    TextDelta,
+    TextReplacement,
+)
+from webaiprovider.resources.model.model import ModelRef
 
 from accounts import identity
-from extensions.archive.repository import Files, SQLiteRepository, encode
-from extensions.archive.sync import Archive
+from archive import Archive, Files, SQLiteRepository
+from archive.repository import encode
 from tests.account_fixture import configured_application as create_application
 from tests.tui_support import terminal
 
@@ -27,11 +33,6 @@ def blocked_remote_fetch(entered, release):
         return {"title": "remote"}
 
     return fetch
-
-
-async def responsive_pulse():
-    await asyncio.sleep(0)
-    return "responsive"
 
 
 class SyncConcurrencyTests(unittest.TestCase):
@@ -410,13 +411,17 @@ class AccountConcurrencyTests(unittest.TestCase):
         self.gemini = self.accounts.add("gemini", "Concurrency fixture")
         self.entered = {key: threading.Event() for key in (self.gemini, "chatgpt/default")}
         for key in self.entered:
+            provider = self.accounts.provider(key)
+            provider._opened = True
 
-            async def stream(request, key=key):
+            def stream(request, key=key):
                 self.entered[key].set()
                 yield ConversationBound("c_fixture")
-                yield ReplaceText("answer", "final")
+                yield TextReplacement("answer", "final")
+                yield ResponseComplete()
 
-            self.accounts._providers[key] = Mock(stream=stream, close=AsyncMock(), browser=None)
+            provider._stream_provider_events = stream
+            self.accounts._providers[key] = provider
 
     def send(self, key):
         return self.accounts.send(
@@ -425,42 +430,22 @@ class AccountConcurrencyTests(unittest.TestCase):
 
     def test_sidebar_rename_uses_conversation_account_instead_of_active_account(self):
         target = self.accounts._providers[self.gemini]
-        target.rename_chat = AsyncMock()
+        target._rename_chat_data = Mock()
         active = self.accounts._providers["chatgpt/default"]
-        active.rename_chat = AsyncMock()
+        active._rename_chat_data = Mock()
         archive = self.accounts.archive()
         for key in (self.gemini, "chatgpt/default"):
             value = {"id": "same-id", "title": "Original", "messages": []}
             archive.put(key, "conversation", "same-id", value)
-            self.accounts.repository.cache_put(key, "conversation", "same-id", value)
 
         self.accounts.callbacks("chatgpt/default")["rename_conversation"](
             identity(self.gemini, "same-id"), "Renamed"
         )
 
-        target.rename_chat.assert_awaited_once_with("same-id", "Renamed")
-        active.rename_chat.assert_not_called()
+        target._rename_chat_data.assert_called_once_with("same-id", "Renamed")
+        active._rename_chat_data.assert_not_called()
         for key, title in ((self.gemini, "Renamed"), ("chatgpt/default", "Original")):
             self.assertEqual(archive.get(key, "conversation", "same-id")["title"], title)
-            self.assertEqual(
-                self.accounts.repository.cache_get(key, "conversation", "same-id")["title"],
-                title,
-            )
-
-    def test_background_catalog_verification_does_not_resume_a_paused_send_account(self):
-        account = tuple(self.gemini.split("/", 1))
-
-        async def block():
-            self.api.tasks._block_account(account, None)
-
-        async def paused():
-            return account in self.api.tasks._blocked
-
-        self.accounts.call(block())
-        self.accounts._remember_verification(self.gemini)
-        self.assertTrue(self.accounts.call(paused()))
-        self.accounts._remember_verification(self.gemini, resume=True)
-        self.assertFalse(self.accounts.call(paused()))
 
     def test_unexpected_local_archive_error_does_not_reject_an_accepted_turn(self):
         with patch.object(
@@ -482,16 +467,31 @@ class AccountConcurrencyTests(unittest.TestCase):
         started, draining, release = threading.Event(), threading.Event(), threading.Event()
         handles = []
 
-        async def stream(request):
+        def stream(request):
             started.set()
             try:
                 yield ConversationBound("c_fixture")
-                await asyncio.Event().wait()
+                deadline = time.monotonic() + 3.0
+                while time.monotonic() < deadline:
+                    with self.accounts._lock:
+                        cancelled = (
+                            all(
+                                getattr(op, "_cancelled", False)
+                                for op in self.accounts._active_operations
+                            )
+                            if self.accounts._active_operations
+                            else True
+                        )
+                    if cancelled:
+                        break
+                    yield TextDelta("", "final")
+                    time.sleep(0.01)
+                yield ResponseComplete()
             finally:
                 draining.set()
-                await asyncio.to_thread(release.wait, 3)
+                release.wait(3)
 
-        self.accounts._providers[self.gemini].stream = stream
+        self.accounts._providers[self.gemini]._stream_provider_events = stream
         with ThreadPoolExecutor(1) as pool:
             send = pool.submit(
                 self.accounts.send,
@@ -517,7 +517,7 @@ class AccountConcurrencyTests(unittest.TestCase):
                 send.result(2)
         self.assertEqual(self.accounts._sending[self.gemini], 0)
 
-    def test_slow_archive_write_does_not_block_another_provider_stream_or_loop(self):
+    def test_slow_archive_write_does_not_block_another_provider_stream(self):
         archive = self.accounts.archive()
         entered, release = threading.Event(), threading.Event()
         original = archive.save_turn
@@ -535,11 +535,10 @@ class AccountConcurrencyTests(unittest.TestCase):
                 self.assertTrue(entered.wait(1))
                 second = pool.submit(self.send, "chatgpt/default")
                 self.assertTrue(self.entered["chatgpt/default"].wait(1))
-                self.assertEqual(self.accounts.call(responsive_pulse(), timeout=1), "responsive")
+                second.result(2)
             finally:
                 release.set()
             first.result(2)
-            second.result(2)
 
     def test_same_account_waits_for_persistence_and_preserves_both_turns(self):
         archive = self.accounts.archive()
@@ -569,7 +568,7 @@ class AccountConcurrencyTests(unittest.TestCase):
     def test_runtime_drains_accepted_response_before_closing_archive_extension(self):
         archive = self.accounts.archive()
         entered, release, closing = threading.Event(), threading.Event(), threading.Event()
-        original_put, original_close = archive.save_turn, self.accounts.close
+        original_put, original_begin = archive.save_turn, self.accounts.begin_shutdown
 
         def slow(account, remote, value):
             entered.set()
@@ -577,13 +576,13 @@ class AccountConcurrencyTests(unittest.TestCase):
                 raise TimeoutError("test barrier")
             return original_put(account, remote, value)
 
-        def close_accounts():
+        def begin_accounts_shutdown():
             closing.set()
-            return original_close()
+            return original_begin()
 
         with (
             patch.object(archive, "save_turn", side_effect=slow),
-            patch.object(self.accounts, "close", side_effect=close_accounts),
+            patch.object(self.accounts, "begin_shutdown", side_effect=begin_accounts_shutdown),
             ThreadPoolExecutor(2) as pool,
         ):
             sending = pool.submit(self.send, self.gemini)
@@ -616,11 +615,12 @@ class AccountConcurrencyTests(unittest.TestCase):
                 refresh.assert_called_once()
                 self.assertFalse(background.call_args.kwargs["session_bound"])
 
-    def test_catalog_disk_write_does_not_block_the_provider_loop(self):
+    def test_catalog_disk_write_stores_hot_cache_before_blocking_another_account(self):
         entered, release = threading.Event(), threading.Event()
         original = self.accounts.repository.put
-        self.accounts._providers[self.gemini].models = AsyncMock(
-            return_value=ModelCatalog(FeatureState.AVAILABLE, (Model("fixture", "Fixture"),))
+        refs = [ModelRef("gemini", "fixture", "Fixture")]
+        self.accounts._providers[self.gemini].models = Mock(
+            list=Mock(return_value=refs), refresh=Mock(return_value=refs)
         )
 
         def slow(key, kind, value):
@@ -637,24 +637,27 @@ class AccountConcurrencyTests(unittest.TestCase):
             discovering = pool.submit(self.accounts.models, self.gemini, True)
             try:
                 self.assertTrue(entered.wait(1))
-                self.assertEqual(self.accounts.call(responsive_pulse(), timeout=1), "responsive")
+                self.assertEqual(
+                    self.send("chatgpt/default")["conversation_id"],
+                    identity("chatgpt/default", "c_fixture"),
+                )
             finally:
                 release.set()
-            self.assertEqual(discovering.result(2).models[0].id, "fixture")
+            self.assertEqual(discovering.result(2).chat_models[0].id, "fixture")
 
     def test_http_discovery_for_one_account_does_not_block_another(self):
-        from webai_provider.api import FeatureState, Model, ModelCatalog
-
         release = threading.Event()
-        catalog = ModelCatalog(FeatureState.AVAILABLE, (Model("fixture", "Fixture"),))
         for key in self.entered:
+            provider_id = key.split("/", 1)[0]
+            refs = [ModelRef(provider_id, "fixture", "Fixture")]
 
-            async def models(key=key, *, force=False):
+            def discover(*, key=key, refs=refs):
                 self.entered[key].set()
-                await asyncio.to_thread(release.wait, 3)
-                return catalog
+                if not release.wait(3):
+                    raise TimeoutError("test barrier")
+                return refs
 
-            self.accounts._providers[key] = SimpleNamespace(models=models, close=AsyncMock())
+            self.accounts._providers[key].models = Mock(list=discover, refresh=discover)
         with ThreadPoolExecutor(2) as pool:
             first = pool.submit(self.accounts.models, self.gemini, True)
             try:
@@ -663,12 +666,10 @@ class AccountConcurrencyTests(unittest.TestCase):
                 self.assertTrue(self.entered["chatgpt/default"].wait(1))
             finally:
                 release.set()
-            self.assertEqual(first.result(2).models[0].id, "fixture")
-            self.assertEqual(second.result(2).models[0].id, "fixture")
+            self.assertEqual(first.result(2).chat_models[0].id, "fixture")
+            self.assertEqual(second.result(2).chat_models[0].id, "fixture")
 
-    def test_closed_account_service_cannot_restart_its_background_loop(self):
+    def test_closed_account_service_rejects_provider_operations(self):
         self.accounts.close()
         with self.assertRaisesRegex(RuntimeError, "kapalı"):
-            self.accounts._start()
-        with self.assertRaisesRegex(RuntimeError, "kapalı"):
-            self.accounts.call(asyncio.sleep(0))
+            self.accounts.open_provider(self.gemini)

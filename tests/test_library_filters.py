@@ -3,11 +3,12 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import Mock, patch
 
-from webai_provider.api import Conversation, Origin, Page
-from webai_provider.providers.gemini.history import conversations
-from webai_provider.providers.gemini.notebooks import project_from_native
+from webaiprovider.collections import Page
+from webaiprovider.providers.gemini.history import parse_chat_page
+from webaiprovider.providers.gemini.notebooks import project_from_native
+from webaiprovider.resources.chat.types import Conversation
 
 from tests.account_fixture import configured_application as create_application
 from tests.fakes import Accounts
@@ -50,9 +51,8 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual(read_time.call_count, len(rows))
 
     def test_gemini_native_dates_are_normalized_for_both_record_types(self):
-        chat = conversations(
-            [[None, None, [["c_x", "Title", None, None, None, [100, 500000000]]]]],
-            lambda cid: Origin("gemini", "a", cid),
+        chat = parse_chat_page(
+            [[None, None, [["c_x", "Title", None, None, None, [100, 500000000]]]]]
         )[0]
         self.assertEqual(chat.metadata["updated_at"], 100.5)
         row = notebook()
@@ -100,15 +100,14 @@ class LibraryTests(unittest.TestCase):
                 accounts.browser_connected = lambda _: True
                 for key in ("chatgpt/default", second):
                     provider = accounts.provider(key)
-                    provider.list_chats = AsyncMock(
-                        return_value=Page((Conversation(Origin(*key.split("/"), "c"), key),))
-                    )
+                    provider._opened = True
+                    provider._list_chats_data = Mock(return_value=Page((Conversation("c", key),)))
                 before = accounts.active()
                 page = accounts.list_chats(account_keys={second})
                 self.assertEqual(len(page["items"]), 1)
                 self.assertEqual(page["items"][0]["account_id"], second.split("/")[1])
                 self.assertEqual(accounts.active(), before)
-                accounts._providers["chatgpt/default"].list_chats.assert_not_called()
+                accounts._providers["chatgpt/default"]._list_chats_data.assert_not_called()
             finally:
                 app.runtime.close()
 

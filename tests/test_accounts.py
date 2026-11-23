@@ -1,6 +1,5 @@
 """Account identity, cache isolation and terminal routing without real sessions."""
 
-import asyncio
 import json
 import os
 import subprocess
@@ -12,31 +11,23 @@ from dataclasses import asdict
 from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, call, patch
+from unittest.mock import Mock, patch
 
-from webai_provider.api import (
-    AccountPaused,
-    Capability,
-    Content,
-    Conversation,
+from webaiprovider import AccountPaused, RateLimited
+from webaiprovider.collections import Page
+from webaiprovider.resources.chat.types import Conversation
+from webaiprovider.resources.message.protocol import (
     ConversationBound,
-    FeatureState,
-    Message,
-    Model,
-    ModelCatalog,
-    Origin,
-    Page,
-    RateLimited,
-    ReplaceText,
+    ResponseComplete,
     TextDelta,
+    TextReplacement,
 )
+from webaiprovider.resources.message.types import Content, MessageData
+from webaiprovider.resources.model.model import ModelRef
+from webaiprovider.resources.project.types import ProjectData
 
 from accounts import Accounts, identity, origin
 from tests.account_fixture import configured_application as create_application
-
-
-async def never_finishes(**_kwargs):
-    await asyncio.Event().wait()
 
 
 class AccountTests(unittest.TestCase):
@@ -47,51 +38,6 @@ class AccountTests(unittest.TestCase):
         self.addCleanup(self.api.runtime.close)
         self.accounts = self.api.get("accounts")
         self.gemini = self.accounts.add("gemini", "Personal Gemini")
-
-    def test_account_database_history_is_promoted_to_archive(self):
-        remote = "fallback-cache-chat"
-        self.accounts.repository.cache_put(
-            self.gemini,
-            "conversation",
-            remote,
-            {"id": remote, "title": "Fallback", "messages": [{"role": "user", "text": "saved"}]},
-        )
-        self.accounts.repository.cache_set_active(self.gemini, remote)
-
-        self.accounts._promote_fallback_cache()
-
-        archive = self.accounts.archive()
-        self.assertEqual(archive.get(self.gemini, "conversation", remote)["title"], "Fallback")
-        self.assertEqual(archive.get(self.gemini, "pointer", "active"), {"remote": remote})
-        self.assertFalse(self.accounts.repository.cache_exists(self.gemini, "conversation", remote))
-        self.assertIsNone(self.accounts.repository.cache_active(self.gemini))
-
-    def test_account_database_tombstone_is_promoted_to_archive(self):
-        remote = "fallback-deleted-chat"
-        self.accounts.repository.cache_mark_deleted(self.gemini, remote)
-
-        self.accounts._promote_fallback_cache()
-
-        self.assertTrue(self.accounts.archive().deleted(self.gemini, "conversation", remote))
-        self.assertFalse(self.accounts.repository.cache_is_deleted(self.gemini, remote))
-        self.assertIsNone(self.accounts.archive().get(self.gemini, "conversation", remote))
-
-    def test_account_database_history_remains_readable_when_archive_is_disabled(self):
-        remote = "fallback-cache-chat"
-        self.accounts.repository.cache_put(
-            self.gemini,
-            "conversation",
-            remote,
-            {
-                "id": remote,
-                "title": "Fallback",
-                "messages": [{"role": "assistant", "text": "kept"}],
-            },
-        )
-        self.accounts.repository.cache_set_active(self.gemini, remote)
-        with patch.object(self.accounts, "archive", return_value=None):
-            self.assertEqual(self.accounts.cached(self.gemini, remote)["title"], "Fallback")
-            self.assertEqual(self.accounts.active_conversation(self.gemini), remote)
 
     def test_shutdown_drains_active_pointer_to_archive_before_fallback_is_selected(self):
         self.accounts.set_active(self.gemini, "chat-before-close")
@@ -169,9 +115,10 @@ class AccountTests(unittest.TestCase):
         with (
             patch.object(self.accounts, "browser_connected", side_effect=AssertionError("browser")),
             patch(
-                "webai_provider.providers.chatgpt.session.BrowserSession.launch",
+                "webaiprovider.providers.chatgpt.auth.BrowserSession.capture_auth",
                 side_effect=AssertionError("browser"),
             ),
+            patch("subprocess.Popen", side_effect=AssertionError("browser")),
         ):
             self.assertEqual(self.accounts.status(self.gemini)["transport"], "http")
             self.assertFalse(self.accounts.status(self.gemini)["authenticated"])
@@ -199,9 +146,9 @@ class AccountTests(unittest.TestCase):
         nested_metadata = {"details": {"items": ["source"]}}
         content = Content("text", "A large body", metadata=nested_metadata)
         chat = Conversation(
-            Origin("gemini", self.gemini.split("/", 1)[1], "remote-chat"),
+            "remote-chat",
             "Memory check",
-            (Message("m1", "assistant", (content,)),),
+            (MessageData("m1", "assistant", (content,)),),
         )
 
         record = self.accounts.chat_record(self.gemini, chat)
@@ -210,48 +157,35 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(archived_content, asdict(content))
         self.assertIs(archived_content["metadata"], nested_metadata)
 
-    def test_runtime_shutdown_does_not_cancel_provider_loop_cleanup(self):
-        self.accounts.call(asyncio.sleep(0))
-        thread = self.accounts._thread
-
-        self.api.runtime.close()
-
-        self.assertTrue(self.accounts.closed)
-        self.assertFalse(thread.is_alive())
-
-    def test_begin_shutdown_releases_threads_waiting_for_provider_reads(self):
-        started, cancelled = Event(), Event()
-
-        async def blocked_read():
-            started.set()
-            try:
-                await asyncio.sleep(30)
-            finally:
-                cancelled.set()
-
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            pending = pool.submit(self.accounts.call, blocked_read())
-            self.assertTrue(started.wait(1))
-            self.accounts.begin_shutdown()
-            with self.assertRaises(CancelledError):
-                pending.result(timeout=1)
-
-        self.assertTrue(cancelled.wait(1))
-
     def test_begin_shutdown_cancels_active_provider_stream_promptly(self):
         started, cancelled = Event(), Event()
 
-        async def stream(_request):
+        def stream(_request):
             started.set()
             try:
-                await asyncio.Event().wait()
+                deadline = time.monotonic() + 5.0
+                while time.monotonic() < deadline:
+                    with self.accounts._lock:
+                        stop = (
+                            all(
+                                getattr(op, "_cancelled", False)
+                                for op in self.accounts._active_operations
+                            )
+                            if self.accounts._active_operations
+                            else True
+                        )
+                    if stop:
+                        break
+                    yield TextDelta("", "final")
+                    time.sleep(0.01)
             finally:
                 cancelled.set()
             yield TextDelta("unreachable")
+            yield ResponseComplete()
 
-        provider = Mock()
-        provider.close = AsyncMock()
-        provider.stream = stream
+        provider = self.accounts.provider(self.gemini)
+        provider._opened = True
+        provider._stream_provider_events = stream
         self.accounts._providers[self.gemini] = provider
 
         with ThreadPoolExecutor(max_workers=1) as pool:
@@ -261,116 +195,10 @@ class AccountTests(unittest.TestCase):
             self.assertTrue(started.wait(1))
             self.accounts.begin_shutdown()
             with self.assertRaises(CancelledError):
-                pending.result(timeout=1)
+                pending.result(timeout=2)
 
         self.assertTrue(cancelled.wait(1))
         self.assertEqual(self.accounts._sending.get(self.gemini), 0)
-
-    def test_shutdown_drains_background_persistence_before_stopping_loop(self):
-        persisted = Event()
-
-        async def write_later():
-            await asyncio.sleep(0.02)
-            persisted.set()
-
-        async def schedule_write():
-            asyncio.create_task(write_later(), name="siope-persist:test")
-
-        self.accounts.call(schedule_write())
-        self.api.runtime.close()
-
-        self.assertTrue(persisted.is_set())
-
-    def test_shutdown_keeps_a_live_event_loop_open_for_retry(self):
-        loop, thread = Mock(), Mock()
-        loop.is_running.return_value = True
-        loop.is_closed.return_value = False
-        thread.is_alive.side_effect = (True, True)
-        self.accounts._loop, self.accounts._thread = loop, thread
-
-        def close_coroutine(coroutine, *, _closing=False):
-            coroutine.close()
-
-        try:
-            with (
-                patch.object(self.accounts, "call", side_effect=close_coroutine),
-                self.assertLogs("accounts", level="ERROR") as logs,
-                self.assertRaisesRegex(RuntimeError, "remains open"),
-            ):
-                self.accounts.close()
-            self.assertIn("event loop did not stop", logs.output[-1])
-            loop.close.assert_not_called()
-            loop.call_soon_threadsafe.assert_has_calls(
-                [call(self.api.tasks.begin_shutdown), call(loop.stop)]
-            )
-            self.assertIs(self.accounts._loop, loop)
-            self.assertIs(self.accounts._thread, thread)
-        finally:
-            self.accounts._loop = self.accounts._thread = None
-
-    def test_shutdown_timeout_does_not_stop_or_close_the_live_event_loop(self):
-        loop, thread = Mock(), Mock()
-        loop.is_running.return_value = True
-        loop.is_closed.return_value = False
-        thread.is_alive.return_value = True
-        self.accounts._loop, self.accounts._thread = loop, thread
-
-        def time_out(coroutine, *, _closing=False):
-            coroutine.close()
-            raise TimeoutError("slow provider close")
-
-        try:
-            with (
-                patch.object(self.accounts, "call", side_effect=time_out),
-                self.assertLogs("accounts", level="ERROR") as logs,
-                self.assertRaisesRegex(RuntimeError, "remains open"),
-            ):
-                self.accounts.close()
-            self.assertIn("cleanup timed out", logs.output[-1])
-            loop.call_soon_threadsafe.assert_called_once_with(self.api.tasks.begin_shutdown)
-            loop.close.assert_not_called()
-            thread.join.assert_not_called()
-            self.assertIs(self.accounts._loop, loop)
-        finally:
-            self.accounts._loop = self.accounts._thread = None
-
-    def test_timeout_closes_provider_coroutine_that_never_started(self):
-        self.accounts._start()
-        loop = self.accounts._loop
-        loop_errors = []
-        loop.call_soon_threadsafe(
-            loop.set_exception_handler, lambda _, context: loop_errors.append(context)
-        )
-        entered, release = Event(), Event()
-
-        def block_provider_loop():
-            entered.set()
-            release.wait(2)
-
-        self.accounts._loop.call_soon_threadsafe(block_provider_loop)
-        self.assertTrue(entered.wait(1))
-
-        async def pending():
-            return None
-
-        coroutine = pending()
-        try:
-            with self.assertRaises(TimeoutError):
-                self.accounts.call(coroutine, timeout=0.01)
-            self.assertIsNone(coroutine.cr_frame)
-        finally:
-            release.set()
-            drained = Event()
-
-            def drain(turns=5):
-                if turns:
-                    loop.call_soon(drain, turns - 1)
-                else:
-                    drained.set()
-
-            loop.call_soon_threadsafe(drain)
-            self.assertTrue(drained.wait(1))
-            self.assertEqual(loop_errors, [])
 
     def test_verification_survives_closed_browser_and_account_service_restart(self):
         self.accounts.credentials(self.gemini).save({"session": "verified test session"})
@@ -386,14 +214,14 @@ class AccountTests(unittest.TestCase):
     def test_transport_failure_preserves_verification_but_auth_rejection_invalidates_it(self):
         self.accounts.credentials(self.gemini).save({"session": "verified test session"})
         self.accounts._remember_verification(self.gemini)
-        provider = Mock()
-        provider.models = AsyncMock(side_effect=RuntimeError("connection refused"))
-        provider.close = AsyncMock()
+        provider = self.accounts.provider(self.gemini)
+        provider._opened = True
+        provider.models = Mock(refresh=Mock(side_effect=RuntimeError("connection refused")))
         self.accounts._providers[self.gemini] = provider
         with self.assertRaisesRegex(RuntimeError, "connection refused"):
             self.accounts.models(self.gemini, force=True)
         self.assertTrue(self.accounts.status(self.gemini)["authenticated"])
-        provider.models.side_effect = AccountPaused("Sign in required")
+        provider.models.refresh.side_effect = AccountPaused("Sign in required")
         with self.assertRaises(AccountPaused):
             self.accounts.models(self.gemini, force=True)
         self.assertFalse(self.accounts.status(self.gemini)["authenticated"])
@@ -409,28 +237,30 @@ class AccountTests(unittest.TestCase):
             self.assertEqual(state["transport"], "http")
 
     def test_catalog_single_flight_cache_and_account_local_disk_snapshot(self):
-        catalog = ModelCatalog(FeatureState.AVAILABLE, (Model("gemini-test", "Gemini"),))
+        refs = [ModelRef("gemini", "gemini-test", "Gemini")]
 
-        async def discover(*, force=False):
-            await asyncio.sleep(0.04)
-            return catalog
+        def discover():
+            time.sleep(0.04)
+            return refs
 
-        provider = Mock()
-        provider.models = AsyncMock(side_effect=discover)
-        provider.close = AsyncMock()
+        provider = self.accounts.provider(self.gemini)
+        provider._opened = True
+        provider.models = Mock(
+            list=Mock(side_effect=discover),
+            refresh=Mock(side_effect=discover),
+        )
         self.accounts._providers[self.gemini] = provider
         with ThreadPoolExecutor(3) as pool:
             values = list(pool.map(lambda _: self.accounts.models(self.gemini), range(3)))
-        self.assertEqual(provider.models.await_count, 1)
-        self.assertTrue(all(v == catalog for v in values))
-        self.assertEqual(self.accounts.models(self.gemini), catalog)
-        self.assertEqual(provider.models.await_count, 1)
+        self.assertEqual(provider.models.list.call_count, 1)
+        self.assertEqual(values[0].chat_models[0].id, "gemini-test")
+        self.assertTrue(all(v == values[0] for v in values))
+        self.assertEqual(self.accounts.models(self.gemini), values[0])
+        self.assertEqual(provider.models.list.call_count, 1)
         self.accounts.models(self.gemini, force=True)
-        self.assertEqual(provider.models.await_count, 2)
-        self.assertFalse(provider.models.await_args_list[0].kwargs["force"])
-        self.assertTrue(provider.models.await_args_list[1].kwargs["force"])
+        self.assertEqual(provider.models.refresh.call_count, 1)
         fresh = Accounts(self.api)
-        self.assertEqual(fresh.cached_models(self.gemini), catalog)
+        self.assertEqual(fresh.cached_models(self.gemini), values[0])
         self.assertIsNone(fresh.cached_models("chatgpt/default"))
 
     def test_background_preparation_skips_accounts_without_credentials(self):
@@ -449,71 +279,67 @@ class AccountTests(unittest.TestCase):
             {"key": self.gemini, "enabled": True},
             {"key": failed_key, "enabled": True},
         ]
-        selected = SimpleNamespace(prepare=AsyncMock(), prepare_for_send=AsyncMock())
-        other = SimpleNamespace(prepare=AsyncMock(), prepare_for_send=AsyncMock())
-        failed = SimpleNamespace(
-            prepare=AsyncMock(side_effect=RuntimeError("offline")),
-            prepare_for_send=AsyncMock(),
+        self.accounts.set_active(selected_key, "active-chat")
+        self.accounts.set_active(self.gemini, "other-chat")
+        selected = Mock(opened=False, open=Mock(), models=Mock(list=Mock(return_value=[])))
+        other = Mock(opened=False, open=Mock(), models=Mock(list=Mock(return_value=[])))
+        failed = Mock(
+            opened=False,
+            open=Mock(side_effect=RuntimeError("offline")),
+            models=Mock(list=Mock(return_value=[])),
         )
         providers = {selected_key: selected, self.gemini: other, failed_key: failed}
+        self.accounts._providers.update(providers)
         with (
             patch.object(self.accounts, "items", return_value=items),
             patch("accounts.service.session_exists", return_value=True),
-            patch.object(self.accounts, "provider", side_effect=providers.__getitem__),
+            patch.object(self.accounts, "prepare_chat") as prepare_chat,
         ):
             failures = self.accounts.prepare_enabled(selected_key=selected_key)
         self.assertEqual(failures, {failed_key: "offline"})
-        selected.prepare.assert_awaited_once_with()
-        selected.prepare_for_send.assert_awaited_once_with()
-        other.prepare.assert_awaited_once_with()
-        other.prepare_for_send.assert_not_awaited()
-        failed.prepare_for_send.assert_not_awaited()
+        selected.open.assert_called_once_with()
+        selected.models.list.assert_called_once_with()
+        prepare_chat.assert_called_once_with(selected_key, "active-chat")
+        other.open.assert_called_once_with()
+        other.models.list.assert_called_once_with()
+        failed.models.list.assert_not_called()
 
     def test_failed_refresh_preserves_last_usable_model_catalog(self):
-        good = ModelCatalog(FeatureState.AVAILABLE, (Model("m", "Model"),))
-        provider = Mock()
-        provider.models = AsyncMock(return_value=good)
-        provider.close = AsyncMock()
+        refs = [ModelRef("gemini", "m", "Model")]
+        provider = self.accounts.provider(self.gemini)
+        provider._opened = True
+        provider.models = Mock(
+            list=Mock(return_value=refs),
+            refresh=Mock(side_effect=RuntimeError("offline")),
+        )
         self.accounts._providers[self.gemini] = provider
-        self.accounts.models(self.gemini)
-        provider.models.return_value = ModelCatalog(FeatureState.UNKNOWN, reason="offline")
+        good = self.accounts.models(self.gemini)
         with self.assertRaisesRegex(RuntimeError, "offline"):
             self.accounts.models(self.gemini, force=True)
         self.assertIs(self.accounts.cached_models(self.gemini), good)
 
-    def test_read_timeout_releases_catalog_single_flight_for_retry(self):
-        provider = Mock()
-        provider.models = AsyncMock(side_effect=never_finishes)
-        provider.close = AsyncMock()
+    def test_failed_catalog_discovery_releases_lock_for_retry(self):
+        provider = self.accounts.provider(self.gemini)
+        provider._opened = True
+        provider.models = Mock(list=Mock(side_effect=TimeoutError("timed out")))
         self.accounts._providers[self.gemini] = provider
-        with patch("accounts.service.MODEL_TIMEOUT", 0.02):
-            with self.assertRaises(TimeoutError):
-                self.accounts.models(self.gemini)
-        self.assertNotIn(self.gemini, self.accounts._catalog_tasks)
-        provider.models = AsyncMock(
-            return_value=ModelCatalog(FeatureState.AVAILABLE, (Model("m", "M"),))
-        )
-        self.assertEqual(self.accounts.models(self.gemini).models[0].id, "m")
-        started = time.monotonic()
         with self.assertRaises(TimeoutError):
-            self.accounts.call(asyncio.sleep(10), timeout=0.02)
-        self.assertLess(time.monotonic() - started, 1)
+            self.accounts.models(self.gemini)
+        provider.models = Mock(list=Mock(return_value=[ModelRef("gemini", "m", "M")]))
+        self.assertEqual(self.accounts.models(self.gemini).chat_models[0].id, "m")
 
     def test_history_timeout_isolated_from_other_account(self):
         self.accounts.status = lambda key: {"saved_snapshot": True}
         for key in (self.gemini, "chatgpt/default"):
-            provider = Mock()
-            provider.close = AsyncMock()
-            provider.list_chats = (
-                AsyncMock(side_effect=never_finishes)
+            provider = self.accounts.provider(key)
+            provider._opened = True
+            provider._list_chats_data = (
+                Mock(side_effect=TimeoutError("timed out"))
                 if key == self.gemini
-                else AsyncMock(
-                    return_value=Page((Conversation(Origin("chatgpt", "default", "chat"), "GPT"),))
-                )
+                else Mock(return_value=Page((Conversation("chat", "GPT"),)))
             )
             self.accounts._providers[key] = provider
-        with patch("accounts.history.HISTORY_TIMEOUT", 0.2):
-            page = self.accounts.list_chats()
+        page = self.accounts.list_chats()
         self.assertEqual(len(page["items"]), 1)
         self.assertEqual(page["errors"], ["Personal Gemini"])
 
@@ -572,11 +398,10 @@ class AccountTests(unittest.TestCase):
     def test_accounts_without_saved_sessions_are_reported_instead_of_silently_omitted(self):
         self.accounts.status = lambda _: {"saved_snapshot": False}
         for key in ("chatgpt/default", self.gemini):
-            provider = Mock()
-            provider.capabilities = {Capability.PROJECTS}
-            provider.close = AsyncMock()
-            provider.list_chats = AsyncMock(side_effect=RuntimeError("No saved session"))
-            provider.list_projects = AsyncMock(side_effect=RuntimeError("No saved session"))
+            provider = self.accounts.provider(key)
+            provider._opened = True
+            provider._list_chats_data = Mock(side_effect=RuntimeError("No saved session"))
+            provider._list_projects_data = Mock(side_effect=RuntimeError("No saved session"))
             self.accounts._providers[key] = provider
         for page in (self.accounts.list_chats(), self.accounts.all_projects()):
             self.assertEqual(set(page["failed_accounts"]), {"chatgpt/default", self.gemini})
@@ -584,20 +409,19 @@ class AccountTests(unittest.TestCase):
             self.assertEqual(page["items"], [])
 
     def test_authoritative_unassigned_chat_clears_remembered_notebook_membership(self):
-        origin = Origin("gemini", self.gemini.split("/")[1], "c_chat")
-        linked = Conversation(origin, "Chat", project_id="notebooks/abcdef")
+        linked = Conversation("c_chat", "Chat", project=ProjectData("notebooks/abcdef", ""))
         self.assertIsNotNone(self.accounts.chat_record(self.gemini, linked)["project_id"])
-        plain = Conversation(origin, "Chat", metadata={"project_membership_known": True})
+        plain = Conversation("c_chat", "Chat", metadata={"project_membership_known": True})
         self.assertIsNone(self.accounts.chat_record(self.gemini, plain)["project_id"])
 
     def test_mixed_list_filter_and_account_pagination(self):
         self.accounts.status = lambda _: {"saved_snapshot": True}
         for key in ("chatgpt/default", self.gemini):
-            provider = Mock()
-            provider.close = AsyncMock()
-            provider.list_chats = AsyncMock(
+            provider = self.accounts.provider(key)
+            provider._opened = True
+            provider._list_chats_data = Mock(
                 return_value=Page(
-                    (Conversation(Origin(*key.split("/"), "same"), key),),
+                    (Conversation("same", key),),
                     "50" if key.startswith("chatgpt") else None,
                 )
             )
@@ -614,7 +438,7 @@ class AccountTests(unittest.TestCase):
         filtered = self.accounts.list_chats({"gemini"})
         self.assertEqual([item["provider_id"] for item in filtered["items"]], ["gemini"])
         self.accounts.list_chats(cursor=page["cursor"])
-        self.accounts._providers["chatgpt/default"].list_chats.assert_awaited_with(
+        self.accounts._providers["chatgpt/default"]._list_chats_data.assert_called_with(
             cursor="50", limit=50
         )
 
@@ -641,13 +465,14 @@ class AccountTests(unittest.TestCase):
         self.assertEqual([item["id"] for item in page["items"]], ["known", "first", "later"])
 
     def test_send_cache_and_temporary_mode_are_account_scoped(self):
-        async def stream(request):
-            yield ReplaceText("Answer")
+        def stream(request):
+            yield TextReplacement("Answer")
             yield ConversationBound("same")
+            yield ResponseComplete()
 
-        provider = Mock()
-        provider.close = AsyncMock()
-        provider.stream = stream
+        provider = self.accounts.provider(self.gemini)
+        provider._opened = True
+        provider._stream_provider_events = stream
         self.accounts._providers[self.gemini] = provider
         result = self.accounts.send(self.gemini, None, "Q", [], Mock(), Mock())
         self.assertEqual(origin(result["conversation_id"])[0], self.gemini)
@@ -665,23 +490,25 @@ class AccountTests(unittest.TestCase):
         self.accounts._remember_verification(self.gemini)
         calls = 0
 
-        async def stream(_request):
+        def stream(_request):
             nonlocal calls
             calls += 1
             if calls == 1:
                 raise RateLimited()
-            yield ReplaceText("Answer")
+            yield TextReplacement("Answer")
             yield ConversationBound("same")
+            yield ResponseComplete()
 
-        provider = Mock()
-        provider.close = AsyncMock()
-        provider.stream = stream
+        provider = self.accounts.provider(self.gemini)
+        provider._opened = True
+        provider._stream_provider_events = stream
         self.accounts._providers[self.gemini] = provider
 
         with self.assertRaises(RateLimited):
             self.accounts.send(self.gemini, None, "Q", [], Mock(), Mock())
         self.assertTrue(self.accounts.status(self.gemini)["authenticated"])
 
+        provider._stream_provider_events = Mock(side_effect=RateLimited())
         with self.assertRaises(RateLimited) as blocked:
             self.accounts.send(self.gemini, None, "Q", [], Mock(), Mock())
         self.assertEqual(blocked.exception.code, "rate_limited")
@@ -689,17 +516,18 @@ class AccountTests(unittest.TestCase):
         self.assertNotIn(self.gemini, self.accounts._verification_required)
 
     def test_view_callback_failure_does_not_truncate_archived_text_or_reasoning(self):
-        async def stream(_request):
+        def stream(_request):
             yield ConversationBound("callback-case")
-            yield TextDelta("discarded")
-            yield TextDelta("old thought", channel="analysis")
-            yield ReplaceText("final")
-            yield ReplaceText("canonical thought", channel="analysis")
-            yield TextDelta(" answer")
+            yield TextDelta("old thought", channel="analysis", part_id="thoughts")
+            yield TextDelta("discarded", part_id="answer")
+            yield TextReplacement("canonical thought", channel="analysis", part_id="thoughts")
+            yield TextReplacement("final", part_id="answer")
+            yield TextDelta(" answer", part_id="answer")
+            yield ResponseComplete()
 
-        provider = Mock()
-        provider.close = AsyncMock()
-        provider.stream = stream
+        provider = self.accounts.provider(self.gemini)
+        provider._opened = True
+        provider._stream_provider_events = stream
         self.accounts._providers[self.gemini] = provider
         calls = 0
 
@@ -708,11 +536,11 @@ class AccountTests(unittest.TestCase):
             calls += 1
             raise RuntimeError("view closed during stream")
 
-        with self.assertLogs("tasks", level="WARNING") as logs:
+        with self.assertLogs("accounts", level="WARNING") as logs:
             self.accounts.send(self.gemini, None, "Question", [], failing_view, Mock())
             messages = self.accounts.cached(self.gemini, "callback-case")["messages"]
 
-        self.assertIn("Detached failing task observer", logs.output[0])
+        self.assertIn("Detached failing stream observer", logs.output[0])
         self.assertEqual(calls, 1)
         self.assertEqual(
             [(message["role"], message["text"]) for message in messages],
@@ -724,49 +552,62 @@ class AccountTests(unittest.TestCase):
         )
 
     def test_local_history_failure_keeps_successful_send_and_conversation_identity(self):
-        async def stream(_request):
+        def stream(_request):
             yield ConversationBound("archive-failure")
-            yield ReplaceText("accepted response")
+            yield TextReplacement("accepted response")
+            yield ResponseComplete()
 
-        provider = Mock()
-        provider.close = AsyncMock()
-        provider.stream = stream
+        provider = self.accounts.provider(self.gemini)
+        provider._opened = True
+        provider._stream_provider_events = stream
         self.accounts._providers[self.gemini] = provider
 
-        with patch.object(self.accounts, "cached", side_effect=RuntimeError("local read failed")):
+        with patch.object(
+            self.accounts, "cached_window", side_effect=RuntimeError("local read failed")
+        ):
             result = self.accounts.send(self.gemini, None, "Question", [], Mock(), Mock())
 
         self.assertEqual(result["conversation_id"], identity(self.gemini, "archive-failure"))
-        self.assertEqual(result["cache_warning"], "Yanıt alındı ancak yerel arşive kaydedilemedi")
+        self.assertEqual(result["cache_warning"], "Yanıt alındı ancak yerel geçmiş okunamadı")
 
     def test_stop_cancels_a_cross_account_upload_before_chat_submission(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "source.txt"
             path.write_text("source", encoding="utf-8")
             upload_started, upload_cancelled, stream_started = Event(), Event(), Event()
+            stopped = Event()
 
-            async def upload(_path):
+            def upload(_path):
                 upload_started.set()
-                try:
-                    await asyncio.sleep(30)
-                finally:
-                    upload_cancelled.set()
+                stopped.wait(3)
+                upload_cancelled.set()
+                return {"id": "uploaded"}
 
-            async def stream(_request):
+            def stream(_request):
                 stream_started.set()
                 yield ConversationBound("should-not-send")
+                yield ResponseComplete()
 
-            provider = Mock()
-            provider.close = AsyncMock()
-            provider.capabilities = frozenset({Capability.ATTACHMENTS, Capability.CHAT})
+            provider = self.accounts.provider(self.gemini)
+            provider._opened = True
             provider.attachment_policy = lambda: {
                 "max_files": 10,
                 "max_bytes": 20 * 1024 * 1024,
             }
             provider.upload_file = upload
-            provider.stream = stream
+            provider._stream_provider_events = stream
             self.accounts._providers[self.gemini] = provider
             connections = []
+
+            def capture_connection(connection):
+                original_close = connection.close
+
+                def close_and_wake():
+                    original_close()
+                    stopped.set()
+
+                connection.close = close_and_wake
+                connections.append(connection)
 
             with ThreadPoolExecutor(max_workers=1) as pool:
                 future = pool.submit(
@@ -784,7 +625,7 @@ class AccountTests(unittest.TestCase):
                         }
                     ],
                     Mock(),
-                    connections.append,
+                    capture_connection,
                 )
                 self.assertTrue(upload_started.wait(2))
                 self.assertEqual(len(connections), 1)
@@ -797,10 +638,106 @@ class AccountTests(unittest.TestCase):
             self.assertEqual(self.accounts._sending.get(self.gemini), 0)
 
     def test_cross_account_project_move_fails_before_provider_call(self):
-        provider = Mock()
+        provider = self.accounts.provider(self.gemini)
+        provider._opened = True
+        provider._move_chat_data = Mock()
         self.accounts._providers[self.gemini] = provider
         with self.assertRaises(ValueError):
             self.accounts.callbacks(self.gemini)["move_conversation"](
                 identity(self.gemini, "chat"), identity("chatgpt/default", "g-p-work")
             )
-        provider.move_chat.assert_not_called()
+        provider._move_chat_data.assert_not_called()
+
+    def test_models_without_saved_session_does_not_poison_verification_required(self):
+        from webaiprovider import AccountPaused
+
+        with self.assertRaises(AccountPaused):
+            self.accounts.models(self.gemini)
+        self.assertNotIn(self.gemini, self.accounts._verification_required)
+        self.assertIsNone(self.accounts.repository.get(self.gemini, "verification"))
+        self.assertTrue(self.accounts.account_is_visible(self.gemini))
+
+    def test_prepare_chat_deduplicates_concurrent_calls_and_skips_while_sending(self):
+        import threading
+
+        entered = threading.Event()
+        release = threading.Event()
+        calls = 0
+
+        class FakeChat:
+            remote_id = "c-1"
+            temporary = False
+
+            def prepare(self):
+                nonlocal calls
+                calls += 1
+                entered.set()
+                release.wait(2)
+
+        provider = self.accounts.provider(self.gemini)
+        provider._opened = True
+        self.accounts._providers[self.gemini] = provider
+        self.accounts._chats[self.gemini, "c-1"] = FakeChat()
+        setattr(self.accounts._chats[self.gemini, "c-1"], "provider", provider)
+
+        t1 = threading.Thread(
+            target=self.accounts.prepare_chat,
+            args=(self.gemini, identity(self.gemini, "c-1")),
+        )
+        t1.start()
+        self.assertTrue(entered.wait(2))
+        self.accounts.prepare_chat(self.gemini, identity(self.gemini, "c-1"))
+        release.set()
+        t1.join(timeout=2)
+        self.assertEqual(calls, 1)
+
+        with self.accounts._lock:
+            self.accounts._sending[self.gemini] = 1
+        try:
+            self.accounts.prepare_chat(self.gemini, identity(self.gemini, "c-1"))
+        finally:
+            with self.accounts._lock:
+                self.accounts._sending[self.gemini] = 0
+        self.assertEqual(calls, 1)
+
+    def test_schedule_chat_prepare_deduplicates_typing_and_retriggers_on_project_change(self):
+        from tui.chat.view import ChatView
+
+        prepared = []
+        service = Mock()
+        service.active.return_value = self.gemini
+        service.active_accounts.return_value = [{"key": self.gemini}]
+        service.archive.return_value = None
+        service.cached_models.return_value = None
+        service.capabilities.return_value = frozenset()
+        service.callbacks.return_value = {
+            "load_conversation": Mock(),
+            "send_prompt": Mock(),
+        }
+        service.status.return_value = {"authenticated": True, "saved_snapshot": True}
+        service.preference.return_value = {}
+        service.prepare_chat = lambda key, cid=None, *, project_id=None: prepared.append(
+            (key, cid, project_id)
+        )
+        view = ChatView(
+            lambda: [],
+            Mock(),
+            Mock(),
+            account_service=service,
+        )
+        view.app = SimpleNamespace(is_running=True, invalidate=lambda: None)
+        view._read_in_background = lambda read, ok, err, **kw: ok(read())
+        try:
+            view.input.text = "M"
+            view.input.text = "Me"
+            view.input.text = "Mer"
+            self.assertEqual(len(prepared), 1)
+            self.assertEqual(prepared[0], (self.gemini, None, None))
+
+            view.current_project = {"id": identity(self.gemini, "p-1"), "name": "Proje"}
+            view._save_active_tab()
+            view._schedule_chat_prepare()
+            self.assertEqual(len(prepared), 2)
+            self.assertEqual(prepared[1], (self.gemini, None, identity(self.gemini, "p-1")))
+        finally:
+            view.close_background_work(wait=True)

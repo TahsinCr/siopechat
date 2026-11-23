@@ -4,57 +4,57 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import Mock, patch
 
-from webai_provider.api import FeatureState, GeminiProvider, Model, ModelCatalog, Origin
-from webai_provider.providers.gemini.history import conversations, history
+from webaiprovider import Account, GeminiProvider
+from webaiprovider.providers.gemini.errors import GeminiCompatibilityError
+from webaiprovider.providers.gemini.history import parse_chat_history, parse_chat_page
 
+from accounts.shared import AccountCatalog, CatalogModel, ModelCatalogState
 from bootstrap import create_application
 
 
-class NativeHistoryTests(unittest.IsolatedAsyncioTestCase):
-    async def test_http_history_read_does_not_wait_for_the_composer_gate(self):
-        import asyncio
+class NativeHistoryTests(unittest.TestCase):
+    def test_http_history_read_does_not_wait_for_the_composer_gate(self):
+        provider = GeminiProvider(Account("default", "gemini", Path("unused")))
+        provider._opened = True
+        provider.rpc.call = Mock(return_value=[[[]]])
+        with provider._gate:
+            result = provider.chats.get("c_abc")
+        self.assertEqual(result.responses.list(), [])
 
-        provider = GeminiProvider(Path("unused"))
-        provider.rpc.call = AsyncMock(return_value=[[[]]])
-        async with provider._gate:
-            result = await asyncio.wait_for(provider.get_chat("c_abc"), 0.2)
-        self.assertEqual(result.messages, ())
-
-    async def test_notebooks_share_the_account_http_reader(self):
-        provider = GeminiProvider(Path("unused"), "personal")
-        provider.rpc.call = AsyncMock(return_value=[])
-        self.assertEqual((await provider.notebooks.list()).items, ())
-        provider.rpc.call.assert_awaited_once_with(
-            "CNgdBe", [2, ["en"], 0, None, [2]], "/notebooks/view"
+    def test_notebooks_share_the_account_http_reader(self):
+        provider = GeminiProvider(Account("personal", "gemini", Path("unused")))
+        provider._opened = True
+        provider.rpc.call = Mock(return_value=[])
+        self.assertEqual(provider.projects.list(), [])
+        provider.rpc.call.assert_called_once_with(
+            "CNgdBe", [2, ["en"], 0, None, [2]], "/notebooks/view", allow_empty=False
         )
 
-    async def test_history_uses_only_the_owned_account_http_session(self):
-        provider = GeminiProvider(Path("unused"))
+    def test_history_uses_only_the_owned_account_http_session(self):
+        provider = GeminiProvider(Account("default", "gemini", Path("unused")))
+        provider._opened = True
         client = SimpleNamespace(
-            batch=AsyncMock(return_value=SimpleNamespace(text='[["wrb.fr","hNvQHb","[[]]"]]'))
+            batch=Mock(return_value=SimpleNamespace(text='[["wrb.fr","hNvQHb","[[]]"]]'))
         )
-        provider.rpc.connect = AsyncMock(return_value=client)
-        with patch("asyncio.create_subprocess_exec", side_effect=AssertionError("browser")):
-            self.assertEqual((await provider.get_chat("c_abc")).messages, ())
+        provider.rpc.connect = Mock(return_value=client)
+        with patch("subprocess.Popen", side_effect=AssertionError("browser")):
+            self.assertEqual(provider.chats.get("c_abc").responses.list(), [])
 
     def test_empty_pinned_page_is_valid_and_contract_errors_are_explicit(self):
-        def origin(cid):
-            return Origin("gemini", "a", cid)
-
-        self.assertEqual(len(conversations([[], [None, None, [["c_abc", "Title"]]]], origin)), 1)
-        with self.assertRaisesRegex(Exception, "sözleşmesi"):
-            conversations([[None]], origin)
+        self.assertEqual(len(parse_chat_page([[], [None, None, [["c_abc", "Title"]]]])), 1)
+        with self.assertRaisesRegex(GeminiCompatibilityError, "contract changed"):
+            parse_chat_page([[None]])
 
     def test_general_chat_list_preserves_notebook_membership(self):
         rows = [
             ["c_project", "Notebook chat", None, None, None, None, None, "notebooks/abcdef"],
             ["c_plain", "General chat", None, None, None, None, None, None],
         ]
-        chats = conversations([[None, None, rows]], lambda cid: Origin("gemini", "a", cid))
-        self.assertEqual(chats[0].project_id, "notebooks/abcdef")
-        self.assertIsNone(chats[1].project_id)
+        chats = parse_chat_page([[None, None, rows]])
+        self.assertEqual(chats[0].project.id, "notebooks/abcdef")
+        self.assertIsNone(chats[1].project)
         self.assertTrue(all(c.metadata["project_membership_known"] for c in chats))
 
     def test_history_preserves_ids_published_thoughts_and_raw_media_metadata(self):
@@ -64,7 +64,7 @@ class NativeHistoryTests(unittest.IsolatedAsyncioTestCase):
         activity[7] = [["favicon", "https://example.com/result", "Published result"]]
         candidate[37] = [["Published thought"], [activity]]
         turn = [[None, "r_id"], None, [["Question"]], [[candidate]]]
-        chat = history([[turn]], lambda cid: Origin("gemini", "a", cid), "c_abc")
+        chat = parse_chat_history([[turn]], "c_abc")
         self.assertEqual([m.channel for m in chat.messages], [None, "analysis", None])
         self.assertIn("Published thought", chat.messages[1].content[0].text)
         self.assertIn("Searching the web", chat.messages[1].content[0].text)
@@ -86,7 +86,7 @@ class NativeHistoryTests(unittest.IsolatedAsyncioTestCase):
         activity[7] = [["favicon", "https://example.com/result", "Published result"]]
         candidate[37] = [["Published thought"], [activity]]
         turn = [[None, "r_id"], None, [["Question"]], [[candidate]]]
-        chat = history([[turn]], lambda cid: Origin("gemini", "a", cid), "c_abc")
+        chat = parse_chat_history([[turn]], "c_abc")
         with tempfile.TemporaryDirectory() as folder:
             api = create_application(Path(folder))
             try:
@@ -108,15 +108,13 @@ class NativeHistoryTests(unittest.IsolatedAsyncioTestCase):
 
 class PassiveStartupTests(unittest.TestCase):
     def test_saved_accounts_use_cached_data_without_a_browser_probe(self):
-        import time
-
         with tempfile.TemporaryDirectory() as folder:
             api = create_application(Path(folder))
             try:
                 a = api.get("accounts")
                 key = a.add("gemini", "Gemini")
-                catalog = ModelCatalog(FeatureState.AVAILABLE, (Model("m", "Model"),))
-                a._catalogs[key] = (time.monotonic(), catalog)
+                catalog = AccountCatalog(ModelCatalogState.AVAILABLE, (CatalogModel("m", "Model"),))
+                a._catalogs[key] = (0, catalog)
                 a.archive().put(key, "conversation", "c_abc", {"messages": [], "title": "Cached"})
                 with patch.object(
                     a, "browser_connected", side_effect=AssertionError("browser probe")

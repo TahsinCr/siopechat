@@ -9,13 +9,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from webai_provider.api import Capability
+from webaiprovider import Capability
 
 from bootstrap import create_application
-from language import Catalog, literal
 from settings import DEFAULTS
 from tests import tui_support as interaction
 from tests.tui_support import ResizableOutput, screen_text
+from tui.lang import Catalog, literal, load_catalog
+from tui.settings import SettingsCatalog
 from tui.styles import ICONS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def bundles():
     return {
-        locale: json.loads((ROOT / "src/lang" / (locale + ".json")).read_text(encoding="utf-8"))
+        locale: json.loads((ROOT / "src/tui/lang" / (locale + ".json")).read_text(encoding="utf-8"))
         for locale in ("en", "tr", "ru")
     }
 
@@ -45,7 +46,7 @@ class LocalizationTests(unittest.TestCase):
             return result
 
         for locale in ("en", "tr", "ru"):
-            path = ROOT / "src/lang" / (locale + ".json")
+            path = ROOT / "src/tui/lang" / (locale + ".json")
             with self.subTest(locale=locale):
                 json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
 
@@ -69,33 +70,30 @@ class LocalizationTests(unittest.TestCase):
         self.assertEqual(literal(messages, " \n "), " \n ")
         self.assertEqual(catalog().merged("ru-RU")["application.save"], "Сохранить")
 
-    def test_russian_is_available_with_both_bundled_extensions(self):
+    def test_russian_is_available_from_bundled_catalog_and_settings(self):
         with tempfile.TemporaryDirectory() as directory:
             api = create_application(Path(directory))
             try:
-                self.assertIn("ru", api.languages.locales())
+                languages = load_catalog()
+                self.assertIn("ru", languages.locales())
                 api.settings.update("application", {"language": "ru"})
-                merged = api.languages.merged("ru")
-                self.assertIn("компоновки", merged["layout.enabled"])
-                self.assertEqual(merged["archive.enabled"], "Локальный архив и синхронизация")
-                from settings import SettingsCatalog
-
-                rows = SettingsCatalog(api).rows()
+                merged = languages.merged("ru")
+                self.assertEqual(merged["application.settings"], "Настройки")
+                self.assertEqual(merged["application.category_providers"], "Провайдеры")
+                rows = SettingsCatalog(api, languages=languages).rows()
                 self.assertIn(
                     "ru", next(row["choices"] for row in rows if row["key"] == "language")
                 )
             finally:
                 api.runtime.close()
 
-    def test_bundled_extensions_do_not_depend_on_checkout_location(self):
+    def test_bundled_application_and_tui_do_not_depend_on_checkout_location(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with patch("bootstrap.__file__", str(root / "installed" / "bootstrap.py")):
                 api = create_application(root / "home")
             try:
-                statuses = api.get("extensions").statuses()
-                self.assertEqual(statuses["layout"].state, "active")
-                self.assertEqual(statuses["archive"].state, "active")
+                self.assertEqual(set(load_catalog().locales()), {"en", "ru", "tr"})
             finally:
                 api.runtime.close()
 

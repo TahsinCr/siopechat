@@ -245,9 +245,9 @@ class TabMemoryReleaseTests(unittest.TestCase):
     def test_chatgpt_client_forget_conversation_clears_only_the_selected_cache(self):
         from unittest.mock import Mock
 
-        from webai_provider.api import ChatGPTClient
+        from webaiprovider.providers.chatgpt.client import ChatGPTClient
 
-        client = ChatGPTClient(Mock(), authenticate=False)
+        client = ChatGPTClient(Mock(session_file=None), authenticate=False)
         dummy_conv = {
             "conversation_id": "c1",
             "current_node": "m1",
@@ -261,14 +261,14 @@ class TabMemoryReleaseTests(unittest.TestCase):
         client._remember_conversation(dummy_conv)
         second = dict(dummy_conv, conversation_id="c2")
         client._remember_conversation(second)
-        self.assertIn("c1", client._continuation_cache)
-        self.assertIn("c2", client._continuation_cache)
-        self.assertGreater(client._continuation_cache_text_chars, 0)
+        self.assertIsNotNone(client._cached_continuation("c1"))
+        self.assertIsNotNone(client._cached_continuation("c2"))
+        self.assertGreater(client._continuation_cache.stats().bytes, 0)
 
-        client.forget_conversation("c1")
-        self.assertNotIn("c1", client._continuation_cache)
-        self.assertIn("c2", client._continuation_cache)
-        self.assertGreater(client._continuation_cache_text_chars, 0)
+        client._forget_conversation("c1")
+        self.assertIsNone(client._cached_continuation("c1"))
+        self.assertIsNotNone(client._cached_continuation("c2"))
+        self.assertGreater(client._continuation_cache.stats().bytes, 0)
 
     def test_tab_memory_trim_is_scheduled_in_the_background(self):
         with terminal() as (view, _):

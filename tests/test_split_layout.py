@@ -4,8 +4,8 @@ import asyncio
 import unittest
 from unittest.mock import patch
 
-from extensions.layout.panes import SplitLayout, _Pane
 from tests import tui_support as interaction
+from tui.workspaces.panes import SplitLayout, _Pane
 
 
 class SplitTests(unittest.IsolatedAsyncioTestCase):

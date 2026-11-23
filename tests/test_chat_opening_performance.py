@@ -27,7 +27,7 @@ class OpeningPerformanceTests(unittest.IsolatedAsyncioTestCase):
                 threads.append(threading.get_ident())
                 return original(renderer, *args)
 
-            def cached(*_):
+            def cached(*_, **_kwargs):
                 self.assertNotEqual(threading.get_ident(), ui_thread)
                 entered.set()
                 if not release.wait(3):
@@ -40,7 +40,7 @@ class OpeningPerformanceTests(unittest.IsolatedAsyncioTestCase):
             try:
                 with (
                     terminal(account_service=accounts) as (v, _),
-                    patch.object(accounts, "cached", cached),
+                    patch.object(accounts, "cached_window", cached),
                     patch.object(v, "refresh_provider_catalog"),
                     patch.object(MessageRenderer, "render", render),
                 ):

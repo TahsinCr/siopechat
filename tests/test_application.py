@@ -1,23 +1,30 @@
+import json
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import nullcontext
 from pathlib import Path
-from unittest.mock import Mock, patch
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from webaiprovider import MemoryCredentialStore, RateLimited
+from webaiprovider.providers.chatgpt.auth import BrowserSession
+from webaiprovider.providers.chatgpt.client import ChatGPTClient
+from webaiprovider.transport.base import Transport
+
+from bootstrap import create_application
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class ApplicationTests(unittest.TestCase):
     def setUp(self):
-        import backend as module
-        from backend import BackendService
-
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
-        self.app = BackendService(Path(self.directory.name))
-        self.module = module
+        self.app = create_application(Path(self.directory.name))
+        self.addCleanup(self.app.runtime.close)
 
     def test_source_entrypoint_works_outside_repository(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -41,82 +48,126 @@ class ApplicationTests(unittest.TestCase):
         self.assertIn("workspace", result.stdout)
         self.assertIn("auth", result.stdout)
 
-    def test_daemon_spawn_uses_module_and_preserves_foreground_diagnostic(self):
-        process = Mock(returncode=1)
-        process.poll.return_value = 1
-        with tempfile.TemporaryDirectory() as directory:
-            with patch.object(self.module.subprocess, "Popen", return_value=process) as spawn:
-                with patch.object(self.app, "daemon_is_ready", return_value=False):
-                    with self.assertRaisesRegex(self.module.ChatGPTWebError, "foreground"):
-                        self.app.start_daemon(
-                            Path(directory) / "daemon.sock", "http://localhost:9222"
-                        )
-        self.assertEqual(spawn.call_args.args[0][1:3], ["-m", "bootstrap"])
-        self.assertTrue(spawn.call_args.kwargs["env"]["PYTHONPATH"].startswith(str(ROOT / "src")))
-
-    def test_fullscreen_network_callbacks_do_not_duplicate_daemon_cache_writes(self):
-        from tui import chat
+    def test_fullscreen_wires_native_account_callbacks_and_workspaces(self):
         from tui.application import run_fullscreen
+        from tui.chat.view import ChatView
 
-        backend = Mock()
-        backend.daemon_request.return_value = {"conversation": {"id": "example", "messages": []}}
-        backend.daemon_stream_request.return_value = {
-            "conversation": {"id": "example", "messages": []}
-        }
-        api = Mock()
-        from settings import DEFAULTS
+        captured = {}
 
-        api.settings.snapshot.return_value = DEFAULTS
-        accounts = Mock()
-        accounts.active.return_value = "chatgpt/default"
-        accounts.archive.return_value = None
-        accounts.callbacks.return_value = {
-            "load_conversation": Mock(return_value={"id": "example"}),
-            "send_prompt": Mock(return_value={}),
-        }
-        api.get.side_effect = lambda key: {
-            "accounts": accounts,
-            "backend": backend,
-            "data_root": Path("unused-root/data"),
-            "state_root": Path("unused-root/state"),
-        }.get(key, Mock())
-        with patch.object(chat, "run_tui") as run_tui:
-            with patch.object(self.app, "cache_conversation") as cache:
-                run_fullscreen(api, Path("unused.sock"))
-                callbacks = run_tui.call_args.args
-                self.assertEqual(callbacks[1]("example")["id"], "example")
-                callbacks[2]("example", "hello", [], Mock(), Mock())
-                cache.assert_not_called()
+        def fake_run(view):
+            captured["view"] = view
+            captured["rows"] = view.settings_rows()
+            captured["updated"] = view.change_setting("application", "language", "tr")
+            captured["workspaces"] = view.list_workspaces()
+            captured["layout_list"] = view.invoke_action("layout.list")
+            captured["actions"] = view.list_actions()
+            captured["sidebar_caps"] = view._sidebar_provider_capabilities("chatgpt")
+            captured["grok_caps"] = view._sidebar_provider_capabilities("grok")
 
-    def test_rename_updates_cache_at_daemon_boundary(self):
-        client = Mock()
-        with patch.object(self.app, "rename_cached_conversation") as cache:
-            self.app.handle_daemon_command(
-                client,
-                {
-                    "command": "rename",
-                    "conversation_id": "example",
-                    "title": " New name ",
-                },
+        with patch.object(ChatView, "run", fake_run):
+            result = run_fullscreen(self.app)
+
+        self.assertEqual(result, 0)
+        view = captured["view"]
+        self.assertEqual(view.title, "New conversation")
+        self.assertIs(view.account_service, self.app.accounts)
+        self.assertEqual(captured["workspaces"], [])
+        self.assertEqual(captured["layout_list"], [])
+        self.assertEqual(captured["updated"]["settings"]["application"]["language"], "tr")
+        self.assertTrue(any(row["section"] == "application" for row in captured["rows"]))
+        self.assertTrue(any(action["id"] == "layout.list" for action in captured["actions"]))
+        self.assertIn("rename", {c.value for c in captured["sidebar_caps"]})
+        self.assertIn("delete", {c.value for c in captured["sidebar_caps"]})
+        self.assertNotIn("effort", {c.value for c in captured["grok_caps"]})
+
+    def test_fullscreen_initializes_with_configured_account_real_callbacks(self):
+        from tui.application import run_fullscreen
+        from tui.chat.view import ChatView
+
+        key = self.app.accounts.add("chatgpt", "Work")
+        self.app.accounts.select(key)
+        captured = {}
+
+        def fake_run(view):
+            captured["view"] = view
+
+        with patch.object(ChatView, "run", fake_run):
+            result = run_fullscreen(self.app)
+
+        self.assertEqual(result, 0)
+        view = captured["view"]
+        self.assertEqual(view.account_key, key)
+        self.assertTrue(callable(view.list_projects_callback))
+        self.assertTrue(callable(view.get_project_callback))
+        self.assertTrue(callable(view.list_project_chats_callback))
+        self.assertTrue(callable(view.attach_file_callback))
+        self.assertTrue(callable(view.attachment_policy_callback))
+        self.assertTrue(callable(view.release_conversation))
+
+    def test_cli_providers_reports_real_per_provider_capabilities(self):
+        from io import StringIO
+
+        from cli import main as cli_main
+
+        stdout = StringIO()
+        with patch("sys.stdout", stdout):
+            code = cli_main(self.app, ["providers"])
+        self.assertEqual(code, 0)
+        providers = {item["id"]: item for item in json.loads(stdout.getvalue())}
+        self.assertIn("effort", providers["chatgpt"]["capabilities"])
+        self.assertIn("chat_branch", providers["chatgpt"]["capabilities"])
+        self.assertNotIn("effort", providers["grok"]["capabilities"])
+        self.assertNotIn("chat_branch", providers["grok"]["capabilities"])
+        self.assertNotIn("chat_branch", providers["claude"]["capabilities"])
+        self.assertNotIn("project_membership", providers["gemini"]["capabilities"])
+
+    def test_settings_change_rejects_unknown_provider_setting_key(self):
+        with self.assertRaises(ValueError):
+            self.app.actions.invoke_sync(
+                "settings.change",
+                section="providers.chatgpt",
+                key="unknown_field",
+                value=True,
             )
-        client.rename_conversation.assert_called_once_with("example", "New name")
-        cache.assert_called_once_with("example", "New name")
 
     def test_rate_limit_is_not_automatically_retried(self):
-        import httpx
-        from webai_provider.api import ChatGPTClient, RateLimited
-
         calls = []
 
-        def handle(request):
-            calls.append(request)
-            return httpx.Response(429, headers={"retry-after": "30"}, json={})
+        class RateLimitTransport(Transport):
+            def __init__(self):
+                super().__init__("https://chatgpt.com")
 
-        client = object.__new__(ChatGPTClient)
-        client.headers = {}
-        with httpx.Client(transport=httpx.MockTransport(handle)) as http:
-            client.http = http
+            def send(self, method, path, **options):
+                calls.append((method, path))
+                response = SimpleNamespace(
+                    status_code=429,
+                    headers={"retry-after": "30"},
+                    content=json.dumps({}).encode(),
+                    text="{}",
+                    json=lambda: {},
+                )
+                self._check_response(response, options.get("check_status", True))
+                return response
+
+            def stream(self, method, path, **options):
+                return nullcontext()
+
+            def close(self):
+                pass
+
+        store = MemoryCredentialStore(
+            {
+                "version": 1,
+                "url": "https://chatgpt.com/backend-api/conversations",
+                "headers": {"authorization": "Bearer token"},
+            }
+        )
+        transport = RateLimitTransport()
+        client = ChatGPTClient(BrowserSession(store), authenticate=False, transport=transport)
+        try:
             with self.assertRaises(RateLimited) as raised:
                 client.request("GET", "https://chatgpt.com/backend-api/me")
+        finally:
+            client.close()
         self.assertEqual(raised.exception.retry_after, 30)
         self.assertEqual(len(calls), 1)

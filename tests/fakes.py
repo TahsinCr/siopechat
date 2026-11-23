@@ -1,17 +1,11 @@
-"""Controllable offline providers shared by behavioral tests."""
+"""Controllable offline providers shared by behavioral tests (webaiprovider v2)."""
 
-import asyncio
+from __future__ import annotations
 
-from webai_provider.api import (
-    Capability,
-    Choice,
-    ConversationBound,
-    FeatureState,
-    Model,
-    ModelCatalog,
-    SendRequest,
-    TextDelta,
-)
+from webaiprovider import Capability
+from webaiprovider.resources.model.model import ModelCatalogState
+
+from accounts.shared import AccountCatalog, CatalogChoice, CatalogModel
 
 
 class Accounts:
@@ -66,46 +60,11 @@ class Accounts:
         return {"items": [], "cursor": None}
 
     def callbacks(self, key):
-        model = Model(key, key, (Choice("standard", "Standart"),))
+        model = CatalogModel(key, key, (CatalogChoice("standard", "Standart"),))
         return {
-            "load_catalog": lambda: ModelCatalog(FeatureState.AVAILABLE, (model,)),
+            "load_catalog": lambda: AccountCatalog(ModelCatalogState.AVAILABLE, (model,)),
             "list_projects_callback": lambda cursor=None: {"items": [], "cursor": None},
             "session_action": lambda _: self.status(key),
             "attach_file_callback": lambda path: {"id": "file-test", "name": "demo.pdf"},
             "load_conversation": lambda _: {"messages": []},
         }
-
-
-class ControlledProvider:
-    capabilities = frozenset(Capability)
-
-    def __init__(self, provider_id="gpt"):
-        self.id = provider_id
-        self.started = asyncio.Queue()
-        self.releases = {}
-        self.closed = set()
-        self.calls = []
-        self.failure = None
-        self.failures = {}
-
-    async def stream(self, request):
-        self.calls.append(request)
-        release = self.releases.setdefault(request.chat_id, asyncio.Event())
-        await self.started.put(request.chat_id)
-        try:
-            yield ConversationBound(f"remote-{request.chat_id}")
-            yield TextDelta("partial")
-            await release.wait()
-            failure = self.failures.get(request.chat_id, self.failure)
-            if failure is not None:
-                raise failure
-            yield TextDelta(" response")
-        finally:
-            self.closed.add(request.chat_id)
-
-    def release(self, chat_id):
-        self.releases.setdefault(chat_id, asyncio.Event()).set()
-
-
-def request(chat_id="one", provider="gpt", account="default", **kwargs):
-    return SendRequest(provider, account, chat_id, "hello", **kwargs)

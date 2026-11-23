@@ -29,8 +29,7 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(rows.message_index(0))
 
     async def test_visible_toolbar_stays_attached_during_progressive_history_loading(self):
-        from extensions.archive.repository import Files, SQLiteRepository
-        from extensions.archive.sync import Archive
+        from archive import Archive, Files, SQLiteRepository
         from tests.tui_support import ResizableOutput
 
         with tempfile.TemporaryDirectory() as directory:
@@ -91,7 +90,7 @@ class TranscriptPaintTests(unittest.IsolatedAsyncioTestCase):
                 archive.close()
 
     async def test_inactive_pane_maps_old_toolbar_after_history_is_prepended(self):
-        from extensions.layout.panes import _Pane
+        from tui.workspaces.panes import _Pane
 
         old = [
             {"id": str(i), "role": "assistant", "text": f"Answer {i}", "_archive_ordinal": i}

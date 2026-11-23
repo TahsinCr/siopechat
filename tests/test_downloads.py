@@ -1,14 +1,17 @@
 """Safe, streaming and atomic file downloads."""
 
+import contextlib
 import os
 import tempfile
 import threading
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
+from urllib.parse import urlsplit
 
 import httpx
-from webai_provider.api import DownloadSource, NativeDownloadClient
+from webaiprovider.transport.downloader import DownloadSource, NativeDownloadClient
 
 from downloads import Downloads
 from settings import Settings
@@ -275,10 +278,29 @@ class DownloadTests(unittest.TestCase):
             service = Downloads(self.settings, self.root, self.accounts)
             result = service.fetch("account", f"http://127.0.0.1:{server.server_port}/file")
             self.assertEqual(Path(result["path"]).read_bytes(), payload)
+
+            def native_session(**_kwargs):
+                client = httpx.Client(timeout=httpx.Timeout(120, connect=15), trust_env=False)
+
+                @contextlib.contextmanager
+                def stream_from_http(method, url, headers=None, **_opts):
+                    target = urlsplit(url)._replace(scheme="http").geturl()
+                    with client.stream(method, target, headers=headers) as resp:
+                        yield SimpleNamespace(
+                            status_code=resp.status_code,
+                            headers=resp.headers,
+                            iter_content=lambda chunk_size=65536: resp.iter_bytes(chunk_size),
+                        )
+
+                return SimpleNamespace(
+                    cookies=client.cookies, stream=stream_from_http, close=client.close
+                )
+
             self.accounts.resolve_download.side_effect = lambda key, url, *args: DownloadSource(
                 url, force_download=True, client_factory=NativeDownloadClient
             )
-            native = service.fetch("account", f"http://127.0.0.1:{server.server_port}/file")
+            with patch("curl_cffi.requests.Session", side_effect=native_session):
+                native = service.fetch("account", f"https://127.0.0.1:{server.server_port}/file")
             self.assertEqual(Path(native["path"]).read_bytes(), payload)
         finally:
             server.shutdown()

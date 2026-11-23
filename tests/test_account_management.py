@@ -4,7 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock, patch
 
 from settings import Settings
 from tests.account_fixture import configured_application as create_application
@@ -69,7 +69,8 @@ class AccountManagementTests(unittest.TestCase):
         self.assertTrue(reloaded.snapshot()["accounts"]["items"][-1]["enabled"])
 
     def test_logout_preserves_archive_and_hides_it_until_reverification(self):
-        from webai_provider.api import Capability
+        from webaiprovider import Capability
+        from webaiprovider.accounts.status import SessionState, SessionStatus
 
         archive = self.api.get("archive")
         chat_page = {
@@ -89,8 +90,9 @@ class AccountManagementTests(unittest.TestCase):
         self.verify_account(self.gemini)
         self.accounts._providers[self.gemini] = Mock(
             capabilities=frozenset({Capability.PROJECTS}),
-            forget_session=AsyncMock(),
-            close=AsyncMock(),
+            opened=True,
+            forget_session=Mock(return_value=SessionStatus(SessionState.LOGIN_REQUIRED, False)),
+            close=Mock(),
             transport=Mock(authenticated=True),
         )
 

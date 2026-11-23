@@ -2,12 +2,16 @@
 
 import asyncio
 import tempfile
+import threading
 import unittest
 from dataclasses import replace
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
-from webai_provider.api import Capability, Origin, Project, ProjectEditing, ProjectOptions, Resource
+from webaiprovider import Attachment, Capability, Project
+from webaiprovider.resources.project.mutations import ProjectMutationsMixin
+from webaiprovider.resources.project.types import ProjectData, ProjectOptions
 
 from bootstrap import create_application
 from tests import tui_support as interaction
@@ -16,21 +20,29 @@ from tests.tui_support import immediate, terminal
 from tui.projects import ProjectPanel
 
 
-class ProjectWriteTests(unittest.IsolatedAsyncioTestCase):
-    async def test_native_write_is_not_repeated_while_readback_is_eventually_consistent(self):
-        provider = ProjectEditing()
-        provider.id, provider.account_id = "claude", "personal"
-        provider._gate = asyncio.Lock()
-        old = Project(Origin("claude", "personal", "one"), "Old")
+class _StubProjectProvider(ProjectMutationsMixin):
+    def __init__(self, editor, reader):
+        self.id = "claude"
+        self.account_id = "personal"
+        self._gate = threading.Lock()
+        self.editor = editor
+        self._get_project_data = reader
+        self._invalidate_project_cache = Mock()
+
+
+class ProjectWriteTests(unittest.TestCase):
+    def test_native_write_is_not_repeated_while_readback_is_eventually_consistent(self):
+        old = ProjectData("one", "Old")
         new = replace(old, name="New", instructions="Instructions")
-        provider.editor = Mock(write=AsyncMock())
-        provider.get_project = AsyncMock(side_effect=[old, old, new])
-        with patch("webai_provider.base.asyncio.sleep", new=AsyncMock()):
-            self.assertEqual(await provider.update_project(new), new)
-        provider.editor.write.assert_awaited_once()
-        with self.assertRaisesRegex(ValueError, "başka"):
-            await provider.update_project(replace(new, origin=Origin("gemini", "personal", "one")))
-        provider.editor.write.assert_awaited_once()
+        editor = Mock(spec=["update"], update=Mock(return_value=None))
+        reader = Mock(side_effect=[old, old, new])
+        provider = _StubProjectProvider(editor, reader)
+        with patch("webaiprovider.resources.project.mutations.time.sleep"):
+            self.assertEqual(
+                provider._patch_project("one", name="New", instructions="Instructions"),
+                new,
+            )
+        editor.update.assert_called_once()
 
 
 class ProjectFormTests(unittest.IsolatedAsyncioTestCase):
@@ -143,16 +155,22 @@ class ProjectArchiveTests(unittest.TestCase):
             try:
                 accounts = api.get("accounts")
                 key = accounts.add("chatgpt", "Test")
-                account_id = key.split("/", 1)[1]
                 source = Path(folder) / "source.pdf"
                 source.write_bytes(b"private source body")
-                project = Project(
-                    Origin("chatgpt", account_id, "one"),
-                    "Project",
-                    resources=(Resource("source-1", "source.pdf", "application/pdf"),),
+                project = Project("one", "Project", remote_id="one")
+
+                def add_attachment(*_args, **_kwargs):
+                    att = Attachment("source-1", "source.pdf", media_type="application/pdf")
+                    project.attachments._items.append(att)
+                    return att
+
+                project.attachments = SimpleNamespace(
+                    _items=[], create=Mock(side_effect=add_attachment)
                 )
                 provider = Mock(
-                    add_project_resource=AsyncMock(return_value=project), close=AsyncMock()
+                    opened=True,
+                    projects=Mock(get=Mock(return_value=project)),
+                    close=Mock(),
                 )
                 accounts._providers[key] = provider
 
@@ -203,10 +221,13 @@ class ProjectArchiveTests(unittest.TestCase):
             api = create_application(Path(folder))
             try:
                 accounts = api.get("accounts")
-                project = Project(
-                    Origin("chatgpt", "default", "one"),
-                    "Saved",
-                    resources=(Resource("a", "Source"),),
+                project = SimpleNamespace(
+                    id="one",
+                    remote_id="one",
+                    title="Saved",
+                    instruction=SimpleNamespace(_text=""),
+                    attachments=SimpleNamespace(_items=(Attachment("a", "Source"),)),
+                    _provider_project=None,
                 )
                 with patch.object(api.get("archive"), "put", side_effect=OSError("disk full")):
                     value = accounts.store_project("chatgpt/default", project)

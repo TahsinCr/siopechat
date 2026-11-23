@@ -9,12 +9,11 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from prompt_toolkit.utils import get_cwidth
-from webai_provider.api import normalize_message
 
-from backend import BackendService
 from bootstrap import create_application
 from tests.tui_support import immediate, terminal
 from tui.markdown import visible_chat_message
+from tui.settings import SettingsPanel
 from tui.styles import ICONS
 from tui.tab_session import TabSessionStore
 
@@ -44,30 +43,30 @@ class WorkspaceTests(unittest.TestCase):
             v.settings_dialog.close()
             self.assertEqual(v.messages[0]["text"], "Keep")
 
-    def test_extension_category_toggle_uses_lifecycle(self):
+    def test_provider_category_toggle_updates_settings(self):
         with tempfile.TemporaryDirectory() as directory:
             api = create_application(Path(directory))
             self.addCleanup(api.runtime.close)
+            panel = SettingsPanel(api)
 
             def change(section, key, value):
                 asyncio.run(
                     api.actions.invoke("settings.change", section=section, key=key, value=value)
                 )
-                return api.settings.snapshot()
+                return {"settings": api.settings.snapshot()}
 
-            with terminal(
-                settings_rows=lambda: asyncio.run(api.actions.invoke("settings.show")),
-                change_setting=change,
-            ) as (v, _):
+            with terminal(settings_rows=panel.rows, change_setting=change) as (v, _):
                 v._read_in_background = immediate
-                v.settings_dialog.open("extensions")
+                v.settings_dialog.open("providers")
                 i = next(
-                    i for i, r in enumerate(v.settings_dialog.filtered) if r["key"] == "enabled"
+                    i
+                    for i, r in enumerate(v.settings_dialog.filtered)
+                    if r["section"] == "providers.gemini" and r["key"] == "enabled"
                 )
                 v.settings_dialog.toggle(i)
-                self.assertFalse(v.layout_enabled)
+                self.assertFalse(api.accounts.enabled("gemini"))
                 v.settings_dialog.toggle(i)
-                self.assertTrue(v.layout_enabled)
+                self.assertTrue(api.accounts.enabled("gemini"))
 
     def test_project_and_temporary_contexts_are_per_tab(self):
         move = Mock()
@@ -92,16 +91,31 @@ class WorkspaceTests(unittest.TestCase):
             self.assertFalse(v.temporary)
 
     def test_reasoning_is_visible_but_hidden_protocol_nodes_are_not(self):
-        raw = {
-            "author": {"role": "assistant"},
-            "channel": "analysis",
-            "content": {"content_type": "thoughts", "thoughts": [{"summary": "Summary"}]},
-        }
-        self.assertEqual(
-            visible_chat_message(normalize_message(raw)), {"role": "reasoning", "text": "Summary"}
-        )
-        raw["metadata"] = {"is_visually_hidden_from_conversation": True}
-        self.assertIsNone(visible_chat_message(normalize_message(raw)))
+        from webaiprovider import Account, ChatGPTProvider, MemoryCredentialStore
+
+        provider = ChatGPTProvider(Account("default", "chatgpt", MemoryCredentialStore({})))
+        try:
+            raw = {
+                "author": {"role": "assistant"},
+                "channel": "analysis",
+                "content": {"content_type": "thoughts", "thoughts": [{"summary": "Summary"}]},
+            }
+            msg = provider._message(raw, allow_actions=True)
+            self.assertEqual(
+                visible_chat_message(
+                    {
+                        "role": msg.role,
+                        "channel": msg.channel,
+                        "text": msg.content[0].text,
+                    }
+                ),
+                {"role": "reasoning", "text": "Summary"},
+            )
+            self.assertIsNone(
+                visible_chat_message({"role": "assistant", "hidden": True, "text": "Summary"})
+            )
+        finally:
+            provider.close()
 
     def test_reasoning_stream_does_not_replace_final_answer(self):
         def send(*args, **kw):
@@ -528,14 +542,17 @@ class WorkspaceTests(unittest.TestCase):
             self.assertTrue(v.projects_loaded)
 
     def test_temporary_cache_never_writes(self):
-        b = BackendService()
-        with (
-            patch.object(b, "atomic_json_write") as write,
-            patch.object(b, "set_active_conversation") as active,
-        ):
-            b.cache_conversation({"id": "temp", "temporary": True, "messages": []})
-            write.assert_not_called()
-            active.assert_not_called()
+        with tempfile.TemporaryDirectory() as directory:
+            api = create_application(Path(directory))
+            try:
+                key = api.accounts.add("chatgpt", "ChatGPT")
+                api.accounts.cache_conversation(
+                    key, {"id": "temp", "temporary": True, "messages": []}
+                )
+                self.assertIsNone(api.archive.get(key, "conversation", "temp"))
+                self.assertIsNone(api.accounts.active_conversation(key))
+            finally:
+                api.runtime.close()
 
     def test_queued_message_is_saved_as_draft_in_session(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -691,7 +708,8 @@ class WorkspaceTests(unittest.TestCase):
             self.assertTrue(all(tab.get("conversation_id") not in ids for tab in view.tabs))
 
     def test_immutable_keybindings_in_settings_catalog_and_dialog(self):
-        from settings import IMMUTABLE_KEYBINDINGS, SettingsCatalog
+        from settings import IMMUTABLE_KEYBINDINGS
+        from tui.settings import SettingsCatalog
 
         with tempfile.TemporaryDirectory() as folder:
             api = create_application(Path(folder))

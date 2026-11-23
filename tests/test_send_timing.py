@@ -4,13 +4,9 @@ import asyncio
 import threading
 import unittest
 
-from webai_provider.api import (
-    SendTiming,
-    collect_send_timing,
-    current_send_timing,
-    send_timing_report,
-    use_send_timing,
-)
+from webaiprovider.core.timing import SendTiming, current_send_timing, use_send_timing
+
+from tui.chat.sending import collect_send_timing, send_timing_report
 
 
 class SendTimingTests(unittest.TestCase):
@@ -32,8 +28,8 @@ class SendTimingTests(unittest.TestCase):
         self.assertNotIn("token", report.lower())
         self.assertNotIn("prompt", report.lower())
 
-    def test_context_survives_provider_loop_submission_and_worker_thread(self):
-        timing = SendTiming()
+    def test_context_survives_worker_thread_submission(self):
+        timing = SendTiming("chatgpt")
         loop = asyncio.new_event_loop()
         thread = threading.Thread(target=loop.run_forever, daemon=True)
         thread.start()

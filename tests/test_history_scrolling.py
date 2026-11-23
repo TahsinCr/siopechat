@@ -5,8 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from extensions.archive.repository import Files, SQLiteRepository
-from extensions.archive.sync import Archive
+from archive import Archive, Files, SQLiteRepository
 from tests.history_support import message
 from tui.paging import visible_window
 

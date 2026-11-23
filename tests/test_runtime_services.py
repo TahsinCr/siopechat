@@ -6,13 +6,10 @@ from pathlib import Path
 
 from eventflow import EventBus
 
-from actions import Action, ActionChanged
-from bootstrap import create_application
-from extension import ExtensionAPI, ExtensionManager, ExtensionSpec
+from actions import Action, ActionChanged, ActionService
+from bootstrap import Application, create_application
 from runtime import Runtime, ServiceChanged
 from settings import Settings, SettingsChanged
-from tasks import JobChanged, JobState
-from tests.fakes import ControlledProvider, request
 
 
 class RuntimeSyncCloseTests(unittest.TestCase):
@@ -38,7 +35,13 @@ class RuntimeServiceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
-        self.api = ExtensionAPI(Settings(Path(self.directory.name) / "config.json"))
+        self.runtime = Runtime()
+        self.settings = Settings(
+            Path(self.directory.name) / "config.json", events=self.runtime.events
+        )
+        self.actions = ActionService(self.runtime.events)
+        self.runtime.provide("application", "actions", self.actions)
+        self.api = Application(self.settings, self.runtime, self.actions)
         self.addAsyncCleanup(self.api.runtime.aclose)
 
     async def test_runtime_registers_and_resolves_owned_services(self):
@@ -51,16 +54,16 @@ class RuntimeServiceTests(unittest.IsolatedAsyncioTestCase):
                 closed.append(True)
 
         shared = Service()
-        self.api.provide("sample", "shared", shared)
+        self.api.runtime.provide("sample", "shared", shared)
         self.assertIs(self.api.get("shared"), shared)
         with self.assertRaises(ValueError):
-            self.api.provide("other", "shared", object())
-        self.api.withdraw("sample")
+            self.api.runtime.provide("other", "shared", object())
+        self.api.runtime.unregister("sample")
         self.assertEqual(closed, [True])
         with self.assertRaises(LookupError):
             self.api.get("shared")
 
-    async def test_actions_settings_and_tasks_publish_through_the_same_bus(self):
+    async def test_actions_and_settings_publish_through_the_same_bus(self):
         events = []
         self.api.events.subscribe(events.append)
 
@@ -71,53 +74,34 @@ class RuntimeServiceTests(unittest.IsolatedAsyncioTestCase):
         self.api.actions.register("sample", Action("sample.run", "Run", lambda: 42))
         self.assertEqual(await self.api.actions.invoke("sample.run"), 42)
         self.api.settings.update("application", {"language": "tr"})
-        provider = ControlledProvider()
-        self.api.providers.register(provider)
-        job = self.api.tasks.submit(request())
-        provider.release("one")
-        result = await self.api.tasks.wait(job)
-        self.assertEqual(result.state, JobState.COMPLETED)
         self.assertTrue(any(isinstance(event, ActionChanged) for event in events))
         self.assertTrue(any(isinstance(event, SettingsChanged) for event in events))
-        self.assertTrue(any(isinstance(event, JobChanged) for event in events))
         self.assertGreater(self.api.events.stats.failed, 0)
 
-    async def test_extension_provided_resources_use_explicit_cleanup(self):
-        manager = ExtensionManager(self.api)
+    async def test_runtime_provided_resources_use_explicit_cleanup(self):
         closed = []
 
         class Resource:
             async def aclose(self):
                 closed.append("async")
 
-        class Scoped:
-            def close(self):
-                closed.append("scoped")
-
         seen = []
-
-        def activate(context):
-            context.on_dispose(Scoped().close)
-            context.provide("resource", Resource())
-            context.subscribe(seen.append, event_type=ServiceChanged)
-
-        manager.register(ExtensionSpec("sample", activate, api_version=3))
-        self.assertTrue(manager.activate("sample"))
+        sub = self.api.events.subscribe(seen.append, event_type=ServiceChanged)
+        self.api.runtime.provide("sample", "resource", Resource())
         other_resource = object()
-        self.api.provide("other", "other", other_resource)
+        self.api.runtime.provide("other", "other", other_resource)
         self.assertTrue(seen)
-        await manager.disable_async("sample")
-        self.assertEqual(closed, ["scoped", "async"])
+        await self.api.runtime.unregister_async("sample")
+        self.assertEqual(closed, ["async"])
+        sub.cancel()
         before = len(seen)
-        self.api.provide("other", "another", object())
+        self.api.runtime.provide("other", "another", object())
         self.assertEqual(len(seen), before)
         with self.assertRaises(LookupError):
             self.api.get("resource")
         self.assertIs(self.api.get("other"), other_resource)
 
     async def test_async_cleanup_failure_can_be_retried_without_stopping_other_services(self):
-        manager = ExtensionManager(self.api)
-
         class Resource:
             attempts = 0
 
@@ -127,41 +111,47 @@ class RuntimeServiceTests(unittest.IsolatedAsyncioTestCase):
                     raise OSError("temporary cleanup failure")
 
         resource = Resource()
-        manager.register(
-            ExtensionSpec(
-                "sample", lambda context: context.provide("resource", resource), api_version=3
-            )
-        )
         other_resource = object()
-        self.api.provide("other", "other", other_resource)
-        manager.activate("sample")
-        await manager.disable_async("sample")
-        self.assertEqual(manager.statuses()["sample"].state, "failed")
+        self.api.runtime.provide("sample", "resource", resource)
+        self.api.runtime.provide("other", "other", other_resource)
+        with self.assertRaises(OSError):
+            await self.api.runtime.unregister_async("sample")
         self.assertIs(self.api.get("other"), other_resource)
-        await manager.disable_async("sample")
-        self.assertEqual(manager.statuses()["sample"].state, "disabled")
+        await self.api.runtime.unregister_async("sample")
         self.assertEqual(resource.attempts, 2)
+        with self.assertRaises(LookupError):
+            self.api.get("resource")
 
-    async def test_runtime_shutdown_preserves_extension_enabled_preference(self):
+    async def test_runtime_shutdown_preserves_settings_file_and_closes_accounts(self):
         root = Path(self.directory.name) / "application"
         api = create_application(root)
         settings = api.settings
-        tasks = api.tasks
+        accounts = api.accounts
         before = settings.path.read_bytes()
         await api.runtime.aclose()
         self.assertEqual(settings.path.read_bytes(), before)
-        self.assertTrue(tasks._closed)
+        self.assertTrue(accounts.closed)
         self.assertTrue(api.events.closed)
         self.assertTrue(api.runtime._closed)
         await api.runtime.aclose()
 
-    async def test_cross_thread_bus_publication_reaches_bounded_ui_queue(self):
-        queue = self.api.tasks.subscribe(capacity=1)
-        event = JobChanged("external", JobState.STREAMING, 1)
-        await asyncio.to_thread(self.api.events.publish, event)
-        self.assertEqual(await asyncio.wait_for(queue.get(), 1), event)
-        queue.task_done()
-        self.api.tasks.unsubscribe(queue)
+    async def test_cross_thread_bus_publication_reaches_subscriber(self):
+        received = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        events = []
+
+        def on_event(event):
+            events.append(event)
+            loop.call_soon_threadsafe(received.set)
+
+        sub = self.api.events.subscribe(on_event, event_type=ServiceChanged)
+        try:
+            event = ServiceChanged("external", "svc", "registered")
+            await asyncio.to_thread(self.api.events.publish, event)
+            await asyncio.wait_for(received.wait(), 1)
+            self.assertEqual(events, [event])
+        finally:
+            sub.cancel()
 
     async def test_cancelling_shutdown_waiter_does_not_interrupt_cleanup(self):
         started = asyncio.Event()

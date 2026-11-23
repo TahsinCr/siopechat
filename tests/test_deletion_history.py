@@ -1,6 +1,5 @@
 """Deletion, tombstone recovery and cached-history merging without remote traffic."""
 
-import asyncio
 import tempfile
 import threading
 import time
@@ -8,14 +7,13 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock, patch
 
-from webai_provider.api import Capability, RemoteNotFound, merge_conversation
+from webaiprovider import Capability, ProviderError, RemoteNotFound
 
 from accounts import identity
+from archive import Archive, Files, SQLiteRepository, merge_conversation
 from bootstrap import create_application
-from extensions.archive.repository import Files, SQLiteRepository
-from extensions.archive.sync import Archive
 from tests.tui_support import terminal
 
 
@@ -117,9 +115,10 @@ class DeleteAndCacheTests(unittest.TestCase):
         self.key = self.accounts.add("gemini", "Fixture")
         self.provider = Mock(
             capabilities={Capability.DELETE, Capability.PROJECT_DELETE},
-            close=AsyncMock(),
-            delete_chat=AsyncMock(),
-            delete_project=AsyncMock(),
+            opened=True,
+            close=Mock(),
+            chats=Mock(delete=Mock(), get=Mock(), get_with_responses=Mock()),
+            projects=Mock(delete=Mock(), get=Mock()),
         )
         self.accounts._providers[self.key] = self.provider
 
@@ -140,16 +139,12 @@ class DeleteAndCacheTests(unittest.TestCase):
         )
         return chat
 
-    def test_remote_chat_delete_removes_archive_and_fallback_history(self):
+    def test_remote_chat_delete_removes_archive(self):
         chat = self.seed()
-        self.accounts.repository.cache_put(
-            self.key, "conversation", "c_abc", dict(chat, id="c_abc")
-        )
         result = self.accounts.delete(chat["id"], self.key)
-        self.provider.delete_chat.assert_awaited_once_with("c_abc")
+        self.provider.chats.delete.assert_called_once_with("c_abc")
         self.assertIn(chat["id"], result["removed"])
         self.assertIsNone(self.accounts.cached(self.key, "c_abc"))
-        self.assertIsNone(self.accounts.repository.cache_get(self.key, "conversation", "c_abc"))
         self.assertEqual(self.archive.get(self.key, "chats", "")["items"], [])
         self.archive.put(self.key, "chats", "", {"items": [chat]})
         self.assertEqual(self.archive.get(self.key, "chats", "")["items"], [])
@@ -171,22 +166,25 @@ class DeleteAndCacheTests(unittest.TestCase):
                 self.key, "conversation", remote, dict(chat, id=identity(self.key, remote))
             )
         active = peak = 0
+        lock = threading.Lock()
 
-        async def missing(_):
+        def missing(_remote, **_kwargs):
             nonlocal active, peak
-            active += 1
-            peak = max(peak, active)
+            with lock:
+                active += 1
+                peak = max(peak, active)
             try:
-                await asyncio.sleep(0)
+                time.sleep(0.02)
                 raise RemoteNotFound("deleted upstream")
             finally:
-                active -= 1
+                with lock:
+                    active -= 1
 
-        self.provider.get_chat = AsyncMock(side_effect=missing)
+        self.provider.chats.get = Mock(side_effect=missing)
         self.archive.put("chatgpt/default", "conversation", "c_abc", {"title": "other"})
         result = self.accounts.delete(identity(self.key, "notebooks/abcdef"), self.key, "container")
         self.assertIn(chat["id"], result["removed"])
-        self.assertEqual(self.provider.get_chat.await_count, 6)
+        self.assertEqual(self.provider.chats.get.call_count, 6)
         self.assertEqual(peak, 4)
         self.assertIsNone(self.archive.get(self.key, "conversation", "c_abc"))
         self.assertEqual(
@@ -194,16 +192,13 @@ class DeleteAndCacheTests(unittest.TestCase):
         )
 
     def test_project_delete_does_not_tombstone_surviving_or_unknown_chats(self):
-
-        from webai_provider.api import ProviderError
-
         for outcome in (SimpleNamespace(metadata={}), ProviderError("offline")):
             with self.subTest(outcome=outcome):
                 self.seed()
-                self.provider.get_chat = (
-                    AsyncMock(return_value=outcome)
+                self.provider.chats.get = (
+                    Mock(return_value=outcome)
                     if not isinstance(outcome, Exception)
-                    else AsyncMock(side_effect=outcome)
+                    else Mock(side_effect=outcome)
                 )
                 self.accounts.delete(identity(self.key, "notebooks/abcdef"), self.key, "container")
                 self.assertFalse(self.archive.deleted(self.key, "conversation", "c_abc"))
@@ -211,28 +206,28 @@ class DeleteAndCacheTests(unittest.TestCase):
 
     def test_server_confirmed_missing_chat_is_tombstoned_but_network_failure_is_not(self):
         self.seed()
-        self.provider.get_chat = AsyncMock(side_effect=RemoteNotFound("deleted upstream"))
+        self.provider.chats.get_with_responses = Mock(
+            side_effect=RemoteNotFound("deleted upstream")
+        )
         with self.assertRaises(RemoteNotFound):
             self.accounts.load(identity(self.key, "c_missing"), self.key, force=True)
         self.assertTrue(self.archive.deleted(self.key, "conversation", "c_missing"))
-        self.provider.get_chat.side_effect = RuntimeError("offline")
+        self.provider.chats.get_with_responses.side_effect = RuntimeError("offline")
         with self.assertRaisesRegex(RuntimeError, "offline"):
             self.accounts.load(identity(self.key, "c_network"), self.key, force=True)
         self.assertFalse(self.archive.deleted(self.key, "conversation", "c_network"))
 
     def test_delete_already_missing_upstream_still_cleans_the_archive(self):
         chat = self.seed()
-        self.provider.delete_chat.side_effect = RemoteNotFound("already deleted")
-        self.provider.get_chat = AsyncMock(side_effect=RemoteNotFound("missing"))
+        self.provider.chats.delete.side_effect = RemoteNotFound("already deleted")
+        self.provider.chats.get = Mock(side_effect=RemoteNotFound("missing"))
         self.accounts.delete(chat["id"], self.key)
         self.assertIsNone(self.accounts.cached(self.key, "c_abc"))
 
     def test_missing_delete_route_is_not_evidence_that_the_conversation_is_gone(self):
-        from webai_provider.api import ProviderError
-
         chat = self.seed()
-        self.provider.delete_chat.side_effect = RemoteNotFound("missing route")
-        self.provider.get_chat = AsyncMock(return_value=object())
+        self.provider.chats.delete.side_effect = RemoteNotFound("missing route")
+        self.provider.chats.get = Mock(return_value=object())
         with self.assertRaisesRegex(ProviderError, "uzak ve yerel kayıt korundu"):
             self.accounts.delete(chat["id"], self.key)
         self.assertIsNotNone(self.accounts.cached(self.key, "c_abc"))
@@ -240,7 +235,7 @@ class DeleteAndCacheTests(unittest.TestCase):
 
     def test_remote_failure_does_not_remove_local_history(self):
         chat = self.seed()
-        self.provider.delete_chat.side_effect = RuntimeError("offline")
+        self.provider.chats.delete.side_effect = RuntimeError("offline")
         with self.assertRaisesRegex(RuntimeError, "offline"):
             self.accounts.delete(chat["id"], self.key)
         self.assertEqual(self.accounts.cached(self.key, "c_abc")["title"], "saved")
@@ -397,4 +392,4 @@ class DeleteAndCacheTests(unittest.TestCase):
             with patch.object(view.forms, "confirm") as opened:
                 view.delete_record()
                 self.assertEqual(opened.call_args.args[0], "Sohbeti sil")
-                self.provider.delete_chat.assert_not_awaited()
+                self.provider.chats.delete.assert_not_called()

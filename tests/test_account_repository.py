@@ -1,4 +1,4 @@
-"""Account SQL isolation, restart, concurrency, permissions and provider storage injection."""
+"""Account SQL isolation, restart, concurrency, permissions and CredentialStore contract."""
 
 import os
 import sqlite3
@@ -8,80 +8,28 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from pathlib import Path
 
-from webai_provider.api import (
-    AccountPaused,
-    delete_session,
-    read_session,
-    save_session,
-    session_exists,
-)
+from webaiprovider import AccountPaused
+from webaiprovider.accounts import delete_session, read_session, save_session, session_exists
 
 from accounts.repository import AccountRepository
 
 
 class RepositoryTests(unittest.TestCase):
-    def test_v1_database_upgrades_without_changing_existing_account_records(self):
+    def test_repository_initializes_schema_v2_and_serializes_catalog(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "accounts.sqlite3"
-            with closing(sqlite3.connect(path)) as db:
-                db.execute(
-                    """CREATE TABLE account_records (
-                        account_key TEXT NOT NULL,
-                        kind TEXT NOT NULL CHECK(kind IN ('credentials','catalog','verification')),
-                        updated REAL NOT NULL,
-                        payload TEXT NOT NULL,
-                        PRIMARY KEY(account_key,kind)
-                    ) WITHOUT ROWID"""
-                )
-                db.execute(
-                    "INSERT INTO account_records VALUES(?,?,?,?)",
-                    ("gemini/personal", "catalog", 1.0, '{"models":[]}'),
-                )
-                db.execute("PRAGMA user_version=1")
-                db.commit()
-
             repository = AccountRepository(path)
+            repository.put("gemini/personal", "catalog", {"models": []})
             self.assertEqual(repository.get("gemini/personal", "catalog"), {"models": []})
             with closing(sqlite3.connect(path)) as db:
                 self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 2)
                 self.assertIsNotNone(
                     db.execute(
-                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='account_cache'"
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='account_records'"
                     ).fetchone()
                 )
-
-    def test_sqlite_cache_keeps_pointer_conversation_and_tombstone_account_scoped(self):
-        with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / "accounts.sqlite3"
-            repository = AccountRepository(path)
-            record = {"id": "@gemini/a/chat", "messages": [{"text": "cached"}]}
-            self.assertTrue(repository.cache_put("gemini/a", "conversation", "chat", record))
-            repository.cache_set_active("gemini/a", "chat")
-            self.assertEqual(repository.cache_get("gemini/a", "conversation", "chat"), record)
-            self.assertEqual(repository.cache_active("gemini/a"), "chat")
-
-            repository.cache_mark_deleted("gemini/a", "chat")
-            self.assertTrue(repository.cache_is_deleted("gemini/a", "chat"))
-            self.assertIsNone(repository.cache_get("gemini/a", "conversation", "chat"))
-            self.assertIsNone(repository.cache_active("gemini/a"))
-            self.assertFalse(repository.cache_put("gemini/a", "conversation", "chat", record))
-            self.assertIsNone(repository.cache_get("gemini/b", "conversation", "chat"))
-
-    def test_account_cache_pages_are_bounded_and_resume_by_remote_key(self):
-        with tempfile.TemporaryDirectory() as folder:
-            repository = AccountRepository(Path(folder) / "accounts.sqlite3")
-            for remote in ("chat-a", "chat-b", "chat-c"):
-                repository.cache_put("claude/work", "conversation", remote, {"id": remote})
-
-            first = repository.cache_records_page("claude/work", "conversation", limit=2)
-            second = repository.cache_records_page(
-                "claude/work", "conversation", after=first[-1][0], limit=2
-            )
-
-            self.assertEqual([remote for remote, _ in first], ["chat-a", "chat-b"])
-            self.assertEqual([remote for remote, _ in second], ["chat-c"])
-            with self.assertRaises(ValueError):
-                repository.cache_records_page("claude/work", "conversation", limit=0)
+            reopened = AccountRepository(path)
+            self.assertEqual(reopened.get("gemini/personal", "catalog"), {"models": []})
 
     def test_credentials_are_account_isolated_and_survive_restart(self):
         with tempfile.TemporaryDirectory() as folder:

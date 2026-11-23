@@ -4,9 +4,10 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock, patch
 
-from webai_provider.api import SessionState, SessionStatus
+from webaiprovider import Account, MemoryCredentialStore, ProviderType
+from webaiprovider.accounts.status import SessionState, SessionStatus
 
 from tests.account_fixture import configured_application
 
@@ -24,40 +25,38 @@ class ProfileAccountTests(unittest.TestCase):
         path = self.accounts.credentials(self.gemini)
         path.save({"__Secure-1PSID": "previous"})
         self.accounts._remember_verification(self.gemini)
-        candidate = Mock(
-            authenticate=AsyncMock(side_effect=RuntimeError("rejected")), close=AsyncMock()
-        )
+        candidate = Mock(authenticate=Mock(side_effect=RuntimeError("rejected")), close=Mock())
         with (
             patch(
                 "accounts.sessions.import_cookies",
                 return_value=("chromium", {"__Secure-1PSID": "new"}),
             ),
-            patch("accounts.sessions.create_provider", return_value=candidate),
+            patch("accounts.sessions.Provider", return_value=candidate),
         ):
             with self.assertRaisesRegex(RuntimeError, "rejected"):
                 self.accounts.session_action(self.gemini, "verify_profile")
         self.assertEqual(path.load(), {"__Secure-1PSID": "previous"})
         self.assertTrue(self.accounts.status(self.gemini)["authenticated"])
         self.assertFalse(self.accounts._session_changes)
-        candidate.close.assert_awaited_once()
+        candidate.close.assert_called_once()
 
     def test_success_saves_only_selected_account_after_remote_verification(self):
         path = self.accounts.credentials(self.gemini)
-        old = Mock(close=AsyncMock())
+        old = Mock(close=Mock())
         self.accounts._providers[self.gemini] = old
         self.accounts._catalogs[self.gemini] = "old catalog"
         candidate = Mock(
-            authenticate=AsyncMock(return_value=SessionStatus(SessionState.AUTHENTICATED, True)),
-            close=AsyncMock(),
+            authenticate=Mock(return_value=SessionStatus(SessionState.AUTHENTICATED, True)),
+            close=Mock(),
         )
         with (
             patch(
                 "accounts.sessions.import_cookies",
                 return_value=("chromium", {"__Secure-1PSID": "new"}),
             ),
-            patch("accounts.sessions.create_provider", return_value=candidate),
+            patch("accounts.sessions.Provider", return_value=candidate),
             patch(
-                "webai_provider.providers.chatgpt.session.BrowserSession.launch",
+                "accounts.sessions._launch_or_open_cdp_browser",
                 side_effect=AssertionError("browser"),
             ),
         ):
@@ -69,31 +68,32 @@ class ProfileAccountTests(unittest.TestCase):
         self.assertFalse(self.accounts.credentials("chatgpt/default").exists())
         if os.name != "nt":
             self.assertEqual(self.accounts.repository.path.stat().st_mode & 0o777, 0o600)
-        old.close.assert_awaited_once()
+        old.close.assert_called_once()
 
     def test_grok_profile_verification_uses_grok_provider_factory(self):
         grok = self.accounts.add("grok", "Personal Grok")
         candidate = Mock(
-            authenticate=AsyncMock(return_value=SessionStatus(SessionState.AUTHENTICATED, True)),
-            close=AsyncMock(),
+            authenticate=Mock(return_value=SessionStatus(SessionState.AUTHENTICATED, True)),
+            close=Mock(),
         )
         with (
             patch("accounts.sessions.import_cookies", return_value=("chromium", {"sso-rw": "new"})),
-            patch("accounts.sessions.create_provider", return_value=candidate) as create,
+            patch("accounts.sessions.Provider", return_value=candidate) as create,
         ):
             state = self.accounts.session_action(grok, "verify_profile")
 
         self.assertTrue(state["authenticated"])
-        self.assertEqual(create.call_args.args[:2], ("grok", self.accounts.item(grok)["id"]))
+        self.assertEqual(create.call_args.args[0].id, self.accounts.item(grok)["id"])
+        self.assertEqual(create.call_args.kwargs["type"], ProviderType.GROK)
         self.assertEqual(self.accounts.credentials(grok).load(), {"sso-rw": "new"})
-        candidate.authenticate.assert_awaited_once()
-        candidate.close.assert_awaited_once()
+        candidate.authenticate.assert_called_once()
+        candidate.close.assert_called_once()
 
     def test_browser_verification_persists_only_provider_scoped_allowed_cookies(self):
         claude = self.accounts.add("claude", "Personal Claude")
         provider = Mock(
-            close=AsyncMock(),
-            authenticate=AsyncMock(return_value=SessionStatus(SessionState.AUTHENTICATED, True)),
+            close=Mock(),
+            authenticate=Mock(return_value=SessionStatus(SessionState.AUTHENTICATED, True)),
         )
         self.accounts._providers[claude] = provider
         self.accounts.status = lambda _: {"authenticated": True}
@@ -106,14 +106,17 @@ class ProfileAccountTests(unittest.TestCase):
             {"name": "broken", "value": None, "domain": ".claude.ai"},
         ]
 
-        with patch("accounts.sessions.read_provider_cookies", return_value=browser_cookies):
+        with (
+            patch("accounts.sessions.read_provider_cookies", return_value=browser_cookies),
+            patch.object(self.accounts, "provider", return_value=provider),
+        ):
             self.accounts.session_action(claude, "verify")
 
         self.assertEqual(
             self.accounts.credentials(claude).load(),
             {"sessionKey": "valid-session", "anthropic-device-id": "device"},
         )
-        provider.authenticate.assert_awaited_once()
+        provider.authenticate.assert_called_once()
 
     def test_browser_verification_rejects_foreign_session_cookie_without_replacing_saved_data(self):
         previous = {"__Secure-1PSID": "saved-session"}
@@ -127,10 +130,10 @@ class ProfileAccountTests(unittest.TestCase):
             patch("accounts.sessions.read_provider_cookies", return_value=browser_cookies),
             patch.object(self.accounts, "provider") as provider,
         ):
-            with self.assertRaisesRegex(RuntimeError, "giriş tamamlanmamış"):
+            with self.assertRaisesRegex(RuntimeError, "No active provider session"):
                 self.accounts.session_action(self.gemini, "verify")
 
-        provider.assert_called_once_with(self.gemini)
+        provider.assert_not_called()
         self.assertEqual(self.accounts.credentials(self.gemini).load(), previous)
 
     def test_import_is_blocked_during_send_before_reading_profile(self):
@@ -171,26 +174,29 @@ class ProfileUiTests(unittest.IsolatedAsyncioTestCase):
             view.refresh_sidebar.assert_called_once()
             view.refresh_provider_catalog.assert_called_once()
 
-    async def test_chatgpt_profile_auth_never_contacts_debugging_browser(self):
-        from webai_provider.api import BrowserSession, ChatGPTProvider, SessionPaths
+    def test_chatgpt_profile_auth_never_contacts_debugging_browser(self):
+        from webaiprovider import ChatGPTProvider
+        from webaiprovider.providers.chatgpt.auth import BrowserSession
 
         from tests.provider_fakes import FakeClient
 
-        with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
-            session = BrowserSession(SessionPaths(root / "session.json", root / "profile"))
-            client = FakeClient(session)
-            provider = ChatGPTProvider(session, client_factory=lambda _: client)
+        store = MemoryCredentialStore({"version": 1, "url": "https://chatgpt.com/", "headers": {}})
+        session = BrowserSession(store)
+        account = Account("default", "chatgpt", store)
+        client = FakeClient(session)
+        provider = ChatGPTProvider(account, session=session, client_factory=lambda _: client)
+        try:
             with (
                 patch.object(session, "is_ready", side_effect=AssertionError("CDP probe")),
                 patch.object(
                     session, "capture_auth", side_effect=AssertionError("browser capture")
                 ),
             ):
-                status = await provider.authenticate(capture_browser=False)
+                status = provider.authenticate(capture_browser=False)
             self.assertEqual(status.state, SessionState.AUTHENTICATED)
             self.assertTrue(client.closed.is_set())
-            await provider.close()
+        finally:
+            provider.close()
 
     async def test_profile_action_is_visible_in_resized_accounts_panel(self):
         import asyncio

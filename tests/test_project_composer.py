@@ -4,8 +4,9 @@ import asyncio
 import unittest
 from unittest.mock import Mock, patch
 
-from webai_provider.api import Choice, FeatureState, Model, ModelCatalog
+from webaiprovider.resources.model.model import ModelCatalogState
 
+from accounts.shared import AccountCatalog, CatalogChoice, CatalogModel
 from tests import tui_support as interaction
 from tests.fakes import Accounts
 from tests.tui_support import ResizableOutput, screen_text
@@ -94,8 +95,9 @@ class ProjectComposerTests(unittest.IsolatedAsyncioTestCase):
         with interaction.terminal(account_service=service) as (v, _):
             project_view(v)
             v.messages = []
-            v.catalog = ModelCatalog(
-                FeatureState.AVAILABLE, (Model("gpt", "GPT", (Choice("medium", "Medium"),)),)
+            v.catalog = AccountCatalog(
+                ModelCatalogState.AVAILABLE,
+                (CatalogModel("gpt", "GPT", (CatalogChoice("medium", "Medium"),)),),
             )
             service.cached_models.reset_mock()
             v.open_palette("models")

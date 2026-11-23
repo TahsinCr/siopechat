@@ -1,7 +1,11 @@
 """Provider protocol fixtures used by SiopeChat's application tests."""
 
 import threading
+import time
 from http.cookiejar import Cookie
+
+from webaiprovider.core.timing import _STREAM_PAUSED
+from webaiprovider.providers.chatgpt.catalogs import parse_model_catalog
 
 CATALOG = {
     "default_model_slug": "account-thinking",
@@ -56,7 +60,7 @@ def cookie(name, value="secret", domain=".google.com", expires=None):
 
 
 class FakeClient:
-    """Controllable synchronous transport for application lifecycle tests."""
+    """Controllable synchronous client for ChatGPT provider lifecycle tests."""
 
     def __init__(self, session):
         self.session = session
@@ -93,11 +97,30 @@ class FakeClient:
     def verify(self):
         return {"items": []}
 
+    def model_catalog(self, refresh=False):
+        del refresh
+        return parse_model_catalog(CATALOG)
+
     def list_page(self, offset, limit):
         return {"items": [self.raw]}
 
     def get_conversation(self, conversation_id):
         return self.raw
+
+    def iter_send_prompt(self, conversation_id, prompt, **kwargs):
+        del conversation_id, prompt, kwargs
+        yield ("raw", {"type": "delta", "text": "partial"})
+        self.started.set()
+        deadline = time.monotonic() + 2.0
+        while not self.closed.is_set() and time.monotonic() < deadline:
+            yield ("paused", _STREAM_PAUSED)
+            self.closed.wait(0.01)
+        if self.failure:
+            raise self.failure
+        if not self.closed.is_set():
+            raise RuntimeError("test did not release stream")
+        yield ("raw", {"type": "replace", "text": "finished"})
+        yield ("completed", ("remote", self.raw, None))
 
     def send_prompt(self, conversation_id, prompt, on_event):
         on_event({"type": "delta", "text": "partial"})

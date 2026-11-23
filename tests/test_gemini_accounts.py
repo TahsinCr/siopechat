@@ -3,9 +3,16 @@
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import Mock
 
-from webai_provider.api import ConversationBound, GeminiProvider, ReplaceText
+from webaiprovider import Account, GeminiProvider
+from webaiprovider.resources.message.protocol import (
+    ConversationBound,
+    ResponseComplete,
+    TextReplacement,
+)
+from webaiprovider.resources.model.model import EffortOption, Model, ModelCatalog, ModelCatalogState
+from webaiprovider.resources.project.types import ProjectData
 
 
 class AccountNativeTests(unittest.TestCase):
@@ -21,22 +28,36 @@ class AccountNativeTests(unittest.TestCase):
                 accounts = api.get("accounts")
                 key = accounts.add("gemini", "Native fixture")
                 provider = GeminiProvider(
-                    Path("unused"),
-                    key.split("/")[1],
-                    notebooks=SimpleNamespace(cdp_url="http://127.0.0.1:9231"),
+                    Account(key.split("/")[1], "gemini", accounts.credentials(key)),
+                    notebooks=SimpleNamespace(get=lambda pid: ProjectData(pid, "Notebook")),
                 )
-                provider._connect = AsyncMock(side_effect=AssertionError("SDK must not send"))
+                provider._opened = True
+                provider._connect = Mock(side_effect=AssertionError("SDK must not send"))
+                provider._load_catalog = Mock(
+                    return_value=ModelCatalog(
+                        ModelCatalogState.AVAILABLE,
+                        (
+                            Model(
+                                "gemini-flash",
+                                "Gemini Flash",
+                                efforts=(EffortOption("standard", "Standard"),),
+                                default_effort="standard",
+                            ),
+                        ),
+                    )
+                )
                 requests = []
 
-                async def stream(request):
+                def stream(request):
                     requests.append(request)
                     if not request.conversation_id:
                         self.assertEqual(request.project_id, "notebooks/abcdef")
                     yield ConversationBound("c_abcdef")
-                    yield ReplaceText("Reasoning summary", "analysis")
-                    yield ReplaceText("Answer", "final")
+                    yield TextReplacement("Reasoning summary", "analysis")
+                    yield TextReplacement("Answer", "final")
+                    yield ResponseComplete()
 
-                provider._stream = stream
+                provider._stream_provider_events = stream
                 provider._temporary["temporary_fixture"] = ["temporary_fixture"]
                 accounts._providers[key] = provider
                 delivered = []
@@ -58,7 +79,15 @@ class AccountNativeTests(unittest.TestCase):
                     ["Question", "Reasoning summary", "Answer"],
                 )
                 self.assertEqual(record["project_id"], identity(key, "notebooks/abcdef"))
-                self.assertEqual(delivered[-1]["text"], "Answer")
+                self.assertEqual(
+                    next(
+                        event["text"]
+                        for event in reversed(delivered)
+                        if event.get("type") in ("delta", "replace")
+                        and event.get("channel") == "final"
+                    ),
+                    "Answer",
+                )
                 accounts.send(
                     key,
                     result["conversation_id"],
@@ -75,7 +104,7 @@ class AccountNativeTests(unittest.TestCase):
                 self.assertEqual(
                     [request.conversation_id for request in requests], [None, "c_abcdef"]
                 )
-                provider._connect.assert_not_awaited()
+                provider._connect.assert_not_called()
                 accounts.callbacks(key)["forget_temporary"](identity(key, "temporary_fixture"))
                 self.assertNotIn("temporary_fixture", provider._temporary)
             finally:

@@ -8,13 +8,15 @@ import time
 import unittest
 from pathlib import Path
 
-from webai_provider.api import Choice, FeatureState, Model, ModelCatalog
+from webaiprovider.resources.model.model import ModelCatalogState
 
+from accounts.shared import AccountCatalog, CatalogChoice, CatalogModel
 from actions import Action
-from settings import DEFAULT_KEYBINDINGS, SettingsCatalog
+from settings import DEFAULT_KEYBINDINGS
 from tests import tui_support as interaction
 from tests.account_fixture import configured_application as create_application
 from tests.tui_support import immediate
+from tui.settings import SettingsCatalog
 
 
 class ProductServicesTests(unittest.TestCase):
@@ -82,8 +84,9 @@ class ProductServicesTests(unittest.TestCase):
     def test_account_preferences_survive_restart_and_ui_updates(self):
         self.accounts.select(self.gemini)
         self.accounts.remember(self.gemini, "flash", "extended")
-        catalog = ModelCatalog(
-            FeatureState.AVAILABLE, (Model("flash", "Flash", (Choice("extended", "Extended"),)),)
+        catalog = AccountCatalog(
+            ModelCatalogState.AVAILABLE,
+            (CatalogModel("flash", "Flash", (CatalogChoice("extended", "Extended"),)),),
         )
         self.accounts._catalogs[self.gemini] = (time.monotonic(), catalog)
         with interaction.terminal(account_service=self.accounts) as (v, _):
@@ -108,9 +111,16 @@ class ProductServicesTests(unittest.TestCase):
     def test_explicit_default_effort_remains_an_absent_override(self):
         self.accounts.select(self.gemini)
         self.accounts.remember(self.gemini, "flash", None)
-        catalog = ModelCatalog(
-            FeatureState.AVAILABLE,
-            (Model("flash", "Flash", (Choice("extended", "Extended"),), "extended"),),
+        catalog = AccountCatalog(
+            ModelCatalogState.AVAILABLE,
+            (
+                CatalogModel(
+                    "flash",
+                    "Flash",
+                    (CatalogChoice("extended", "Extended"),),
+                    default_effort="extended",
+                ),
+            ),
         )
         self.accounts._catalogs[self.gemini] = (time.monotonic(), catalog)
         with interaction.terminal(account_service=self.accounts) as (v, _):
@@ -125,7 +135,7 @@ class ProductServicesTests(unittest.TestCase):
         self.accounts.select(self.gemini)
         self.accounts._catalogs[self.gemini] = (
             time.monotonic(),
-            ModelCatalog(FeatureState.AVAILABLE, (Model("flash", "Flash"),)),
+            AccountCatalog(ModelCatalogState.AVAILABLE, (CatalogModel("flash", "Flash"),)),
         )
         with interaction.terminal(
             account_service=self.accounts,
@@ -143,56 +153,6 @@ class ProductServicesTests(unittest.TestCase):
             self.assertEqual(v.account_key, "chatgpt/default")
             self.assertIsNone(v.conversation_id)
             self.assertEqual(v.tabs[0]["messages"][0]["text"], "Keep")
-
-    def test_extension_discovery_is_isolated(self):
-        from extension import ExtensionSpec
-
-        directory = self.root / "extensions" / "sample"
-        directory.mkdir(parents=True)
-        (directory / "manifest.json").write_text('{"id":"sample","api_version":3,"requires":[]}')
-        (directory / "helper.py").write_text('VALUE = "ok"')
-        (directory / "plugin.py").write_text(
-            'from extension import ExtensionSpec, Action\nfrom .helper import VALUE\ndef activate(ctx):\n    ctx.action(Action("sample.hello", "Hello", lambda: VALUE))\nSPEC = ExtensionSpec("sample", activate, api_version=3)\n'
-        )
-        manager = self.api.get("extensions")
-        with self.assertRaises(ValueError):
-            manager.register(ExtensionSpec("old_api", lambda _: None, api_version=2))
-        manager.load_directory(directory.parent)
-        self.assertEqual(asyncio.run(self.api.actions.invoke("sample.hello")), "ok")
-        self.api.get("extensions").disable("sample")
-        self.assertFalse(self.api.actions.search("sample.hello"))
-
-    def test_disabled_extension_is_not_imported_until_explicit_enable(self):
-        directory = self.root / "extensions" / "lazy"
-        directory.mkdir(parents=True)
-        marker = directory / "imported"
-        (directory / "manifest.json").write_text('{"id":"lazy","api_version":3,"requires":[]}')
-        (directory / "plugin.py").write_text(
-            'from pathlib import Path\nfrom extension import ExtensionSpec\nPath(__file__).with_name("imported").touch()\nSPEC = ExtensionSpec("lazy", lambda ctx: None, api_version=3)\n'
-        )
-        self.api.settings.update_extension("lazy", {"enabled": False})
-        manager = self.api.get("extensions")
-        manager.load_directory(directory.parent)
-        self.assertFalse(marker.exists())
-        self.assertEqual(manager.statuses()["lazy"].state, "disabled")
-        self.assertTrue(manager.enable("lazy"))
-        self.assertTrue(marker.exists())
-
-    def test_extension_without_manifest_is_rejected_before_import(self):
-        directory = self.root / "extensions" / "manifest_required"
-        directory.mkdir(parents=True)
-        marker = directory / "imported"
-        (directory / "plugin.py").write_text(
-            "from pathlib import Path\n"
-            'Path(__file__).with_name("imported").touch()\n'
-            'raise RuntimeError("must not import")\n'
-        )
-
-        manager = self.api.get("extensions")
-        manager.load_directory(directory.parent)
-
-        self.assertFalse(marker.exists())
-        self.assertEqual(manager.statuses()["manifest_required"].state, "failed")
 
     def test_application_composition_does_not_import_cli(self):
         script = """import builtins,tempfile
@@ -215,7 +175,7 @@ with tempfile.TemporaryDirectory() as folder:
 class ProductKeyboardTests(unittest.IsolatedAsyncioTestCase):
     settle = staticmethod(interaction.wait_until)
 
-    async def test_extension_action_palette_collects_required_arguments(self):
+    async def test_custom_action_palette_collects_required_arguments(self):
         from unittest.mock import Mock
 
         invoke = Mock(return_value={"ok": True})

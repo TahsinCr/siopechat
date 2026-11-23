@@ -1,48 +1,40 @@
-"""Saved web sessions: no browser processes, redirects or mutation retries."""
+"""Application storage isolation and repository-backed session status."""
 
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
 
-import httpx
-from webai_provider.api import WebSession, save_session
-
-from backend import BackendService
+from bootstrap import create_application
 
 
-class SessionTests(unittest.IsolatedAsyncioTestCase):
+class ApplicationPathsTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
-        self.path = Path(self.directory.name) / "session.json"
-        save_session(self.path, {"sessionKey": "fixture"})
-        self.client = SimpleNamespace(
-            request=AsyncMock(return_value=httpx.Response(200, json={"ok": True})),
-            cookies={"sessionKey": "rotated"},
-            close=AsyncMock(),
-        )
-        self.factory = Mock(return_value=self.client)
-        self.session = WebSession(
-            "https://claude.ai", self.path, "sessionKey", client_factory=self.factory
-        )
-        self.addAsyncCleanup(self.session.close)
+        self.root = Path(self.directory.name).resolve()
 
     def test_custom_application_root_keeps_data_and_runtime_under_root(self):
-        root = Path(self.directory.name).resolve()
-        backend = BackendService(root)
-        self.assertEqual(backend.data_root, root / "data")
-        backend._session_credentials.save({"sessionKey": "fixture"})
-        self.assertTrue(backend._session_credentials.exists())
-        self.assertTrue(backend.create_session().paths.profile.is_relative_to(root))
-        self.assertEqual(backend.default_socket_path(), root / ".runtime" / "daemon.sock")
+        app = create_application(self.root)
+        try:
+            self.assertEqual(app.get("data_root"), self.root / "data")
+            self.assertEqual(app.get("runtime_root"), self.root / ".runtime")
+            key = app.accounts.add("claude", "Claude")
+            store = app.accounts.credentials(key)
+            store.save({"sessionKey": "fixture"})
+            self.assertTrue(store.exists())
+            self.assertEqual(store.load(), {"sessionKey": "fixture"})
+            self.assertTrue(app.accounts.repository.path.is_relative_to(self.root))
+        finally:
+            app.runtime.close()
 
-    def test_daemon_status_reads_credentials_from_the_account_repository(self):
-        backend = BackendService(Path(self.directory.name))
-        client = SimpleNamespace(session=SimpleNamespace(is_ready=lambda: False))
-        status = backend.handle_daemon_command(client, {"command": "status"})[0]
-        self.assertFalse(status["session_saved"])
-        backend._session_credentials.save({"sessionKey": "fixture"})
-        status = backend.handle_daemon_command(client, {"command": "status"})[0]
-        self.assertTrue(status["session_saved"])
+    def test_status_reads_credentials_from_the_account_repository(self):
+        app = create_application(self.root)
+        try:
+            key = app.accounts.add("chatgpt", "Personal")
+            status = app.accounts.status(key)
+            self.assertFalse(status["saved_snapshot"])
+            app.accounts.credentials(key).save({"headers": {"authorization": "Bearer t"}})
+            status = app.accounts.status(key)
+            self.assertTrue(status["saved_snapshot"])
+        finally:
+            app.runtime.close()

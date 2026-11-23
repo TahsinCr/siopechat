@@ -1,37 +1,66 @@
-import asyncio
-import tempfile
+import concurrent.futures
 import unittest
-from pathlib import Path
 
-from webai_provider.api import (
-    BrowserSession,
+from webaiprovider import (
+    Account,
     ChatGPTProvider,
-    ProviderRegistry,
-    SendRequest,
-    SessionPaths,
+    MemoryCredentialStore,
+    OperationCancelledError,
+    OperationState,
+    OutputDelta,
 )
+from webaiprovider.providers.chatgpt.auth import BrowserSession
 
-from tasks import JobState, TaskService
 from tests.provider_fakes import FakeClient
 
 
-class ProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
+class ProviderAdapterTests(unittest.TestCase):
     def setUp(self):
-        self.directory = tempfile.TemporaryDirectory()
-        self.addCleanup(self.directory.cleanup)
-        root = Path(self.directory.name)
-        self.session = BrowserSession(SessionPaths(root / "session.json", root / "profile"))
-        self.client = FakeClient(self.session)
-        self.provider = ChatGPTProvider(self.session, client_factory=lambda _: self.client)
+        store = MemoryCredentialStore({"version": 1, "url": "https://chatgpt.com/", "headers": {}})
+        self.account = Account("default", "chatgpt", store)
+        self.session = BrowserSession(store)
+        self.clients = []
 
-    async def test_job_cancellation_closes_sync_transport_and_waits_for_worker(self):
-        registry = ProviderRegistry()
-        registry.register(self.provider)
-        runtime = TaskService(registry)
-        job = runtime.submit(SendRequest("chatgpt", "default", "local", "hello"))
-        self.assertTrue(await asyncio.to_thread(self.client.started.wait, 2))
-        result = await asyncio.wait_for(runtime.cancel(job), 3)
-        self.assertEqual(result.state, JobState.CANCELLED)
-        self.assertEqual(result.text, "partial")
-        self.assertTrue(self.client.closed.is_set())
-        await runtime.close()
+        def make_client(session):
+            client = FakeClient(session)
+            self.clients.append(client)
+            return client
+
+        self.provider = ChatGPTProvider(
+            self.account, session=self.session, client_factory=make_client
+        )
+        self.addCleanup(self.provider.close)
+
+    def test_operation_cancellation_closes_sync_client_and_stops_stream(self):
+        self.provider.open()
+        chat = self.provider.chats.create()
+        op = chat.responses.create("hello")
+        chunks = []
+        cancelled = []
+
+        def run():
+            try:
+                for event in op.stream():
+                    if isinstance(event, OutputDelta):
+                        chunks.append(event.delta)
+            except OperationCancelledError as error:
+                cancelled.append(error)
+
+        def send_client():
+            return next(
+                (client for client in self.clients[1:] if client.started.is_set()),
+                self.clients[-1],
+            )
+
+        with concurrent.futures.ThreadPoolExecutor(1) as pool:
+            future = pool.submit(run)
+            while len(self.clients) < 2:
+                self.assertTrue(future.running())
+            self.assertTrue(self.clients[-1].started.wait(2))
+            op.cancel()
+            future.result(timeout=3)
+
+        self.assertEqual("".join(chunks), "partial")
+        self.assertEqual(op.state, OperationState.CANCELLED)
+        self.assertEqual(len(cancelled), 1)
+        self.assertTrue(send_client().closed.is_set())

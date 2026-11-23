@@ -8,19 +8,18 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from webai_provider.api import (
-    Content,
-    Conversation,
+from webaiprovider.core.timing import SendTiming
+from webaiprovider.resources.chat.types import Conversation
+from webaiprovider.resources.message.protocol import (
     ConversationBound,
-    Message,
-    MessageAction,
     MessageMetadata,
-    Origin,
-    ReplaceText,
+    ResponseComplete,
+    TextReplacement,
 )
+from webaiprovider.resources.message.types import Content, MessageAction, MessageData
+from webaiprovider.resources.project.types import ProjectData
 
-from extensions.archive.repository import Files, SQLiteRepository
-from extensions.archive.sync import Archive
+from archive import Archive, Files, SQLiteRepository, merge_conversation
 from tests.account_fixture import configured_application
 from tests.tui_support import immediate, terminal
 from tui.markdown import transcript_fragments, visible_chat_message, visible_chat_messages
@@ -35,7 +34,6 @@ class MutationArchiveTests(unittest.TestCase):
         self.addCleanup(self.archive.close)
 
     def test_provider_refresh_keeps_reply_settings_and_files_through_sqlite_reload(self):
-        from webai_provider.api import merge_conversation
 
         local = {
             "messages": [
@@ -449,41 +447,61 @@ class MutationAccountsTests(unittest.TestCase):
                     },
                 )
                 received = []
+                edited = False
 
-                class Provider:
-                    id, account_id = "chatgpt", "default"
+                def stream(request):
+                    nonlocal edited
+                    received.append(request)
+                    edited = True
+                    yield ConversationBound("chat")
+                    yield TextReplacement("New answer", "final")
+                    yield MessageMetadata("new-answer", "new-user")
+                    yield ResponseComplete()
 
-                    async def stream(self, request):
-                        received.append(request)
-                        yield ConversationBound("chat")
-                        yield ReplaceText("New answer", "final")
-                        yield MessageMetadata("new-answer", "new-user", actions=("retry", "branch"))
-
-                    async def get_chat(self, remote):
+                def get_chat(remote):
+                    if not edited:
                         return Conversation(
-                            Origin("chatgpt", "default", remote),
+                            remote,
                             "Chat",
                             (
-                                Message(
-                                    "new-user",
+                                MessageData(
+                                    "old-user",
                                     "user",
-                                    (Content("text", "Changed"),),
+                                    (Content("text", "Original"),),
                                     actions=("edit",),
                                 ),
-                                Message(
-                                    "new-answer",
+                                MessageData(
+                                    "old-answer",
                                     "assistant",
-                                    (Content("text", "New answer"),),
+                                    (Content("text", "Old answer"),),
                                     actions=("retry", "branch"),
                                 ),
                             ),
-                            project_id="g-p-work",
                         )
+                    return Conversation(
+                        remote,
+                        "Chat",
+                        (
+                            MessageData(
+                                "new-user",
+                                "user",
+                                (Content("text", "Changed"),),
+                                actions=("edit",),
+                            ),
+                            MessageData(
+                                "new-answer",
+                                "assistant",
+                                (Content("text", "New answer"),),
+                                actions=("retry", "branch"),
+                            ),
+                        ),
+                        project=ProjectData("g-p-work", ""),
+                    )
 
-                    async def close(self):
-                        pass
-
-                provider = Provider()
+                provider = accounts.provider("chatgpt/default")
+                provider._opened = True
+                provider._stream_provider_events = stream
+                provider._get_chat_data = get_chat
                 accounts._providers["chatgpt/default"] = provider
                 result = accounts.send(
                     "chatgpt/default",
@@ -536,40 +554,61 @@ class MutationAccountsTests(unittest.TestCase):
                     },
                 )
                 received = []
+                edited = False
 
-                class GrokTestProvider:
-                    id, account_id = "grok", accounts.item(grok)["id"]
+                def stream(request):
+                    nonlocal edited
+                    received.append(request)
+                    edited = True
+                    yield ConversationBound("grok-chat")
+                    yield TextReplacement("Edited answer", "final")
+                    yield MessageMetadata("a1", "u1")
+                    yield ResponseComplete()
 
-                    async def stream(self, request):
-                        received.append(request)
-                        yield ConversationBound("grok-chat")
-                        yield ReplaceText("Edited answer", "final")
-                        yield MessageMetadata("a1", "u1", actions=("retry",))
-
-                    async def get_chat(self, remote):
+                def get_chat(remote):
+                    if not edited:
                         return Conversation(
-                            Origin("grok", accounts.item(grok)["id"], remote),
+                            remote,
                             "Grok Chat",
                             (
-                                Message(
-                                    "u1",
+                                MessageData(
+                                    "u0",
                                     "user",
-                                    (Content("text", "Edited question"),),
+                                    (Content("text", "Old question"),),
                                     actions=("edit",),
                                 ),
-                                Message(
-                                    "a1",
+                                MessageData(
+                                    "a0",
                                     "assistant",
-                                    (Content("text", "Edited answer"),),
+                                    (Content("text", "Old answer"),),
                                     actions=("retry",),
                                 ),
                             ),
                         )
+                    return Conversation(
+                        remote,
+                        "Grok Chat",
+                        (
+                            MessageData(
+                                "u1",
+                                "user",
+                                (Content("text", "Edited question"),),
+                                actions=("edit",),
+                            ),
+                            MessageData(
+                                "a1",
+                                "assistant",
+                                (Content("text", "Edited answer"),),
+                                actions=("retry",),
+                            ),
+                        ),
+                    )
 
-                    async def close(self):
-                        pass
-
-                accounts._providers[grok] = GrokTestProvider()
+                provider = accounts.provider(grok)
+                provider._opened = True
+                provider._stream_provider_events = stream
+                provider._get_chat_data = get_chat
+                accounts._providers[grok] = provider
                 result = accounts.send(
                     grok,
                     "grok-chat",
@@ -604,40 +643,40 @@ class MutationAccountsTests(unittest.TestCase):
             archive.put("chatgpt/default", "conversation", "source", source)
             requests, reads = [], []
 
-            class Provider:
-                id, account_id = "chatgpt", "default"
+            def branch_chat(cid, mid):
+                return Conversation(
+                    "preview",
+                    "Branch",
+                    (MessageData("a", "assistant", (Content("text", "Original"),)),),
+                    metadata={"pending_branch": {"conversation_id": cid, "message_id": mid}},
+                )
 
-                async def branch_chat(self, cid, mid):
-                    return Conversation(
-                        Origin(self.id, self.account_id, "preview"),
-                        "Branch",
-                        (Message("a", "assistant", (Content("text", "Original"),)),),
-                        metadata={"pending_branch": {"conversation_id": cid, "message_id": mid}},
-                    )
+            def stream(request):
+                requests.append(request)
+                yield ConversationBound("persisted")
+                yield TextReplacement("New answer", "final")
+                yield ResponseComplete()
 
-                async def stream(self, request):
-                    requests.append(request)
-                    yield ConversationBound("persisted")
-                    yield ReplaceText("New answer", "final")
+            def get_chat(cid):
+                reads.append(cid)
+                if cid != "persisted":
+                    raise AssertionError("An uncommitted branch must be read from SQL")
+                return Conversation(
+                    cid,
+                    "Branch",
+                    (
+                        MessageData("a", "assistant", (Content("text", "Original"),)),
+                        MessageData("u", "user", (Content("text", "Continue"),)),
+                        MessageData("new", "assistant", (Content("text", "New answer"),)),
+                    ),
+                )
 
-                async def get_chat(self, cid):
-                    reads.append(cid)
-                    if cid != "persisted":
-                        raise AssertionError("An uncommitted branch must be read from SQL")
-                    return Conversation(
-                        Origin(self.id, self.account_id, cid),
-                        "Branch",
-                        (
-                            Message("a", "assistant", (Content("text", "Original"),)),
-                            Message("u", "user", (Content("text", "Continue"),)),
-                            Message("new", "assistant", (Content("text", "New answer"),)),
-                        ),
-                    )
-
-                async def close(self):
-                    pass
-
-            accounts._providers["chatgpt/default"] = Provider()
+            provider = accounts.provider("chatgpt/default")
+            provider._opened = True
+            provider._branch_chat_data = branch_chat
+            provider._stream_provider_events = stream
+            provider._get_chat_data = get_chat
+            accounts._providers["chatgpt/default"] = provider
             record = accounts.branch_chat("chatgpt/default", "source", "a")
             reopened = accounts.load(record["id"], "chatgpt/default", force=True, window=True)
             self.assertEqual(reopened["messages"][0]["text"], "Original")
@@ -650,8 +689,11 @@ class MutationAccountsTests(unittest.TestCase):
                 lambda event: None,
                 lambda connection: None,
             )
-            self.assertEqual(requests[0].branch.conversation_id, "source")
-            self.assertEqual(requests[0].branch.message_id, "a")
+            self.assertEqual(requests[0].conversation_id, "preview")
+            self.assertEqual(
+                provider._pending_branches["preview"],
+                {"conversation_id": "source", "message_id": "a"},
+            )
             self.assertEqual(result["conversation_id"], "@chatgpt/default/persisted")
             self.assertEqual(result["replaced_conversation_id"], "@chatgpt/default/preview")
             self.assertTrue(archive.deleted("chatgpt/default", "conversation", "preview"))
@@ -679,28 +721,26 @@ class MutationAccountsTests(unittest.TestCase):
             )
             reads = []
 
-            class Provider:
-                id, account_id = "gemini", key.split("/", 1)[1]
+            def branch_chat(conversation_id, message_id):
+                return Conversation(
+                    "c_branch",
+                    "Branch",
+                    (MessageData("answer", "assistant", (Content("text", "Original"),)),),
+                )
 
-                async def branch_chat(self, conversation_id, message_id):
-                    return Conversation(
-                        Origin(self.id, self.account_id, "c_branch"),
-                        "Branch",
-                        (Message("answer", "assistant", (Content("text", "Original"),)),),
-                    )
+            def get_chat(conversation_id):
+                reads.append(conversation_id)
+                return Conversation(
+                    conversation_id,
+                    "Branch",
+                    (MessageData("answer", "assistant", (Content("text", "Original"),)),),
+                )
 
-                async def get_chat(self, conversation_id):
-                    reads.append(conversation_id)
-                    return Conversation(
-                        Origin(self.id, self.account_id, conversation_id),
-                        "Branch",
-                        (Message("answer", "assistant", (Content("text", "Original"),)),),
-                    )
-
-                async def close(self):
-                    pass
-
-            accounts._providers[key] = Provider()
+            provider = accounts.provider(key)
+            provider._opened = True
+            provider._branch_chat_data = branch_chat
+            provider._get_chat_data = get_chat
+            accounts._providers[key] = provider
             branch = accounts.branch_chat(key, "c_source", "answer")
             self.assertFalse(branch.get("pending_local_branch"))
             self.assertEqual(archive.pending_branches(key), [])
@@ -735,30 +775,48 @@ class MutationAccountsTests(unittest.TestCase):
                 },
             )
             requests = []
+            retried = False
 
-            class Provider:
-                id, account_id = "chatgpt", "default"
+            def stream(request):
+                nonlocal retried
+                requests.append(request)
+                retried = True
+                yield ConversationBound("chat")
+                yield TextReplacement("Retried", "final")
+                yield MessageMetadata("new-a")
+                yield ResponseComplete()
 
-                async def stream(self, request):
-                    requests.append(request)
-                    yield ConversationBound("chat")
-                    yield ReplaceText("Retried", "final")
-                    yield MessageMetadata("new-a")
-
-                async def get_chat(self, cid):
+            def get_chat(cid):
+                if not retried:
                     return Conversation(
-                        Origin(self.id, self.account_id, cid),
+                        cid,
                         "Chat",
                         (
-                            Message("u", "user", (Content("text", "Original"),)),
-                            Message("new-a", "assistant", (Content("text", "Retried"),)),
+                            MessageData(
+                                "u", "user", (Content("text", "Original"),), actions=("edit",)
+                            ),
+                            MessageData(
+                                "a",
+                                "assistant",
+                                (Content("text", "Old answer"),),
+                                actions=("retry",),
+                            ),
                         ),
                     )
+                return Conversation(
+                    cid,
+                    "Chat",
+                    (
+                        MessageData("u", "user", (Content("text", "Original"),)),
+                        MessageData("new-a", "assistant", (Content("text", "Retried"),)),
+                    ),
+                )
 
-                async def close(self):
-                    pass
-
-            accounts._providers["chatgpt/default"] = Provider()
+            provider = accounts.provider("chatgpt/default")
+            provider._opened = True
+            provider._stream_provider_events = stream
+            provider._get_chat_data = get_chat
+            accounts._providers["chatgpt/default"] = provider
             result = accounts.send(
                 "chatgpt/default",
                 "chat",
@@ -770,7 +828,7 @@ class MutationAccountsTests(unittest.TestCase):
                 message_id="a",
             )
             self.assertEqual(requests[0].action, MessageAction.RETRY)
-            self.assertEqual(requests[0].prompt, "")
+            self.assertEqual(requests[0].prompt, "Original")
             self.assertEqual(result["history"]["messages"][-1]["text"], "Retried")
 
 
@@ -1199,8 +1257,6 @@ class MessageToolbarTests(unittest.TestCase):
             self.assertEqual(view.messages[0]["_body_length"], len("Done"))
 
     def test_first_assistant_text_is_timed_at_the_ui_after_render_hook(self):
-        from webai_provider.api import SendTiming
-
         from tui.chat.stream import _SendStream
 
         with terminal() as (view, _):
@@ -1226,8 +1282,6 @@ class MessageToolbarTests(unittest.TestCase):
             self.assertEqual(view.messages[-1]["text"], "First visible text")
 
     def test_unrendered_timing_callback_is_removed_when_stream_finishes(self):
-        from webai_provider.api import SendTiming
-
         from tui.chat.stream import _SendStream
 
         with terminal() as (view, _):

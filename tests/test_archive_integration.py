@@ -1,20 +1,21 @@
 """Application and provider integration with the local archive."""
 
-import asyncio
-import sqlite3
 import tempfile
 import threading
 import time
 import unittest
-from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock, patch
 
-from webai_provider.api import Capability, Choice, FeatureState, Model, ModelCatalog
+from webaiprovider.resources.chat.types import Conversation
+from webaiprovider.resources.message.protocol import (
+    ConversationBound,
+    ResponseComplete,
+    TextReplacement,
+)
 
-from extensions.archive.repository import Files, SQLiteRepository, encode
-from extensions.archive.sync import Archive
+from accounts.shared import AccountCatalog, CatalogChoice, CatalogModel, ModelCatalogState
 from tests.account_fixture import configured_application as create_application
 from tests.tui_support import immediate, terminal
 from tui.history import prepare_archive_snapshot
@@ -64,14 +65,18 @@ class ArchiveIntegrationTests(unittest.TestCase):
     def test_cold_provider_callback_returns_25_message_archive_window(self):
         record = {
             "id": "@chatgpt/default/cold",
+            "metadata": {},
             "messages": [
                 {"id": str(i), "role": "assistant", "text": f"Answer {i}"} for i in range(100)
             ],
         }
-        provider = Mock()
+        provider = Mock(
+            _opened=True,
+            opened=True,
+            chats=Mock(get_with_responses=Mock(return_value=(SimpleNamespace(metadata={}), []))),
+        )
         with (
             patch.object(self.accounts, "provider", return_value=provider),
-            patch.object(self.accounts, "call", return_value=SimpleNamespace(metadata={})),
             patch.object(self.accounts, "chat_record", return_value=record),
         ):
             page = self.accounts.callbacks("chatgpt/default")["load_conversation"](
@@ -130,9 +135,10 @@ class ArchiveIntegrationTests(unittest.TestCase):
         self.accounts.select(self.gemini)
         for key, model in [("chatgpt/default", "gpt"), (self.gemini, "flash")]:
             self.accounts._catalogs[key] = (
-                time.monotonic(),
-                ModelCatalog(
-                    FeatureState.AVAILABLE, (Model(model, model, (Choice("high", "High"),)),)
+                0,
+                AccountCatalog(
+                    ModelCatalogState.AVAILABLE,
+                    (CatalogModel(model, model, (CatalogChoice("high", "High"),)),),
                 ),
             )
         with terminal(account_service=self.accounts) as (view, _):
@@ -359,19 +365,16 @@ class ArchiveIntegrationTests(unittest.TestCase):
             self.assertEqual(view.input.text, "keep my draft")
 
     def test_opening_other_provider_chat_uses_its_preference_for_cached_and_cold_history(self):
-        self.accounts.call(
-            asyncio.to_thread(lambda: None)
-        )  # Start real provider/executor threads before the UI-thread mock.
         self.accounts.select(self.gemini)
         key = "chatgpt/default"
         self.accounts.remember(key, "preferred-gpt", "high")
         self.accounts._catalogs[key] = (
-            time.monotonic(),
-            ModelCatalog(
-                FeatureState.AVAILABLE,
+            0,
+            AccountCatalog(
+                ModelCatalogState.AVAILABLE,
                 (
-                    Model("old-gpt", "Old"),
-                    Model("preferred-gpt", "Preferred", (Choice("high", "High"),)),
+                    CatalogModel("old-gpt", "Old"),
+                    CatalogModel("preferred-gpt", "Preferred", (CatalogChoice("high", "High"),)),
                 ),
             ),
         )
@@ -415,17 +418,6 @@ class ArchiveIntegrationTests(unittest.TestCase):
             sent.assert_called_once()
             self.assertEqual(view.input.text, "")
 
-    def test_extension_disable_preserves_archive_and_other_services(self):
-        archive = self.api.get("archive")
-        archive.put("chatgpt/default", "conversation", "one", {"title": "Saved"})
-        self.api.get("extensions").disable("archive")
-        self.assertIsNone(self.accounts.archive())
-        self.assertTrue(self.api.get("workspaces"))
-        self.api.get("extensions").enable("archive")
-        self.assertEqual(
-            self.api.get("archive").get("chatgpt/default", "conversation", "one")["title"], "Saved"
-        )
-
     def test_cold_load_allows_another_tab_and_applies_only_to_its_owner(self):
         entered, release = threading.Event(), threading.Event()
         with terminal(account_service=self.accounts) as (view, _):
@@ -460,13 +452,16 @@ class ArchiveIntegrationTests(unittest.TestCase):
             self.assertEqual(view.messages, [])
 
     def test_completed_reply_does_not_turn_into_request_failure_if_archive_write_fails(self):
-        from webai_provider.api import ConversationBound, ReplaceText
+        provider = self.accounts.provider(self.gemini)
+        provider._opened = True
 
-        async def stream(request):
-            yield ReplaceText("Answer")
+        def stream(request):
+            yield TextReplacement("Answer")
             yield ConversationBound("one")
+            yield ResponseComplete()
 
-        self.accounts._providers[self.gemini] = Mock(stream=stream, close=AsyncMock())
+        provider._stream_provider_events = stream
+        self.accounts._providers[self.gemini] = provider
         archive = self.api.get("archive")
         archive.repository.append_turn = Mock(side_effect=OSError("disk full"))
         result = self.accounts.send(self.gemini, None, "Question", [], Mock(), Mock())
@@ -474,23 +469,20 @@ class ArchiveIntegrationTests(unittest.TestCase):
         self.assertTrue(result["cache_warning"])
 
     def test_successful_file_send_keeps_metadata_without_archiving_file_content(self):
-        from webai_provider.api import ConversationBound, ReplaceText
-
         root = Path(self.folder.name)
         source = root / "notes.txt"
         source.write_text("Research source")
 
-        async def stream(request):
+        def stream(request):
             self.assertNotIn("path", request.attachments[0])
-            yield ReplaceText("Answer")
+            yield TextReplacement("Answer")
             yield ConversationBound("one")
+            yield ResponseComplete()
 
-        provider = Mock(
-            stream=stream,
-            close=AsyncMock(),
-            capabilities=frozenset({Capability.ATTACHMENTS}),
-        )
-        provider.attachment_policy.return_value = {"max_files": 10, "max_bytes": 1024}
+        provider = self.accounts.provider("chatgpt/default")
+        provider._opened = True
+        provider._stream_provider_events = stream
+        provider.attachment_policy = lambda: {"max_files": 10, "max_bytes": 1024}
         self.accounts._providers["chatgpt/default"] = provider
         self.accounts._attachment_paths["chatgpt/default", "file1"] = str(source)
         self.accounts.send(
@@ -508,111 +500,6 @@ class ArchiveIntegrationTests(unittest.TestCase):
         self.assertNotIn("sha256", resource)
         self.assertEqual(list(archive.files.root.glob("??/" + "?" * 64)), [])
         self.assertTrue(source.exists())
-
-    def test_v5_migration_removes_legacy_uploaded_bodies_and_keeps_resource_metadata(self):
-
-        archive = self.api.get("archive")
-        repository_before = archive.repository
-        relative, digest = archive.files.save(b"legacy uploaded body")
-        archive.put(
-            "chatgpt/a",
-            "conversation",
-            "chat",
-            {
-                "messages": [
-                    {
-                        "role": "user",
-                        "resources": [
-                            {
-                                "id": "file-1",
-                                "name": "notes.txt",
-                                "mime": "text/plain",
-                                "size": 20,
-                                "path": relative,
-                                "sha256": digest,
-                            }
-                        ],
-                    }
-                ]
-            },
-        )
-        archive.put(
-            "gemini/a",
-            "container",
-            "project",
-            {
-                "id": "project",
-                "resources": [
-                    {
-                        "id": "source-1",
-                        "name": "reference.pdf",
-                        "mime": "application/pdf",
-                        "path": relative,
-                        "sha256": digest,
-                    }
-                ],
-            },
-        )
-        with closing(sqlite3.connect(repository_before.path)) as db:
-            db.executemany(
-                "INSERT INTO resources(account,owner_kind,owner,ordinal,remote,kind,name,mime,uri,path,metadata) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                (
-                    (
-                        "gemini/a",
-                        "container",
-                        f"project-{index}",
-                        0,
-                        None,
-                        "file",
-                        "reference.pdf",
-                        "application/pdf",
-                        None,
-                        relative,
-                        encode({"id": f"source-{index}", "path": relative, "sha256": digest}),
-                    )
-                    for index in range(300)
-                ),
-            )
-            for table in (
-                "pending_branches",
-                "response_variant_groups",
-                "response_variants",
-                "superseded_messages",
-            ):
-                db.execute(f"DROP TABLE {table}")
-            db.execute("UPDATE schema_version SET version=4")
-            db.commit()
-
-        archive.close()
-        repository = SQLiteRepository(repository_before.path)
-        upgraded = Archive(repository, Files(archive.files.root))
-        self.addCleanup(upgraded.close)
-        resource = upgraded.get("chatgpt/a", "conversation", "chat")["messages"][0]["resources"][0]
-        self.assertEqual(
-            {key: resource[key] for key in ("id", "name", "mime", "size")},
-            {"id": "file-1", "name": "notes.txt", "mime": "text/plain", "size": 20},
-        )
-        self.assertNotIn("path", resource)
-        self.assertNotIn("sha256", resource)
-        self.assertFalse((archive.files.root / relative).exists())
-        project_resource = upgraded.get("gemini/a", "container", "project")["resources"][0]
-        self.assertNotIn("path", project_resource)
-        self.assertNotIn("sha256", project_resource)
-        self.assertIsNone(repository.resources("gemini/a", "container", "project")[0].get("path"))
-        with closing(sqlite3.connect(repository.path)) as db:
-            self.assertIsNone(
-                db.execute(
-                    "SELECT path FROM resources WHERE account=? AND owner_kind=? AND owner=?",
-                    ("gemini/a", "container", "project"),
-                ).fetchone()[0]
-            )
-        self.assertFalse(repository.uploaded_file_cleanup_pending())
-        with closing(sqlite3.connect(repository.path)) as db:
-            self.assertEqual(
-                db.execute("SELECT count(*) FROM resources WHERE path IS NOT NULL").fetchone()[0],
-                0,
-            )
 
     def test_cached_startup_revalidates_active_chat_without_resetting_draft(self):
         self.accounts.load = Mock(return_value={"id": "one", "messages": []})
@@ -797,13 +684,14 @@ class ArchiveIntegrationTests(unittest.TestCase):
         )
         release = threading.Event()
 
-        async def get_chat(remote):
-            await asyncio.to_thread(release.wait, 2)
-            from webai_provider.api import Conversation, Origin
+        def get_chat(remote):
+            release.wait(2)
+            return Conversation(remote, "Remote")
 
-            return Conversation(Origin("gemini", self.gemini.split("/")[1], remote), "Remote")
-
-        self.accounts._providers[self.gemini] = Mock(get_chat=get_chat, close=AsyncMock())
+        provider = self.accounts.provider(self.gemini)
+        provider._opened = True
+        provider._get_chat_data = get_chat
+        self.accounts._providers[self.gemini] = provider
         started = time.monotonic()
         try:
             self.assertEqual(self.accounts.load("one", self.gemini)["title"], "Saved")

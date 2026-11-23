@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import Mock
 
 from prompt_toolkit.styles import Style
-from webai_provider.api import Capability
+from webaiprovider import Capability
 
 from tests import tui_support as interaction
 from tests.fakes import Accounts
@@ -109,7 +109,7 @@ class FormsRenderTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(style.get_attrs_for_style_str(active).color, "a9cfff")
 
     def test_split_group_label_keeps_the_active_color(self):
-        from extensions.layout.panes import SplitLayout
+        from tui.workspaces.panes import SplitLayout
 
         with terminal(layout_factory=SplitLayout) as (v, _):
             v.title = "Left"
@@ -191,7 +191,7 @@ class FormsRenderTests(unittest.IsolatedAsyncioTestCase):
             v.delete_record.assert_called_once_with("container", "@gemini/default/p")
 
     def test_close_all_tabs_clears_groups_and_keeps_a_fresh_draft(self):
-        from extensions.layout.panes import SplitLayout
+        from tui.workspaces.panes import SplitLayout
 
         with terminal(layout_factory=SplitLayout) as (v, _):
             v.new_tab()

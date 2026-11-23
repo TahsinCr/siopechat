@@ -4,24 +4,26 @@ import asyncio
 import json
 import tempfile
 import unittest
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-import httpx
 from prompt_toolkit.application.current import set_app
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
-from webai_provider.api import (
-    BrowserSession,
+from webaiprovider import (
+    Account,
     Capability,
-    ChatGPTClient,
+    ChatGPTError,
     ChatGPTProvider,
-    ChatGPTWebError,
-    SessionPaths,
+    MemoryCredentialStore,
 )
+from webaiprovider.providers.chatgpt.auth import BrowserSession
+from webaiprovider.providers.chatgpt.client import ChatGPTClient
+from webaiprovider.transport.base import Transport
 
-from backend import BackendService
+from bootstrap import create_application
 from tests import tui_support as interaction
 from tests.tui_support import ResizableOutput, click, immediate, terminal
 from tui.styles import ICONS
@@ -260,69 +262,94 @@ class PolishTests(unittest.TestCase):
             self.assertFalse(v.follow_output)
 
     def test_provider_requires_server_membership_confirmation(self):
-        with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
-            session = BrowserSession(SessionPaths(root / "session", root / "profile"))
-            client = ChatGPTClient(session, authenticate=False)
-            client.http.close()
-            requests = []
-            membership = ["g-p-work"]
+        requests = []
+        membership = ["g-p-work"]
 
-            def respond(request):
-                requests.append(request)
-                if request.method == "PATCH":
-                    return httpx.Response(200, json={"success": True})
-                return httpx.Response(
-                    200, json={"id": "chat", "gizmo_id": membership[0], "messages": []}
+        class MembershipTransport(Transport):
+            def __init__(self):
+                super().__init__("https://chatgpt.com")
+
+            def send(self, method, path, **options):
+                requests.append((method, path, options))
+                if method == "PATCH":
+                    payload = {"id": "chat", "gizmo_id": membership[0]}
+                else:
+                    payload = {"id": "chat", "gizmo_id": membership[0], "messages": []}
+                return SimpleNamespace(
+                    status_code=200,
+                    headers={"content-type": "application/json"},
+                    content=json.dumps(payload).encode(),
+                    text=json.dumps(payload),
+                    json=lambda: payload,
                 )
 
-            client.http = httpx.Client(transport=httpx.MockTransport(respond))
-            try:
-                client.move_conversation("chat", "g-p-work")
-                self.assertEqual(requests[0].method, "PATCH")
-                self.assertEqual(json.loads(requests[0].content), {"gizmo_id": "g-p-work"})
-                with self.assertRaises(ChatGPTWebError):
-                    client.move_conversation("chat", None)
-                membership[0] = None
+            def stream(self, method, path, **options):
+                return nullcontext()
+
+            def close(self):
+                pass
+
+        store = MemoryCredentialStore(
+            {
+                "version": 1,
+                "url": "https://chatgpt.com/backend-api/conversations",
+                "headers": {"authorization": "Bearer token"},
+            }
+        )
+        client = ChatGPTClient(
+            BrowserSession(store), authenticate=False, transport=MembershipTransport()
+        )
+        try:
+            client.move_conversation("chat", "g-p-work")
+            self.assertEqual(requests[0][0], "PATCH")
+            self.assertEqual(requests[0][2]["json"], {"gizmo_id": "g-p-work"})
+            with self.assertRaises(ChatGPTError):
                 client.move_conversation("chat", None)
-                self.assertEqual(json.loads(requests[-2].content), {"gizmo_id": None})
-                with self.assertRaises(ValueError):
-                    client.move_conversation("chat", "g-custom")
-            finally:
-                client.close()
+            membership[0] = None
+            client.move_conversation("chat", None)
+            self.assertEqual(requests[-1][2]["json"], {"gizmo_id": None})
+            with self.assertRaises(ValueError):
+                client.move_conversation("chat", "g-custom")
+        finally:
+            client.close()
 
     def test_common_provider_exposes_membership_operation(self):
         client = Mock()
-        factory = Mock()
-        factory.return_value.__enter__ = Mock(return_value=client)
-        factory.return_value.__exit__ = Mock(return_value=False)
-        provider = ChatGPTProvider(Mock(), client_factory=factory)
+        client.get_conversation.return_value = {
+            "id": "chat",
+            "conversation_id": "chat",
+            "title": "Chat",
+            "messages": [],
+        }
+        factory = Mock(return_value=client)
+        account = Account("default", "chatgpt", MemoryCredentialStore({}))
+        provider = ChatGPTProvider(account, client_factory=factory)
+        provider._opened = True
         self.assertIn(Capability.PROJECT_MEMBERSHIP, provider.capabilities)
-        asyncio.run(provider.move_chat("chat", None))
-        client.move_conversation.assert_called_once_with("chat", None)
+        chat = provider.chats.get("chat", metadata_only=True)
+        chat.move_to("g-p-work")
+        client.move_conversation.assert_called_once_with("chat", "g-p-work")
+        provider.close()
 
-    def test_ipc_move_preserves_active_conversation_pointer(self):
+    def test_move_conversation_preserves_active_conversation_pointer(self):
         with tempfile.TemporaryDirectory() as folder:
-            backend = BackendService()
-            root = Path(folder)
-            backend.conversation_cache_path = lambda remote: root / (remote + ".json")
-            backend.active_conversation_path = lambda: root / "active.json"
-            backend.set_active_conversation("other")
-            client = Mock()
-            client.move_conversation.return_value = {
-                "id": "chat",
-                "gizmo_id": "g-p-work",
-                "messages": [],
-            }
-            value, _ = backend.handle_daemon_command(
-                client,
-                {"command": "move_chat", "conversation_id": "chat", "project_id": "g-p-work"},
-            )
-            self.assertEqual(value["conversation"]["project_id"], "g-p-work")
-            self.assertEqual(
-                json.loads((root / "active.json").read_text())["conversation_id"], "other"
-            )
-            client.move_conversation.assert_called_once_with("chat", "g-p-work")
+            api = create_application(Path(folder))
+            try:
+                accounts = api.get("accounts")
+                key = accounts.add("chatgpt", "ChatGPT")
+                accounts.set_active(key, "other")
+                chat = Mock()
+                chat._move_to = Mock(return_value=SimpleNamespace(id="chat"))
+                chat.move_to = Mock(return_value=SimpleNamespace(id="chat"))
+                prov = Mock(opened=True, capabilities={Capability.PROJECT_MEMBERSHIP}, close=Mock())
+                accounts._providers[key] = prov
+                accounts._chats[key, "chat"] = chat
+                chat.provider = prov
+                accounts.callbacks(key)["move_conversation"](f"@{key}/chat", f"@{key}/g-p-work")
+                chat.move_to.assert_called_once_with("g-p-work")
+                self.assertEqual(accounts.active_conversation(key), "other")
+            finally:
+                api.runtime.close()
 
 
 class FocusTests(unittest.IsolatedAsyncioTestCase):
