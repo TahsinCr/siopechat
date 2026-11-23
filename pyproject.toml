@@ -25,9 +25,9 @@ classifiers = [
 dependencies = [
     "exceptiongroup>=1.2,<2; python_version < '3.11'",
     "platformdirs>=4,<5",
-    "webai-provider==1.3.0b0",
+    "webaiprovider>=1.3.0b0",
     "httpx>=0.27,<1",
-    "flowevent>=1.3,<2",
+    "flowevent>=1.4.2,<2",
     "prompt-toolkit>=3.0,<4",
     "rich>=13,<15",
 ]
@@ -47,33 +47,26 @@ extend-exclude = [".serena"]
 select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.setuptools]
-package-dir = {"" = "src", "extensions" = "extensions"}
+package-dir = {"" = "src"}
 py-modules = [
-    "downloads",
+    "actions",
     "bootstrap",
     "cli",
-    "settings",
-    "actions",
-    "tasks",
+    "downloads",
     "runtime",
-    "extension",
-    "backend",
-    "language",
+    "settings",
 ]
 # Resource-only namespace packages are listed explicitly so setuptools includes
 # their bundled helpers and translations without package-discovery ambiguity.
 packages = [
     "accounts",
+    "archive",
     "tui",
+    "tui.chat",
+    "tui.lang",
+    "tui.workspaces",
     "utils",
-    "lang",
-    "extensions",
-    "extensions.layout",
-    "extensions.layout.languages",
-    "extensions.archive",
 ]
 
 [tool.setuptools.package-data]
-"lang" = ["*.json"]
-"extensions.layout" = ["languages/*.json", "manifest.json"]
-"extensions.archive" = ["manifest.json"]
+"tui.lang" = ["*.json"]

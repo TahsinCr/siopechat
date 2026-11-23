@@ -1,56 +1,42 @@
-"""AccountsTransfers account operations."""
+"""AccountsTransfers account operations backed by webaiprovider v2."""
 
 from __future__ import annotations
 
+import mimetypes
 import os
 import uuid
 from concurrent.futures import CancelledError
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from webai_provider.api import (
-    Capability,
-    ChatGPTClient,
-    DownloadSource,
-    fit_attachments,
-)
+from webaiprovider import Capability
+from webaiprovider.resources.message.attachment import fit_attachments
+from webaiprovider.transport.downloader import DownloadSource
 
-from .shared import (
-    HISTORY_TIMEOUT,
-    origin,
-)
+from .shared import origin
 
 
 class AccountsTransfers:
-    def _prepare_attachments(self, key, attachments, *, conversation_id=None, cancel_event=None):
+    def _prepare_attachments(
+        self, key: str, attachments, *, conversation_id=None, cancel_event=None
+    ):
         """Fit staged files to the destination account and re-upload foreign IDs."""
         if not attachments:
             return [], []
-        import mimetypes
 
         policy = self.attachment_policy(key)
         if policy is None:
             raise ValueError("Bu sağlayıcı dosya eklerini desteklemiyor")
-        if hasattr(policy, "as_dict"):
-            policy = policy.as_dict()
-        else:
-            policy = dict(policy)
+        policy = policy.as_dict() if hasattr(policy, "as_dict") else dict(policy)
 
         if policy.get("max_files_scope") == "conversation" and conversation_id:
-            provider = self.provider(key)
-            count_attachments = getattr(provider, "conversation_attachment_count", None)
-            if not callable(count_attachments):
-                raise ValueError("Bu sohbetin dosya kotası doğrulanamıyor; ekler gönderilmedi")
-            coroutine = count_attachments(conversation_id)
+            prov = self.open_provider(key)
             try:
-                used_files = (
-                    self._call_cancellable(coroutine, HISTORY_TIMEOUT, cancel_event)
-                    if cancel_event is not None
-                    else self.call(coroutine, timeout=HISTORY_TIMEOUT)
-                )
-            except BaseException:
-                if getattr(coroutine, "close", None):
-                    coroutine.close()
-                raise
+                used_files = prov.conversation_attachment_count(conversation_id)
+            except Exception as error:
+                raise ValueError(
+                    "Claude sohbetindeki mevcut dosya sayısı doğrulanamadı; ekler gönderilmedi"
+                ) from error
             if isinstance(used_files, bool) or not isinstance(used_files, int) or used_files < 0:
                 raise ValueError(
                     "Claude sohbetindeki mevcut dosya sayısı doğrulanamadı; ekler gönderilmedi"
@@ -113,15 +99,15 @@ class AccountsTransfers:
             prepared.append(resource)
         return prepared, omitted
 
-    def resolve_download(self, key, url, conversation_id=None, message_id=None):
-        from urllib.parse import urlsplit
-
+    def resolve_download(
+        self, key: str, url: str, conversation_id: str | None = None, message_id: str | None = None
+    ):
         context, remote = origin(conversation_id, key)
         if context != key:
             raise ValueError("Dosya seçili hesaba ait olmalı")
-        provider = self.provider(key) if key else None
-        if provider and hasattr(provider, "resolve_download"):
-            source = self.call(provider.resolve_download(url, remote, message_id))
+        if key:
+            prov = self.open_provider(key)
+            source = prov._resolve_download_data(url, conversation_id=remote, message_id=message_id)
             if source is not None:
                 return source
         if urlsplit(url).scheme not in ("http", "https"):
@@ -130,15 +116,15 @@ class AccountsTransfers:
 
     def download(
         self,
-        key,
-        url,
+        key: str,
+        url: str,
         conversation_id=None,
         message_id=None,
         progress=None,
         *,
-        title="",
-        force_download=False,
-        filename=None,
+        title: str = "",
+        force_download: bool = False,
+        filename: str | None = None,
     ):
         return self.api.get("downloads").fetch(
             key,
@@ -151,18 +137,19 @@ class AccountsTransfers:
             filename=filename,
         )
 
-    def upload_image(self, key, data, name, mime, width, height):
+    def upload_image(self, key: str, data: bytes, name: str, mime: str, width: int, height: int):
         if key.startswith("claude/") and Capability.ATTACHMENTS not in self.capabilities(key):
             raise ValueError("Claude dosya ekleme henüz kullanılamıyor")
         limit = 30 if key.startswith("claude/") else 20
         if not data or len(data) > limit * 1024 * 1024:
             raise ValueError("Görsel boyutu geçersiz")
+        path = self.directory(key) / "attachments" / (uuid.uuid4().hex + ".png")
+        path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
         if key.startswith("chatgpt/"):
-            path = self.directory(key) / "attachments" / (uuid.uuid4().hex + ".png")
-            path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
             path.write_bytes(data)
             try:
-                with ChatGPTClient(self.session(key)) as client:
+                prov = self.open_provider(key)
+                with prov._activity(), prov._client_scope() as client:
                     result = client.upload_image(name, mime, data, width, height)
                 result.update(
                     path=str(path),
@@ -176,8 +163,6 @@ class AccountsTransfers:
             except BaseException:
                 path.unlink(missing_ok=True)
                 raise
-        path = self.directory(key) / "attachments" / (uuid.uuid4().hex + ".png")
-        path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
         with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as stream:
             stream.write(data)
         if key.startswith("claude/"):
@@ -200,24 +185,20 @@ class AccountsTransfers:
             "temporary_local": True,
         }
 
-    def attach_file(self, key, path, *, cancel_event=None):
+    def attach_file(self, key: str, path, *, cancel_event=None):
         path = Path(path).expanduser().resolve(strict=True)
         if not path.is_file() or path.stat().st_size <= 0:
             raise ValueError("Dosya boş olmamalı")
-        provider = self.provider(key)
-        if Capability.ATTACHMENTS not in provider.capabilities:
+        prov = self.open_provider(key)
+        if Capability.ATTACHMENTS not in prov.capabilities:
             raise ValueError("Bu sağlayıcıda dosya ekleme kullanılamıyor")
-        upload = getattr(provider, "upload_file", None)
-        if upload is None:
-            raise ValueError("Sağlayıcının dosya yükleme işlemi hazır değil")
-        if cancel_event is None:
-            result = self.call(upload(path))
-        elif key.startswith("chatgpt/"):
-            result = self._call_cancellable(
-                upload(path, cancel_event=cancel_event), 45, cancel_event
-            )
+        if cancel_event is not None and cancel_event.is_set():
+            raise CancelledError()
+        if key.startswith("chatgpt/"):
+            with prov._activity():
+                result = prov._upload_file(path, cancel_event=cancel_event)
         else:
-            result = self._call_cancellable(upload(path), 45, cancel_event)
+            result = prov.upload_file(path)
         if key.startswith("gemini/"):
             return result
         remote = result.get("id") or result.get("file_id")
@@ -247,45 +228,34 @@ class AccountsTransfers:
         if remote:
             self._attachment_paths.pop((key, remote), None)
 
-    def attachment_policy(self, key):
-        provider = self.provider(key)
-        if Capability.ATTACHMENTS not in provider.capabilities:
+    def attachment_policy(self, key: str):
+        prov = self.provider(key)
+        if Capability.ATTACHMENTS not in prov.capabilities:
             return None
-        describe = getattr(provider, "attachment_policy", None)
-        return describe() if describe else None
+        return prov.attachment_policy()
 
-    def synchronize(self, scope="all", key=None, conversation_id=None):
+    def synchronize(self, scope: str = "all", key: str | None = None, conversation_id=None):
         """One explicit revalidation entry point for every frontend."""
         if scope not in ("all", "library", "conversation"):
             raise ValueError("Unknown synchronization scope")
-        targets = [self.item(key)] if key else self.active_accounts()
-        errors = []
-        for item in targets:
-            account = item["key"]
-            if not self.status(account)["saved_snapshot"]:
-                continue
+        if scope == "conversation":
+            if not key or not conversation_id:
+                raise ValueError("Account and conversation are required")
+            return self.load(conversation_id, key, force=True, window=True, window_limit=25)
+        targets = (
+            [self.item(key)]
+            if key
+            else [item for item in self.visible_accounts() if item["enabled"]]
+        )
+        results = {"chats": None, "projects": None, "models": {}}
+        for account in targets:
+            with self._lock:
+                self._catalogs.pop(account["key"], None)
             try:
-                if scope == "all":
-                    self.models(account, force=True)
-                if scope in ("all", "library"):
-                    self.list_chats(selected=[item["provider"]], force=True, account_keys={account})
-                    self.list_projects(account, force=True)
-                    archive = self.archive()
-                    if archive:
-                        archive.refresh(
-                            account=account,
-                            kinds={"chats", "containers", "container", "container_chats"},
-                            exclude={
-                                (account, "chats", ""),
-                                (account, "containers", ""),
-                            },
-                        )
-                if scope in ("all", "conversation") and conversation_id:
-                    context, _ = origin(conversation_id, account)
-                    if context == account:
-                        self.load(conversation_id, account, force=True)
+                self.models(account["key"], force=True)
             except Exception as error:
-                errors.append(item["label"] + ": " + str(error))
-        if errors:
-            raise RuntimeError(" · ".join(errors))
-        return {"scope": scope, "queued": True}
+                results["models"][account["key"]] = str(error)
+        keys = [account["key"] for account in targets]
+        results["chats"] = self.list_chats(force=True, account_keys=keys)
+        results["projects"] = self.all_projects(force=True, account_keys=keys)
+        return results

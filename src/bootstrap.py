@@ -1,10 +1,11 @@
-"""Common startup and application composition for every operating system."""
+"""Application composition root for backend and CLI startup (zero TUI coupling)."""
 
 from __future__ import annotations
 
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 
 def _select_environment() -> None:
@@ -24,19 +25,45 @@ def _select_environment() -> None:
         )
 
 
-def create_application(root: Path | None = None):
-    checkout = Path(__file__).resolve().parent.parent
-    if (checkout / "extensions" / "__init__.py").is_file() and str(checkout) not in sys.path:
-        sys.path.insert(0, str(checkout))
-    from webai_provider import create_provider
+class Application:
+    """Central backend container owning runtime services, settings, archive, accounts, downloads."""
 
+    def __init__(self, settings, runtime, actions) -> None:
+        self.runtime = runtime
+        self.settings = settings
+        self.actions = actions
+        settings.events = runtime.events
+
+    @property
+    def events(self):
+        return self.runtime.events
+
+    def provide(self, owner: str, name: str, service: Any) -> None:
+        self.runtime.provide(owner, name, service)
+
+    def get(self, name: str) -> Any:
+        return self.runtime.get(name)
+
+    @property
+    def archive(self):
+        return self.get("archive")
+
+    @property
+    def accounts(self):
+        return self.get("accounts")
+
+    @property
+    def downloads(self):
+        return self.get("downloads")
+
+
+def create_application(root: Path | None = None) -> Application:
     from accounts import Accounts
-    from actions import Action
-    from backend import BackendService
-    from extension import ExtensionAPI, ExtensionManager, View
-    from extensions import __file__ as extensions_file
-    from lang import __file__ as language_file
-    from settings import Settings, SettingsCatalog
+    from actions import Action, ActionService
+    from archive import Archive, Files, SQLiteRepository
+    from downloads import Downloads
+    from runtime import Runtime
+    from settings import IMMUTABLE_KEYBINDINGS, SUPPORTED_LANGUAGES, Settings
     from utils.paths import (
         cache_dir,
         config_path,
@@ -58,101 +85,79 @@ def create_application(root: Path | None = None):
     cache_root = cache_dir(storage_root)
     runtime_root = runtime_dir(storage_root)
     settings_path = config_path(storage_root)
-    settings = Settings(settings_path)
-    api = ExtensionAPI(settings)
-    api.provide("application", "data_root", data_root)
-    api.provide("application", "state_root", state_root)
-    api.provide("application", "downloads_root", downloads_root)
-    api.provide("application", "cache_root", cache_root)
-    api.provide("application", "runtime_root", runtime_root)
-    from accounts.repository import AccountRepository
 
-    repository = AccountRepository(data_root / "accounts.sqlite3")
-    backend = BackendService(
-        root, data_root=data_root, runtime_root=runtime_root, repository=repository
-    )
-    api.provide("application", "backend", backend)
-    api.providers.register(
-        create_provider("chatgpt", session=backend.create_session()),
-        account_factory=lambda account_id, **config: create_provider(
-            "chatgpt", account_id, **config
-        ),
-    )
-
-    api.providers.register(
-        create_provider("gemini", credential_file=repository.credentials("gemini/default")),
-        account_factory=lambda account_id, **config: create_provider(
-            "gemini", account_id, **config
-        ),
-    )
-    api.providers.register(
-        create_provider("claude", credential_file=repository.credentials("claude/default")),
-        account_factory=lambda account_id, **config: create_provider(
-            "claude", account_id, **config
-        ),
-    )
-    api.providers.register(
-        create_provider("grok", credential_file=repository.credentials("grok/default")),
-        account_factory=lambda account_id, **config: create_provider("grok", account_id, **config),
-    )
-    accounts = Accounts(api)
-    api.provide("application", "accounts", accounts)
-    api.tasks.provider_resolver = lambda provider, account: accounts.provider(
-        provider + "/" + account
-    )
-    from downloads import Downloads
-
-    api.provide(
-        "application",
-        "downloads",
-        Downloads(settings, root, accounts, default_directory=downloads_root),
-    )
-    api.actions.register(
-        "application", Action("accounts.list", "Hesapları listele", accounts.items)
-    )
-    api.actions.register("application", Action("accounts.add", "Hesap ekle", accounts.add))
-    api.actions.register("application", Action("accounts.select", "Hesap seç", accounts.select))
-    api.actions.register(
-        "application", Action("accounts.synchronize", "Verileri eşitle", accounts.synchronize)
-    )
-    for bundle in sorted(Path(language_file).parent.glob("*.json")):
-        api.languages.load("application", bundle.stem, bundle)
-    panel = SettingsCatalog(api)
-    api.views.register("application", View("settings", "Settings", lambda: panel))
-    api.actions.register("application", Action("settings.show", "Show settings", panel.rows))
-    manager = ExtensionManager(api)
-    api.provide("application", "extensions", manager)
-    api.actions.register(
-        "application", Action("extensions.enable", "Enable extension", manager.enable)
-    )
-    api.actions.register(
-        "application", Action("extensions.disable", "Disable extension", manager.disable_async)
-    )
-    api.actions.register("application", Action("settings.change", "Change setting", panel.change))
-    bundled_extensions = Path(extensions_file).parent
-    manager.load_directory(bundled_extensions)
-    if (root / "extensions").resolve() != bundled_extensions.resolve():
-        manager.load_directory(root / "extensions")
     for directory in (settings_path.parent, data_root, state_root, cache_root):
         ensure_private_dir(directory)
+
+    runtime = Runtime()
+    settings = Settings(settings_path, events=runtime.events)
+    actions = ActionService(runtime.events)
+    app = Application(settings, runtime, actions)
+
+    for name, value in (
+        ("settings", settings),
+        ("actions", actions),
+        ("data_root", data_root),
+        ("state_root", state_root),
+        ("downloads_root", downloads_root),
+        ("cache_root", cache_root),
+        ("runtime_root", runtime_root),
+    ):
+        app.provide("application", name, value)
+
+    archive = Archive(
+        SQLiteRepository(data_root / "archive.sqlite3"),
+        Files(data_root / "files"),
+        runtime.events,
+    )
+    app.provide("application", "archive", archive)
+
+    accounts = Accounts(app)
+    app.provide("application", "accounts", accounts)
+
+    downloads = Downloads(settings, root, accounts, default_directory=downloads_root)
+    app.provide("application", "downloads", downloads)
+
+    def change_setting(section: str, key: str, value: Any) -> None:
+        if section == "keybindings" and key in IMMUTABLE_KEYBINDINGS:
+            raise ValueError("system keybindings cannot be modified")
+        if section == "application" and key == "language" and value not in SUPPORTED_LANGUAGES:
+            raise ValueError("choose one of the available setting values")
+        if section.startswith("providers."):
+            if key != "enabled":
+                raise ValueError("unknown setting")
+            accounts.set_enabled(section.split(".", 1)[1], value)
+        else:
+            settings.update(section, {key: value})
+
+    for action in (
+        Action("accounts.list", "Hesapları listele", accounts.items),
+        Action("accounts.add", "Hesap ekle", accounts.add),
+        Action("accounts.select", "Hesap seç", accounts.select),
+        Action("accounts.synchronize", "Verileri eşitle", accounts.synchronize),
+        Action("archive.collect", "Preview unreferenced archive files", archive.collect_files),
+        Action("archive.inspect", "Inspect archive file references", archive.inspect_files),
+        Action("settings.change", "Change setting", change_setting),
+    ):
+        actions.register("application", action)
+
     if not settings.path.exists():
         settings.save()
-    # Stop provider work and finish accepted-response writes before extensions
-    # close their repositories. Runtime shutdown callbacks execute in reverse.
-    api.runtime.on_shutdown(lambda: accounts.close())
-    return api
+
+    runtime.on_shutdown(accounts.close)
+    return app
 
 
 def main(argv: list[str] | None = None) -> int:
     _select_environment()
     try:
-        api = create_application()
+        app = create_application()
     except (ImportError, OSError, ValueError) as error:
         print(f"siopechat: {error}", file=sys.stderr)
         return 1
     from cli import main as cli_main
 
-    return cli_main(api, argv)
+    return cli_main(app, argv)
 
 
 if __name__ == "__main__":

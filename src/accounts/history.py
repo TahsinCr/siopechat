@@ -1,282 +1,389 @@
-"""AccountsHistory account operations."""
+"""AccountsHistory account operations backed directly by webaiprovider v2 and Archive."""
 
 from __future__ import annotations
 
-import asyncio
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from itertools import islice
+from typing import Any
 
-from webai_provider.api import (
+from webaiprovider import (
     Capability,
     ProviderError,
     RemoteNotFound,
+    Response,
+    TextPart,
+    ThinkingPart,
 )
 
 from .shared import (
-    HISTORY_TIMEOUT,
     _shallow_dataclass,
     identity,
     origin,
 )
 
 
+def _conversation_messages_to_dicts(raw_messages: Any) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for item in raw_messages:
+        if isinstance(item, dict):
+            result.append(dict(item))
+            continue
+        content = [
+            dict(_shallow_dataclass(part), resource=_shallow_dataclass(part.resource))
+            if getattr(part, "resource", None) is not None
+            else _shallow_dataclass(part)
+            for part in getattr(item, "content", ())
+        ]
+        resources = [part["resource"] for part in content if part.get("resource") is not None]
+        text = "\n".join(
+            part["text"] for part in content if part.get("kind") == "text" and part.get("text")
+        )
+        result.append(
+            {
+                "id": item.id,
+                "role": item.role,
+                "channel": item.channel,
+                "text": text,
+                "content": content,
+                "resources": resources,
+                "metadata": item.metadata,
+                "actions": list(getattr(item, "actions", ())),
+            }
+        )
+    return result
+
+
+def _artifact_dict(artifact: Any) -> dict[str, Any]:
+    return {
+        "id": artifact.id,
+        "name": artifact.name,
+        "media_type": artifact.mime_type,
+        "mime_type": artifact.mime_type,
+        "size_bytes": artifact.size,
+        "remote_url": artifact.download_url,
+        "kind": artifact.kind,
+        **artifact.metadata,
+    }
+
+
+def _source_dict(source: Any) -> dict[str, Any]:
+    return {
+        "id": source.id,
+        "url": source.url,
+        "title": source.title,
+        "description": source.snippet,
+        "snippet": source.snippet,
+        "kind": source.kind,
+        **source.metadata,
+    }
+
+
+def _model_slug_from(value: Any) -> str | None:
+    if isinstance(value, str):
+        return value or None
+    if value is not None:
+        slug = getattr(value, "id", None)
+        if isinstance(slug, str) and slug:
+            return slug
+    return None
+
+
+def _responses_to_messages(responses: list[Response], *, provider_id: str) -> list[dict[str, Any]]:
+    messages: list[dict[str, Any]] = []
+    for resp in responses:
+        msg = resp.message
+        if msg is not None:
+            resources = [
+                {
+                    "id": att.id,
+                    "name": att.name,
+                    "media_type": att.media_type,
+                    "mime_type": att.mime_type,
+                    "size_bytes": att.size,
+                    "remote_url": att.remote_url,
+                    **att.metadata,
+                }
+                for att in msg.attachments
+            ]
+            messages.append(
+                {
+                    "id": msg.remote_id or msg.id,
+                    "role": "user",
+                    "channel": "final",
+                    "text": msg.content,
+                    "content": [{"kind": "text", "text": msg.content}] if msg.content else [],
+                    "resources": resources,
+                    "metadata": dict(msg.metadata),
+                    "actions": list(msg.metadata.get("actions", ())),
+                }
+            )
+        sources = [_source_dict(item) for item in resp.sources]
+        files = [_artifact_dict(item) for item in resp.artifacts]
+        resp_id = resp.remote_id or resp.id
+        model_slug = _model_slug_from(resp.model) or resp.metadata.get("model")
+        effort = resp.metadata.get("effort")
+        if hasattr(resp.model, "effort") and resp.model.effort is not None:
+            effort = resp.model.effort.id
+        base_meta: dict[str, Any] = dict(resp.metadata)
+        if model_slug and "model" not in base_meta:
+            base_meta["model"] = model_slug
+        if effort and "effort" not in base_meta:
+            base_meta["effort"] = effort
+        if sources and "sources" not in base_meta:
+            base_meta["sources"] = sources
+        if files and "files" not in base_meta:
+            base_meta["files"] = files
+        actions = list(resp.metadata.get("actions", ()))
+
+        parts = list(resp.parts)
+        text_indices = [idx for idx, p in enumerate(parts) if isinstance(p, TextPart)]
+        last_text_idx = text_indices[-1] if text_indices else -1
+        if not parts and (resp.remote_id or files or sources):
+            messages.append(
+                {
+                    "id": resp_id,
+                    "role": "assistant",
+                    "channel": "final",
+                    "text": "",
+                    "content": [],
+                    "metadata": base_meta,
+                    "actions": actions,
+                }
+            )
+            continue
+        for idx, part in enumerate(parts):
+            if isinstance(part, ThinkingPart):
+                messages.append(
+                    {
+                        "id": f"{resp_id}:{part.id}",
+                        "part_id": part.id,
+                        "role": "reasoning",
+                        "channel": "analysis",
+                        "text": part.text,
+                        "content": [],
+                        "metadata": {},
+                        "actions": [],
+                    }
+                )
+            elif isinstance(part, TextPart):
+                is_final_text = idx == last_text_idx
+                messages.append(
+                    {
+                        "id": resp_id if is_final_text else f"{resp_id}:{part.id}",
+                        "part_id": part.id,
+                        "role": "assistant",
+                        "channel": "final",
+                        "text": part.text,
+                        "content": [],
+                        "metadata": dict(base_meta) if is_final_text else {},
+                        "actions": actions if is_final_text else [],
+                    }
+                )
+    return messages
+
+
 class AccountsHistory:
-    def cached(self, key, remote=None):
+    def cached(self, key: str, remote: str | None = None):
         if not key or not self.account_is_visible(key):
             return None
         archive = self.archive()
-        if archive and remote is None:
-            pointer = archive.get(key, "pointer", "active")
-            if pointer is not None:
-                remote = pointer.get("remote")
-                if remote is None:
-                    return None
-        if archive and remote:
-            if archive.deleted(key, "conversation", remote):
-                return None
-            value = archive.get(key, "conversation", remote)
-            if value is not None:
-                return value
-        if not remote or self.repository.cache_is_deleted(key, remote):
+        if archive is None:
             return None
-        return self.repository.cache_get(key, "conversation", remote)
+        if remote is None:
+            pointer = archive.get(key, "pointer", "active")
+            if pointer is None:
+                return None
+            remote = pointer.get("remote")
+            if remote is None:
+                return None
+        if archive.deleted(key, "conversation", remote):
+            return None
+        return archive.get(key, "conversation", remote)
 
-    def active_conversation(self, key):
+    def active_conversation(self, key: str) -> str | None:
         if not self.account_is_visible(key):
             return None
         archive = self.archive()
-        if archive:
-            pointer = archive.get(key, "pointer", "active")
-            if pointer is not None:
-                return pointer.get("remote")
-        return self.repository.cache_active(key)
+        if archive is None:
+            return None
+        pointer = archive.get(key, "pointer", "active")
+        return pointer.get("remote") if pointer is not None else None
 
-    def cached_window(self, key, remote=None, *, limit=None):
-        """UI history reads use bounded SQL windows; other API callers retain full history."""
+    def cached_window(self, key: str, remote: str | None = None, *, limit: int | None = None):
+        """UI history reads use bounded SQL windows."""
         if not self.account_is_visible(key):
             return None
         archive = self.archive()
         remote = remote or self.active_conversation(key)
-        if not remote:
+        if not remote or archive is None:
             return None
-        if archive:
-            kw = {"limit": limit} if limit is not None else {}
-            value = archive.conversation_window(key, remote, **kw)
-            if value is not None or archive.deleted(key, "conversation", remote):
-                return value
-        return self.cached(key, remote)
+        kw = {"limit": limit} if limit is not None else {}
+        return archive.conversation_window(key, remote, **kw)
 
-    def response_version(self, key, conversation_id, message_id, version):
+    def response_version(self, key: str, conversation_id: str, message_id: str, version: int):
         context, remote = origin(conversation_id, key)
         if context != key or not remote or not self.account_is_visible(key):
             return None
         archive = self.archive()
         return archive.response_version(key, remote, message_id, version) if archive else None
 
-    def _pending_local_branches(self, key, listed, *, project_listing=False):
+    def _pending_local_branches(self, key: str, listed, *, project_listing: bool = False):
+        archive = self.archive()
+        if archive is None:
+            return []
         remotes = {
             item.get("remote_id") or item.get("id") for item in listed if isinstance(item, dict)
         }
         remotes = {remote for remote in remotes if remote}
-        archive = self.archive()
-        if archive:
-            archive.confirm_pending_branches(key, remotes, project=project_listing)
-            return [
-                item
-                for item in archive.pending_branches(key, project=project_listing)
-                if isinstance(item.get("pending_branch"), dict)
-            ]
+        archive.confirm_pending_branches(key, remotes, project=project_listing)
+        return [
+            item
+            for item in archive.pending_branches(key, project=project_listing)
+            if isinstance(item.get("pending_branch"), dict)
+        ]
 
-        pending = []
-        for remote, record in self.repository.cache_pending_branches(key):
-            if not record.get("pending_local_branch") or not isinstance(
-                record.get("pending_branch"), dict
-            ):
-                continue
-            if remote in remotes:
-                field = "branch_listed_project" if project_listing else "branch_listed_general"
-                record[field] = True
-                project_id = record.get("project_id")
-                listed_general = record.get("branch_listed_general", False)
-                listed_project = record.get("branch_listed_project", False)
-                if listed_general and (not project_id or listed_project):
-                    record.pop("pending_local_branch", None)
-                    record.pop("pending_branch", None)
-                    record.pop("branch_unanswered", None)
-                    record.pop("branch_listed_general", None)
-                    record.pop("branch_listed_project", None)
-                self.repository.cache_put(key, "conversation", remote, record)
-            else:
-                listed_field = (
-                    "branch_listed_project" if project_listing else "branch_listed_general"
-                )
-                if not record.get(listed_field):
-                    pending.append(record)
-        return pending
-
-    def _include_pending_project_branches(self, key, project_remote, page, cursor=None):
-        listed = page.get("items", ())
-        pending = self._pending_local_branches(key, listed, project_listing=True)
-        if cursor:
+    def _include_pending_project_branches(self, key: str, project_remote: str, page, cursor=None):
+        if cursor or not isinstance(page, dict):
             return page
-        known = {item.get("remote_id") or item.get("id") for item in listed}
-        additions = []
-        for item in pending:
-            project = item.get("project_id")
-            remote = item.get("remote_id") or item.get("id")
-            if not project or remote in known:
-                continue
-            context, project_id = origin(project, key)
-            if context == key and project_id == project_remote:
-                additions.append(item)
-        return dict(page, items=[*listed, *additions]) if additions else page
+        project_identity = identity(key, project_remote)
+        items = list(page.get("items") or ())
+        known = {
+            item.get("remote_id") or item.get("id") for item in items if isinstance(item, dict)
+        }
+        extra = [
+            item
+            for item in self._pending_local_branches(key, items, project_listing=True)
+            if item.get("project_id") == project_identity
+            and (item.get("remote_id") or item.get("id")) not in known
+        ]
+        return dict(page, items=items + extra) if extra else page
 
-    def cached_project_chats(self, value, fallback, cursor=None):
-        """Return one cached provider project-chat page without starting a refresh."""
+    def cached_project_chats(self, value: str, fallback: str, cursor=None):
         key, remote = origin(value, fallback)
-        archive = self.archive()
-        if not remote or archive is None or archive.deleted(key, "container", remote):
+        if not remote or not self.account_is_visible(key):
             return None
-        page_key = remote + ":" + (cursor or "")
-        page = archive.get(key, "container_chats", page_key)
-        if not isinstance(page, dict):
+        archive = self.archive()
+        if archive is None:
+            return None
+        page = archive.get(key, "container_chats", remote + ":" + (cursor or ""))
+        if page is None:
             return None
         return self._include_pending_project_branches(key, remote, page, cursor)
 
-    def queue_active(self, key, value):
-        """Coalesce UI pointer writes; never perform SQLite/fsync in navigation."""
-        with self._lock:
-            if self.closing or self.closed:
-                return
-            if key in self._active_values and self._active_values[key] == value:
-                return
-            self._active_values[key] = value
-            self._active_pending[key] = value
-            if self._active_writer_running:
-                return
-            self._active_writer_running = True
-
-        try:
-            self._start()
-            self._loop.call_soon_threadsafe(self._ensure_active_writer)
-        except RuntimeError:
-            with self._lock:
-                closing = self.closing or self.closed
-                self._active_writer_running = False
-            if closing:
-                return
-            raise
-
-    def _ensure_active_writer(self):
-        task = self._active_writer_task
-        if not self._active_writer_running or (task is not None and not task.done()):
-            return
-        self._active_writer_task = asyncio.create_task(
-            self._write_active_queue(), name="siope-persist:active"
-        )
-
-    async def _write_active_queue(self):
-        while True:
-            with self._lock:
-                if not self._active_pending:
-                    self._active_writer_running = False
-                    self._active_writer_task = None
-                    return
-                account = next(iter(self._active_pending))
-                target = self._active_pending.pop(account)
-            try:
-                await asyncio.to_thread(self.set_active, account, target)
-                with self._lock:
-                    if (
-                        account not in self._active_pending
-                        and self._active_values.get(account) == target
-                    ):
-                        self._active_values.pop(account, None)
-            except (OSError, ValueError):
-                with self._lock:
-                    self._active_values.pop(account, None)
-
-    def set_active(self, key, value):
+    def queue_active(self, key: str, value: str | None) -> None:
         _, remote = origin(value, key)
-        if remote and self.repository.cache_is_deleted(key, remote):
-            remote = None
-        archive = self.archive()
-        if archive:
-            try:
-                archive.put(key, "pointer", "active", {"remote": remote})
-            except OSError:
-                self.repository.cache_set_active(key, remote)
+        with self._lock:
+            previous = self._active_values.get(key)
+            self._active_pending[key] = remote
+            self._active_values[key] = remote
+            if previous == remote and key in self._active_pending:
                 return
-            self.repository.cache_set_active(key, None)
-        else:
-            self.repository.cache_set_active(key, remote)
+            self._ensure_active_writer()
 
-    def cache_conversation(self, key, conversation, *, make_active=True):
+    def _ensure_active_writer(self) -> None:
+        if self._active_writer_running or self.closed:
+            return
+        self._active_writer_running = True
+
+        def drain() -> None:
+            while True:
+                with self._lock:
+                    if not self._active_pending:
+                        self._active_writer_running = False
+                        self._active_writer_thread = None
+                        return
+                    account = next(iter(self._active_pending))
+                    target = self._active_pending.pop(account)
+                try:
+                    self.set_active(account, target)
+                except (OSError, ValueError):
+                    pass
+                finally:
+                    with self._lock:
+                        if (
+                            account not in self._active_pending
+                            and self._active_values.get(account) == target
+                        ):
+                            self._active_values.pop(account, None)
+
+        thread = threading.Thread(target=drain, name="siope-active-writer", daemon=True)
+        self._active_writer_thread = thread
+        thread.start()
+
+    def set_active(self, key: str, value: str | None) -> None:
+        _, remote = origin(value, key)
+        archive = self.archive()
+        if archive is None:
+            return
+        if remote and archive.deleted(key, "conversation", remote):
+            remote = None
+        archive.put(key, "pointer", "active", {"remote": remote})
+
+    def cache_conversation(
+        self, key: str, conversation: dict[str, Any], *, make_active: bool = True
+    ):
         remote = conversation.get("remote_id") or conversation.get("id")
         context, remote = origin(remote, key)
         if context != key or not remote or conversation.get("temporary"):
             return
-        if self.repository.cache_is_deleted(key, remote):
+        archive = self.archive()
+        if archive is None or archive.deleted(key, "conversation", remote):
             return
         record = dict(conversation, id=identity(key, remote), remote_id=remote, context=key)
-        archive = self.archive()
-        if archive:
-            if archive.deleted(key, "conversation", remote):
-                return
-            archive.put(key, "conversation", remote, record)
-            self.repository.cache_delete(key, "conversation", remote)
-        else:
-            if not self.repository.cache_put(key, "conversation", remote, record):
-                return
+        archive.put(key, "conversation", remote, record)
         if make_active:
             self.set_active(key, remote)
 
-    def chat_record(self, key, chat):
-        if chat.metadata.get("project_membership_known") and not chat.project_id:
-            self._chat_projects.pop((key, chat.origin.remote_id), None)
-        if chat.project_id:
-            self._chat_projects[key, chat.origin.remote_id] = chat.project_id
+    def chat_record(
+        self, key: str, chat: Any, responses: list[Response] | None = None
+    ) -> dict[str, Any]:
+        provider_id, account_id = key.split("/", 1)
+        remote_id = getattr(chat, "remote_id", None) or chat.id
+        chat_project = getattr(chat, "project", None)
+        project_remote = getattr(chat_project, "remote_id", None) or getattr(
+            chat_project, "id", None
+        )
+        metadata = dict(getattr(chat, "metadata", None) or {})
+        if metadata.get("project_membership_known") and not project_remote:
+            self._chat_projects.pop((key, remote_id), None)
+        if project_remote:
+            self._chat_projects[key, remote_id] = project_remote
             if len(self._chat_projects) > 2048:
                 self._chat_projects.pop(next(iter(self._chat_projects)))
-        project = chat.project_id or self._chat_projects.get((key, chat.origin.remote_id))
+        project = project_remote or self._chat_projects.get((key, remote_id))
 
-        def content_record(content):
-            return dict(
-                _shallow_dataclass(content),
-                resource=(
-                    _shallow_dataclass(content.resource) if content.resource is not None else None
-                ),
-            )
+        turn_list = responses
+        if turn_list is None:
+            raw_turns = getattr(getattr(chat, "responses", None), "_turns", None)
+            if raw_turns:
+                turn_list = list(raw_turns)
+        if turn_list:
+            messages = _responses_to_messages(turn_list, provider_id=provider_id)
+        elif raw_messages := getattr(chat, "messages", None):
+            messages = _conversation_messages_to_dicts(raw_messages)
+        else:
+            messages = []
 
-        def message_record(message):
-            value = {
-                "id": message.id,
-                "role": message.role,
-                "channel": message.channel,
-                "text": "\n".join(content.text or "" for content in message.content),
-                "content": [content_record(content) for content in message.content],
-                "metadata": message.metadata,
-                "actions": list(message.actions),
-            }
-            return value
-
-        return {
-            "id": identity(key, chat.origin.remote_id),
-            "remote_id": chat.origin.remote_id,
+        record = {
+            "id": identity(key, remote_id),
+            "remote_id": remote_id,
             "context": key,
-            "provider_id": chat.origin.provider_id,
-            "account_id": chat.origin.account_id,
+            "provider_id": provider_id,
+            "account_id": account_id,
             "title": chat.title,
             "project_id": identity(key, project),
-            "metadata": chat.metadata,
+            "metadata": metadata,
             **(
-                {"pending_branch": chat.metadata["pending_branch"]}
-                if chat.metadata.get("pending_branch")
+                {"pending_branch": metadata["pending_branch"]}
+                if metadata.get("pending_branch")
                 else {}
             ),
-            "history_complete": not chat.metadata.get("history_partial", False),
-            "messages": [message_record(message) for message in chat.messages],
+            "history_complete": not metadata.get("history_partial", False),
+            "messages": messages,
         }
+        return record
 
     def list_chats(
         self,
@@ -300,8 +407,8 @@ class AccountsHistory:
             page_cursor = cursors.get(key) if cursors else None
 
             def fetch():
-                page = self.call(
-                    self.provider(key).list_chats(cursor=page_cursor, limit=50), HISTORY_TIMEOUT
+                page = self.open_provider(key).chats._fetch_page(
+                    page_cursor, 50, include_projects=True
                 )
                 return {
                     "items": [self.chat_record(key, chat) for chat in page.items],
@@ -321,8 +428,6 @@ class AccountsHistory:
             return [
                 item for item in pending if (item.get("remote_id") or item.get("id")) not in known
             ]
-
-        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         futures_map = {}
         pages_map = {}
@@ -369,160 +474,136 @@ class AccountsHistory:
             "failed_accounts": failed,
         }
 
-    def load(self, value, key, force=False, *, window=False, window_limit=None):
+    def load(
+        self, value: str, key: str, force: bool = False, *, window: bool = False, window_limit=None
+    ):
         key, remote = origin(value, key)
         self.require_visible_account(key)
         archive = self.archive()
         if archive and archive.deleted(key, "conversation", remote):
             raise RemoteNotFound("Bu sohbet sağlayıcıdan silindi")
-        if archive and archive.conversation_window(key, remote) is None:
-            legacy = self.cached(key, remote)
-            if legacy and not legacy.get("temporary"):
-                archive.put(
-                    key, "conversation", remote, dict(legacy, id=identity(key, remote), context=key)
-                )
 
-        cached = (
-            self.cached_window(key, remote, limit=window_limit)
-            if archive
-            else self.cached(key, remote)
-        )
+        cached = self.cached_window(key, remote, limit=window_limit) if archive else None
         pending_branch = bool(
             cached
             and isinstance(cached.get("pending_branch"), dict)
             and cached.get("branch_unanswered", True)
-            and (
-                archive.is_pending_branch(key, remote)
-                if archive and remote
-                else cached.get("pending_local_branch")
-            )
+            and archive
+            and remote
+            and archive.is_pending_branch(key, remote)
         )
         if cached and pending_branch:
             return cached
 
         def fetch():
             try:
-                chat = self.call(self.provider(key).get_chat(remote))
+                prov = self.open_provider(key)
+                chat, responses = prov.chats.get_with_responses(
+                    remote, limit=None, include_projects=True
+                )
             except RemoteNotFound:
                 if archive:
                     archive.delete(key, "conversation", remote)
                 raise
-            return self._record_from_chat(key, remote, chat, archive)
+            self._cache_chat_handle(key, chat)
+            return self._record_from_chat(key, remote, chat, responses)
 
         return self.read_record(
             key, "conversation", remote, fetch, force, window=window, window_limit=window_limit
         )
 
-    def _record_from_chat(self, key, remote, chat, archive):
-        record = self.chat_record(key, chat)
+    def _record_from_chat(self, key: str, remote: str, chat: Any, responses: list[Response] | None):
+        record = self.chat_record(key, chat, responses)
         previous = self.cached_window(key, remote) or {}
-        if chat.metadata.get("title_unavailable"):
+        if record.get("metadata", {}).get("title_unavailable"):
             record["title"] = previous.get("title") or record["title"]
         if not record.get("project_id"):
             record["project_id"] = previous.get("project_id")
-        if not archive:
-            self.cache_conversation(key, dict(record, id=remote), make_active=False)
         return record
 
-    def delete(self, value, key, kind="conversation"):
+    def delete(self, value: str, key: str, kind: str = "conversation"):
         context, remote = origin(value, key)
         if context != key or kind not in ("conversation", "container") or not remote:
             raise ValueError("Silinecek kayıt seçili hesaba ait olmalı")
         with self._lock:
             if self._sending.get(key, 0):
                 raise RuntimeError("Hesabın gönderimleri tamamlandıktan sonra silin")
-        provider = self.provider(key)
+        prov = self.provider(key)
         capability = Capability.DELETE if kind == "conversation" else Capability.PROJECT_DELETE
-        if capability not in provider.capabilities:
+        if capability not in prov.capabilities:
             raise ValueError("Sağlayıcı bu silme işlemini desteklemiyor")
 
+        archive = self.archive()
+        members = (
+            archive.repository.container_members(key, remote)
+            if kind == "container" and archive
+            else set()
+        )
         confirmed_children = None
 
-        def cleanup():
-            archive = self.archive()
+        with self._account_gate(key):
+            prov = self.open_provider(key)
             try:
-                removed = (
-                    archive.delete(key, kind, remote, children=confirmed_children)
-                    if archive
-                    else [(key, kind, remote)]
-                )
-                if kind == "container":
-                    for member_key, project_id in tuple(self._chat_projects.items()):
-                        if member_key[0] == key and project_id == remote:
-                            self._chat_projects.pop(member_key, None)
-                for _, target_kind, target in removed:
-                    if target_kind == "conversation":
-                        pointer = archive.get(key, "pointer", "active") if archive else None
-                        if isinstance(pointer, dict) and pointer.get("remote") == target:
-                            self.set_active(key, None)
-                        if archive:
-                            self.repository.cache_delete(key, "conversation", target)
-                            self.repository.cache_delete(key, "tombstone", target)
-                        else:
-                            self.repository.cache_mark_deleted(key, target)
-                        self._chat_projects.pop((key, target), None)
-            except OSError as error:
-                raise RuntimeError(
-                    "Sağlayıcıdan silindi; yerel kayıt temizlenemedi. Yenileyin."
-                ) from error
-            return {"removed": [identity(a, r) for a, _, r in removed], "kind": kind}
-
-        async def remove():
-            nonlocal confirmed_children
-            archive = self.archive()
-            members = (
-                await asyncio.to_thread(archive.repository.container_members, key, remote)
-                if kind == "container" and archive
-                else set()
-            )
-            gate = self.api.tasks.account_gate(*key.split("/", 1))
-            async with gate:
+                if kind == "conversation":
+                    prov.chats.delete(remote)
+                else:
+                    prov.projects.delete(remote)
+            except RemoteNotFound:
                 try:
-                    await (
-                        provider.delete_chat(remote)
-                        if kind == "conversation"
-                        else provider.delete_project(remote)
-                    )
-                except RemoteNotFound:
-                    try:
-                        await (
-                            provider.get_chat(remote)
-                            if kind == "conversation"
-                            else provider.get_project(remote)
-                        )
-                    except RemoteNotFound:
-                        pass
+                    if kind == "conversation":
+                        prov.chats.get(remote, include_projects=True, metadata_only=True)
                     else:
-                        raise ProviderError(
-                            "Sağlayıcı silmeyi doğrulamadı; uzak ve yerel kayıt korundu"
-                        )
-                if kind == "container":
+                        prov.projects.get(remote)
+                except RemoteNotFound:
+                    pass
+                else:
+                    raise ProviderError(
+                        "Sağlayıcı silmeyi doğrulamadı; uzak ve yerel kayıt korundu"
+                    )
+            if kind == "conversation":
+                self._forget_chat_handle(key, remote)
+            elif kind == "container" and members:
 
-                    async def confirm(child):
-                        try:
-                            chat = await provider.get_chat(child)
-                            return child if chat.metadata.get("is_visible") is False else None
-                        except RemoteNotFound:
-                            return child
-                        except ProviderError:
-                            return None
+                def confirm(child):
+                    try:
+                        chat = prov.chats.get(child, include_projects=True, metadata_only=True)
+                        return child if chat.metadata.get("is_visible") is False else None
+                    except RemoteNotFound:
+                        return child
+                    except ProviderError:
+                        return None
 
-                    confirmed_children = set()
-                    children = iter(members)
-                    while batch := tuple(islice(children, 4)):
-                        results = await asyncio.gather(
-                            *(confirm(child) for child in batch), return_exceptions=True
-                        )
-                        for child in results:
-                            if isinstance(child, BaseException):
-                                raise child
-                            if child is not None:
-                                confirmed_children.add(child)
-                return await asyncio.to_thread(cleanup)
+                confirmed_children = set()
+                children = iter(members)
+                while batch := tuple(islice(children, 4)):
+                    with ThreadPoolExecutor(max_workers=len(batch)) as pool:
+                        for child, res in zip(batch, pool.map(confirm, batch)):
+                            if res is not None:
+                                confirmed_children.add(res)
 
-        return self.call(remove(), timeout=60)
+        try:
+            removed = (
+                archive.delete(key, kind, remote, children=confirmed_children)
+                if archive
+                else [(key, kind, remote)]
+            )
+            if kind == "container":
+                for member_key, project_id in tuple(self._chat_projects.items()):
+                    if member_key[0] == key and project_id == remote:
+                        self._chat_projects.pop(member_key, None)
+            for _, target_kind, target in removed:
+                if target_kind == "conversation":
+                    pointer = archive.get(key, "pointer", "active") if archive else None
+                    if isinstance(pointer, dict) and pointer.get("remote") == target:
+                        self.set_active(key, None)
+                    self._chat_projects.pop((key, target), None)
+        except OSError as error:
+            raise RuntimeError(
+                "Sağlayıcıdan silindi; yerel kayıt temizlenemedi. Yenileyin."
+            ) from error
+        return {"removed": [identity(a, r) for a, _, r in removed], "kind": kind}
 
-    def branch_chat(self, key, conversation_id, message_id):
+    def branch_chat(self, key: str, conversation_id: str, message_id: str):
         context, remote = origin(conversation_id, key)
         if context != key or not remote:
             raise ValueError("The conversation belongs to a different account")
@@ -539,19 +620,31 @@ class AccountsHistory:
                 raise RuntimeError("Account verification is still running")
             self._sending[key] = self._sending.get(key, 0) + 1
 
-        async def branch():
-            provider = self.provider(key)
-            async with self.api.tasks.account_gate(provider.id, provider.account_id):
-                if not self.enabled(provider.id):
+        try:
+            with self._account_gate(key):
+                if not self.enabled(key.split("/")[0]):
                     raise ValueError("Provider is disabled")
                 if archive and archive.deleted(key, "conversation", remote):
                     raise RemoteNotFound("The conversation was deleted")
-                return await provider.branch_chat(remote, message_id)
-
-        try:
-            record = self.chat_record(key, self.call(branch()))
+                chat = self._chat_handle(key, remote)
+                branched = chat.branch(message_id)
+            record = self.chat_record(key, branched)
             if record["remote_id"] == remote:
                 raise ProviderError("The provider did not create a separate conversation")
+            if not record["messages"] and source.get("messages"):
+                source_messages = list(source.get("messages") or ())
+                target_idx = next(
+                    (
+                        idx
+                        for idx, msg in enumerate(source_messages)
+                        if isinstance(msg, dict) and msg.get("id") == message_id
+                    ),
+                    None,
+                )
+                record["messages"] = (
+                    source_messages[: target_idx + 1] if target_idx is not None else source_messages
+                )
+            self._cache_chat_handle(key, branched)
             if (
                 record.get("metadata", {}).get("title_unavailable")
                 or not str(record.get("title") or "").strip()
@@ -559,12 +652,9 @@ class AccountsHistory:
                 record["title"] = source.get("title") or record.get("title") or "Untitled"
             if not record.get("project_id"):
                 record["project_id"] = source.get("project_id")
-            archive = self.archive()
             native_preview = isinstance(record.get("pending_branch"), dict)
             if native_preview:
                 record["branch_unanswered"] = True
-                if not archive:
-                    record["pending_local_branch"] = True
             self.cache_conversation(key, record, make_active=False)
             if archive and native_preview:
                 archive.mark_pending_branch(key, record["remote_id"])

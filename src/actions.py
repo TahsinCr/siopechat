@@ -1,5 +1,6 @@
-"""One action dispatch path for command palette, keyboard and extension calls."""
+"""One action dispatch path for command palette and keyboard calls."""
 
+import asyncio
 import inspect
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -68,6 +69,21 @@ class ActionService:
         try:
             result = action.callback(**arguments)
             result = await result if inspect.isawaitable(result) else result
+        except BaseException:
+            self._emit(action_id, "failed")
+            raise
+        self._emit(action_id, "completed")
+        return result
+
+    def invoke_sync(self, action_id: str, **arguments: Any) -> Any:
+        action = self._actions[action_id][1]
+        if not self._available(action):
+            raise ValueError("action is currently unavailable")
+        self._emit(action_id, "running")
+        try:
+            result = action.callback(**arguments)
+            if inspect.isawaitable(result):
+                result = asyncio.run(result)
         except BaseException:
             self._emit(action_id, "failed")
             raise

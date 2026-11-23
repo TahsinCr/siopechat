@@ -10,9 +10,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from urllib.parse import unquote
 
-from webai_provider.api import MERGE_WINDOW, merge_conversation
-
 from .adapters import MAPPINGS, Mapping
+from .history import MERGE_WINDOW, merge_conversation
 from .repository import encode
 
 SYNC_MERGE_OVERLAP = 80
@@ -31,9 +30,6 @@ class Archive:
 
     def __init__(self, repository, files, events=None, memory_bytes=8 * 1024 * 1024):
         self.repository, self.files, self.events = repository, files, events
-        if repository.uploaded_file_cleanup_pending():
-            files.purge_owned()
-            repository.complete_uploaded_file_cleanup()
         from .downloads import DownloadHistory
 
         self.downloads = DownloadHistory(repository)

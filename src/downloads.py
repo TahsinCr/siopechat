@@ -15,6 +15,7 @@ from urllib.parse import unquote, urljoin, urlsplit
 from urllib.parse import unquote as decode_id
 
 import httpx
+from webaiprovider.transport.downloader import NativeDownloadClient
 
 from utils.paths import downloads_dir
 
@@ -443,18 +444,33 @@ class Downloads:
 
     def _fetch(self, source, progress):
         url, headers = source.url, dict(source.headers)
+        allow_private = self.settings.snapshot()["application"].get("download_allow_private", False)
         factory = source.client_factory or self.client_factory
-        with factory(
-            timeout=httpx.Timeout(120, connect=15), follow_redirects=False, trust_env=False
-        ) as client:
+        is_native = isinstance(factory, type) and issubclass(factory, NativeDownloadClient)
+        client_scope = (
+            factory(
+                timeout=httpx.Timeout(120, connect=15),
+                trust_env=False,
+                allow_private=allow_private,
+            )
+            if is_native
+            else factory(
+                timeout=httpx.Timeout(120, connect=15),
+                follow_redirects=False,
+                trust_env=False,
+            )
+        )
+        with client_scope as client:
             for _ in range(6):
                 origin = self._web_url(url)
                 address = self._address(origin)
                 cookies = getattr(client, "cookies", None)
                 if cookies is not None:
                     cookies.clear()  # Only the explicit, origin-scoped source headers carry auth.
-                if source.client_factory:
-                    request_url, stream_options = url, {"resolved_address": address}
+                if isinstance(client, NativeDownloadClient):
+                    request_url, stream_options = url, {"allow_private": allow_private}
+                elif source.client_factory:
+                    request_url, stream_options = url, {}
                 else:
                     request_url = str(httpx.URL(url).copy_with(host=address))
                     headers = dict(headers, Host=origin.netloc)

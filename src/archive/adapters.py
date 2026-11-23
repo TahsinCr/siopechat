@@ -9,8 +9,6 @@ class Mapping:
         if kind == "conversation":
             result.pop("history_window", None)
             result.pop("history_version", None)
-        # These are the only dictionaries archive normalization mutates. Text
-        # bodies and native metadata remain read-only until SQL serialization.
         for collection in ("items", "resources"):
             if collection in result:
                 result[collection] = [dict(item) for item in result[collection]]
@@ -27,4 +25,9 @@ class GeminiMapping(Mapping):
     container_kind = "notebook"
 
 
-MAPPINGS = {"chatgpt": Mapping(), "gemini": GeminiMapping(), "claude": Mapping()}
+MAPPINGS = {
+    "chatgpt": Mapping(),
+    "gemini": GeminiMapping(),
+    "claude": Mapping(),
+    "grok": Mapping(),
+}

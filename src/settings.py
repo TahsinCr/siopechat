@@ -1,18 +1,176 @@
 """Validated shared settings with atomic JSON persistence."""
 
+from __future__ import annotations
+
 import copy
 import json
 import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from eventflow import EventBus
-from prompt_toolkit.key_binding import KeyBindings
-from webai_provider.api import PROVIDERS
 
+from accounts.shared import PROVIDERS
 from utils.files import atomic_json_write
+
+_VALID_KEYS = frozenset(
+    {
+        "c-0",
+        "c-1",
+        "c-2",
+        "c-3",
+        "c-4",
+        "c-5",
+        "c-6",
+        "c-7",
+        "c-8",
+        "c-9",
+        "c-@",
+        "c-\\",
+        "c-]",
+        "c-^",
+        "c-_",
+        "c-a",
+        "c-b",
+        "c-c",
+        "c-d",
+        "c-delete",
+        "c-down",
+        "c-e",
+        "c-end",
+        "c-f",
+        "c-f1",
+        "c-f2",
+        "c-f3",
+        "c-f4",
+        "c-f5",
+        "c-f6",
+        "c-f7",
+        "c-f8",
+        "c-f9",
+        "c-f10",
+        "c-f11",
+        "c-f12",
+        "c-f13",
+        "c-f14",
+        "c-f15",
+        "c-f16",
+        "c-f17",
+        "c-f18",
+        "c-f19",
+        "c-f20",
+        "c-f21",
+        "c-f22",
+        "c-f23",
+        "c-f24",
+        "c-g",
+        "c-h",
+        "c-home",
+        "c-i",
+        "c-insert",
+        "c-j",
+        "c-k",
+        "c-l",
+        "c-left",
+        "c-m",
+        "c-n",
+        "c-o",
+        "c-p",
+        "c-pagedown",
+        "c-pageup",
+        "c-q",
+        "c-r",
+        "c-right",
+        "c-s",
+        "c-s-0",
+        "c-s-1",
+        "c-s-2",
+        "c-s-3",
+        "c-s-4",
+        "c-s-5",
+        "c-s-6",
+        "c-s-7",
+        "c-s-8",
+        "c-s-9",
+        "c-s-delete",
+        "c-s-down",
+        "c-s-end",
+        "c-s-home",
+        "c-s-insert",
+        "c-s-left",
+        "c-s-pagedown",
+        "c-s-pageup",
+        "c-s-right",
+        "c-s-up",
+        "c-t",
+        "c-u",
+        "c-up",
+        "c-v",
+        "c-w",
+        "c-x",
+        "c-y",
+        "c-z",
+        "delete",
+        "down",
+        "end",
+        "escape",
+        "f1",
+        "f2",
+        "f3",
+        "f4",
+        "f5",
+        "f6",
+        "f7",
+        "f8",
+        "f9",
+        "f10",
+        "f11",
+        "f12",
+        "f13",
+        "f14",
+        "f15",
+        "f16",
+        "f17",
+        "f18",
+        "f19",
+        "f20",
+        "f21",
+        "f22",
+        "f23",
+        "f24",
+        "home",
+        "insert",
+        "left",
+        "pagedown",
+        "pageup",
+        "right",
+        "s-delete",
+        "s-down",
+        "s-end",
+        "s-escape",
+        "s-home",
+        "s-insert",
+        "s-left",
+        "s-pagedown",
+        "s-pageup",
+        "s-right",
+        "s-tab",
+        "s-up",
+        "up",
+    }
+)
+
+_KEY_ALIASES = {
+    "backspace": "c-h",
+    "c-space": "c-@",
+    "enter": "c-m",
+    "tab": "c-i",
+    "s-c-left": "c-s-left",
+    "s-c-right": "c-s-right",
+    "s-c-home": "c-s-home",
+    "s-c-end": "c-s-end",
+}
 
 DEFAULT_KEYBINDINGS = {
     "edit.select_all": "c-a",
@@ -90,23 +248,31 @@ DEFAULT_KEYBINDINGS = {
 }
 
 IMMUTABLE_KEYBINDINGS = frozenset({"app.quit", "app.quit_eof"})
+SUPPORTED_LANGUAGES = ("en", "tr", "ru")
+
+
+def _parse_key_token(token: str) -> str:
+    key = _KEY_ALIASES.get(token, token)
+    if key == "space":
+        return " "
+    if key in _VALID_KEYS or len(key) == 1:
+        return key
+    raise ValueError(f"Invalid key: {token}")
 
 
 def keybinding_conflicts(keybindings: dict[str, str]) -> frozenset[str]:
     """Validate key sequences and return every action participating in a collision."""
-    by_sequence: dict[tuple, list[str]] = {}
+    by_sequence: dict[tuple[str, ...], list[str]] = {}
     for action_id, value in keybindings.items():
         if not isinstance(action_id, str) or not action_id.strip() or not isinstance(value, str):
             raise ValueError("keybindings must map action IDs to key strings")
         tokens = value.strip().lower().split()
         if not tokens:
             continue
-        registry = KeyBindings()
         try:
-            registry.add(*tokens)(lambda _: None)
-        except (AssertionError, TypeError, ValueError) as error:
+            sequence = tuple(_parse_key_token(token) for token in tokens)
+        except ValueError as error:
             raise ValueError(f"invalid keybinding for {action_id}") from error
-        sequence = registry.bindings[0].keys
         by_sequence.setdefault(sequence, []).append(action_id)
     return frozenset(
         action_id
@@ -130,7 +296,6 @@ DEFAULTS = {
     },
     "keybindings": DEFAULT_KEYBINDINGS,
     "providers": {key: {"enabled": True} for key in PROVIDERS},
-    "extensions": {"layout": {"enabled": True}, "archive": {"enabled": True}},
     "accounts": {
         "active": "",
         "selected": {},
@@ -138,20 +303,6 @@ DEFAULTS = {
         "items": [],
     },
 }
-
-
-@dataclass(frozen=True)
-class SettingField:
-    key: str
-    value_type: type
-    default: Any
-    title_key: str
-    choices: tuple[Any, ...] = ()
-
-    def validate(self, value: Any) -> None:
-        if type(value) is not self.value_type or (self.choices and value not in self.choices):
-            raise ValueError(f"invalid value for setting {self.key}")
-        json.dumps(value, allow_nan=False)
 
 
 def _merge(defaults: dict, current: dict) -> dict:
@@ -174,15 +325,12 @@ class Settings:
     def __init__(self, path: Path, events: EventBus | None = None):
         self.events = events
         self.path = Path(path)
-        self._fields: dict[str, tuple[SettingField, ...]] = {}
         self._lock = threading.RLock()
         self._data = copy.deepcopy(DEFAULTS)
         if self.path.exists():
             value = json.loads(self.path.read_text(encoding="utf-8"))
             if not isinstance(value, dict):
                 raise ValueError("config.json must contain an object")
-            if isinstance(value.get("providers"), dict):
-                value["providers"].pop("default", None)  # Migrate the former selector.
             if isinstance(value.get("application"), dict):
                 value["application"] = {
                     key: item
@@ -201,7 +349,7 @@ class Settings:
     def _validate_document(data: dict) -> None:
         if type(data.get("version")) is not int or data["version"] != 1:
             raise ValueError("unsupported settings version")
-        for section in ("application", "keybindings", "providers", "extensions", "accounts"):
+        for section in ("application", "keybindings", "providers", "accounts"):
             if not isinstance(data.get(section), dict):
                 raise ValueError(f"settings section {section} must be an object")
         if set(data["application"]) - DEFAULTS["application"].keys():
@@ -280,9 +428,6 @@ class Settings:
             or data["application"]["download_max_bytes"] < 1
         ):
             raise ValueError("invalid download limits")
-        for value in data["extensions"].values():
-            if not isinstance(value, dict) or type(value.get("enabled", True)) is not bool:
-                raise ValueError("invalid extension settings")
         if not all(
             isinstance(key, str) and isinstance(value, str)
             for key, value in data["keybindings"].items()
@@ -295,39 +440,7 @@ class Settings:
         with self._lock:
             return copy.deepcopy(self._data)
 
-    def register(self, owner: str, fields: tuple[SettingField, ...]) -> None:
-        with self._lock:
-            if owner in self._fields or not owner:
-                raise ValueError("settings owner already registered or empty")
-            if len({field.key for field in fields}) != len(fields):
-                raise ValueError("duplicate setting key")
-            current = self._data["extensions"].get(owner, {})
-            for field in fields:
-                field.validate(current.get(field.key, field.default))
-            self._fields[owner] = fields
-
-    def unregister(self, owner: str) -> None:
-        self._fields.pop(owner, None)  # Preserve stored user values on disable.
-
-    def fields(self) -> dict[str, tuple[SettingField, ...]]:
-        return self._fields.copy()
-
-    def extension(self, owner: str) -> dict:
-        with self._lock:
-            defaults = {f.key: f.default for f in self._fields.get(owner, ())}
-            return _merge(defaults, self._data["extensions"].get(owner, {}))
-
-    def update_extension(self, owner: str, values: dict) -> None:
-        with self._lock:
-            updated = _merge(self.extension(owner), values)
-            for field in self._fields.get(owner, ()):
-                field.validate(updated.get(field.key, field.default))
-            candidate = self.snapshot()
-            candidate["extensions"][owner] = updated
-            self._commit(candidate)
-        self._notify(f"extensions.{owner}", values)
-
-    def configure_provider(self, provider_id, enabled):
+    def configure_provider(self, provider_id: str, enabled: bool) -> None:
         if type(enabled) is not bool:
             raise ValueError("enabled must be a boolean")
         with self._lock:
@@ -351,7 +464,7 @@ class Settings:
             self._commit(data)
         self._notify("providers", {provider_id: {"enabled": enabled}})
 
-    def rename_account(self, key, label):
+    def rename_account(self, key: str, label: str) -> None:
         """Change display metadata without replacing identity, sessions or preferences."""
         if not isinstance(label, str) or not 1 <= len(label.strip()) <= 80:
             raise ValueError("Hesap adı 1–80 karakter olmalı")
@@ -371,7 +484,7 @@ class Settings:
             self._commit(data)
         self._notify("accounts", {"key": key, "label": label.strip()})
 
-    def set_account_enabled(self, key, enabled):
+    def set_account_enabled(self, key: str, enabled: bool) -> None:
         if type(enabled) is not bool:
             raise ValueError("enabled must be a boolean")
         with self._lock:
@@ -390,7 +503,7 @@ class Settings:
             self._commit(data)
         self._notify("accounts", {"key": key, "enabled": enabled})
 
-    def remove_account(self, key):
+    def remove_account(self, key: str) -> str:
         """Remove metadata atomically, choosing another enabled account."""
         with self._lock:
             data = self.snapshot()
@@ -423,7 +536,7 @@ class Settings:
 
     def update(self, section: str, values: dict) -> None:
         if section not in ("application", "keybindings", "providers", "accounts"):
-            raise ValueError("use update_extension for extension settings")
+            raise ValueError(f"unknown settings section: {section}")
         with self._lock:
             if section == "keybindings" and any(
                 key in values and values[key] != self._data["keybindings"].get(key)
@@ -447,122 +560,3 @@ class Settings:
         self._validate_document(candidate)
         atomic_json_write(self.path, candidate, indent=2, allow_nan=False, prefix=".config-")
         self._data = copy.deepcopy(candidate)
-
-
-class SettingsCatalog:
-    def __init__(
-        self,
-        api,
-        *,
-        title=lambda key, _messages, fallback=None: fallback or key,
-        order=lambda key: key,
-    ):
-        self.title, self.order = title, order
-        self.api = api
-        self.settings = api.settings
-        self.languages = api.languages
-
-    def rows(self) -> list[dict]:
-        config = self.settings.snapshot()
-        locale = config["application"]["language"]
-        messages = self.languages.merged(locale)
-        rows = [
-            {
-                "section": "application",
-                "key": key,
-                "title": self.languages.translate(f"application.{key}", locale),
-                "value": value,
-            }
-            for key, value in config["application"].items()
-            if key not in ("model", "effort")
-        ]
-        action_records = {action.id: action for action in self.api.actions.catalog()}
-        action_ids = dict.fromkeys((*DEFAULT_KEYBINDINGS, *action_records))
-
-        def default_keybinding(action_id):
-            action = action_records.get(action_id)
-            return action.keybinding if action else ""
-
-        keybindings = {
-            action_id: config["keybindings"].get(action_id, default_keybinding(action_id)) or ""
-            for action_id in action_ids
-        }
-        conflicts = keybinding_conflicts(keybindings)
-        rows.extend(
-            {
-                "section": "keybindings",
-                "key": key,
-                "title": self.title(
-                    key,
-                    messages,
-                    action_records[key].title if key in action_records else None,
-                ),
-                "value": value,
-                "conflict": key in conflicts,
-                "immutable": key in IMMUTABLE_KEYBINDINGS,
-                "disabled": key in IMMUTABLE_KEYBINDINGS,
-            }
-            for key, value in sorted(keybindings.items(), key=lambda item: self.order(item[0]))
-        )
-        for row in rows:
-            if row["key"] == "language":
-                row["choices"] = self.languages.locales()
-        rows.extend(
-            {
-                "section": f"providers.{provider_id}",
-                "key": "enabled",
-                "title": provider_id.title() if provider_id != "chatgpt" else "ChatGPT",
-                "value": config["providers"].get(provider_id, {}).get("enabled", True),
-            }
-            for provider_id in self.api.providers.ids()
-        )
-        schemas = self.settings.fields()
-        for owner in dict.fromkeys(
-            (*config["extensions"], *schemas, *self.api.get("extensions").statuses())
-        ):
-            fields = schemas.get(owner, ())
-            values = self.settings.extension(owner)
-            if not any(field.key == "enabled" for field in fields):
-                rows.append(
-                    {
-                        "section": f"extensions.{owner}",
-                        "key": "enabled",
-                        "title": owner,
-                        "value": values.get("enabled", True),
-                    }
-                )
-            rows.extend(
-                {
-                    "section": f"extensions.{owner}",
-                    "key": field.key,
-                    "title": self.languages.translate(field.title_key, locale),
-                    "value": values[field.key],
-                    "choices": field.choices,
-                }
-                for field in fields
-            )
-        return rows
-
-    async def change(self, section: str, key: str, value) -> None:
-        if section == "keybindings" and key in IMMUTABLE_KEYBINDINGS:
-            raise ValueError("system keybindings cannot be modified")
-        row = next(
-            (row for row in self.rows() if row["section"] == section and row["key"] == key), None
-        )
-        if row is None:
-            raise ValueError("unknown setting")
-        if row.get("choices") and value not in row["choices"]:
-            raise ValueError("choose one of the available setting values")
-        if section.startswith("providers."):
-            self.api.get("accounts").set_enabled(section.split(".", 1)[1], value)
-        elif section.startswith("extensions."):
-            owner = section.removeprefix("extensions.")
-            if key == "enabled":
-                if type(value) is not bool:
-                    raise ValueError("enabled must be true or false")
-                manager = self.api.get("extensions")
-                manager.enable(owner) if value else await manager.disable_async(owner)
-            else:
-                self.settings.update_extension(owner, {key: value})
-        else:
-            self.settings.update(section, {key: value})

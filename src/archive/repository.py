@@ -14,21 +14,6 @@ from utils.sqlite import SQLiteRepositoryBase
 V5_MIGRATION_BATCH_SIZE = 256
 
 
-def _rowid_batches(db, table, *columns):
-    """Read a stable table snapshot in bounded keyset batches inside a migration."""
-    last_rowid = 0
-    selected = ",".join(columns)
-    while True:
-        rows = db.execute(
-            f"SELECT rowid,{selected} FROM {table} WHERE rowid>? ORDER BY rowid LIMIT ?",
-            (last_rowid, V5_MIGRATION_BATCH_SIZE),
-        ).fetchall()
-        if not rows:
-            return
-        yield rows
-        last_rowid = rows[-1][0]
-
-
 def encode(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
@@ -51,37 +36,7 @@ def conversation_header(value):
     }
 
 
-def _is_archive_blob_path(value):
-    if not isinstance(value, str):
-        return False
-    parts = value.replace("\\", "/").split("/")
-    return (
-        len(parts) == 2
-        and len(parts[0]) == 2
-        and len(parts[1]) == 64
-        and parts[0] == parts[1][:2]
-        and all(char in "0123456789abcdef" for char in parts[1])
-    )
-
-
-def _strip_archive_blob_refs(value):
-    changed = False
-    if isinstance(value, dict):
-        looks_like_resource = "id" in value and any(
-            name in value for name in ("name", "filename", "mime", "mime_type")
-        )
-        if _is_archive_blob_path(value.get("path")) or (
-            looks_like_resource and ("path" in value or "sha256" in value)
-        ):
-            value.pop("path", None)
-            value.pop("sha256", None)
-            changed = True
-        for item in value.values():
-            changed = _strip_archive_blob_refs(item) or changed
-    elif isinstance(value, list):
-        for item in value:
-            changed = _strip_archive_blob_refs(item) or changed
-    return changed
+SCHEMA_VERSION = 6
 
 
 class SQLiteRepository(SQLiteRepositoryBase):
@@ -94,15 +49,14 @@ class SQLiteRepository(SQLiteRepositoryBase):
             ).fetchone()
             if exists:
                 versions = db.execute("SELECT version FROM schema_version").fetchall()
-                if versions not in ([(1,)], [(2,)], [(3,)], [(4,)], [(5,)], [(6,)]):
+                if versions != [(SCHEMA_VERSION,)]:
                     raise OSError("Unsupported archive schema version")
-                if versions == [(6,)]:
-                    return
+                return
             db.executescript(
-                """
+                f"""
                 PRAGMA journal_mode=WAL;
                 CREATE TABLE IF NOT EXISTS schema_version(version INTEGER PRIMARY KEY);
-                INSERT INTO schema_version SELECT 1 WHERE NOT EXISTS(SELECT 1 FROM schema_version);
+                INSERT INTO schema_version VALUES({SCHEMA_VERSION});
                 CREATE TABLE IF NOT EXISTS tombstones(
                     account TEXT NOT NULL, kind TEXT NOT NULL, remote TEXT NOT NULL,
                     deleted REAL NOT NULL, PRIMARY KEY(account,kind,remote));
@@ -115,6 +69,9 @@ class SQLiteRepository(SQLiteRepositoryBase):
                     account TEXT NOT NULL, remote TEXT NOT NULL, title TEXT, container TEXT,
                     model TEXT, metadata TEXT NOT NULL, PRIMARY KEY(account,remote));
                 CREATE INDEX IF NOT EXISTS conversation_container ON conversations(account,container);
+                CREATE TABLE IF NOT EXISTS conversation_metadata(
+                    account TEXT NOT NULL, remote TEXT NOT NULL, payload TEXT NOT NULL,
+                    PRIMARY KEY(account,remote));
                 CREATE TABLE IF NOT EXISTS messages(
                     account TEXT NOT NULL, conversation TEXT NOT NULL, ordinal INTEGER NOT NULL,
                     remote TEXT, role TEXT, channel TEXT, text TEXT, metadata TEXT NOT NULL,
@@ -139,147 +96,31 @@ class SQLiteRepository(SQLiteRepositoryBase):
                     PRIMARY KEY(account,kind,remote));
                 CREATE TABLE IF NOT EXISTS maintenance(
                     key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS downloads(
+                    id TEXT PRIMARY KEY, created REAL NOT NULL, payload TEXT NOT NULL,
+                    revision INTEGER NOT NULL DEFAULT 0);
+                CREATE TABLE IF NOT EXISTS pending_branches(
+                    account TEXT NOT NULL, remote TEXT NOT NULL,
+                    created REAL NOT NULL, answered INTEGER NOT NULL DEFAULT 0,
+                    listed_general INTEGER NOT NULL DEFAULT 0, listed_project INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY(account,remote));
+                CREATE TABLE IF NOT EXISTS response_variant_groups(
+                    account TEXT NOT NULL, conversation TEXT NOT NULL, group_id TEXT NOT NULL,
+                    current_message TEXT NOT NULL, current_index INTEGER NOT NULL,
+                    PRIMARY KEY(account,conversation,group_id),
+                    UNIQUE(account,conversation,current_message));
+                CREATE INDEX IF NOT EXISTS response_variant_current
+                    ON response_variant_groups(account,conversation,current_message);
+                CREATE TABLE IF NOT EXISTS response_variants(
+                    account TEXT NOT NULL, conversation TEXT NOT NULL,
+                    group_id TEXT NOT NULL, version_index INTEGER NOT NULL, payload TEXT NOT NULL,
+                    PRIMARY KEY(account,conversation,group_id,version_index));
+                CREATE TABLE IF NOT EXISTS superseded_messages(
+                    account TEXT NOT NULL, conversation TEXT NOT NULL,
+                    message_id TEXT NOT NULL, group_id TEXT NOT NULL,
+                    PRIMARY KEY(account,conversation,message_id));
                 """
             )
-        # Upgrade the existing archive atomically; conversation tables remain intact.
-        with self.transaction(immediate=True) as db:
-            db.execute(
-                "CREATE TABLE IF NOT EXISTS downloads("
-                "id TEXT PRIMARY KEY, created REAL NOT NULL, payload TEXT NOT NULL)"
-            )
-            db.execute("UPDATE schema_version SET version=2 WHERE version=1")
-        # Revisions let a process reject stale download-history writes without
-        # changing the payload contract or overwriting another process's row.
-        with self.transaction(immediate=True) as db:
-            columns = {row[1] for row in db.execute("PRAGMA table_info(downloads)")}
-            if "revision" not in columns:
-                db.execute("ALTER TABLE downloads ADD COLUMN revision INTEGER NOT NULL DEFAULT 0")
-            db.execute("UPDATE schema_version SET version=3 WHERE version=2")
-        # Older versions duplicated complete histories in the listing metadata.
-        # Migrate one record at a time; the canonical record and messages stay intact.
-        with self.transaction(immediate=True) as db:
-            db.execute(
-                "CREATE TABLE IF NOT EXISTS conversation_metadata("
-                "account TEXT NOT NULL, remote TEXT NOT NULL, payload TEXT NOT NULL,"
-                "PRIMARY KEY(account,remote))"
-            )
-            if db.execute("SELECT version FROM schema_version").fetchone()[0] == 3:
-                for account, remote, metadata in db.execute(
-                    "SELECT account,remote,metadata FROM conversations"
-                ):
-                    header = json.loads(metadata)
-                    if "messages" in header:
-                        header = conversation_header(header)
-                        db.execute(
-                            "UPDATE conversations SET metadata=? WHERE account=? AND remote=?",
-                            (encode(header), account, remote),
-                        )
-                for account, remote, payload in db.execute(
-                    "SELECT account,remote,payload FROM records WHERE kind='conversation'"
-                ):
-                    value = json.loads(payload)
-                    changed = False
-                    if "messages" in value:
-                        messages = value.pop("messages")
-                        count = db.execute(
-                            "SELECT count(*) FROM messages WHERE account=? AND conversation=?",
-                            (account, remote),
-                        ).fetchone()[0]
-                        if count != len(messages):
-                            self._write_messages(db, account, remote, messages)
-                        value["_archive_sql_messages"] = True
-                        changed = True
-                    if "metadata" in value:
-                        db.execute(
-                            "INSERT OR REPLACE INTO conversation_metadata VALUES(?,?,?)",
-                            (account, remote, encode(value.pop("metadata"))),
-                        )
-                        value["_archive_sql_metadata"] = True
-                        changed = True
-                    if changed:
-                        db.execute(
-                            "UPDATE records SET payload=? WHERE account=? "
-                            "AND kind='conversation' AND remote=?",
-                            (encode(value), account, remote),
-                        )
-                db.execute("UPDATE schema_version SET version=4 WHERE version=3")
-        # v5 stops duplicating uploaded source bytes in the archive. Remove only
-        # content-addressed archive paths; provider URIs and attachment metadata stay.
-        with self.transaction(immediate=True) as db:
-            version = db.execute("SELECT version FROM schema_version").fetchone()[0]
-            if version == 4:
-                for table, column in (
-                    ("records", "payload"),
-                    ("conversations", "metadata"),
-                    ("messages", "metadata"),
-                    ("containers", "metadata"),
-                    ("conversation_metadata", "payload"),
-                ):
-                    for rows in _rowid_batches(db, table, column):
-                        for rowid, payload in rows:
-                            value = json.loads(payload)
-                            if _strip_archive_blob_refs(value):
-                                db.execute(
-                                    f"UPDATE {table} SET {column}=? WHERE rowid=?",
-                                    (encode(value), rowid),
-                                )
-                for rows in _rowid_batches(db, "resources", "metadata", "path"):
-                    for rowid, metadata, path in rows:
-                        value = json.loads(metadata)
-                        changed = _strip_archive_blob_refs(value)
-                        remove_path = path is not None
-                        if changed or remove_path:
-                            db.execute(
-                                "UPDATE resources SET path=?,metadata=? WHERE rowid=?",
-                                (
-                                    None if remove_path else path,
-                                    encode(value) if changed else metadata,
-                                    rowid,
-                                ),
-                            )
-                db.execute(
-                    "INSERT OR REPLACE INTO maintenance(key,value) "
-                    "VALUES('uploaded_file_cleanup_pending','1')"
-                )
-                db.execute("UPDATE schema_version SET version=5 WHERE version=4")
-        with self.transaction(immediate=True) as db:
-            version = db.execute("SELECT version FROM schema_version").fetchone()[0]
-            if version == 5:
-                db.execute(
-                    "CREATE TABLE pending_branches(account TEXT NOT NULL, remote TEXT NOT NULL, "
-                    "created REAL NOT NULL, answered INTEGER NOT NULL DEFAULT 0, "
-                    "listed_general INTEGER NOT NULL DEFAULT 0, listed_project INTEGER NOT NULL DEFAULT 0, "
-                    "PRIMARY KEY(account,remote))"
-                )
-                db.execute(
-                    "CREATE TABLE response_variant_groups(account TEXT NOT NULL, "
-                    "conversation TEXT NOT NULL, group_id TEXT NOT NULL, current_message TEXT NOT NULL, "
-                    "current_index INTEGER NOT NULL, PRIMARY KEY(account,conversation,group_id), "
-                    "UNIQUE(account,conversation,current_message))"
-                )
-                db.execute(
-                    "CREATE TABLE response_variants(account TEXT NOT NULL, conversation TEXT NOT NULL, "
-                    "group_id TEXT NOT NULL, version_index INTEGER NOT NULL, payload TEXT NOT NULL, "
-                    "PRIMARY KEY(account,conversation,group_id,version_index))"
-                )
-                db.execute(
-                    "CREATE TABLE superseded_messages(account TEXT NOT NULL, "
-                    "conversation TEXT NOT NULL, message_id TEXT NOT NULL, group_id TEXT NOT NULL, "
-                    "PRIMARY KEY(account,conversation,message_id))"
-                )
-                db.execute(
-                    "CREATE INDEX response_variant_current ON response_variant_groups"
-                    "(account,conversation,current_message)"
-                )
-                for account, remote, payload in db.execute(
-                    "SELECT account,remote,payload FROM records WHERE kind='conversation'"
-                ):
-                    if json.loads(payload).get("pending_branch"):
-                        db.execute(
-                            "INSERT OR IGNORE INTO pending_branches VALUES(?,?,?,0,0,0)",
-                            (account, remote, time.time()),
-                        )
-                db.execute("UPDATE schema_version SET version=6 WHERE version=5")
 
     def get(self, account, kind, remote):
         with self.transaction() as db:
@@ -555,7 +396,7 @@ class SQLiteRepository(SQLiteRepositoryBase):
 
     def append_turn(self, account, remote, value):
         """Reconcile only the bounded tail, never decode/rewrite the complete history."""
-        from webai_provider.api import merge_conversation
+        from .history import merge_conversation
 
         with self.transaction(immediate=True) as db:
             row = db.execute(
@@ -1522,17 +1363,6 @@ class SQLiteRepository(SQLiteRepositoryBase):
 
     def close(self):
         pass  # Connections are scoped to individual transactions, never held across remote work.
-
-    def uploaded_file_cleanup_pending(self):
-        with self.connect() as db:
-            row = db.execute(
-                "SELECT value FROM maintenance WHERE key='uploaded_file_cleanup_pending'"
-            ).fetchone()
-        return bool(row and row[0] == "1")
-
-    def complete_uploaded_file_cleanup(self):
-        with self.connect() as db:
-            db.execute("DELETE FROM maintenance WHERE key='uploaded_file_cleanup_pending'")
 
 
 class Files:

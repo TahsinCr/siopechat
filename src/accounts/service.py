@@ -1,29 +1,31 @@
-"""Account service coordination and lifecycle."""
+"""Account service coordination and native synchronous v2 provider lifecycle."""
 
 from __future__ import annotations
 
-import asyncio
 import threading
 import time
 import uuid
-from concurrent.futures import CancelledError, Future
-from concurrent.futures import TimeoutError as FutureTimeout
-from dataclasses import asdict, replace
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 
 try:
     from builtins import ExceptionGroup
 except ImportError:  # Python 3.10
     from exceptiongroup import ExceptionGroup
 
-from webai_provider.api import (
-    PROVIDERS,
+from webaiprovider import (
+    Account,
     AccountPaused,
-    BrowserSession,
-    FeatureState,
-    ModelCatalog,
-    SessionPaths,
-    session_exists,
+    Capability,
+    ChatGPTProvider,
+    EventEnvelope,
+    LifecycleState,
+    Project,
+    Provider,
+    ProviderType,
 )
+from webaiprovider.accounts import session_exists
+from webaiprovider.providers.chatgpt.auth import BrowserSession
 
 from .history import AccountsHistory
 from .projects import AccountsProjects
@@ -31,13 +33,14 @@ from .repository import AccountRepository
 from .sending import AccountsSending
 from .sessions import AccountsSessions
 from .shared import (
-    _LOG,
     CATALOG_SCHEMA,
-    MODEL_TIMEOUT,
-    identity,
+    PROVIDERS,
+    AccountCatalog,
     origin,
 )
 from .transfers import AccountsTransfers
+
+_MAX_CACHED_CHATS = 128
 
 
 class Accounts(
@@ -47,40 +50,42 @@ class Accounts(
     AccountsSending,
     AccountsTransfers,
 ):
-    """Coordinate account-scoped provider operations."""
+    """Coordinate account-scoped synchronous v2 provider operations."""
 
     def __init__(self, api):
         self.api = api
         self.settings = api.settings
         self.closing = False
         self.closed = False
-        self._chat_projects = {}
+        self._chat_projects: dict[tuple[str, str], str] = {}
         self.data_root = api.get("data_root")
         self.runtime_root = api.get("runtime_root")
         self.repository = AccountRepository(self.data_root / "accounts.sqlite3")
-        self._providers = {}
-        self._credential_stores = {}
+        self._providers: dict[str, Provider] = {}
+        self._accounts: dict[str, Account] = {}
+        self._event_subscriptions: dict[str, object] = {}
+        self._provider_locks: dict[str, threading.RLock] = {}
+        self._chats: OrderedDict[tuple[str, str], object] = OrderedDict()
+        self._credential_stores: dict[str, object] = {}
         self._credential_lock = threading.Lock()
         self.cdp_url = None
-        self._verified = set()
-        self._verification_required = set()
-        self._catalogs = {}
-        self._catalog_tasks = {}
-        self._catalog_versions = {}
+        self._verified: set[str] = set()
+        self._verification_required: set[str] = set()
+        self._catalogs: dict[str, tuple[int, AccountCatalog]] = {}
+        self._catalog_versions: dict[str, int] = {}
         self._catalog_io_lock = threading.Lock()
-        self._sending = {}
-        self._session_changes = set()
-        self._attachment_paths = {}
-        self._loop = None
-        self._thread = None
-        self._lock = threading.Lock()
-        self._active_calls = set()
-        self._active_pending = {}
-        self._active_values = {}
+        self._sending: dict[str, int] = {}
+        self._preparing_chats: set[tuple[str, str | None, str | None]] = set()
+        self._active_operations: set[object] = set()
+        self._send_locks: dict[str, threading.RLock] = {}
+        self._session_changes: set[str] = set()
+        self._attachment_paths: dict[tuple[str, str], str] = {}
+        self._lock = threading.RLock()
+        self._active_pending: dict[str, str | None] = {}
+        self._active_values: dict[str, str | None] = {}
         self._active_writer_running = False
-        self._active_writer_task = None
-        self._cache_promotion_lock = threading.Lock()
-        self._cache_promotion_complete = False
+        self._active_writer_thread = None
+        self._paused_accounts: set[tuple[str, str]] = set()
         for item in self.items():
             key = item["key"]
             try:
@@ -89,6 +94,142 @@ class Accounts(
                     self._verification_required.add(key)
             except (OSError, ValueError, AttributeError):
                 pass
+
+    def _provider_lock(self, key: str) -> threading.RLock:
+        with self._lock:
+            lock = self._provider_locks.get(key)
+            if lock is None:
+                lock = threading.RLock()
+                self._provider_locks[key] = lock
+            return lock
+
+    def _account_gate(self, key: str) -> threading.RLock:
+        with self._lock:
+            lock = self._send_locks.get(key)
+            if lock is None:
+                lock = threading.RLock()
+                self._send_locks[key] = lock
+            return lock
+
+    def _cdp_url_for(self, key: str) -> str:
+        item = self.item(key)
+        if item.get("browser_account"):
+            return self._cdp_url_for(item["browser_account"])
+        if key == "chatgpt/default" and self.cdp_url:
+            return self.cdp_url
+        return f"http://127.0.0.1:{item['port']}"
+
+    def _account_obj(self, key: str) -> Account:
+        item = self.item(key)
+        account = self._accounts.get(key)
+        if account is not None and account.name == item["label"]:
+            return account
+        account = Account(
+            id=item["id"],
+            provider=item["provider"],
+            credentials=self.credentials(key),
+            name=item["label"],
+        )
+        self._accounts[key] = account
+        return account
+
+    def _build_provider(self, key: str, account: Account | None = None) -> Provider:
+        item = self.item(key)
+        resolved_account = account if account is not None else self._account_obj(key)
+        provider_id = item["provider"]
+        if provider_id == "chatgpt":
+            session = BrowserSession(self.credentials(key), cdp_url=self._cdp_url_for(key))
+            return ChatGPTProvider(resolved_account, session=session)
+        return Provider(resolved_account, type=ProviderType.parse(provider_id))
+
+    def _subscribe_provider(self, key: str, prov: Provider) -> None:
+        previous = self._event_subscriptions.pop(key, None)
+        if previous is not None and hasattr(previous, "cancel"):
+            previous.cancel()
+        if hasattr(prov, "events") and hasattr(prov.events, "subscribe"):
+            self._event_subscriptions[key] = prov.events.subscribe(
+                lambda envelope, account_key=key: self._on_provider_event(account_key, envelope)
+            )
+
+    def _on_provider_event(self, key: str, envelope: EventEnvelope | object) -> None:
+        name = getattr(envelope, "name", None)
+        if name == "provider.opened":
+            self._remember_verification(key)
+            return
+        if name not in ("collection.changed", "chat.created", "chat.updated", "chat.deleted"):
+            return
+        payload = getattr(envelope, "payload", None)
+        archive = self.archive()
+        if name == "chat.deleted" and archive:
+            rid = getattr(envelope, "resource_id", None)
+            if isinstance(rid, str) and rid:
+                self._forget_chat_handle(key, rid)
+        elif name == "collection.changed" and isinstance(payload, dict):
+            collection = payload.get("collection")
+            action = payload.get("action")
+            item = payload.get("item")
+            if collection == "chats" and action == "update" and item is not None:
+                remote_id = getattr(item, "remote_id", None)
+                title = getattr(item, "title", None)
+                if archive and isinstance(remote_id, str) and isinstance(title, str) and title:
+                    archive.rename_conversation(key, remote_id, title)
+
+    def _forget_chat_handle(self, key: str, remote_id: str | None = None) -> None:
+        with self._lock:
+            if remote_id is None:
+                for entry_key in tuple(self._chats):
+                    if entry_key[0] == key:
+                        self._chats.pop(entry_key, None)
+            else:
+                self._chats.pop((key, remote_id), None)
+
+    def _chat_handle(
+        self,
+        key: str,
+        remote_id: str | None = None,
+        *,
+        project_id: str | None = None,
+        temporary: bool = False,
+        create_new: bool = False,
+    ):
+        prov = self.open_provider(key)
+        if create_new or not remote_id:
+            project = prov.projects.get(project_id) if project_id else None
+            return prov.chats.create(project=project, temporary=temporary)
+        with self._lock:
+            existing = self._chats.get((key, remote_id))
+            if existing is not None and getattr(existing, "provider", None) is prov:
+                self._chats.move_to_end((key, remote_id))
+                return existing
+        chat = prov.chats._new(
+            id=remote_id,
+            remote_id=remote_id,
+            temporary=temporary,
+        )
+        if project_id:
+            chat.project = Project(id=project_id, remote_id=project_id, provider=prov)
+        self._cache_chat_handle(key, chat)
+        return chat
+
+    def _cache_chat_handle(self, key: str, chat: object) -> None:
+        remote_id = getattr(chat, "remote_id", None)
+        if not isinstance(remote_id, str) or not remote_id or getattr(chat, "temporary", False):
+            return
+        with self._lock:
+            self._chats[key, remote_id] = chat
+            self._chats.move_to_end((key, remote_id))
+            while len(self._chats) > _MAX_CACHED_CHATS:
+                self._chats.popitem(last=False)
+
+    def _discard_provider(self, key: str) -> None:
+        with self._provider_lock(key):
+            sub = self._event_subscriptions.pop(key, None)
+            if sub is not None and hasattr(sub, "cancel"):
+                sub.cancel()
+            prov = self._providers.pop(key, None)
+            self._forget_chat_handle(key)
+        if prov is not None:
+            prov.close()
 
     def items(self):
         config = self.settings.snapshot()
@@ -113,23 +254,23 @@ class Accounts(
             if item["enabled"] and item["key"] not in self._verification_required
         ]
 
-    def account_is_visible(self, key):
+    def account_is_visible(self, key: str) -> bool:
         try:
             item = self.item(key)
         except ValueError:
             return False
         return item["enabled"] and key not in self._verification_required
 
-    def require_visible_account(self, key):
+    def require_visible_account(self, key: str):
         item = self.item(key)
         if not item["enabled"] or key in self._verification_required:
             raise ValueError("Hesap devre dışı veya yeniden doğrulanmalı")
         return item
 
-    def enabled(self, provider):
+    def enabled(self, provider: str) -> bool:
         return self.settings.snapshot()["providers"].get(provider, {}).get("enabled", False)
 
-    def set_enabled(self, provider, enabled):
+    def set_enabled(self, provider: str, enabled: bool) -> None:
         with self._lock:
             if not enabled and any(
                 count and key.split("/")[0] == provider for key, count in self._sending.items()
@@ -137,7 +278,7 @@ class Accounts(
                 raise ValueError("Önce bu sağlayıcıdaki yanıtları tamamlayın veya durdurun")
             self.settings.configure_provider(provider, enabled)
 
-    def set_account_enabled(self, key, enabled):
+    def set_account_enabled(self, key: str, enabled: bool):
         if type(enabled) is not bool:
             raise ValueError("enabled must be a boolean")
         self.item(key)
@@ -152,18 +293,16 @@ class Accounts(
                     self._catalog_versions[key] = self._catalog_versions.get(key, 0) + 1
                     self._catalogs.pop(key, None)
             if not enabled:
-                task = self._catalog_tasks.get(key)
-                if task and self._loop is not None and self._loop.is_running():
-                    self._loop.call_soon_threadsafe(task.cancel)
+                self._discard_provider(key)
         finally:
             with self._lock:
                 self._session_changes.discard(key)
         return self.item(key)
 
-    def preference(self, key):
+    def preference(self, key: str):
         return self.settings.snapshot()["accounts"].get("preferences", {}).get(key, {})
 
-    def remember(self, key, model, effort):
+    def remember(self, key: str, model: str, effort: str | None) -> None:
         self.item(key)
         self.settings.update("accounts", {"preferences": {key: {"model": model, "effort": effort}}})
 
@@ -202,19 +341,16 @@ class Accounts(
         self, key, kind, remote, fetch, force=False, *, window=False, fresh=False, window_limit=None
     ):
         archive = self.archive()
-        if archive:
-            try:
-                options = {"window": True} if window else {}
-                if fresh:
-                    options["fresh"] = True
-                if window_limit is not None:
-                    options["window_limit"] = window_limit
-                return archive.read(key, kind, remote or "", fetch, force=force, **options)
-            except OSError:
-                return fetch()
-        return fetch()
+        if archive is None:
+            return fetch()
+        options = {"window": True} if window else {}
+        if fresh:
+            options["fresh"] = True
+        if window_limit is not None:
+            options["window_limit"] = window_limit
+        return archive.read(key, kind, remote or "", fetch, force=force, **options)
 
-    def active(self):
+    def active(self) -> str:
         data = self.settings.snapshot()
         key = data["accounts"]["active"]
         if key and self.enabled(key.split("/")[0]):
@@ -222,13 +358,13 @@ class Accounts(
         active = self.active_accounts()
         return active[0]["key"] if active else ""
 
-    def item(self, key):
+    def item(self, key: str):
         item = next((item for item in self.items() if item["key"] == key), None)
         if item is None:
             raise ValueError("Hesap bulunamadı")
         return item
 
-    def add(self, provider, label, browser_account=None):
+    def add(self, provider: str, label: str, browser_account=None) -> str:
         if (
             provider not in PROVIDERS
             or not isinstance(label, str)
@@ -259,7 +395,7 @@ class Accounts(
         self.settings.update("accounts", data)
         return provider + "/" + value["id"]
 
-    def select(self, key):
+    def select(self, key: str) -> None:
         self.item(key)
         if not self.enabled(key.split("/")[0]):
             raise ValueError("Sağlayıcı devre dışı; önce Ayarlar → Sağlayıcılar bölümünden açın")
@@ -267,12 +403,13 @@ class Accounts(
         selected[key.split("/")[0]] = key
         self.settings.update("accounts", {"active": key, "selected": selected})
 
-    def rename(self, key, label):
+    def rename(self, key: str, label: str):
         """Rename the local display label while keeping the provider session intact."""
         self.settings.rename_account(key, label)
+        self._accounts.pop(key, None)
         return self.item(key)
 
-    def remove(self, key):
+    def remove(self, key: str):
         """Forget a local account; never delete the remote account or archived conversations."""
         self.item(key)
         with self._lock:
@@ -280,23 +417,11 @@ class Accounts(
                 raise RuntimeError("Önce devam eden işlemi tamamlayın veya durdurun")
             self._session_changes.add(key)
         try:
-            # Reject before closing clients or touching credentials.
             if not any(item["key"] != key and item["enabled"] for item in self.items()):
                 raise ValueError("Son etkin hesap silinemez; önce başka bir hesap ekleyin")
 
-            async def release():
-                task = self._catalog_tasks.get(key)
-                if task:
-                    task.cancel()
-                    await asyncio.gather(task, return_exceptions=True)
-                provider = self._providers.get(key)
-                if provider:
-                    await provider.close()
-
-            self.call(release())
+            self._discard_provider(key)
             previous_accounts = self.settings.snapshot()["accounts"]
-            # Commit visible account removal first. If SQLite cleanup then fails,
-            # restore the metadata while keeping the credential record intact.
             active = self.settings.remove_account(key)
             try:
                 self.repository.delete(key)
@@ -312,10 +437,11 @@ class Accounts(
             with self._catalog_io_lock:
                 self._catalog_versions[key] = self._catalog_versions.get(key, 0) + 1
                 self._catalogs.pop(key, None)
-            self._providers.pop(key, None)
+            self._accounts.pop(key, None)
             with self._credential_lock:
                 self._credential_stores.pop(key, None)
             self._verified.discard(key)
+            self._verification_required.discard(key)
             with self._lock:
                 self._active_pending.pop(key, None)
                 self._active_values.pop(key, None)
@@ -325,202 +451,74 @@ class Accounts(
             with self._lock:
                 self._session_changes.discard(key)
 
-    def directory(self, key):
+    def directory(self, key: str):
         self.item(key)
         return self.data_root / "accounts" / key
 
-    def session(self, key):
-        item = self.item(key)
-        if item.get("browser_account"):
-            return self.session(item["browser_account"])
-        directory = self.directory(key)
-        if key == "chatgpt/default":
-            session = self.api.get("backend").create_session(
-                self.cdp_url or f"http://127.0.0.1:{item['port']}"
-            )
-            return BrowserSession(
-                replace(session.paths, session_file=self.credentials(key)), session.cdp_url
-            )
-        return BrowserSession(
-            SessionPaths(self.credentials(key), directory / "chrome-profile"),
-            f"http://127.0.0.1:{item['port']}",
-        )
+    def session(self, key: str) -> BrowserSession:
+        return BrowserSession(self.credentials(key), cdp_url=self._cdp_url_for(key))
 
-    def credentials(self, key):
+    def credentials(self, key: str):
         with self._credential_lock:
             existing = self._credential_stores.get(key)
-            if existing is not None:
-                return existing
-            store = self.repository.credentials(key)
-            self._credential_stores[key] = store
-            return store
+            if existing is None:
+                existing = self.repository.credentials(key)
+                self._credential_stores[key] = existing
+            return existing
 
-    def capabilities(self, key):
+    def capabilities(self, key: str) -> frozenset[Capability]:
         return self.provider(key).capabilities
 
-    def provider(self, key):
-        with self._lock:
-            if key not in self._providers:
-                item = self.item(key)
-                configuration = {"credential_file": self.credentials(key)}
-                if item["provider"] == "chatgpt":
-                    configuration["session"] = self.session(key)
-                provider = self.api.providers.create_account(
-                    item["provider"], item["id"], **configuration
-                )
-                self._providers[key] = provider
-            return self._providers[key]
-
-    def _start(self, allow_closed=False):
-        with self._lock:
-            if (self.closing or self.closed) and not allow_closed:
+    def provider(self, key: str) -> Provider:
+        with self._provider_lock(key):
+            if self.closing or self.closed:
                 raise RuntimeError("Hesap hizmeti kapalı")
-            if self._loop is None:
-                self._loop = asyncio.new_event_loop()
-                self._thread = threading.Thread(
-                    target=self._loop.run_forever, name="siope-providers", daemon=True
-                )
+            prov = self._providers.get(key)
+            if prov is None or prov.lifecycle_state in (
+                LifecycleState.CLOSED,
+                LifecycleState.CLOSING,
+                LifecycleState.CLOSE_FAILED,
+            ):
+                prov = self._build_provider(key)
+                self._subscribe_provider(key, prov)
+                self._providers[key] = prov
+            return prov
+
+    def open_provider(self, key: str) -> Provider:
+        with self._provider_lock(key):
+            if self.closing or self.closed:
+                raise RuntimeError("Hesap hizmeti kapalı")
+            prov = self.provider(key)
+            if not prov.opened:
                 try:
-                    self._thread.start()
-                except Exception:
-                    self._loop.close()
-                    self._loop = self._thread = None
+                    prov.open()
+                except AccountPaused as error:
+                    if getattr(error, "requires_verification", True) and session_exists(
+                        self.credentials(key)
+                    ):
+                        self._forget_verification(key)
                     raise
+                except Exception:
+                    if prov.lifecycle_state in (LifecycleState.OPEN_FAILED, LifecycleState.CLOSED):
+                        with self._catalog_io_lock:
+                            self._providers.pop(key, None)
+                    raise
+            return prov
 
-    def call(self, coroutine, timeout=45, *, _closing=False):
-        try:
-            self._start(allow_closed=_closing)
-        except Exception:
-            coroutine.close()
-            raise
-
-        started = threading.Event()
-        startup_lock = threading.Lock()
-        cancelled_before_start = threading.Event()
-
-        async def bounded():
-            with startup_lock:
-                if cancelled_before_start.is_set():
-                    return None
-                started.set()
-            if _closing:
-                # Keep the shutdown coroutine in the run_coroutine_threadsafe
-                # task. wait_for() wraps it in a child task; Accounts.close()
-                # then mistakes this child/parent pair for background work
-                # and cancels its own caller while draining the provider loop.
-                return await coroutine
-            return await asyncio.wait_for(coroutine, timeout)
-
-        with self._lock:
-            if (self.closing or self.closed) and not _closing:
-                coroutine.close()
-                raise RuntimeError("Hesap hizmeti kapalı")
-            future = asyncio.run_coroutine_threadsafe(bounded(), self._loop)
-            if not _closing:
-                self._active_calls.add(future)
-        if not _closing:
-            future.add_done_callback(self._forget_active_call)
-        try:
-            return future.result(timeout=timeout + 1)
-        except (TimeoutError, asyncio.TimeoutError, FutureTimeout):
-            future.cancel()
-            with startup_lock:
-                if not started.is_set():
-                    cancelled_before_start.set()
-                    coroutine.close()
-            raise TimeoutError(
-                "Sağlayıcı işlemi zaman aşımına uğradı; yeniden deneyebilirsiniz"
-            ) from None
-        except CancelledError:
-            with startup_lock:
-                if not started.is_set():
-                    cancelled_before_start.set()
-                    coroutine.close()
-            raise
-
-    def _forget_active_call(self, future):
-        with self._lock:
-            self._active_calls.discard(future)
-
-    def begin_shutdown(self):
-        """Stop new provider work and release threads waiting on provider calls."""
+    def begin_shutdown(self) -> None:
+        """Stop new provider work and cancel active synchronous operations."""
         with self._lock:
             if self.closed:
                 return
             self.closing = True
-            loop = self._loop
-            calls = tuple(self._active_calls)
-        for future in calls:
-            future.cancel()
-        if loop is not None and loop.is_running():
+            ops = tuple(self._active_operations)
+        for operation in ops:
             try:
-                loop.call_soon_threadsafe(self.api.tasks.begin_shutdown)
-            except RuntimeError:
+                operation.cancel()
+            except Exception:
                 pass
 
-    def _call_cancellable(self, coroutine, timeout, cancel_event):
-        if cancel_event.is_set():
-            coroutine.close()
-            raise CancelledError()
-
-        completion = Future()
-        task_ref = []
-
-        async def bounded():
-            return await asyncio.wait_for(coroutine, timeout)
-
-        def finish(task):
-            if completion.done():
-                return
-            if task.cancelled():
-                completion.cancel()
-                return
-            error = task.exception()
-            if error is not None:
-                completion.set_exception(error)
-            else:
-                completion.set_result(task.result())
-
-        def start():
-            task = self._loop.create_task(bounded())
-            task_ref.append(task)
-            task.add_done_callback(finish)
-            if cancel_event.is_set():
-                task.cancel()
-
-        try:
-            self._loop.call_soon_threadsafe(start)
-        except BaseException:
-            coroutine.close()
-            raise
-
-        deadline = time.monotonic() + timeout + 1
-        while True:
-            if cancel_event.is_set():
-                if not completion.done():
-                    self._loop.call_soon_threadsafe(lambda: task_ref and task_ref[0].cancel())
-                try:
-                    completion.result(timeout=timeout + 1)
-                except CancelledError:
-                    pass
-                except FutureTimeout:
-                    raise TimeoutError(
-                        "Sağlayıcı dosya yüklemesi iptal edilirken zaman aşımına uğradı"
-                    ) from None
-                raise CancelledError()
-            if completion.done():
-                return completion.result()
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                cancel_event.set()
-                if task_ref:
-                    self._loop.call_soon_threadsafe(task_ref[0].cancel)
-                raise TimeoutError(
-                    "Sağlayıcı işlemi zaman aşımına uğradı; yeniden deneyebilirsiniz"
-                )
-            cancel_event.wait(min(0.05, remaining))
-
-    def cached_models(self, key):
+    def cached_models(self, key: str) -> AccountCatalog | None:
         cached = self._catalogs.get(key)
         if cached:
             return cached[1]
@@ -530,25 +528,36 @@ class Accounts(
                 return None
             if record.get("account_key") != key or record.get("schema") != CATALOG_SCHEMA:
                 return None
-            catalog = ModelCatalog.from_dict(record["catalog"])
-            if catalog.state != FeatureState.AVAILABLE:
+            catalog = AccountCatalog.from_dict(record["catalog"])
+            if catalog.state.value != "available":
                 return None
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             return None
-        self._catalogs.setdefault(key, (float("-inf"), catalog))
-        return self._catalogs[key][1]
+        with self._catalog_io_lock:
+            self._catalogs.setdefault(key, (self._catalog_versions.get(key, 0), catalog))
+            return self._catalogs[key][1]
 
-    def prepare_enabled(self, selected_key=None):
-        """Warm saved sessions for enabled accounts without blocking the UI.
+    def _store_catalog(self, key: str, version: int, refs) -> AccountCatalog:
+        catalog = AccountCatalog.from_model_refs(refs)
+        with self._catalog_io_lock:
+            if version == self._catalog_versions.get(key, 0):
+                self._catalogs[key] = (version, catalog)
+                try:
+                    self.repository.put(
+                        key,
+                        "catalog",
+                        {
+                            "schema": CATALOG_SCHEMA,
+                            "account_key": key,
+                            "catalog": catalog.to_dict(),
+                        },
+                    )
+                except OSError:
+                    pass
+        return catalog
 
-        Failures are returned per account so one expired session cannot prevent
-        the other providers from becoming ready. Accounts without saved
-        credentials are skipped rather than prompting or opening a browser.
-        """
-        try:
-            self._promote_fallback_cache()
-        except Exception as error:
-            _LOG.warning("Account cache promotion could not finish: %s", error)
+    def prepare_enabled(self, selected_key: str | None = None) -> dict[str, str]:
+        """Warm saved sessions and model catalogs in parallel for enabled accounts."""
         accounts = [
             item
             for item in self.visible_accounts()
@@ -559,252 +568,87 @@ class Accounts(
 
         def prepare(item):
             key = item["key"]
-            provider = self.provider(key)
-            warmup = getattr(provider, "prepare", None)
-            if warmup is None:
-                return key, None
+            version = self._catalog_versions.get(key, 0)
             try:
-                self.call(warmup(), MODEL_TIMEOUT)
-                prepare_for_send = getattr(provider, "prepare_for_send", None)
-                if key == selected_key and callable(prepare_for_send):
-                    self.call(prepare_for_send(), MODEL_TIMEOUT)
+                prov = self.open_provider(key)
+                self._store_catalog(key, version, prov.models.list())
+                if key == selected_key:
+                    active_remote = self.active_conversation(key)
+                    if active_remote:
+                        try:
+                            self.prepare_chat(key, active_remote)
+                        except Exception:
+                            pass
             except AccountPaused as error:
-                self._forget_verification(key)
+                if getattr(error, "requires_verification", True) and session_exists(
+                    self.credentials(key)
+                ):
+                    self._forget_verification(key)
                 return key, str(error)
             except Exception as error:
                 return key, str(error)
             return key, None
 
-        from concurrent.futures import ThreadPoolExecutor
-
-        with ThreadPoolExecutor(max_workers=min(3, len(accounts))) as pool:
+        with ThreadPoolExecutor(max_workers=min(4, len(accounts))) as pool:
             results = pool.map(prepare, accounts)
             return {key: error for key, error in results if error}
 
-    def _promote_fallback_cache(self):
-        """Move SQLite fallback history into the archive when it is available."""
-        archive = self.archive()
-        if archive is None:
-            return
-        with self._cache_promotion_lock:
-            if self._cache_promotion_complete:
-                return
-            complete = True
-            for item in self.items():
-                key = item["key"]
-                try:
-                    self._promote_account_history(archive, key)
-                except (OSError, ValueError, TypeError) as error:
-                    complete = False
-                    _LOG.warning("Could not promote cached history for %s: %s", key, error)
-            self._cache_promotion_complete = complete
-
-    def _promote_account_history(self, archive, key):
-        def cached_records(kind):
-            after = ""
-            while True:
-                limit = 1 if kind == "conversation" else 64
-                rows = self.repository.cache_records_page(key, kind, after=after, limit=limit)
-                if not rows:
-                    return
-                after = rows[-1][0]
-                yield from rows
-
-        def save_conversation(remote, conversation):
-            if not isinstance(conversation, dict) or conversation.get("temporary"):
-                return False
-            saved_id = conversation.get("remote_id") or conversation.get("id") or remote
-            context, saved_remote = origin(saved_id, key)
-            if context != key or saved_remote != remote:
-                return False
-            record = dict(conversation)
-            record.update(id=identity(key, remote), remote_id=remote, context=key)
-            if archive.deleted(key, "conversation", remote):
-                return True
-            if archive.conversation_window(key, remote) is None:
-                archive.put(key, "conversation", remote, record)
-            return archive.conversation_window(key, remote) is not None
-
-        # Archive records are canonical; account-database rows are promoted
-        # only when absent and removed only after the archive confirms them.
-        for remote, _ in cached_records("tombstone"):
-            if not archive.deleted(key, "conversation", remote):
-                archive.delete(key, "conversation", remote)
-            if archive.deleted(key, "conversation", remote):
-                self.repository.cache_delete(key, "tombstone", remote)
-        for remote, conversation in cached_records("conversation"):
-            if save_conversation(remote, conversation):
-                self.repository.cache_delete(key, "conversation", remote)
-
-        current = archive.get(key, "pointer", "active")
-        fallback_remote = self.repository.cache_active(key)
-        if fallback_remote and archive.deleted(key, "conversation", fallback_remote):
-            self.repository.cache_set_active(key, None)
-            fallback_remote = None
-        target = current.get("remote") if isinstance(current, dict) else None
-        if target and archive.deleted(key, "conversation", target):
-            archive.put(key, "pointer", "active", {"remote": None})
-            current = archive.get(key, "pointer", "active")
-        if current is None and fallback_remote:
-            archive.put(key, "pointer", "active", {"remote": fallback_remote})
-            current = archive.get(key, "pointer", "active")
-        if current is not None or fallback_remote is None:
-            self.repository.cache_set_active(key, None)
-
-    def models(self, key, force=False):
+    def models(self, key: str, force: bool = False) -> AccountCatalog:
         self.require_visible_account(key)
+        if not force:
+            cached = self.cached_models(key)
+            if cached is not None:
+                return cached
+        with self._provider_lock(key):
+            if not force:
+                cached = self.cached_models(key)
+                if cached is not None:
+                    return cached
+            version = self._catalog_versions.get(key, 0)
+            try:
+                prov = self.open_provider(key)
+                refs = prov.models.refresh() if force else prov.models.list()
+            except AccountPaused as error:
+                if getattr(error, "requires_verification", True) and session_exists(
+                    self.credentials(key)
+                ):
+                    self._forget_verification(key)
+                raise
+            self._remember_verification(key)
+            return self._store_catalog(key, version, refs)
 
-        async def discover():
-            cached = self._catalogs.get(key)
-            if cached and not force and time.monotonic() - cached[0] < 300:
-                return cached[1]
-            task = self._catalog_tasks.get(key)
-            if task is None:
-                version = self._catalog_versions.get(key, 0)
-
-                async def fetch():
-                    try:
-                        value = await asyncio.wait_for(
-                            self.provider(key).models(force=force), MODEL_TIMEOUT
-                        )
-                    except AccountPaused:
-                        self._forget_verification(key)
-                        raise
-                    if not isinstance(value, ModelCatalog):
-                        raise ValueError("Sağlayıcı model kataloğu geçersiz")
-                    if value.state != FeatureState.AVAILABLE:
-                        raise RuntimeError(value.reason or "Model kataloğu şu anda kullanılamıyor")
-                    if version == self._catalog_versions.get(key, 0):
-                        self._catalogs[key] = (time.monotonic(), value)
-
-                        def save_catalog():
-                            # Logout and an old discovery result cannot race a
-                            # delayed atomic write back onto disk.
-                            with self._catalog_io_lock:
-                                if version != self._catalog_versions.get(key, 0):
-                                    return
-                                if (
-                                    getattr(
-                                        getattr(self.provider(key), "transport", None),
-                                        "authenticated",
-                                        False,
-                                    )
-                                    is True
-                                ):
-                                    self._remember_verification(key)
-                                try:
-                                    self.repository.put(
-                                        key,
-                                        "catalog",
-                                        {
-                                            "schema": CATALOG_SCHEMA,
-                                            "account_key": key,
-                                            "catalog": asdict(value),
-                                        },
-                                    )
-                                except OSError:
-                                    pass
-
-                        saving = asyncio.create_task(
-                            asyncio.to_thread(save_catalog), name="siope-persist:" + key
-                        )
-                        await asyncio.shield(saving)
-                    return value
-
-                task = asyncio.create_task(fetch())
-                self._catalog_tasks[key] = task
-
-                def forget_task(done):
-                    # A cancelled tab may stop awaiting this shared discovery.
-                    if not done.cancelled():
-                        done.exception()
-                    if self._catalog_tasks.get(key) is done:
-                        self._catalog_tasks.pop(key, None)
-
-                task.add_done_callback(forget_task)
-            return await asyncio.shield(task)
-
-        return self.call(discover())
-
-    def close(self):
+    def close(self) -> None:
         with self._lock:
             if self.closed:
                 return
         self.begin_shutdown()
-        with self._lock:
-            loop, thread = self._loop, self._thread
-        if loop is None or thread is None:
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
             with self._lock:
-                self.closed = True
-            return
-
-        async def cleanup():
-            errors = []
+                if not any(self._sending.values()):
+                    break
+            time.sleep(0.005)
+        thread = self._active_writer_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=2)
+        errors = []
+        for sub in list(self._event_subscriptions.values()):
+            if hasattr(sub, "cancel"):
+                sub.cancel()
+        self._event_subscriptions.clear()
+        for key in list(self._providers):
             try:
-                await self.api.tasks.close()
+                self._discard_provider(key)
             except Exception as error:
                 errors.append(error)
-            with self._lock:
-                pending_active = bool(self._active_pending)
-                if pending_active:
-                    self._active_writer_running = True
-            if pending_active or self._active_writer_running:
-                self._ensure_active_writer()
-            current = asyncio.current_task()
-            pending = [task for task in asyncio.all_tasks() if task is not current]
-            persistence = [task for task in pending if task.get_name().startswith("siope-persist:")]
-            background = [task for task in pending if task not in persistence]
-            for task in background:
-                task.cancel()
-            # Provider/catalog tasks can finish with ordinary account or network
-            # errors while cancellation is in flight. Those outcomes belong to
-            # their callers; they are not cleanup failures.
-            await asyncio.gather(*background, return_exceptions=True)
-            # Atomic writes are deliberately allowed to finish before the loop
-            # stops so callers can safely remove their temporary data directory.
-            results = await asyncio.gather(*persistence, return_exceptions=True)
-            errors.extend(result for result in results if isinstance(result, Exception))
-            for provider in self._providers.values():
-                close = getattr(provider, "close", None)
-                if close:
-                    try:
-                        await close()
-                    except Exception as error:
-                        errors.append(error)
-            if errors:
-                raise ExceptionGroup("account shutdown failed", errors)
-
-        cleanup_error = None
-        if loop.is_running():
-            try:
-                self.call(cleanup(), _closing=True)
-            except TimeoutError as error:
-                message = (
-                    "Provider cleanup timed out; its event loop remains open for a later retry"
-                )
-                _LOG.error(message)
-                raise RuntimeError(message) from error
-            except Exception as error:
-                cleanup_error = error
-            try:
-                loop.call_soon_threadsafe(loop.stop)
-            except RuntimeError as error:
-                cleanup_error = cleanup_error or error
-        if thread.is_alive():
-            thread.join(timeout=5)
-        if thread.is_alive():
-            message = "Provider event loop did not stop; it remains open for a later shutdown retry"
-            _LOG.error(message)
-            raise RuntimeError(message) from cleanup_error
         with self._lock:
             self.closed = True
-        if not loop.is_closed():
-            loop.close()
-        self._loop = self._thread = None
-        if cleanup_error is not None:
-            raise cleanup_error
+        if errors:
+            if len(errors) == 1:
+                raise errors[0]
+            raise ExceptionGroup("account shutdown failed", errors)
 
-    def callbacks(self, key):
+    def callbacks(self, key: str):
         if not key:
 
             def unavailable(*args, **kwargs):
@@ -828,7 +672,6 @@ class Accounts(
                 "attach_file_callback": None,
                 "attachment_policy_callback": None,
             }
-        provider = self.provider(key)
 
         def get_project(project):
             context, remote = origin(project, key)
@@ -837,7 +680,7 @@ class Accounts(
                 "container",
                 remote,
                 lambda: self.project_record(
-                    context, self.call(self.provider(context).get_project(remote))
+                    context, self.open_provider(context).projects.get(remote)
                 ),
             )
 
@@ -845,7 +688,8 @@ class Accounts(
             context, remote = origin(project, key)
 
             def fetch():
-                page = self.call(self.provider(context).list_project_chats(remote, cursor))
+                proj = self.open_provider(context).projects.get(remote)
+                page = proj.chats._fetch_page(cursor, None)
                 return {
                     "items": [self.chat_record(context, item) for item in page.items],
                     "cursor": page.next_cursor,
@@ -860,40 +704,51 @@ class Accounts(
             )
             return self._include_pending_project_branches(context, remote, page, cursor)
 
-        def move(chat, project):
-            chat_context, remote = origin(chat, key)
-            project_context, project_remote = origin(project, key)
+        def move(chat_id, project_id):
+            from .shared import origin
+
+            chat_context, remote = origin(chat_id, key)
+            project_context, project_remote = origin(project_id, key)
             if chat_context != key or project_context != key:
                 raise ValueError("Sohbet ve proje aynı sağlayıcı hesabında olmalı")
-            return self.call(provider.move_chat(remote, project_remote))
+            self.open_provider(key)
+            chat = self._chat_handle(key, remote)
+            if project_remote is None and hasattr(chat, "_move_to"):
+                return chat._move_to(None, allow_reassignment=True)
+            return chat.move_to(project_remote)
 
-        def rename(chat, title):
-            context, remote = origin(chat, key)
-            target = self.provider(context)
-            self.call(target.rename_chat(remote, title))
+        def rename(chat_id, title):
+            from .shared import origin
+
+            context, remote = origin(chat_id, key)
+            self.open_provider(context)
+            chat = self._chat_handle(context, remote)
+            chat.rename(title)
             archive = self.archive()
             if archive:
                 archive.rename_conversation(context, remote, title)
-            cached = self.repository.cache_get(context, "conversation", remote)
-            if isinstance(cached, dict):
-                cached["title"] = title
-                self.repository.cache_put(context, "conversation", remote, cached)
 
-        def forget(chat):
-            _, remote = origin(chat, key)
-            if hasattr(provider, "forget_temporary"):
-                result = provider.forget_temporary(remote)
-                if asyncio.iscoroutine(result):
-                    self.call(result)
-            elif hasattr(provider, "_temporary_conversations"):
-                provider._temporary_conversations.pop(remote, None)
+        def forget(chat_id):
+            from .shared import origin
 
-        def release_conversation(chat):
-            _, remote = origin(chat, key)
-            if hasattr(provider, "forget_conversation"):
-                result = provider.forget_conversation(remote)
-                if asyncio.iscoroutine(result):
-                    self.call(result)
+            _, remote = origin(chat_id, key)
+            self._forget_chat_handle(key, remote)
+            prov = self._providers.get(key)
+            if prov is None:
+                return
+            if hasattr(prov, "_temporary_conversations"):
+                prov._temporary_conversations.pop(remote, None)
+            if hasattr(prov, "_temporary"):
+                prov._temporary.pop(remote, None)
+
+        def release_conversation(chat_id):
+            from .shared import origin
+
+            _, remote = origin(chat_id, key)
+            self._forget_chat_handle(key, remote)
+            prov = self._providers.get(key)
+            if prov is not None and hasattr(prov, "_pending_branches"):
+                prov._pending_branches.pop(remote, None)
 
         return {
             "upload_image": lambda *args: self.upload_image(key, *args),
