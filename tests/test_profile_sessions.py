@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from webaiprovider import Account, MemoryCredentialStore, ProviderType
+from webaiprovider import MemoryCredentialStore, WebAIAccount, WebAIProviderType
 from webaiprovider.accounts.status import SessionState, SessionStatus
 
 from tests.account_fixture import configured_application
@@ -31,7 +31,7 @@ class ProfileAccountTests(unittest.TestCase):
                 "accounts.sessions.import_cookies",
                 return_value=("chromium", {"__Secure-1PSID": "new"}),
             ),
-            patch("accounts.sessions.Provider", return_value=candidate),
+            patch("accounts.sessions.WebAIProvider", return_value=candidate),
         ):
             with self.assertRaisesRegex(RuntimeError, "rejected"):
                 self.accounts.session_action(self.gemini, "verify_profile")
@@ -54,7 +54,7 @@ class ProfileAccountTests(unittest.TestCase):
                 "accounts.sessions.import_cookies",
                 return_value=("chromium", {"__Secure-1PSID": "new"}),
             ),
-            patch("accounts.sessions.Provider", return_value=candidate),
+            patch("accounts.sessions.WebAIProvider", return_value=candidate),
             patch(
                 "accounts.sessions._launch_or_open_cdp_browser",
                 side_effect=AssertionError("browser"),
@@ -78,13 +78,13 @@ class ProfileAccountTests(unittest.TestCase):
         )
         with (
             patch("accounts.sessions.import_cookies", return_value=("chromium", {"sso-rw": "new"})),
-            patch("accounts.sessions.Provider", return_value=candidate) as create,
+            patch("accounts.sessions.WebAIProvider", return_value=candidate) as create,
         ):
             state = self.accounts.session_action(grok, "verify_profile")
 
         self.assertTrue(state["authenticated"])
         self.assertEqual(create.call_args.args[0].id, self.accounts.item(grok)["id"])
-        self.assertEqual(create.call_args.kwargs["type"], ProviderType.GROK)
+        self.assertEqual(create.call_args.kwargs["type"], WebAIProviderType.GROK)
         self.assertEqual(self.accounts.credentials(grok).load(), {"sso-rw": "new"})
         candidate.authenticate.assert_called_once()
         candidate.close.assert_called_once()
@@ -175,16 +175,16 @@ class ProfileUiTests(unittest.IsolatedAsyncioTestCase):
             view.refresh_provider_catalog.assert_called_once()
 
     def test_chatgpt_profile_auth_never_contacts_debugging_browser(self):
-        from webaiprovider import ChatGPTProvider
+        from webaiprovider import ChatGPTWebAIProvider
         from webaiprovider.providers.chatgpt.auth import BrowserSession
 
         from tests.provider_fakes import FakeClient
 
         store = MemoryCredentialStore({"version": 1, "url": "https://chatgpt.com/", "headers": {}})
         session = BrowserSession(store)
-        account = Account("default", "chatgpt", store)
+        account = WebAIAccount("default", "chatgpt", store)
         client = FakeClient(session)
-        provider = ChatGPTProvider(account, session=session, client_factory=lambda _: client)
+        provider = ChatGPTWebAIProvider(account, session=session, client_factory=lambda _: client)
         try:
             with (
                 patch.object(session, "is_ready", side_effect=AssertionError("CDP probe")),

@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from webaiprovider import Account, GeminiProvider
+from webaiprovider import GeminiWebAIProvider, WebAIAccount
 from webaiprovider.providers.gemini.errors import GeminiCompatibilityError
 from webaiprovider.providers.gemini.history import parse_chat_history, parse_chat_page
 
@@ -16,7 +16,7 @@ from bootstrap import create_application
 
 class NativeHistoryTests(unittest.TestCase):
     def test_http_history_read_does_not_wait_for_the_composer_gate(self):
-        provider = GeminiProvider(Account("default", "gemini", Path("unused")))
+        provider = GeminiWebAIProvider(WebAIAccount("default", "gemini", Path("unused")))
         provider._opened = True
         provider.rpc.call = Mock(return_value=[[[]]])
         with provider._gate:
@@ -24,7 +24,7 @@ class NativeHistoryTests(unittest.TestCase):
         self.assertEqual(result.responses.list(), [])
 
     def test_notebooks_share_the_account_http_reader(self):
-        provider = GeminiProvider(Account("personal", "gemini", Path("unused")))
+        provider = GeminiWebAIProvider(WebAIAccount("personal", "gemini", Path("unused")))
         provider._opened = True
         provider.rpc.call = Mock(return_value=[])
         self.assertEqual(provider.projects.list(), [])
@@ -33,7 +33,7 @@ class NativeHistoryTests(unittest.TestCase):
         )
 
     def test_history_uses_only_the_owned_account_http_session(self):
-        provider = GeminiProvider(Account("default", "gemini", Path("unused")))
+        provider = GeminiWebAIProvider(WebAIAccount("default", "gemini", Path("unused")))
         provider._opened = True
         client = SimpleNamespace(
             batch=Mock(return_value=SimpleNamespace(text='[["wrb.fr","hNvQHb","[[]]"]]'))

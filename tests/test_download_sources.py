@@ -6,7 +6,12 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import httpx
-from webaiprovider import Account, ChatGPTProvider, ClaudeProvider, GeminiProvider
+from webaiprovider import (
+    ChatGPTWebAIProvider,
+    ClaudeWebAIProvider,
+    GeminiWebAIProvider,
+    WebAIAccount,
+)
 from webaiprovider.accounts.credentials import save_session
 from webaiprovider.providers.gemini.history import parse_chat_history
 from webaiprovider.resources.chat.types import Conversation
@@ -29,7 +34,9 @@ class ProviderFileTests(unittest.TestCase):
         client.request.return_value.json.return_value = {
             "download_url": "https://files.example.com/signed"
         }
-        provider = ChatGPTProvider(Account("default", "chatgpt", {}), client_factory=factory)
+        provider = ChatGPTWebAIProvider(
+            WebAIAccount("default", "chatgpt", {}), client_factory=factory
+        )
         source = provider._resolve_download_data(
             "sandbox:/mnt/data/game.py", "chat", "local:assistant"
         )
@@ -63,7 +70,7 @@ class ProviderFileTests(unittest.TestCase):
 
     def test_gemini_alias_is_resolved_in_its_own_conversation(self):
         alias = "http://googleusercontent.com/image_generation_content/6_786"
-        provider = GeminiProvider(Account("default", "gemini", Path("unused")))
+        provider = GeminiWebAIProvider(WebAIAccount("default", "gemini", Path("unused")))
         provider._client = Mock(
             http=Mock(
                 cookies=Mock(
@@ -114,7 +121,9 @@ class AuthenticatedFileTests(unittest.TestCase):
         client.get_conversation.return_value = {
             "messages": [{"id": "native", "content": {"parts": ["sandbox:/mnt/data/a.py"]}}]
         }
-        provider = ChatGPTProvider(Account("default", "chatgpt", {}), client_factory=factory)
+        provider = ChatGPTWebAIProvider(
+            WebAIAccount("default", "chatgpt", {}), client_factory=factory
+        )
         for target, authorized in [
             ("https://chatgpt.com/backend-api/estuary/content?id=opaque", True),
             ("https://files.oaiusercontent.com/signed", False),
@@ -129,7 +138,9 @@ class AuthenticatedFileTests(unittest.TestCase):
         client = Mock()
         factory = Mock(return_value=client)
         client.headers = {"authorization": "Bearer selected-account"}
-        provider = ChatGPTProvider(Account("default", "chatgpt", {}), client_factory=factory)
+        provider = ChatGPTWebAIProvider(
+            WebAIAccount("default", "chatgpt", {}), client_factory=factory
+        )
         source = provider._resolve_download_data(
             "https://chatgpt.com/backend-api/estuary/content?id=opaque", "chat"
         )
@@ -138,7 +149,9 @@ class AuthenticatedFileTests(unittest.TestCase):
         client.get_conversation.assert_not_called()
 
     def test_gemini_never_sends_cookies_to_arbitrary_cdn_subdomains(self):
-        provider = GeminiProvider(Account("default", "gemini", {"__Secure-1PSID": "secret"}))
+        provider = GeminiWebAIProvider(
+            WebAIAccount("default", "gemini", {"__Secure-1PSID": "secret"})
+        )
         for url in [
             "https://untrusted.googleusercontent.com/file",
             "https://lh3.googleusercontent.com.evil.example/file",
@@ -150,7 +163,7 @@ class AuthenticatedFileTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             credentials = Path(folder) / "session.json"
             save_session(credentials, {"cookies": {"sessionKey": "owned", "lastActiveOrg": "org"}})
-            provider = ClaudeProvider(Account("default", "claude", credentials))
+            provider = ClaudeWebAIProvider(WebAIAccount("default", "claude", credentials))
             cid = "12345678-1234-4234-8234-123456789abc"
             provider.client.base = Mock(return_value="/api/organizations/org")
             provider.client.http = Mock(

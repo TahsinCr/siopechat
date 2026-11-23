@@ -9,7 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from webaiprovider import Capability, ProviderError, RemoteNotFound
+from webaiprovider import Capability, RemoteNotFound, WebAIProviderError
 
 from accounts import identity
 from archive import Archive, Files, SQLiteRepository, merge_conversation
@@ -192,7 +192,7 @@ class DeleteAndCacheTests(unittest.TestCase):
         )
 
     def test_project_delete_does_not_tombstone_surviving_or_unknown_chats(self):
-        for outcome in (SimpleNamespace(metadata={}), ProviderError("offline")):
+        for outcome in (SimpleNamespace(metadata={}), WebAIProviderError("offline")):
             with self.subTest(outcome=outcome):
                 self.seed()
                 self.provider.chats.get = (
@@ -228,7 +228,7 @@ class DeleteAndCacheTests(unittest.TestCase):
         chat = self.seed()
         self.provider.chats.delete.side_effect = RemoteNotFound("missing route")
         self.provider.chats.get = Mock(return_value=object())
-        with self.assertRaisesRegex(ProviderError, "uzak ve yerel kayıt korundu"):
+        with self.assertRaisesRegex(WebAIProviderError, "uzak ve yerel kayıt korundu"):
             self.accounts.delete(chat["id"], self.key)
         self.assertIsNotNone(self.accounts.cached(self.key, "c_abc"))
         self.assertFalse(self.archive.deleted(self.key, "conversation", "c_abc"))

@@ -91,9 +91,11 @@ class WorkspaceTests(unittest.TestCase):
             self.assertFalse(v.temporary)
 
     def test_reasoning_is_visible_but_hidden_protocol_nodes_are_not(self):
-        from webaiprovider import Account, ChatGPTProvider, MemoryCredentialStore
+        from webaiprovider import ChatGPTWebAIProvider, MemoryCredentialStore, WebAIAccount
 
-        provider = ChatGPTProvider(Account("default", "chatgpt", MemoryCredentialStore({})))
+        provider = ChatGPTWebAIProvider(
+            WebAIAccount("default", "chatgpt", MemoryCredentialStore({}))
+        )
         try:
             raw = {
                 "author": {"role": "assistant"},

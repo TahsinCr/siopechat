@@ -13,11 +13,11 @@ from prompt_toolkit.application.current import set_app
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
 from webaiprovider import (
-    Account,
     Capability,
     ChatGPTError,
-    ChatGPTProvider,
+    ChatGPTWebAIProvider,
     MemoryCredentialStore,
+    WebAIAccount,
 )
 from webaiprovider.providers.chatgpt.auth import BrowserSession
 from webaiprovider.providers.chatgpt.client import ChatGPTClient
@@ -322,8 +322,8 @@ class PolishTests(unittest.TestCase):
             "messages": [],
         }
         factory = Mock(return_value=client)
-        account = Account("default", "chatgpt", MemoryCredentialStore({}))
-        provider = ChatGPTProvider(account, client_factory=factory)
+        account = WebAIAccount("default", "chatgpt", MemoryCredentialStore({}))
+        provider = ChatGPTWebAIProvider(account, client_factory=factory)
         provider._opened = True
         self.assertIn(Capability.PROJECT_MEMBERSHIP, provider.capabilities)
         chat = provider.chats.get("chat", metadata_only=True)

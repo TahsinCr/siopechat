@@ -2,12 +2,12 @@ import concurrent.futures
 import unittest
 
 from webaiprovider import (
-    Account,
-    ChatGPTProvider,
+    ChatGPTWebAIProvider,
     MemoryCredentialStore,
     OperationCancelledError,
     OperationState,
     OutputDelta,
+    WebAIAccount,
 )
 from webaiprovider.providers.chatgpt.auth import BrowserSession
 
@@ -17,7 +17,7 @@ from tests.provider_fakes import FakeClient
 class ProviderAdapterTests(unittest.TestCase):
     def setUp(self):
         store = MemoryCredentialStore({"version": 1, "url": "https://chatgpt.com/", "headers": {}})
-        self.account = Account("default", "chatgpt", store)
+        self.account = WebAIAccount("default", "chatgpt", store)
         self.session = BrowserSession(store)
         self.clients = []
 
@@ -26,7 +26,7 @@ class ProviderAdapterTests(unittest.TestCase):
             self.clients.append(client)
             return client
 
-        self.provider = ChatGPTProvider(
+        self.provider = ChatGPTWebAIProvider(
             self.account, session=self.session, client_factory=make_client
         )
         self.addCleanup(self.provider.close)

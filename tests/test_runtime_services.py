@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from eventflow import EventBus
+from flowevent import EventBus
 
 from actions import Action, ActionChanged, ActionService
 from bootstrap import Application, create_application

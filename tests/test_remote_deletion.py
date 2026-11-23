@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from webaiprovider import ProviderError, RemoteNotFound
+from webaiprovider import RemoteNotFound, WebAIProviderError
 from webaiprovider.providers.chatgpt.provider import confirm_deleted
 from webaiprovider.providers.gemini.rpc import GeminiRPC
 
@@ -18,16 +18,16 @@ class DeletionVerificationTests(unittest.TestCase):
 
     def test_local_deletion_cannot_succeed_while_server_still_returns_the_record(self):
         with patch("webaiprovider.providers.chatgpt.provider.time.sleep"):
-            with self.assertRaisesRegex(ProviderError, "Sync before retrying"):
+            with self.assertRaisesRegex(WebAIProviderError, "Sync before retrying"):
                 confirm_deleted(Mock(return_value={"id": "present"}))
 
     def test_network_errors_do_not_count_as_confirmed_deletion(self):
-        with self.assertRaisesRegex(ProviderError, "network"):
-            confirm_deleted(Mock(side_effect=ProviderError("network")))
+        with self.assertRaisesRegex(WebAIProviderError, "network"):
+            confirm_deleted(Mock(side_effect=WebAIProviderError("network")))
 
     def test_missing_gemini_rpc_reply_cannot_confirm_a_delete(self):
         client = SimpleNamespace(
             batch=Mock(return_value=SimpleNamespace(text="not a valid response"))
         )
-        with self.assertRaises(ProviderError):
+        with self.assertRaises(WebAIProviderError):
             GeminiRPC(lambda: client).call("GzXR5e", ["c_fixture"], allow_empty=True)

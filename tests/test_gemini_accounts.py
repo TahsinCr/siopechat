@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from webaiprovider import Account, GeminiProvider
+from webaiprovider import GeminiWebAIProvider, WebAIAccount
 from webaiprovider.resources.message.protocol import (
     ConversationBound,
     ResponseComplete,
@@ -27,8 +27,8 @@ class AccountNativeTests(unittest.TestCase):
             try:
                 accounts = api.get("accounts")
                 key = accounts.add("gemini", "Native fixture")
-                provider = GeminiProvider(
-                    Account(key.split("/")[1], "gemini", accounts.credentials(key)),
+                provider = GeminiWebAIProvider(
+                    WebAIAccount(key.split("/")[1], "gemini", accounts.credentials(key)),
                     notebooks=SimpleNamespace(get=lambda pid: ProjectData(pid, "Notebook")),
                 )
                 provider._opened = True

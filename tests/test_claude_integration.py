@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from webaiprovider import ClaudeProvider
+from webaiprovider import ClaudeWebAIProvider
 from webaiprovider.providers.claude.records import conversation
 
 from tests.account_fixture import configured_application as create_application
@@ -94,7 +94,7 @@ class ClaudeAccountsTests(unittest.TestCase):
                     accounts._cdp_url_for("chatgpt/default"),
                 )
                 self.assertNotEqual(accounts.directory(key), accounts.directory("chatgpt/default"))
-                self.assertIsInstance(accounts.provider(key), ClaudeProvider)
+                self.assertIsInstance(accounts.provider(key), ClaudeWebAIProvider)
                 accounts.credentials(key).save({})
                 accounts._remember_verification(key)
                 with patch.object(accounts, "browser_connected", return_value=False):
