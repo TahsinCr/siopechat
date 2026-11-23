@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Callable
 
-from webai_provider import Capability
+from webaiprovider import Capability
 
 from accounts import origin
 

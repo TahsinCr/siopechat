@@ -5,7 +5,9 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from webai_provider.api import FeatureState, ModelCatalog
+from webaiprovider.resources.model.model import ModelCatalogState
+
+from accounts.shared import AccountCatalog
 
 
 def model_title(model) -> str:
@@ -41,7 +43,7 @@ class ModelComponent:
             finish()
             if epoch != self.session_epoch:
                 return
-            if not isinstance(catalog, ModelCatalog):
+            if not isinstance(catalog, AccountCatalog):
                 failure(self.tr("Sağlayıcı model kataloğu geçersiz"))
                 return
             self._account_catalogs[key] = catalog
@@ -116,7 +118,7 @@ class ModelComponent:
                 catalog = self.account_service.cached_models(key)
                 if catalog is not None:
                     self._account_catalogs[key] = catalog
-            if catalog and catalog.state == FeatureState.AVAILABLE:
+            if catalog and catalog.state == ModelCatalogState.AVAILABLE:
                 ready += 1
                 models += len(catalog.chat_models)
         return self.tr("{0} model · {1}/{2} sağlayıcı").format(models, ready, len(accounts))
@@ -145,11 +147,11 @@ class ModelComponent:
             catalog = self._account_catalogs.get(key)
             if catalog is None:
                 catalog = self.account_service.cached_models(key)
-                if catalog is not None and catalog.state == FeatureState.AVAILABLE:
+                if catalog is not None and catalog.state == ModelCatalogState.AVAILABLE:
                     self._account_catalogs[key] = catalog
         active_key = self.account_key
         catalog = self._account_catalogs.get(active_key)
-        if catalog and catalog.state == FeatureState.AVAILABLE:
+        if catalog and catalog.state == ModelCatalogState.AVAILABLE:
             self.catalog = catalog
             self.catalog_error = None
             tab = self.tabs[self.active_tab]
@@ -194,7 +196,7 @@ class ModelComponent:
             )
 
     def normalize_model_selection(self):
-        if self.catalog.state != FeatureState.AVAILABLE or self.active_busy():
+        if self.catalog.state != ModelCatalogState.AVAILABLE or self.active_busy():
             return
         selected = self.catalog.chat_model(self.model)
         if selected is None:

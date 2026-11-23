@@ -547,7 +547,7 @@ class SlashCommandCompleter(Completer):
         ("/model", "select a model ID for this session"),
         ("/effort", "show the provider effort value"),
         ("/actions", "search actions and commands"),
-        ("/settings", "edit application and extension settings"),
+        ("/settings", "edit application settings"),
         ("/downloads", "download history and progress"),
         ("/session", "account and session controls"),
         ("/login", "open login controls"),

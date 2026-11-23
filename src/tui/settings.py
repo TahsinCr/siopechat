@@ -1,4 +1,4 @@
-"""Shared settings presentation; extensions contribute fields, not separate forms."""
+"""Shared settings presentation and catalog."""
 
 import json
 
@@ -12,19 +12,107 @@ from prompt_toolkit.layout.margins import ScrollbarMargin
 from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Button, TextArea
 
+from accounts.shared import PROVIDERS
+from settings import DEFAULT_KEYBINDINGS, IMMUTABLE_KEYBINDINGS, keybinding_conflicts
+
 from .actions import action_order, action_title
+from .lang import load_catalog
 from .styles import ICONS
 from .widgets import BoundedTextControl, SelectionWindow, fit_text, on_click
 
 
-def SettingsPanel(api):
-    from settings import SettingsCatalog
+class SettingsCatalog:
+    def __init__(
+        self,
+        api,
+        *,
+        title=action_title,
+        order=action_order,
+        languages=None,
+    ):
+        self.title, self.order = title, order
+        self.api = api
+        self.settings = api.settings
+        self.languages = languages if languages is not None else load_catalog()
 
-    return SettingsCatalog(api, title=action_title, order=action_order)
+    def rows(self) -> list[dict]:
+        config = self.settings.snapshot()
+        locale = config["application"]["language"]
+        messages = self.languages.merged(locale)
+        rows = [
+            {
+                "section": "application",
+                "key": key,
+                "title": self.languages.translate(f"application.{key}", locale),
+                "value": value,
+            }
+            for key, value in config["application"].items()
+            if key not in ("model", "effort")
+        ]
+        action_records = {action.id: action for action in self.api.actions.catalog()}
+        action_ids = dict.fromkeys((*DEFAULT_KEYBINDINGS, *action_records))
+
+        def default_keybinding(action_id):
+            action = action_records.get(action_id)
+            return action.keybinding if action else ""
+
+        keybindings = {
+            action_id: config["keybindings"].get(action_id, default_keybinding(action_id)) or ""
+            for action_id in action_ids
+        }
+        conflicts = keybinding_conflicts(keybindings)
+        rows.extend(
+            {
+                "section": "keybindings",
+                "key": key,
+                "title": self.title(
+                    key,
+                    messages,
+                    action_records[key].title if key in action_records else None,
+                ),
+                "value": value,
+                "conflict": key in conflicts,
+                "immutable": key in IMMUTABLE_KEYBINDINGS,
+                "disabled": key in IMMUTABLE_KEYBINDINGS,
+            }
+            for key, value in sorted(keybindings.items(), key=lambda item: self.order(item[0]))
+        )
+        for row in rows:
+            if row["key"] == "language":
+                row["choices"] = self.languages.locales()
+        rows.extend(
+            {
+                "section": f"providers.{provider_id}",
+                "key": "enabled",
+                "title": title,
+                "value": config["providers"].get(provider_id, {}).get("enabled", True),
+            }
+            for provider_id, (title, _url) in PROVIDERS.items()
+        )
+        return rows
+
+    async def change(self, section: str, key: str, value) -> None:
+        if section == "keybindings" and key in IMMUTABLE_KEYBINDINGS:
+            raise ValueError("system keybindings cannot be modified")
+        row = next(
+            (row for row in self.rows() if row["section"] == section and row["key"] == key), None
+        )
+        if row is None:
+            raise ValueError("unknown setting")
+        if row.get("choices") and value not in row["choices"]:
+            raise ValueError("choose one of the available setting values")
+        if section.startswith("providers."):
+            self.api.get("accounts").set_enabled(section.split(".", 1)[1], value)
+        else:
+            self.settings.update(section, {key: value})
+
+
+def SettingsPanel(api, *, languages=None):
+    return SettingsCatalog(api, title=action_title, order=action_order, languages=languages)
 
 
 class SettingsDialog:
-    """Editable schema-driven form shared by application and extension settings."""
+    """Editable schema-driven settings dialog."""
 
     def __init__(self, view):
         self.view = view
@@ -39,7 +127,6 @@ class SettingsDialog:
             ("application", self.view.tr("Genel")),
             ("providers", self.view.tr("Sağlayıcılar")),
             ("accounts", self.view.tr("Hesaplar")),
-            ("extensions", self.view.tr("Eklentiler")),
             ("keybindings", self.view.tr("Kısayollar")),
         ]
         self.category_index = 0
@@ -267,7 +354,7 @@ class SettingsDialog:
             for row in self.rows
             if (
                 row["section"].startswith(self.category + ".")
-                if self.category in ("extensions", "providers")
+                if self.category == "providers"
                 else row["section"] == self.category
             )
             and all(
@@ -387,7 +474,7 @@ class SettingsDialog:
             "language": self.view.tr("Arayüz dili."),
             "mouse": self.view.tr("Tıklama ve fare etkileşimi."),
             "show_reasoning": self.view.tr("Sağlayıcının sunduğu düşünme özetlerini göster."),
-            "enabled": self.view.tr("Eklentinin özelliklerini etkinleştir veya kapat."),
+            "enabled": self.view.tr("Bu sağlayıcıyı etkinleştir veya kapat."),
         }
         description = (
             self.view.tr("Bu eylem için bir tuş dizisi belirleyin; boş bırakabilirsiniz.")

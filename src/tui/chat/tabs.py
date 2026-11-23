@@ -7,9 +7,10 @@ import uuid
 from typing import Any
 
 from prompt_toolkit.layout.dimension import D
-from webai_provider.api import FeatureState, ModelCatalog
+from webaiprovider.resources.model.model import ModelCatalogState
 
 from accounts import origin
+from accounts.shared import AccountCatalog
 from utils.process import trim_memory
 
 
@@ -101,7 +102,7 @@ class TabComponent:
                 {
                     "account_key": key or self.account_key,
                     "catalog": self._account_catalogs.get(key)
-                    or ModelCatalog(FeatureState.UNKNOWN),
+                    or AccountCatalog(ModelCatalogState.UNKNOWN),
                     "conversation_id": conversation_id,
                     "kind": kind,
                     "title": saved.get("title") or self.tr("New conversation"),
@@ -234,7 +235,7 @@ class TabComponent:
                     self.catalog.default_chat_model.id if self.catalog.default_chat_model else ""
                 )
                 self.effort = None
-                if self.catalog.state == FeatureState.UNKNOWN:
+                if self.catalog.state == ModelCatalogState.UNKNOWN:
                     self.refresh_provider_catalog()
         self.restore_account_preference()
         self._save_active_tab()
@@ -264,7 +265,7 @@ class TabComponent:
             self.catalog = (
                 self._account_catalogs.get(self.account_key)
                 or tab.get("catalog")
-                or ModelCatalog(FeatureState.UNKNOWN)
+                or AccountCatalog(ModelCatalogState.UNKNOWN)
             )
             self.catalog_loading = self.account_key in self._catalog_requests
         self.temporary = bool(tab.get("temporary"))
@@ -335,8 +336,44 @@ class TabComponent:
                 if self.tab_kind == "downloads"
                 else self.input
             )
-        if self.account_service and self.catalog.state == FeatureState.UNKNOWN:
+        if self.account_service and self.catalog.state == ModelCatalogState.UNKNOWN:
             self.refresh_provider_catalog()
+        self._schedule_chat_prepare(tab)
+
+    def _schedule_chat_prepare(
+        self, tab: dict[str, Any] | None = None, *, force: bool = False
+    ) -> None:
+        """Pre-warm provider/continuation context once per (account, chat, project) in background."""
+        if (
+            not self.account_service
+            or not hasattr(self.account_service, "prepare_chat")
+            or not getattr(self.app, "is_running", False)
+        ):
+            return
+        target = tab if tab is not None else self.tabs[self.active_tab]
+        if target.get("kind", "chat") != "chat" or target.get("busy") or target.get("temporary"):
+            return
+        target_key = target.get("account_key") or self.account_key
+        if not target_key:
+            return
+        target_cid = target.get("conversation_id")
+        target_project = (target.get("project") or {}).get("id")
+        prepare_sig = (target_key, target_cid, target_project)
+        if not force and target.get("_prepared_sig") == prepare_sig:
+            return
+        target["_prepared_sig"] = prepare_sig
+        self._read_in_background(
+            lambda key=target_key, cid=target_cid, pid=target_project: (
+                self.account_service.prepare_chat(key, cid, project_id=pid)
+            ),
+            lambda _: None,
+            lambda _: (
+                target.pop("_prepared_sig", None)
+                if target.get("_prepared_sig") == prepare_sig
+                else None
+            ),
+            session_bound=False,
+        )
 
     def close_tab(self) -> None:
         self.close_overlays()

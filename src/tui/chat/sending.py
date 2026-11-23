@@ -1,29 +1,66 @@
-"""SendingComponent: sending behavior for ChatView."""
+"""SendingComponent and opt-in send timing metrics for ChatView."""
 
 from __future__ import annotations
 
 import asyncio
+import math
+import os
+import statistics
 import threading
 import time
 from typing import Any
 
-from webai_provider.api import (
-    SendTiming,
-    collect_send_timing,
-    normalize_message,
-    timing_enabled,
-    use_send_timing,
-)
+from webaiprovider.core.timing import SendTiming, use_send_timing
 
 from accounts import identity, origin
 
-from ..markdown import (
-    visible_chat_message,
-    visible_chat_messages,
-)
+from ..markdown import visible_chat_messages
 from ..styles import ICONS
 from .contracts import Message
 from .stream import _SendStream
+
+_TIMING_LOCK = threading.Lock()
+_TIMING_SAMPLES: dict[str, list[float]] = {}
+_TIMING_COUNTS: dict[str, int] = {}
+
+
+def timing_enabled() -> bool:
+    for var in ("SIOPECHAT_SEND_TIMING", "WEBAI_SEND_TIMING"):
+        value = os.environ.get(var, "").strip().casefold()
+        if value in {"1", "true", "yes", "on"}:
+            return True
+    return False
+
+
+def collect_send_timing(timing: SendTiming | None) -> None:
+    if timing is None:
+        return
+    durations, counts = timing.snapshot()
+    with _TIMING_LOCK:
+        for name, value in durations.items():
+            _TIMING_SAMPLES.setdefault(name, []).append(float(value))
+        for name, count in counts.items():
+            _TIMING_COUNTS[name] = _TIMING_COUNTS.get(name, 0) + int(count)
+
+
+def send_timing_report() -> str:
+    with _TIMING_LOCK:
+        samples = dict(_TIMING_SAMPLES)
+        counts = dict(_TIMING_COUNTS)
+        _TIMING_SAMPLES.clear()
+        _TIMING_COUNTS.clear()
+    if not samples and not counts:
+        return ""
+    lines = ["Send timing report (content-free):"]
+    for name in sorted(samples):
+        values = sorted(samples[name])
+        count = len(values)
+        median = statistics.median(values)
+        rank = max(0, min(count - 1, math.ceil(0.95 * count) - 1))
+        lines.append(f"  {name} | {count} | {median:.3f} | {values[rank]:.3f}")
+    for name in sorted(counts):
+        lines.append(f"  {name} | {counts[name]}")
+    return "\n".join(lines)
 
 
 class SendingComponent:
@@ -35,38 +72,49 @@ class SendingComponent:
             return None, None
 
         resolved_title = conversation.get("title") or None
-        resolved_model = conversation.get("default_model_slug")
-        if not isinstance(resolved_model, str) or not resolved_model:
-            resolved_model = None
-        previous_ids = set(result.get("previous_ids", []))
+        resolved_model = result.get("model") if isinstance(result.get("model"), str) else None
+        if not resolved_model:
+            for item in reversed(conversation.get("messages") or ()):
+                if not isinstance(item, dict):
+                    continue
+                author_role = (item.get("author") or {}).get("role", item.get("role"))
+                if author_role != "assistant":
+                    continue
+                meta = item.get("metadata") or {}
+                candidate = meta.get("model_slug") or meta.get("model")
+                if isinstance(candidate, str) and candidate:
+                    resolved_model = candidate
+                    break
+        if not resolved_model:
+            candidate = conversation.get("default_model_slug")
+            if isinstance(candidate, str) and candidate:
+                resolved_model = candidate
+
+        parts = conversation.get("parts") or ()
         final_text = ""
-        for message in conversation.get("messages", []):
-            if not isinstance(message, dict) or message.get("id") in previous_ids:
+        for part in parts:
+            if not isinstance(part, dict):
                 continue
-            author = message.get("author") or {}
-            if author.get("role") == "assistant" and message.get("channel") == "analysis":
-                visible = visible_chat_message(normalize_message(message))
-                if visible and not any(
-                    item.get("role") == "reasoning" and item.get("text") == visible["text"]
+            role = part.get("role")
+            text = part.get("text") or ""
+            if role == "reasoning" and text:
+                if not any(
+                    item.get("role") == "reasoning" and item.get("text") == text
                     for item in messages
                 ):
                     with self.lock:
-                        messages.insert(max(0, len(messages) - 1), visible)
-                continue
-            if author.get("role") != "assistant" or message.get("recipient") not in (None, "all"):
-                continue
-            metadata = message.get("metadata") or {}
-            if isinstance(metadata, dict) and isinstance(metadata.get("model_slug"), str):
-                resolved_model = metadata["model_slug"]
-            content = message.get("content") or {}
-            parts = content.get("parts") or []
-            text_parts = [part for part in parts if isinstance(part, str)]
-            if text_parts:
-                final_text = "\n".join(text_parts)
+                        messages.insert(
+                            max(0, len(messages) - 1), {"role": "reasoning", "text": text}
+                        )
+            elif role == "assistant" and text:
+                final_text = text
 
         if final_text and final_text != rendered:
             with self.lock:
-                messages[-1]["text"] = final_text
+                for item in reversed(messages):
+                    if item.get("role") == "assistant":
+                        item["text"] = final_text
+                        break
         return resolved_title, resolved_model
 
     def run_send(
@@ -88,7 +136,10 @@ class SendingComponent:
         timing: SendTiming | None = None,
     ) -> None:
         if timing is not None:
-            timing.record_elapsed("submit_to_send_worker_start_ms", timing.started_ns)
+            timing.record(
+                "submit_to_send_worker_start_ms",
+                time.perf_counter_ns() - timing.started_ns,
+            )
         target_tab = self.tabs[tab_index] if target_tab is None else target_tab
         target_tab["remote_generation"] = None
 
@@ -118,8 +169,14 @@ class SendingComponent:
             stream.on_event(event)
 
         try:
+            callback = send_callback or self.send_prompt
+            kwargs = {
+                **({"project_id": project_id} if project_id else {}),
+                **({"temporary": True} if temporary else {}),
+                **({"action": message_action, "message_id": message_id} if message_action else {}),
+            }
             if timing is None:
-                result = (send_callback or self.send_prompt)(
+                result = callback(
                     conversation_id,
                     prompt,
                     attachments,
@@ -127,17 +184,11 @@ class SendingComponent:
                     stream.register_connection,
                     model,
                     effort,
-                    **({"project_id": project_id} if project_id else {}),
-                    **({"temporary": True} if temporary else {}),
-                    **(
-                        {"action": message_action, "message_id": message_id}
-                        if message_action
-                        else {}
-                    ),
+                    **kwargs,
                 )
             else:
                 with use_send_timing(timing):
-                    result = (send_callback or self.send_prompt)(
+                    result = callback(
                         conversation_id,
                         prompt,
                         attachments,
@@ -145,13 +196,7 @@ class SendingComponent:
                         stream.register_connection,
                         model,
                         effort,
-                        **({"project_id": project_id} if project_id else {}),
-                        **({"temporary": True} if temporary else {}),
-                        **(
-                            {"action": message_action, "message_id": message_id}
-                            if message_action
-                            else {}
-                        ),
+                        **kwargs,
                     )
             send_succeeded = True
             omitted_count = int(result.get("attachment_omitted_count") or 0)
@@ -167,6 +212,10 @@ class SendingComponent:
             resolved_title, resolved_model = self._apply_send_snapshot(
                 result, messages, stream.rendered
             )
+            if timing is not None and isinstance(result.get("timing"), dict):
+                for metric_name, metric_val in result["timing"].items():
+                    if isinstance(metric_val, (int, float)) and metric_val is not None:
+                        timing.record(metric_name, int(metric_val * 1_000_000))
         except Exception as error:
             error_code = getattr(error, "code", None)
             message_submitted = getattr(error, "message_submitted", None)
@@ -307,7 +356,18 @@ class SendingComponent:
                             record["updated_at"] = now
                             record.setdefault("created_at", now)
                 self._invalidate_sidebar_rows()
-                if was_new_chat and send_succeeded and not temporary and resolved_id:
+                fallback_prefix = prompt[:25].strip() + ("…" if len(prompt) > 25 else "")
+                if (
+                    was_new_chat
+                    and send_succeeded
+                    and not temporary
+                    and resolved_id
+                    and (
+                        not resolved_title
+                        or resolved_title == fallback_prefix
+                        or resolved_title in ("New chat", "New conversation", "Yeni sohbet")
+                    )
+                ):
                     try:
                         loop = asyncio.get_running_loop()
                         loop.call_later(
@@ -383,6 +443,8 @@ class SendingComponent:
                     self._persist_session()
                 if queued_to_start is not None:
                     self._execute_queued_submit(tab, queued_to_start)
+                elif send_succeeded and not temporary and any(item is tab for item in self.tabs):
+                    self._schedule_chat_prepare(tab, force=True)
 
             self._dispatch_ui(finish_turn)
             if timing is not None:
@@ -437,7 +499,7 @@ class SendingComponent:
             self._save_active_tab()
         self.app.invalidate()
         timing = (
-            SendTiming()
+            SendTiming(tab.get("account_key", self.account_key).split("/")[0])
             if tab.get("account_key", self.account_key).startswith("chatgpt") and timing_enabled()
             else None
         )

@@ -6,9 +6,10 @@ from typing import Any
 
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.utils import get_cwidth
-from webai_provider import Capability
+from webaiprovider import Capability
 
 from accounts import origin
+from accounts.shared import provider_capabilities
 
 from ..library import build_sidebar_rows, merge_chat_listing
 from ..styles import ICONS
@@ -33,6 +34,7 @@ class SidebarComponent:
                     marker in error
                     for marker in (
                         "kayıtlı oturum yok",
+                        "no valid saved session",
                         "http 401",
                         "unauthorized",
                         "authentication required",
@@ -46,16 +48,10 @@ class SidebarComponent:
         return result
 
     def _sidebar_provider_capabilities(self, provider_id):
-        registry = getattr(getattr(self.account_service, "api", None), "providers", None)
-        if registry is None:
-            return frozenset()
         capabilities = self._sidebar_capabilities_cache.get(provider_id)
         if capabilities is not None:
             return capabilities
-        try:
-            capabilities = frozenset(registry.get(provider_id).capabilities)
-        except (KeyError, AttributeError):
-            return frozenset()
+        capabilities = provider_capabilities(provider_id)
         self._sidebar_capabilities_cache[provider_id] = capabilities
         return capabilities
 

@@ -1,8 +1,7 @@
 """Monotonic SQL history hydration; scrolling never replaces loaded messages."""
 
-from webai_provider.api import merge_conversation
-
 from accounts import origin
+from archive import merge_conversation
 
 from .history import read_history
 from .markdown import visible_chat_messages

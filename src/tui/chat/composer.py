@@ -7,9 +7,12 @@ import threading
 import time
 import uuid
 
-from webai_provider.api import Capability, FeatureState, SendTiming, timing_enabled
+from webaiprovider import Capability
+from webaiprovider.core.timing import SendTiming
+from webaiprovider.resources.model.model import ModelCatalogState
 
 from ..styles import ICONS
+from .sending import timing_enabled
 
 
 class ComposerComponent:
@@ -44,7 +47,7 @@ class ComposerComponent:
         if not self.input.text.lstrip().startswith("/") and (
             self.model.casefold().endswith("-wm")
             or (
-                self.catalog.state == FeatureState.AVAILABLE
+                self.catalog.state == ModelCatalogState.AVAILABLE
                 and not any(model.id == self.model for model in self.catalog.chat_models)
             )
         ):
@@ -454,7 +457,7 @@ class ComposerComponent:
                 for action_id, _key in sorted(self.keybindings.items())
             )
             navigation_help = self.tr(
-                "- `{0}`: Sol paneli aç ve odağı al\n- `{1}` / `{2}`: proje ve sohbetlerde gezin; `Enter` sohbeti açar veya grubu değiştirir\n- `{3}`: seçili proje/bölümü daralt veya genişlet\n- `{4}`: yüklenmiş sohbetleri ara; `Enter` seçili sohbeti açar\n- `{5}`: sol paneli gizle/göster\n- `{6}`: son 50 sohbeti ara; `Enter` seçileni sekmede açar\n- `{7}` yeni sekme; `{8}` / `{9}` sekme değiştirir; `{10}` sekmeyi kapatır\n- Sekmede `{11}` yanıtın sürdüğünü, `{12}` yanıtın tamamlandığını gösterir\n- Yanıt sürerken açık sekmelere geçilebilir; uyumluluk daemon'ı seri çalıştığı için başka sohbet yükleme/gönderme bekler\n"
+                "- `{0}`: Sol paneli aç ve odağı al\n- `{1}` / `{2}`: proje ve sohbetlerde gezin; `Enter` sohbeti açar veya grubu değiştirir\n- `{3}`: seçili proje/bölümü daralt veya genişlet\n- `{4}`: yüklenmiş sohbetleri ara; `Enter` seçili sohbeti açar\n- `{5}`: sol paneli gizle/göster\n- `{6}`: son 50 sohbeti ara; `Enter` seçileni sekmede açar\n- `{7}` yeni sekme; `{8}` / `{9}` sekme değiştirir; `{10}` sekmeyi kapatır\n- Sekmede `{11}` yanıtın sürdüğünü, `{12}` yanıtın tamamlandığını gösterir\n- Yanıt sürerken diğer sekmelere geçilebilir ve eşzamanlı çalışılabilir\n"
             ).format(
                 self.shortcut("navigation.focus_sidebar"),
                 self.shortcut("navigation.sidebar_up"),

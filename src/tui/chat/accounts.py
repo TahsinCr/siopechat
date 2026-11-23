@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from webai_provider.api import PROVIDERS, Capability, FeatureState, ModelCatalog
+from webaiprovider import Capability
+from webaiprovider.resources.model.model import ModelCatalogState
 
 from accounts import origin
+from accounts.shared import PROVIDERS, AccountCatalog
 
 from ..library import SORT_OPTIONS
 from ..styles import ICONS
@@ -38,7 +40,7 @@ class AccountComponent:
         known = self._account_catalogs.get(key)
         if key and known is None and hasattr(self.account_service, "cached_models"):
             known = self.account_service.cached_models(key)
-        self.catalog = known or ModelCatalog(FeatureState.UNKNOWN)
+        self.catalog = known or AccountCatalog(ModelCatalogState.UNKNOWN)
         if known:
             self._account_catalogs[key] = known
         self.catalog_error = self.catalog.reason

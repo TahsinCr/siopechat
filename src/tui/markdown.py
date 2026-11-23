@@ -27,6 +27,10 @@ from rich.style import Style as RichStyle
 from rich.syntax import Syntax
 from rich.text import Text
 from rich.theme import Theme
+from webaiprovider.providers.chatgpt.formats import CHATGPT_FILE_RULE
+from webaiprovider.providers.claude.records import CLAUDE_FILE_RULE
+from webaiprovider.providers.gemini.media import GEMINI_FILE_RULE
+from webaiprovider.resources.response.artifact import FileTargetRule, files_from
 
 from .styles import (
     DEFAULT_MARKDOWN_STYLES,
@@ -388,7 +392,7 @@ def join_reasoning_texts(texts):
 
 
 def _source_items(message: dict[str, Any]) -> tuple[dict[str, str], ...]:
-    from webai_provider.api import sources_from
+    from webaiprovider.resources.response.source import sources_from
 
     return sources_from(message)
 
@@ -428,6 +432,28 @@ def _response_settings(message: dict[str, Any]) -> tuple[tuple[str, str], ...]:
     return tuple(details)
 
 
+_TUI_MARKDOWN_LINK_RE = re.compile(
+    r"\[([^\]\r\n]{1,200})\]\("
+    r"((?:(?:sandbox:)?/mnt/data/|(?:sandbox:|computer:)?/mnt/user-data/|https://assets\.grok\.com/)[^\s)]+)\)"
+)
+_TUI_FILE_RULE = FileTargetRule(
+    parse_target=lambda target, parsed: any(
+        rule.parse_target and rule.parse_target(target, parsed)
+        for rule in (CHATGPT_FILE_RULE, CLAUDE_FILE_RULE, GEMINI_FILE_RULE)
+    ),
+    matches_identity=lambda identity, target: any(
+        rule.matches_identity and rule.matches_identity(identity, target)
+        for rule in (CHATGPT_FILE_RULE, CLAUDE_FILE_RULE, GEMINI_FILE_RULE)
+    ),
+    markdown_link_re=_TUI_MARKDOWN_LINK_RE,
+)
+
+
+def extract_message_files(*roots: Any) -> tuple[dict[str, Any], ...]:
+    """Extract provider and HTTP file cards for visible TUI messages."""
+    return files_from(*roots, rule=_TUI_FILE_RULE)
+
+
 def visible_chat_message(message: dict[str, Any]) -> dict[str, Any] | None:
     """Return user-facing turns while excluding web tool protocol nodes."""
     role = message.get("role")
@@ -465,9 +491,7 @@ def visible_chat_message(message: dict[str, Any]) -> dict[str, Any] | None:
         )
     else:
         visible = False
-    from webai_provider.api import files_from
-
-    files = files_from(message) if role == "assistant" and not reasoning else ()
+    files = extract_message_files(message) if role == "assistant" and not reasoning else ()
     if not visible or not isinstance(text, str) or not (text or files):
         return None
     visible = {"role": "reasoning" if reasoning else role, "text": text} | {

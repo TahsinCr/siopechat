@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from accounts import origin
+from accounts.shared import PROVIDERS
 
 from ..history import (
     prepare_archive_snapshot,
@@ -72,11 +73,7 @@ class ArchiveComponent:
             }
             if len(providers) == 1:
                 provider = next(iter(providers))
-                name = {
-                    "chatgpt": "ChatGPT",
-                    "claude": "Claude",
-                    "gemini": "Gemini",
-                }.get(provider, provider)
+                name = PROVIDERS.get(provider, (provider,))[0]
                 return self.tr("{0} hız sınırı").format(name)
             return self.tr("Sağlayıcı hız sınırı")
 
@@ -87,6 +84,11 @@ class ArchiveComponent:
                 if len(statuses) == 1:
                     return self.tr("ChatGPT HTTP {0}").format(next(iter(statuses)))
                 return self.tr("ChatGPT HTTP errors")
+
+        if all(
+            "no valid saved session" in error or "kayıtlı oturum yok" in error for error in errors
+        ):
+            return self.tr("Kayıtlı oturum yok · F12 ile doğrulayın")
 
         if all("oturum yenilenemedi" in error for error in errors):
             return self.tr("ChatGPT session verification failed")

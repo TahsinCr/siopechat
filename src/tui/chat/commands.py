@@ -10,9 +10,11 @@ from typing import Any
 
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.utils import get_cwidth
-from webai_provider.api import Capability, FeatureState, ModelCatalog
+from webaiprovider import Capability
+from webaiprovider.resources.model.model import ModelCatalogState
 
 from accounts import origin
+from accounts.shared import AccountCatalog
 
 from ..actions import action_order, action_title
 from ..styles import ICONS
@@ -178,7 +180,7 @@ class CommandComponent:
                     context, _ = origin(conversation_id, self.account_key)
                     if context != self.account_key:
                         self.bind_account(context)
-                        self.catalog = ModelCatalog(FeatureState.UNKNOWN)
+                        self.catalog = AccountCatalog(ModelCatalogState.UNKNOWN)
                         self.refresh_provider_catalog()
                 self.resume_conversation(conversation_id)
                 if self.layout_controller:

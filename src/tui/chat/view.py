@@ -17,14 +17,10 @@ from prompt_toolkit.layout import Layout, Window
 from prompt_toolkit.layout.margins import ConditionalMargin, ScrollbarMargin
 from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import TextArea
-from webai_provider.api import (
-    Capability,
-    FeatureState,
-    ModelCatalog,
-    send_timing_report,
-    timing_enabled,
-)
+from webaiprovider import Capability
+from webaiprovider.resources.model.model import ModelCatalogState
 
+from accounts.shared import AccountCatalog
 from settings import DEFAULT_KEYBINDINGS
 
 from ..bindings import key_bindings
@@ -109,7 +105,7 @@ class ChatView(
         list_actions: Callable[[], list[dict[str, str]]] | None = None,
         invoke_action: Callable[..., Any] | None = None,
         effort_preference: str = "medium",
-        load_catalog: Callable[[], ModelCatalog] | None = None,
+        load_catalog: Callable[[], AccountCatalog] | None = None,
         list_projects: Callable[..., dict[str, Any]] | None = None,
         get_project: Callable[[str], dict[str, Any]] | None = None,
         list_project_chats: Callable[..., dict[str, Any]] | None = None,
@@ -147,6 +143,7 @@ class ChatView(
         self._model_picker_requests = set()
         self.attach_file_callback = None
         self.attachment_policy_callback = None
+        self.release_conversation = None
         self.settings_rows_callback = settings_rows
         self.change_setting = change_setting
         self.load_preferences = load_preferences
@@ -185,7 +182,7 @@ class ChatView(
         self.list_projects_callback = list_projects
         self.get_project_callback = get_project
         self.list_project_chats_callback = list_project_chats
-        self.catalog = ModelCatalog(FeatureState.UNKNOWN)
+        self.catalog = AccountCatalog(ModelCatalogState.UNKNOWN)
         self.catalog_error: str | None = None
         self.catalog_loading = False
         self.project_items: dict[str, dict[str, Any]] = {}
@@ -315,6 +312,7 @@ class ChatView(
             )
         ]
         self.input.control.focus_on_click = Condition(lambda: True)
+        self.input.buffer.on_text_changed += lambda _buffer: self._schedule_chat_prepare()
         self.resume_search = TextArea(
             height=1,
             multiline=False,
@@ -390,7 +388,7 @@ class ChatView(
         self.action_cleanup = action_host(self) if action_host else None
 
     def tr(self, source):
-        from language import literal
+        from ..lang import literal
 
         return literal(self.translations, source)
 
@@ -483,7 +481,7 @@ def run_tui(
     list_actions: Callable[[], list[dict[str, str]]] | None = None,
     invoke_action: Callable[..., Any] | None = None,
     effort_preference: str = "medium",
-    load_catalog: Callable[[], ModelCatalog] | None = None,
+    load_catalog: Callable[[], AccountCatalog] | None = None,
     list_projects: Callable[..., dict[str, Any]] | None = None,
     get_project: Callable[[str], dict[str, Any]] | None = None,
     list_project_chats: Callable[..., dict[str, Any]] | None = None,
@@ -522,6 +520,8 @@ def run_tui(
         view.restore_session(initial_session)
     initial_messages = None
     view.run()
+    from .sending import send_timing_report, timing_enabled
+
     if timing_enabled():
         report = send_timing_report()
         if report:

@@ -292,7 +292,7 @@ def build_sidebar_rows(view) -> None:
             for item in visible_workspaces
         )
         if view.workspace_error:
-            rows.append({"kind": "message", "title": view.tr("Düzen eklentisi kullanılamıyor")})
+            rows.append({"kind": "message", "title": view.tr("Çalışma alanları kullanılamıyor")})
         elif not workspaces:
             rows.append({"kind": "message", "title": view.tr("Henüz düzen yok")})
     if not getattr(view, "layout_enabled", True):

@@ -1,8 +1,9 @@
 """Account-scoped project forms, separate from conversation presentation."""
 
-from webai_provider.api import PROVIDERS, Capability
+from webaiprovider import Capability
 
 from accounts import origin
+from accounts.shared import PROVIDERS
 
 from .file_selection import browse_form_field
 from .styles import ICONS

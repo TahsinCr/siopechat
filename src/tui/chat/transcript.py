@@ -435,7 +435,7 @@ class TranscriptComponent:
         if self.layout_controller:
             self.layout_controller.begin(axis)
         else:
-            self.status = self.tr("Layout eklentisi kullanılamıyor")
+            self.status = self.tr("Bölünmüş görünüm kullanılamıyor")
             self.app.invalidate()
 
     def transcript_width(self) -> int:

@@ -9,12 +9,11 @@ import time
 import uuid
 from datetime import datetime
 
-from webai_provider.api import files_from
-
 from accounts import origin
 from utils import clipboard
 
 from ..markdown import (
+    extract_message_files,
     message_body_text,
     render_chatgpt_annotations,
     visible_chat_message,
@@ -506,7 +505,7 @@ class MessageComponent:
         text = render_chatgpt_annotations(message_body_text(message))
         files = message.get("_files")
         if files is None:
-            files = files_from(source or message)
+            files = extract_message_files(source or message)
         attachments = []
         for item in files:
             if not isinstance(item, dict):
@@ -566,7 +565,7 @@ class MessageComponent:
                 yield f"{separator}{self.tr('Attachments')}: {', '.join(details)}"
 
     def _show_message_sources(self, message):
-        from webai_provider.api import sources_from
+        from webaiprovider.resources.response.source import sources_from
 
         prepared_sources = message.get("_thinking_sources") or ()
         sources = sources_from({"sources": prepared_sources}) if prepared_sources else ()

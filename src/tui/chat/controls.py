@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.utils import get_cwidth
-from webai_provider import Capability
+from webaiprovider import Capability
 
 from accounts import origin
 
@@ -261,6 +261,7 @@ class ControlsComponent:
         if not self.conversation_id:
             self.current_project = project
             self._save_active_tab()
+            self._schedule_chat_prepare()
             self.status = self.tr("Yeni sohbet · ") + (project.get("name") or self.tr("Projesiz"))
             self.app.invalidate()
             return

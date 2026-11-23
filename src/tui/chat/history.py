@@ -8,9 +8,9 @@ import uuid
 from datetime import datetime
 
 from prompt_toolkit.formatted_text import FormattedText
-from webai_provider.api import merge_conversation
 
 from accounts import origin
+from archive import merge_conversation
 
 from ..markdown import (
     visible_chat_messages,

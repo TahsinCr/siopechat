@@ -1,1 +1,1 @@
-"""Terminal UI and extension-facing view contributions."""
+"""Terminal UI presentation and workspaces."""

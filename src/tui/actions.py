@@ -12,7 +12,6 @@ _GROUP_ORDER = (
     "editing",
     "navigation",
     "application",
-    "extensions",
 )
 
 
@@ -33,9 +32,7 @@ def action_group(action_id: str) -> str:
         return "chat"
     if action_id.startswith("ui.") and action_id != "ui.command_palette":
         return "appearance"
-    if action_id.startswith(("app.", "command.", "ui.")):
-        return "application"
-    return "extensions"
+    return "application"
 
 
 def action_title(action_id: str, messages: Mapping[str, str], fallback: str | None = None) -> str:

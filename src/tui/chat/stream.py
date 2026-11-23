@@ -1,4 +1,4 @@
-"""Provider stream event handling for one conversation tab."""
+"""Provider stream event handling for one conversation tab (supports multi-part Response.parts)."""
 
 from __future__ import annotations
 
@@ -8,17 +8,17 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from webai_provider.api import SendTiming, files_from
+from webaiprovider.core.timing import SendTiming
 
 if TYPE_CHECKING:
     from .view import ChatView
 
-from ..markdown import message_body_text, visible_chat_message
+from ..markdown import extract_message_files, message_body_text, visible_chat_message
 from .contracts import Message
 
 
 class _SendStream:
-    """Apply provider stream events to one conversation tab."""
+    """Apply synchronous or async provider stream events to one conversation tab."""
 
     def __init__(
         self,
@@ -38,6 +38,7 @@ class _SendStream:
         self._final_pending: list[str] = []
         self._final_replace_pending = False
         self._reasoning_pending: dict[str, tuple[Message, list[str], bool]] = {}
+        self._closed_final_parts: set[str] = set()
         self._last_refresh_ns = 0
         self.final_message_id = None
         self._first_final_text_at_ns = None
@@ -126,19 +127,29 @@ class _SendStream:
 
         self.view._dispatch_ui(update_active_view)
 
+    def _active_assistant_index(self) -> int:
+        for idx in range(len(self.messages) - 1, -1, -1):
+            if self.messages[idx].get("role") == "assistant":
+                return idx
+        return len(self.messages)
+
+    def _flush_final_unlocked(self) -> bool:
+        if not self._final_pending:
+            return False
+        addition = "".join(self._final_pending)
+        self.rendered = addition if self._final_replace_pending else self.rendered + addition
+        self._final_pending.clear()
+        self._final_replace_pending = False
+        idx = self._active_assistant_index()
+        if idx < len(self.messages) and self.messages[idx].get("text") != self.rendered:
+            self.messages[idx]["text"] = self.rendered
+            return True
+        return False
+
     def flush_pending_text(self) -> None:
         changed = False
         with self.view.lock:
-            if self._final_pending:
-                addition = "".join(self._final_pending)
-                self.rendered = (
-                    addition if self._final_replace_pending else self.rendered + addition
-                )
-                self._final_pending.clear()
-                self._final_replace_pending = False
-                if self.messages and self.messages[-1].get("text") != self.rendered:
-                    self.messages[-1]["text"] = self.rendered
-                    changed = True
+            changed = self._flush_final_unlocked()
             for item, chunks, replaces in self._reasoning_pending.values():
                 addition = "".join(chunks)
                 new_text = addition if replaces else item["text"] + addition
@@ -156,6 +167,28 @@ class _SendStream:
             self.view.cancel_connection = connection
         if self.target_tab.get("cancel_requested"):
             self.view._cancel_connection(connection)
+
+    def _start_next_final_part_unlocked(self, identity: str | None) -> None:
+        self._flush_final_unlocked()
+        if (
+            self.final_message_id
+            and self.final_message_id in self._closed_final_parts
+            and self.rendered
+        ):
+            # Start a fresh assistant block instead of overwriting the completed prior part.
+            insert_at = self._active_assistant_index() + 1
+            self.messages.insert(
+                insert_at,
+                {
+                    "role": "assistant",
+                    "text": "",
+                    "stream_id": identity,
+                    "local_pending": True,
+                },
+            )
+            self.rendered = ""
+            self._final_pending.clear()
+            self._final_replace_pending = True
 
     def on_event(self, event: dict[str, Any]) -> None:
         self.target_tab["stream_received"] = True
@@ -190,27 +223,38 @@ class _SendStream:
                 self.target_tab["generation_elapsed"] = max(0.0, time.monotonic() - started)
             self._schedule_refresh(status_message="Response complete", mark_complete=True)
             return
+        if event_type == "verifying":
+            self._schedule_refresh(status_message="Verifying session…")
+            return
+        if event_type == "parts_resolved":
+            return
         if event_type == "metadata":
             self.flush_pending_text()
             with self.view.lock:
-                final = self.messages[-1]
-                if event.get("message_id"):
-                    final["id"] = event["message_id"]
-                final["actions"] = list(event.get("actions", ()))
-                if event.get("sources"):
-                    final["_thinking_sources"] = tuple(event["sources"])
-                final["_response_settings"] = tuple(
-                    (label, event[key])
-                    for label, key in (("Model", "model"), ("Effort", "effort"))
-                    if event.get(key)
-                )
-                source_text = message_body_text(final)
-                files = files_from({"text": source_text, "files": event.get("files", ())})
-                if files:
-                    prepared = visible_chat_message(
-                        {"role": "assistant", "text": source_text, "files": files}
+                idx = self._active_assistant_index()
+                if idx < len(self.messages):
+                    final = self.messages[idx]
+                    if event.get("message_id"):
+                        final["id"] = event["message_id"]
+                    final["actions"] = list(event.get("actions", ()))
+                    if event.get("sources"):
+                        final["_thinking_sources"] = tuple(event["sources"])
+                    final["_response_settings"] = tuple(
+                        (label, event[key])
+                        for label, key in (("Model", "model"), ("Effort", "effort"))
+                        if event.get(key)
                     )
-                    final.update({key: prepared[key] for key in ("text", "_body_length", "_files")})
+                    source_text = message_body_text(final)
+                    files = extract_message_files(
+                        {"text": source_text, "files": event.get("files", ())}
+                    )
+                    if files:
+                        prepared = visible_chat_message(
+                            {"role": "assistant", "text": source_text, "files": files}
+                        )
+                        final.update(
+                            {key: prepared[key] for key in ("text", "_body_length", "_files")}
+                        )
                 if event.get("user_message_id"):
                     user = next(
                         (
@@ -226,23 +270,47 @@ class _SendStream:
                 self.target_tab["render_revision"] = self.target_tab.get("render_revision", 0) + 1
             self._schedule_refresh()
             return
+
         if event.get("channel") == "analysis" or event_type == "reasoning":
+            part_key = str(event.get("part_id") or event.get("message_id") or "reasoning")
+            identity = self.stream_id + ":analysis:" + part_key
+            if event_type == "begin":
+                with self.view.lock:
+                    if not any(item.get("stream_id") == identity for item in self.messages):
+                        insert_at = self._active_assistant_index()
+                        if insert_at < len(self.messages) and self.messages[insert_at].get("text"):
+                            insert_at = len(self.messages)
+                        self.messages.insert(
+                            max(0, insert_at),
+                            {
+                                "role": "reasoning",
+                                "text": "",
+                                "stream_id": identity,
+                                "local_pending": True,
+                            },
+                        )
+                return
+            if event_type == "end":
+                self._schedule_refresh()
+                return
             text = event.get("text")
             if not isinstance(text, str):
                 return
-            identity = self.stream_id + ":" + str(event.get("message_id") or "reasoning")
             with self.view.lock:
                 item = next(
                     (item for item in self.messages if item.get("stream_id") == identity), None
                 )
                 if item is None:
+                    insert_at = self._active_assistant_index()
+                    if insert_at < len(self.messages) and self.messages[insert_at].get("text"):
+                        insert_at = len(self.messages)
                     item = {
                         "role": "reasoning",
                         "text": "",
                         "stream_id": identity,
                         "local_pending": True,
                     }
-                    self.messages.insert(max(0, len(self.messages) - 1), item)
+                    self.messages.insert(max(0, insert_at), item)
                 pending = self._reasoning_pending.get(identity)
                 if pending is None or pending[0] is not item:
                     pending = (item, [], False)
@@ -256,15 +324,30 @@ class _SendStream:
             self._schedule_refresh()
             return
 
-        identity = event.get("message_id")
+        identity = event.get("part_id") or event.get("message_id")
+        if event_type == "begin":
+            with self.view.lock:
+                if identity and identity != self.final_message_id:
+                    self._start_next_final_part_unlocked(identity)
+                    self.final_message_id = identity
+            return
+        if event_type == "end":
+            if identity:
+                self._closed_final_parts.add(identity)
+            self._schedule_refresh()
+            return
+
         text = event.get("text")
         if event_type not in {"delta", "replace"} or not isinstance(text, str):
             return
         with self.view.lock:
             if identity and self.final_message_id and identity != self.final_message_id:
-                self.rendered = ""
-                self._final_pending.clear()
-                self._final_replace_pending = True
+                if self.final_message_id in self._closed_final_parts:
+                    self._start_next_final_part_unlocked(identity)
+                else:
+                    self.rendered = ""
+                    self._final_pending.clear()
+                    self._final_replace_pending = True
             if identity:
                 self.final_message_id = identity
             if event_type == "delta":
@@ -303,7 +386,7 @@ class _SendStream:
             layout = getattr(self.view, "_virtual_transcript", None)
             if info is None or layout is None or getattr(rows, "transcript", None) is not layout:
                 return
-            index = len(self.messages) - 1
+            index = self._active_assistant_index()
             for line in info.displayed_lines:
                 row = rows.paint_row(line)
                 if row is not None and row[1] == index and any(span[1].strip() for span in row[0]):
@@ -312,11 +395,13 @@ class _SendStream:
                 return
         now = time.perf_counter_ns()
         self._ui_first_text_recorded = True
-        self.timing.record_elapsed("button_to_first_ui_frame_ms", self.timing.started_ns)
-        self.timing.record(
-            "first_sse_text_to_ui_frame_ms",
-            now - self._first_final_text_at_ns,
-        )
+        if self.timing is not None:
+            self.timing.record("button_to_first_ui_frame_ms", now - self.timing.started_ns)
+            if self._first_final_text_at_ns is not None:
+                self.timing.record(
+                    "first_sse_text_to_ui_frame_ms",
+                    now - self._first_final_text_at_ns,
+                )
         app.after_render -= self._after_first_text_render
         self._after_render_registered = False
 

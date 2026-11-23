@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import uuid
 
-from webai_provider.api import FeatureState, ModelCatalog
+from webaiprovider.resources.model.model import ModelCatalogState
 
+from accounts.shared import AccountCatalog
 from settings import DEFAULT_KEYBINDINGS
 
 from ..bindings import key_bindings
@@ -21,7 +22,7 @@ class PreferencesComponent:
         application = config.get("application", {})
         self.show_reasoning = application.get("show_reasoning", True)
         self.mouse_enabled = application.get("mouse", True)
-        self.layout_enabled = config.get("extensions", {}).get("layout", {}).get("enabled", True)
+        self.layout_enabled = True
         if self.layout_enabled and self.layout_controller is None and self.layout_factory:
             self.layout_controller = self.layout_factory(self)
         self.translations = preferences.get("translations", self.translations)
@@ -106,7 +107,7 @@ class PreferencesComponent:
         self.sidebar_items.clear()
         self.project_items.clear()
         self.projects_loaded = False
-        self.catalog = ModelCatalog(FeatureState.UNKNOWN)
+        self.catalog = AccountCatalog(ModelCatalogState.UNKNOWN)
         self.catalog_loading = self.sidebar_loading = self.projects_loading = False
         self.project_chats_loading.clear()
         self.project_chats_loaded.clear()
