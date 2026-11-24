@@ -49,6 +49,10 @@ class ApplicationTests(unittest.TestCase):
         self.assertIn("auth", result.stdout)
 
     def test_fullscreen_wires_native_account_callbacks_and_workspaces(self):
+        from prompt_toolkit.application import Application as PTApplication
+        from prompt_toolkit.input import DummyInput
+        from prompt_toolkit.output import DummyOutput
+
         from tui.application import run_fullscreen
         from tui.chat.view import ChatView
 
@@ -64,7 +68,15 @@ class ApplicationTests(unittest.TestCase):
             captured["sidebar_caps"] = view._sidebar_provider_capabilities("chatgpt")
             captured["grok_caps"] = view._sidebar_provider_capabilities("grok")
 
-        with patch.object(ChatView, "run", fake_run):
+        with (
+            patch(
+                "tui.chat.view.Application",
+                side_effect=lambda **kw: PTApplication(
+                    input=DummyInput(), output=DummyOutput(), **kw
+                ),
+            ),
+            patch.object(ChatView, "run", fake_run),
+        ):
             result = run_fullscreen(self.app)
 
         self.assertEqual(result, 0)
@@ -81,6 +93,10 @@ class ApplicationTests(unittest.TestCase):
         self.assertNotIn("effort", {c.value for c in captured["grok_caps"]})
 
     def test_fullscreen_initializes_with_configured_account_real_callbacks(self):
+        from prompt_toolkit.application import Application as PTApplication
+        from prompt_toolkit.input import DummyInput
+        from prompt_toolkit.output import DummyOutput
+
         from tui.application import run_fullscreen
         from tui.chat.view import ChatView
 
@@ -91,7 +107,15 @@ class ApplicationTests(unittest.TestCase):
         def fake_run(view):
             captured["view"] = view
 
-        with patch.object(ChatView, "run", fake_run):
+        with (
+            patch(
+                "tui.chat.view.Application",
+                side_effect=lambda **kw: PTApplication(
+                    input=DummyInput(), output=DummyOutput(), **kw
+                ),
+            ),
+            patch.object(ChatView, "run", fake_run),
+        ):
             result = run_fullscreen(self.app)
 
         self.assertEqual(result, 0)

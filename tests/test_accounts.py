@@ -701,6 +701,10 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(calls, 1)
 
     def test_schedule_chat_prepare_deduplicates_typing_and_retriggers_on_project_change(self):
+        from prompt_toolkit.application import Application as PTApplication
+        from prompt_toolkit.input import DummyInput
+        from prompt_toolkit.output import DummyOutput
+
         from tui.chat.view import ChatView
 
         prepared = []
@@ -719,12 +723,16 @@ class AccountTests(unittest.TestCase):
         service.prepare_chat = lambda key, cid=None, *, project_id=None: prepared.append(
             (key, cid, project_id)
         )
-        view = ChatView(
-            lambda: [],
-            Mock(),
-            Mock(),
-            account_service=service,
-        )
+        with patch(
+            "tui.chat.view.Application",
+            side_effect=lambda **kw: PTApplication(input=DummyInput(), output=DummyOutput(), **kw),
+        ):
+            view = ChatView(
+                lambda: [],
+                Mock(),
+                Mock(),
+                account_service=service,
+            )
         view.app = SimpleNamespace(is_running=True, invalidate=lambda: None)
         view._read_in_background = lambda read, ok, err, **kw: ok(read())
         try:
