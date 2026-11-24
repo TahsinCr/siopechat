@@ -67,6 +67,21 @@ class CatalogModel:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+def _format_gpt_model_title(model_id: str, title: str) -> str:
+    lowered = model_id.casefold()
+    if not lowered.startswith("gpt-"):
+        return title
+    if lowered.endswith("-instant"):
+        suffix = "Instant"
+    elif lowered.endswith(("-thinking", "-t-mini")):
+        suffix = "Thinking"
+    else:
+        return title
+    if title.casefold().endswith(suffix.casefold()):
+        return title
+    return f"{title} {suffix}"
+
+
 @dataclass(frozen=True)
 class AccountCatalog:
     state: ModelCatalogState
@@ -107,7 +122,7 @@ class AccountCatalog:
             is_default = bool(meta.get("default") or meta.get("is_default"))
             item = CatalogModel(
                 id=model.id,
-                title=model.name or model.id,
+                title=_format_gpt_model_title(model.id, model.name or model.id),
                 efforts=efforts,
                 default_effort=default_effort_id,
                 chat_title=meta.get("chat_title")

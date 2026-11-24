@@ -64,3 +64,36 @@ class ProviderAdapterTests(unittest.TestCase):
         self.assertEqual(op.state, OperationState.CANCELLED)
         self.assertEqual(len(cancelled), 1)
         self.assertTrue(send_client().closed.is_set())
+
+    def test_account_catalog_formats_gpt_variant_suffixes_without_breaking_unknown_models(self):
+        from webaiprovider.resources.model.model import EffortSet, ModelRef
+        from webaiprovider.resources.model.types import ModelCatalogState
+
+        from accounts.shared import AccountCatalog
+
+        models = (
+            ModelRef("chatgpt", "gpt-5-6-instant", "GPT-5.6 Sol", efforts=EffortSet),
+            ModelRef("chatgpt", "gpt-5-6-thinking", "GPT-5.6 Sol", efforts=EffortSet),
+            ModelRef("chatgpt", "gpt-5-6-t-mini", "GPT-5.6 Luna", efforts=EffortSet),
+            ModelRef("chatgpt", "gpt-6-2", "GPT-6.2", efforts=EffortSet),
+            ModelRef("chatgpt", "gpt-6-2-instant", "GPT-6.2", efforts=EffortSet),
+            ModelRef("chatgpt", "gpt-6-2-thinking", "GPT-6.2", efforts=EffortSet),
+            ModelRef("chatgpt", "gpt-6-2-thinking", "GPT-6.2 Thinking", efforts=EffortSet),
+            ModelRef("chatgpt", "gpt-7-pro", "GPT-7 Pro", efforts=EffortSet),
+            ModelRef("claude", "claude-sonnet-5-5", "Claude Sonnet 5.5", efforts=EffortSet),
+        )
+        catalog = AccountCatalog.from_model_refs(models, state=ModelCatalogState.AVAILABLE)
+        self.assertEqual(
+            [m.title for m in catalog.chat_models],
+            [
+                "GPT-5.6 Sol Instant",
+                "GPT-5.6 Sol Thinking",
+                "GPT-5.6 Luna Thinking",
+                "GPT-6.2",
+                "GPT-6.2 Instant",
+                "GPT-6.2 Thinking",
+                "GPT-6.2 Thinking",
+                "GPT-7 Pro",
+                "Claude Sonnet 5.5",
+            ],
+        )
