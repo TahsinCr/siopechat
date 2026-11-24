@@ -866,10 +866,10 @@ class MessageRenderer:
         separated: bool,
         active: bool,
     ) -> str:
+        value = self._render_cached(role, text, width, separated, active)
+        key = self._line_count_key(role, text, width, separated, active)
         with self._lock:
             try:
-                value = self._render_cached(role, text, width, separated, active)
-                key = self._line_count_key(role, text, width, separated, active)
                 self._line_counts[key] = max(1, value.count("\n"))
                 self._line_counts.move_to_end(key)
                 while len(self._line_counts) > self.cache_limit:
@@ -891,8 +891,9 @@ class MessageRenderer:
             if count is not None:
                 self._line_counts.move_to_end(key)
                 return count
-            value = self.render(role, render_chatgpt_annotations(text), width, separated, active)
-            count = max(1, value.count("\n"))
+        value = self.render(role, render_chatgpt_annotations(text), width, separated, active)
+        count = max(1, value.count("\n"))
+        with self._lock:
             self._line_counts[key] = count
             self._line_counts.move_to_end(key)
             while len(self._line_counts) > self.cache_limit:
@@ -901,10 +902,14 @@ class MessageRenderer:
 
     def _render_cached(self, role, text, width, separated, active):
         key = (role, sha256(text.encode("utf-8")).digest(), width)
-        if not active and key in self.cache:
-            self.cache.move_to_end(key)
-            cached = self.cache[key]
-            return zlib.decompress(cached).decode("utf-8") if isinstance(cached, bytes) else cached
+        with self._lock:
+            if not active and key in self.cache:
+                self.cache.move_to_end(key)
+                cached = self.cache[key]
+                return (
+                    zlib.decompress(cached).decode("utf-8") if isinstance(cached, bytes) else cached
+                )
+            labels = dict(self.labels)
         buffer = StringIO()
         console = Console(
             file=buffer,
@@ -922,7 +927,7 @@ class MessageRenderer:
         if role == "reasoning":
             console.print(
                 Text(
-                    self.labels["reasoning_label"],
+                    labels["reasoning_label"],
                     style=DEFAULT_REASONING_LABEL_STYLE.to_rich(),
                 )
             )
@@ -944,7 +949,7 @@ class MessageRenderer:
         elif active:
             console.print(
                 Padding(
-                    Text(self.labels["waiting_label"], style="dim italic"),
+                    Text(labels["waiting_label"], style="dim italic"),
                     (0, 1),
                     style=f"on {role_style.bgcolor}",
                 )
@@ -952,13 +957,16 @@ class MessageRenderer:
         console.print()
         value = buffer.getvalue()
         if not active:
-            previous = self.cache.pop(key, None)
-            if previous is not None:
-                self.cache_bytes -= self._cache_entry_bytes(key, previous)
             cached = zlib.compress(value.encode("utf-8"), 1) if len(value) > 8192 else value
-            self.cache[key] = cached
-            self.cache_bytes += self._cache_entry_bytes(key, cached)
-            while len(self.cache) > self.cache_limit or self.cache_bytes > self.cache_byte_limit:
-                removed_key, removed_value = self.cache.popitem(last=False)
-                self.cache_bytes -= self._cache_entry_bytes(removed_key, removed_value)
+            with self._lock:
+                previous = self.cache.pop(key, None)
+                if previous is not None:
+                    self.cache_bytes -= self._cache_entry_bytes(key, previous)
+                self.cache[key] = cached
+                self.cache_bytes += self._cache_entry_bytes(key, cached)
+                while (
+                    len(self.cache) > self.cache_limit or self.cache_bytes > self.cache_byte_limit
+                ):
+                    removed_key, removed_value = self.cache.popitem(last=False)
+                    self.cache_bytes -= self._cache_entry_bytes(removed_key, removed_value)
         return value

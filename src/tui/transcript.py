@@ -21,7 +21,7 @@ class VirtualTranscript:
     """Keep row counts for navigation and a bounded LRU of rendered pages."""
 
     PAGE_ROWS = 128
-    CACHE_BYTES = 1024 * 1024
+    CACHE_BYTES = 8 * 1024 * 1024
 
     def __init__(
         self,
@@ -191,14 +191,17 @@ class VirtualTranscript:
         if self._disposed:
             return ()
         key = self._page_key(entry_index, page)
-        cached = self._pages.get(key)
-        if cached is not None:
-            self._pages.move_to_end(key)
-            return cached[0]
-        message_index = self.entries[entry_index]
-        count = self.body_counts[entry_index]
+        with self._lock:
+            if self._disposed:
+                return ()
+            cached = self._pages.get(key)
+            if cached is not None:
+                self._pages.move_to_end(key)
+                return cached[0]
+            message_index = self.entries[entry_index]
+            count = self.body_counts[entry_index]
+            large_code = self._large_code.get(entry_index)
         start = page * self.PAGE_ROWS
-        large_code = self._large_code.get(entry_index)
         if large_code is not None:
             block, prefix = large_code
             stop = min(count, start + self.PAGE_ROWS)
@@ -218,13 +221,23 @@ class VirtualTranscript:
             rows = index_transcript(
                 transcript_fragments(rendered), [(0, stop - start, message_index)]
             )[: stop - start]
-            self._cache_page(entry_index, page, rows)
-            cached = self._pages.get(key)
-            return cached[0] if cached is not None else rows
+            with self._lock:
+                if self._disposed:
+                    self._release()
+                    return ()
+                self._cache_page(entry_index, page, rows)
+                cached = self._pages.get(key)
+                return cached[0] if cached is not None else rows
 
-        rendered = self._render(entry_index)
+        try:
+            rendered = self._render(entry_index)
+        except IndexError:
+            if self._disposed:
+                return ()
+            raise
         if self._disposed:
-            self._release()
+            with self._lock:
+                self._release()
             return ()
         fragments = transcript_fragments(rendered)
         if len(rendered) + count * 128 > self.CACHE_BYTES:
@@ -234,32 +247,39 @@ class VirtualTranscript:
                 start,
                 min(count, start + self.PAGE_ROWS),
             )
-            self._cache_page(entry_index, page, rows)
-            cached = self._pages.get(key)
-            return cached[0] if cached is not None else rows
+            with self._lock:
+                if self._disposed:
+                    self._release()
+                    return ()
+                self._cache_page(entry_index, page, rows)
+                cached = self._pages.get(key)
+                return cached[0] if cached is not None else rows
 
         all_rows = index_transcript(fragments, [(0, count, message_index)])[:count]
         page_sizes = []
         total_size = 0
-        for start in range(0, len(all_rows), self.PAGE_ROWS):
-            stop = min(len(all_rows), start + self.PAGE_ROWS)
-            size = sum(self._row_bytes(all_rows[index]) for index in range(start, stop))
+        for p_start in range(0, len(all_rows), self.PAGE_ROWS):
+            stop = min(len(all_rows), p_start + self.PAGE_ROWS)
+            size = sum(self._row_bytes(all_rows[index]) for index in range(p_start, stop))
             page_sizes.append(size)
             total_size += size
-        if total_size <= self.CACHE_BYTES:
-            for page_number, start in enumerate(range(0, len(all_rows), self.PAGE_ROWS)):
+        with self._lock:
+            if self._disposed:
+                self._release()
+                return ()
+            if total_size <= self.CACHE_BYTES:
+                for page_number, p_start in enumerate(range(0, len(all_rows), self.PAGE_ROWS)):
+                    rows = tuple(all_rows[p_start : p_start + self.PAGE_ROWS])
+                    size = page_sizes[page_number]
+                    self._cache_page(entry_index, page_number, rows, size)
+            else:
                 rows = tuple(all_rows[start : start + self.PAGE_ROWS])
-                size = page_sizes[page_number]
-                self._cache_page(entry_index, page_number, rows, size)
-        else:
-            start = page * self.PAGE_ROWS
-            rows = tuple(all_rows[start : start + self.PAGE_ROWS])
-            if page < len(page_sizes):
-                self._cache_page(entry_index, page, rows, page_sizes[page])
-        cached = self._pages.get(key)
-        if cached is not None:
-            return cached[0]
-        return tuple(all_rows[start : start + self.PAGE_ROWS])
+                if page < len(page_sizes):
+                    self._cache_page(entry_index, page, rows, page_sizes[page])
+            cached = self._pages.get(key)
+            if cached is not None:
+                return cached[0]
+            return tuple(all_rows[start : start + self.PAGE_ROWS])
 
     def _entry_for_line(self, line):
         if line < 0 or line >= self.line_count:
@@ -278,16 +298,14 @@ class VirtualTranscript:
             return (), None
         if local >= self.body_counts[entry] - 1:
             return (), self.entries[entry]
-        with self._lock:
-            if self._disposed:
-                return (), None
-            page = local // self.PAGE_ROWS
-            rows = self._render_page(entry, page)
-            if self._disposed:
+        page = local // self.PAGE_ROWS
+        rows = self._render_page(entry, page)
+        if self._disposed:
+            with self._lock:
                 self._release()
-                return (), None
-            offset = local % self.PAGE_ROWS
-            return rows[offset] if offset < len(rows) else ((), self.entries[entry])
+            return (), None
+        offset = local % self.PAGE_ROWS
+        return rows[offset] if offset < len(rows) else ((), self.entries[entry])
 
     def cached_row(self, line):
         """Non-blocking paint access; a miss is filled by viewport prefetch."""
@@ -336,12 +354,11 @@ class VirtualTranscript:
             for page in range(first_page, last_page + 1):
                 if self._disposed or (cancelled and cancelled()):
                     return
-                with self._lock:
-                    try:
-                        self._render_page(entry, page)
-                    finally:
-                        if self._disposed:
-                            self._release()
+                self._render_page(entry, page)
+                if self._disposed:
+                    with self._lock:
+                        self._release()
+                    return
 
     @property
     def cache_bytes(self):
@@ -395,7 +412,7 @@ class TranscriptPrefetch:
 
     def clear(self):
         self._generation += 1
-        self._target = self._done = None
+        self._target = self._done = self._running = None
 
     def request(self, layout, top, height):
         height = max(1, height)

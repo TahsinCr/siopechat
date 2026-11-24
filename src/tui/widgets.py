@@ -76,8 +76,10 @@ class TranscriptControl(UIControl):
         self._toolbar_fragments = {}
         cursor = self.view.transcript_cursor_position()
         cursor = Point(0, min(max(0, cursor.y), max(0, len(rows) - 1)))
+        missing_shown = False
 
         def get_line(number):
+            nonlocal missing_shown
             position = bisect_right(ranges, number, key=itemgetter(0)) - 1
             if position >= 0:
                 start, end, index = ranges[position]
@@ -93,6 +95,9 @@ class TranscriptControl(UIControl):
             if hasattr(rows, "paint_row"):
                 row = rows.paint_row(number)
                 if row is None:
+                    if missing_shown:
+                        return []
+                    missing_shown = True
                     return [("class:sidebar.muted", " · ")]
                 spans, message = row
             else:

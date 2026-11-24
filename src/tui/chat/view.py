@@ -232,7 +232,7 @@ class ChatView(
         from ..background import BackgroundReads
 
         self._reads = BackgroundReads()
-        self._render_reads = BackgroundReads(workers=2, capacity=16)
+        self._render_reads = BackgroundReads(workers=4, capacity=32)
         self._operations = BackgroundReads(workers=2, capacity=16)
         self.lock = threading.RLock()
         self.resume_visible = False
@@ -445,12 +445,27 @@ class ChatView(
                 self.close_background_work(wait=False)
                 self._persist_session()
                 if self.forget_temporary and not self.busy:
-                    for tab in self.tabs:
-                        if tab.get("temporary") and tab.get("conversation_id"):
+                    temp_ids = [
+                        tab["conversation_id"]
+                        for tab in self.tabs
+                        if tab.get("temporary") and tab.get("conversation_id")
+                    ]
+                    if len(temp_ids) == 1:
+                        try:
+                            self.forget_temporary(temp_ids[0])
+                        except Exception:
+                            pass
+                    elif temp_ids:
+                        from concurrent.futures import ThreadPoolExecutor
+
+                        def _forget(cid: str) -> None:
                             try:
-                                self.forget_temporary(tab["conversation_id"])
+                                self.forget_temporary(cid)
                             except Exception:
                                 pass
+
+                        with ThreadPoolExecutor(max_workers=min(4, len(temp_ids))) as pool:
+                            list(pool.map(_forget, temp_ids))
             finally:
                 if self.account_service and hasattr(self.account_service, "begin_shutdown"):
                     self.account_service.begin_shutdown()

@@ -567,6 +567,8 @@ class Accounts(
             return {}
 
         def prepare(item):
+            if self.closing or self.closed:
+                return item["key"], None
             key = item["key"]
             version = self._catalog_versions.get(key, 0)
             try:
@@ -636,11 +638,25 @@ class Accounts(
             if hasattr(sub, "cancel"):
                 sub.cancel()
         self._event_subscriptions.clear()
-        for key in list(self._providers):
+        provider_keys = list(self._providers)
+        if len(provider_keys) == 1:
             try:
-                self._discard_provider(key)
+                self._discard_provider(provider_keys[0])
             except Exception as error:
                 errors.append(error)
+        elif provider_keys:
+
+            def _discard_safe(key: str):
+                try:
+                    self._discard_provider(key)
+                    return None
+                except Exception as error:
+                    return error
+
+            with ThreadPoolExecutor(max_workers=min(4, len(provider_keys))) as pool:
+                for error in pool.map(_discard_safe, provider_keys):
+                    if error is not None:
+                        errors.append(error)
         with self._lock:
             self.closed = True
         if errors:
