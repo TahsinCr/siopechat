@@ -21,12 +21,21 @@ Python distributions use the corresponding PEP 440 version (`1.5.6b0` for `v1.5.
 - Make the SQLite archive and saved workspace layouts built-in features. Move their actions and interface settings into the application, and package the English, Turkish, and Russian translations with the terminal UI.
 - Update the shared event bus to FlowEvent 2.0 and refresh the dependency lock for the new provider package.
 - Open the project edit form with the details already shown on screen and submit only fields the user changes.
+- Append `Instant` or `Thinking` suffixes to ChatGPT variant model titles (mapping `t-mini` to `Thinking`).
+- Route file downloads directly through `NativeDownloadClient` (`curl_cffi`) instead of `httpx`.
+- Speed up `Settings.snapshot()`, `Accounts` active-account lookups, `MessageRenderer` (`Console` reuse), single-pass OSC-8 link parsing in `transcript_fragments()`, `TranscriptGutter` role prefix caching, `orjson` archive encoding/hashing, and idle `animate_activity` polling.
+
+### Removed
+
+- Remove the `httpx` dependency and redundant `webai-provider`-internal test modules (`test_profiles`, `test_remote_deletion`, `test_download_sources`, `test_backend_provider_discovery`).
 
 ### Fixed
 
 - Render the first visible assistant text without waiting for the normal streaming redraw intervals. Later chunks continue to use batched redraws.
 - After a confirmed project deletion, check known member chats in small concurrent batches. Keep chats in the local archive when they still exist or their remote status cannot be verified.
 - Keep the terminal background queue running after an individual job fails. On exit, stop accepting new work, request provider cancellation, and let running terminal jobs finish before closing application services.
+- Release render locks during Markdown conversion in `VirtualTranscript` and `MessageRenderer`, reset `TranscriptPrefetch` on tab switch, increase `VirtualTranscript.CACHE_BYTES` to `8 MiB` and render workers to `4`, and show a single-line `" · "` placeholder instead of filling every uncached row.
+- Abort remaining `prepare_enabled` warmups on shutdown and close multiple open providers and temporary conversations concurrently on exit.
 
 ### Removed
 
