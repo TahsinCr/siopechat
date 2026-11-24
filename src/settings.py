@@ -436,9 +436,18 @@ class Settings:
         keybinding_conflicts(data["keybindings"])
         json.dumps(data, allow_nan=False)
 
+    @staticmethod
+    def _clone_json(value):
+        """Clone nested JSON-like dicts/lists without copy.deepcopy overhead."""
+        if isinstance(value, dict):
+            return {k: Settings._clone_json(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [Settings._clone_json(item) for item in value]
+        return value
+
     def snapshot(self) -> dict:
         with self._lock:
-            return copy.deepcopy(self._data)
+            return self._clone_json(self._data)
 
     def configure_provider(self, provider_id: str, enabled: bool) -> None:
         if type(enabled) is not bool:

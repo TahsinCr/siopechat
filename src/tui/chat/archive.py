@@ -25,7 +25,13 @@ class ArchiveComponent:
         last_account_check = 0.0
         last_download_check = 0.0
         while True:
-            await asyncio.sleep(0.12)
+            active = bool(
+                (self.tabs and self.tabs[self.active_tab].get("busy"))
+                or self.loading_conversation
+                or self.uploading_image
+                or getattr(self.downloads_panel, "active_count", 0)
+            )
+            await asyncio.sleep(0.12 if active else 0.4)
             now = asyncio.get_running_loop().time()
             if self.account_service and now - last_account_check >= 5:
                 last_account_check = now

@@ -231,8 +231,9 @@ class Accounts(
         if prov is not None:
             prov.close()
 
-    def items(self):
-        config = self.settings.snapshot()
+    def items(self, config=None):
+        if config is None:
+            config = self.settings.snapshot()
         return [
             dict(
                 item,
@@ -247,10 +248,10 @@ class Accounts(
             for item in config["accounts"]["items"]
         ]
 
-    def visible_accounts(self):
+    def visible_accounts(self, config=None):
         return [
             item
-            for item in self.items()
+            for item in self.items(config=config)
             if item["enabled"] and item["key"] not in self._verification_required
         ]
 
@@ -306,13 +307,15 @@ class Accounts(
         self.item(key)
         self.settings.update("accounts", {"preferences": {key: {"model": model, "effort": effort}}})
 
-    def active_accounts(self):
+    def active_accounts(self, config=None):
         if self.closing or self.closed:
             return []
-        data = self.settings.snapshot()["accounts"]
+        if config is None:
+            config = self.settings.snapshot()
+        data = config["accounts"]
         legacy = data["active"]
         grouped = {}
-        for item in self.visible_accounts():
+        for item in self.visible_accounts(config=config):
             grouped.setdefault(item["provider"], []).append(item)
         selected = data.get("selected", {})
         active = []
@@ -351,11 +354,11 @@ class Accounts(
         return archive.read(key, kind, remote or "", fetch, force=force, **options)
 
     def active(self) -> str:
-        data = self.settings.snapshot()
-        key = data["accounts"]["active"]
-        if key and self.enabled(key.split("/")[0]):
+        config = self.settings.snapshot()
+        key = config["accounts"]["active"]
+        if key and config["providers"].get(key.split("/")[0], {}).get("enabled", False):
             return key
-        active = self.active_accounts()
+        active = self.active_accounts(config=config)
         return active[0]["key"] if active else ""
 
     def item(self, key: str):

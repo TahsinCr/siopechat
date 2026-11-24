@@ -9,22 +9,20 @@ import time
 from pathlib import Path
 from urllib.parse import unquote
 
+import orjson
+
 from utils.sqlite import SQLiteRepositoryBase
 
 V5_MIGRATION_BATCH_SIZE = 256
 
 
 def encode(value):
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return orjson.dumps(value, option=orjson.OPT_SORT_KEYS).decode("utf-8")
 
 
 def _digest_json(value):
-    """Hash canonical JSON incrementally so large histories need no full JSON copy."""
-    digest = hashlib.sha256()
-    encoder = json.JSONEncoder(ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    for part in encoder.iterencode(value):
-        digest.update(part.encode("utf-8"))
-    return digest.hexdigest()
+    """Hash canonical JSON in one C-accelerated pass without intermediate copies."""
+    return hashlib.sha256(orjson.dumps(value, option=orjson.OPT_SORT_KEYS)).hexdigest()
 
 
 def conversation_header(value):

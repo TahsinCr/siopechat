@@ -651,6 +651,18 @@ class TranscriptGutter:
     def __init__(self, view):
         self.view = view
         self._starts = {}
+        self._prefixes = {None: [("class:transcript", " " * DEFAULT_TRANSCRIPT_GUTTER_WIDTH)]}
+        for role in ("user", "assistant", "reasoning"):
+            role_style = ICONS.get(f"role.{role}")
+            marker = role_style.icon if role_style else ""
+            marker_width = get_cwidth(marker)
+            left = max(0, (DEFAULT_TRANSCRIPT_GUTTER_WIDTH - marker_width) // 2)
+            right = max(0, DEFAULT_TRANSCRIPT_GUTTER_WIDTH - marker_width - left)
+            text = " " * left + marker + " " * right
+            style = (
+                f"class:transcript class:{role_style.name}" if role_style else "class:transcript"
+            )
+            self._prefixes[role] = [(style, text)]
 
     def refresh(self):
         ranges = getattr(self.view, "message_ranges", None) or ()
@@ -666,17 +678,9 @@ class TranscriptGutter:
         }
 
     def __call__(self, line_number, wrap_count):
-        role = self._starts.get(line_number) if wrap_count == 0 else None
-        role_style = ICONS.get(f"role.{role}")
-        marker = role_style.icon if role_style else ""
-        marker_width = get_cwidth(marker)
-        left = max(0, (DEFAULT_TRANSCRIPT_GUTTER_WIDTH - marker_width) // 2)
-        right = max(0, DEFAULT_TRANSCRIPT_GUTTER_WIDTH - marker_width - left)
-        text = " " * left + marker + " " * right
-        style = "class:transcript"
-        if role_style:
-            style += f" class:{role_style.name}"
-        return [(style, text)]
+        if wrap_count != 0:
+            return self._prefixes[None]
+        return self._prefixes.get(self._starts.get(line_number), self._prefixes[None])
 
 
 def register_modified_enter():

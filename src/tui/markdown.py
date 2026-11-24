@@ -12,7 +12,7 @@ from array import array
 from collections import OrderedDict
 from hashlib import sha256
 from io import StringIO
-from threading import RLock
+from threading import RLock, local
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -40,6 +40,8 @@ from .styles import (
     ICONS,
     rich_style_map,
 )
+
+_CONSOLE_LOCAL = local()
 
 ANNOTATION_PATTERN = re.compile(r"\ue200([^\ue201\ue202]+)(?:\ue202(.*?))?\ue201")
 FILE_CITATION_PATTERN = re.compile(r"[ \t]*\[F\d+:L\d+(?:[ \t]*[-–—][ \t]*L?\d+)?\]")
@@ -612,48 +614,38 @@ def transcript_fragments(text):
     """Preserve Rich OSC-8 link targets through Prompt Toolkit's ANSI conversion."""
     if "\x1b]8;" not in text:
         return ANSI(text).__pt_formatted_text__()
-    chunks, ranges = [], []
-    offset, cursor, target = 0, 0, None
+    fragments = []
+    handlers = {}
+    cursor, target = 0, None
     for match in OSC_LINK.finditer(text):
         chunk = text[cursor : match.start()]
-        chunks.append(chunk)
-        length = sum(len(part[1]) for part in ANSI(chunk).__pt_formatted_text__())
-        if target and length:
-            ranges.append((offset, offset + length, target))
-        offset += length
+        if chunk:
+            parsed = ANSI(chunk).__pt_formatted_text__()
+            if target:
+                handler = handlers.get(target)
+                if handler is None:
+                    handler = link_handler(target)
+                    handlers[target] = handler
+                is_file = target.startswith("siope-file:")
+                for style, value in parsed:
+                    fragments.append(("class:message.file" if is_file else style, value, handler))
+            else:
+                fragments.extend(parsed)
         target = match.group(1) or None
         cursor = match.end()
     tail = text[cursor:]
-    chunks.append(tail)
-    if target:
-        length = sum(len(part[1]) for part in ANSI(tail).__pt_formatted_text__())
-        ranges.append((offset, offset + length, target))
-    fragments, offset, index = [], 0, 0
-    handlers = {}
-    for style, value in ANSI("".join(chunks)).__pt_formatted_text__():
-        while value:
-            while index < len(ranges) and offset >= ranges[index][1]:
-                index += 1
-            span = ranges[index] if index < len(ranges) else None
-            linked = span is not None and offset >= span[0]
-            stop = span[1] if linked else span[0] if span else offset + len(value)
-            size = min(len(value), stop - offset)
-            piece, value = value[:size], value[size:]
-            if linked:
-                url = span[2]
-                if url not in handlers:
-                    handlers[url] = link_handler(url)
-                handler = handlers[url]
-                fragments.append(
-                    (
-                        "class:message.file" if url.startswith("siope-file:") else style,
-                        piece,
-                        handler,
-                    )
-                )
-            else:
-                fragments.append((style, piece))
-            offset += size
+    if tail:
+        parsed = ANSI(tail).__pt_formatted_text__()
+        if target:
+            handler = handlers.get(target)
+            if handler is None:
+                handler = link_handler(target)
+                handlers[target] = handler
+            is_file = target.startswith("siope-file:")
+            for style, value in parsed:
+                fragments.append(("class:message.file" if is_file else style, value, handler))
+        else:
+            fragments.extend(parsed)
     return fragments
 
 
@@ -911,18 +903,30 @@ class MessageRenderer:
                 )
             labels = dict(self.labels)
         buffer = StringIO()
-        console = Console(
-            file=buffer,
-            force_terminal=True,
-            color_system="truecolor",
-            no_color=False,
-            width=width,
-            soft_wrap=False,
-            theme=DEFAULT_ROLE_MARKDOWN_THEMES.get(role, DEFAULT_MARKDOWN_THEME),
-            # Preserve OSC-8 targets in the ANSI transcript on Windows too;
-            # legacy console detection otherwise strips clickable link data.
-            legacy_windows=False,
-        )
+        consoles = getattr(_CONSOLE_LOCAL, "consoles", None)
+        if consoles is None:
+            consoles = {}
+            _CONSOLE_LOCAL.consoles = consoles
+        console_key = (role, width)
+        console = consoles.get(console_key)
+        if console is None:
+            console = Console(
+                file=buffer,
+                force_terminal=True,
+                color_system="truecolor",
+                no_color=False,
+                width=width,
+                soft_wrap=False,
+                theme=DEFAULT_ROLE_MARKDOWN_THEMES.get(role, DEFAULT_MARKDOWN_THEME),
+                # Preserve OSC-8 targets in the ANSI transcript on Windows too;
+                # legacy console detection otherwise strips clickable link data.
+                legacy_windows=False,
+            )
+            if len(consoles) >= 16:
+                consoles.clear()
+            consoles[console_key] = console
+        else:
+            console.file = buffer
         role_style = DEFAULT_ROLE_STYLES.get(role, DEFAULT_MESSAGE_STYLE)
         if role == "reasoning":
             console.print(
