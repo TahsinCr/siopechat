@@ -1,6 +1,7 @@
 """Resize and SDK output regressions without account requests."""
 
 import asyncio
+import threading
 import unittest
 
 from prompt_toolkit.data_structures import Point
@@ -8,6 +9,7 @@ from prompt_toolkit.layout.controls import FormattedTextControl
 
 from tests import tui_support as interaction
 from tests.tui_support import ResizableOutput, immediate
+from tui.background import BackgroundReads
 from tui.widgets import BoundedTextControl
 
 
@@ -89,11 +91,21 @@ class ResponsiveSettingsTests(unittest.IsolatedAsyncioTestCase):
 
 
 class BackgroundCapacityTests(unittest.TestCase):
+    def test_failed_job_does_not_stop_the_next_job(self):
+        pool = BackgroundReads(workers=1, capacity=2)
+        finished = threading.Event()
+
+        def fail():
+            raise ValueError("background job failed")
+
+        try:
+            self.assertTrue(pool.submit(fail))
+            self.assertTrue(pool.submit(finished.set))
+            self.assertTrue(finished.wait(2))
+        finally:
+            pool.close(wait=True)
+
     def test_metadata_queue_is_bounded_and_shutdown_rejects_new_work(self):
-        import threading
-
-        from tui.background import BackgroundReads
-
         pool = BackgroundReads(workers=1, capacity=2)
         started, release, finished = threading.Event(), threading.Event(), threading.Event()
         queued = []

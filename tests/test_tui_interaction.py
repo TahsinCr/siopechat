@@ -1,6 +1,7 @@
 """Keyboard, input and navigation behavior through Prompt Toolkit."""
 
 import asyncio
+import threading
 import unittest
 from contextlib import nullcontext
 from unittest.mock import Mock, patch
@@ -81,7 +82,20 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
         with terminal() as (view, _pipe):
             steps = []
             view.account_service = Mock()
-            view.account_service.begin_shutdown.side_effect = lambda: steps.append("cancel")
+            started, cancelled = threading.Event(), threading.Event()
+
+            def operation():
+                started.set()
+                if cancelled.wait(3):
+                    steps.append("operation finished")
+
+            def cancel():
+                steps.append("cancel")
+                cancelled.set()
+
+            view.account_service.begin_shutdown.side_effect = cancel
+            self.assertTrue(view._operations.submit(operation))
+            self.assertTrue(started.wait(2))
             view._persist_session = Mock(side_effect=lambda: steps.append("persist"))
             view.action_cleanup = Mock(side_effect=lambda: steps.append("actions"))
             close_background_work = view.close_background_work
@@ -97,9 +111,17 @@ class InputTests(unittest.IsolatedAsyncioTestCase):
                 view.run()
 
             self.assertEqual(
-                steps,
-                [("workers", False), "persist", "cancel", ("workers", True), "actions"],
+                [step for step in steps if step != "operation finished"],
+                [
+                    ("workers", False),
+                    "persist",
+                    "cancel",
+                    ("workers", True),
+                    "actions",
+                ],
             )
+            self.assertLess(steps.index("cancel"), steps.index("operation finished"))
+            self.assertLess(steps.index("operation finished"), steps.index("actions"))
 
     async def test_settings_tab_can_switch_reopen_and_close_with_global_keys(self):
         with terminal(settings_rows=lambda: []) as (view, pipe):

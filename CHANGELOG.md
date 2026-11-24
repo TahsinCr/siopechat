@@ -15,6 +15,10 @@ Python distributions use the corresponding PEP 440 version (`1.5.6b0` for `v1.5.
 - Reuse the displayed project details in the edit form and save only changed fields.
 - Verify project chats in small batches after confirmed project deletion while preserving chats that still exist or cannot be verified.
 
+### Fixed
+
+- Keep the terminal background queue running after a job fails. Drain running terminal jobs after requesting provider cancellation and before closing application services.
+
 ## [1.5.6-beta] - 2026-11-06
 
 ### Added
