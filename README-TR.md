@@ -1,10 +1,13 @@
-[![Sürüm: v1.5.6-beta][version-shield]](CHANGELOG.md)
-[![Python 3.10+][python-shield]](https://www.python.org/downloads/)
-[![GPL-3.0-only][license-shield]](LICENSE)
+[![CI][ci-shield]][ci-url]
+[![Sürüm: v1.5.6-beta][version-shield]][releases]
+[![Python 3.10+][python-shield]][python-url]
+[![GPL-3.0-only][license-shield]][license]
 
-[English](README.md) | **Türkçe** | [Русский](README-RU.md)
+[English][readme-en] | **Türkçe** | [Русский][readme-ru]
 
 # SiopeChat
+
+[Depo][repository] · [Değişiklikler][changelog] · [Son sürüm][releases] · [GPL-3.0 Lisansı][license]
 
 **ChatGPT, Gemini, Claude ve Grok’un web sohbetleri tek terminalde.**
 
@@ -12,9 +15,9 @@ Sohbetlerinizi ve projelerinizi bir arada tutun. Yanıtları karşılaştırmak 
 
 > SiopeChat, web sohbetleri için bağımsız bir istemcidir. Tarayıcıdaki oturumunuzu kullanır, API anahtarı gerektirmez. Resmî geliştirici API’lerine bağlanmaz ve Codex, Claude Code ya da Google Antigravity CLI gibi kodlama ajanlarını çalıştırmaz. Hesabınızın model erişimi ve kullanım sınırları geçerlidir.
 
-[Kurulum](#kurulum) · [Hesap bağlama](#hesap-bağlama) · [Sağlayıcıları karşılaştır](#sağlayıcı-özellikleri) · [Performans](#performans) · [Sürüm notları](CHANGELOG.md)
+[Kurulum][install] · [Hesap bağlama][account] · [Sağlayıcıları karşılaştır][providers] · [Performans][performance] · [Bağımlılıklar][dependencies]
 
-![SiopeChat terminal arayüzü](assets/siopechat.png)
+![SiopeChat terminal arayüzü][screenshot]
 
 *Örnek sohbet verileriyle çalışan SiopeChat terminal arayüzü.*
 
@@ -76,7 +79,7 @@ Tablo, sağlayıcıların SiopeChat üzerinden sunduğu işlevleri gösterir. Mo
 
 Kayıtlı bir sohbeti açtığınızda önce arşivdeki geçmiş görünür. Yeni mesajlar varsa arka planda alınır. Yanıt akmaya başladığında terminal ilk metni hemen çizer. Sonraki parçaları gruplar hâlinde işleyerek arayüzün akıcı kalmasını sağlar.
 
-Bu akışın temelinde [WebAI Provider 2.0](https://pypi.org/project/webai-provider/2.0.0/) var. Motor, web oturumlarını yönetir. Kullanılabilir bağlantıları, güncel model listelerini ve sohbeti sürdürmek için gereken bilgileri yeniden kullanır. Siz mesajı yazarken SiopeChat, uygun sohbetlerde bir sonraki gönderimin hazırlığına başlayabilir. Böylece gönder tuşuna bastığınızda daha az hazırlık işi kalır. Modelin yanıt vermeye ne zaman başlayacağı sağlayıcıya ve ağ koşullarına bağlıdır.
+Bu akışın temelinde [WebAI Provider 2.0][webai-provider-pypi] var. Motor, web oturumlarını yönetir. Kullanılabilir bağlantıları, güncel model listelerini ve sohbeti sürdürmek için gereken bilgileri yeniden kullanır. Siz mesajı yazarken SiopeChat, uygun sohbetlerde bir sonraki gönderimin hazırlığına başlayabilir. Böylece gönder tuşuna bastığınızda daha az hazırlık işi kalır. Modelin yanıt vermeye ne zaman başlayacağı sağlayıcıya ve ağ koşullarına bağlıdır.
 
 ## Sık kullanılan kısayollar
 
@@ -97,10 +100,39 @@ SiopeChat, sohbet geçmişini ve kaynak bilgilerini yerel SQLite arşivinde tuta
 
 Eski bir sürümden geçiyorsanız arşivdeki `archive.sqlite3` dosyasını ve varsa `files/` dizinini yükseltmeden önce yedekleyin.
 
-## Proje bağlantıları
+## Bağımlılıklar
 
-[Sürüm notları](CHANGELOG.md) · [Hata bildirimleri](https://github.com/TahsinCr/siopechat/issues) · [WebAI Provider](https://github.com/TahsinCr/webai-provider/) · [GPL-3.0-only](LICENSE) · [Telif bildirimi](COPYRIGHT)
+- [WebAI Provider][webai-provider] · Web oturumları, sohbet geçmişi, model katalogları ve yanıt akışı
+- [FlowEvent][flowevent] · Uygulama servisleri arasındaki olaylar
+- [prompt_toolkit][prompt-toolkit] · Terminal arayüzü, klavye kısayolları ve fare girdisi
+- [Rich][rich] · Markdown gösterimi ve sözdizimi renklendirme
+- [HTTPX][httpx] · İndirmeler için HTTP aktarımı
+- [platformdirs][platformdirs] · İşletim sistemine uygun ayar ve veri dizinleri
+- [exceptiongroup][exceptiongroup] · Python 3.10 için istisna grupları
 
+[ci-shield]: https://img.shields.io/github/actions/workflow/status/TahsinCr/siopechat/ci.yml?branch=main&style=for-the-badge&label=CI
+[ci-url]: https://github.com/TahsinCr/siopechat/actions/workflows/ci.yml?query=branch%3Amain
 [version-shield]: https://img.shields.io/badge/version-v1.5.6--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
+[python-url]: https://www.python.org/downloads/
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge
+[readme-en]: README.md
+[readme-ru]: README-RU.md
+[repository]: https://github.com/TahsinCr/siopechat
+[changelog]: CHANGELOG.md
+[releases]: https://github.com/TahsinCr/siopechat/releases/latest
+[license]: LICENSE
+[screenshot]: assets/siopechat.png
+[webai-provider-pypi]: https://pypi.org/project/webai-provider/2.0.0/
+[webai-provider]: https://github.com/TahsinCr/webai-provider
+[flowevent]: https://github.com/TahsinCr/python-flowevent
+[prompt-toolkit]: https://github.com/prompt-toolkit/python-prompt-toolkit
+[rich]: https://github.com/Textualize/rich
+[httpx]: https://github.com/encode/httpx
+[platformdirs]: https://github.com/tox-dev/platformdirs
+[exceptiongroup]: https://github.com/agronholm/exceptiongroup
+[install]: #kurulum
+[account]: #hesap-bağlama
+[providers]: #sağlayıcı-özellikleri
+[performance]: #performans
+[dependencies]: #bağımlılıklar

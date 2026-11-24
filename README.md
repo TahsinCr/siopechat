@@ -1,10 +1,13 @@
-[![Version: v1.5.6-beta][version-shield]](CHANGELOG.md)
-[![Python 3.10+][python-shield]](https://www.python.org/downloads/)
-[![GPL-3.0-only][license-shield]](LICENSE)
+[![CI][ci-shield]][ci-url]
+[![Version: v1.5.6-beta][version-shield]][releases]
+[![Python 3.10+][python-shield]][python-url]
+[![GPL-3.0-only][license-shield]][license]
 
-**English** | [Türkçe](README-TR.md) | [Русский](README-RU.md)
+**English** | [Türkçe][readme-tr] | [Русский][readme-ru]
 
 # SiopeChat
+
+[Repository][repository] · [Changelog][changelog] · [Latest release][releases] · [GPL-3.0 License][license]
 
 **ChatGPT, Gemini, Claude and Grok web chats in one terminal.**
 
@@ -12,9 +15,9 @@ Keep your chats and projects in one place, or put two replies side by side when 
 
 > SiopeChat is an independent client for web chats. It uses your existing browser session and requires no API key. It doesn’t connect to official developer APIs or run coding agents such as Codex, Claude Code or Google Antigravity CLI. Your account’s model access and usage limits still apply.
 
-[Install](#install) · [Connect an account](#connect-an-account) · [Compare providers](#provider-capabilities) · [Performance](#performance) · [Changelog](CHANGELOG.md)
+[Install][install] · [Connect an account][account] · [Compare providers][providers] · [Performance][performance] · [Dependencies][dependencies]
 
-![SiopeChat terminal interface](assets/siopechat.png)
+![SiopeChat terminal interface][screenshot]
 
 *SiopeChat’s terminal interface with sample conversations.*
 
@@ -76,7 +79,7 @@ The table describes SiopeChat’s integration. Model access, editable messages a
 
 When you open a saved chat, SiopeChat shows the local copy while it checks for newer messages in the background. As a reply arrives, the terminal draws the first visible text right away and batches later updates to keep the interface responsive.
 
-Under the hood, [WebAI Provider 2.0](https://pypi.org/project/webai-provider/2.0.0/) manages web sessions and streams replies. It reuses connections, valid model catalogs and conversation context where available. SiopeChat can warm up the next send while you’re writing. This saves work in the client. The time a model takes to start replying still depends on the provider and the network.
+Under the hood, [WebAI Provider 2.0][webai-provider-pypi] manages web sessions and streams replies. It reuses connections, valid model catalogs and conversation context where available. SiopeChat can warm up the next send while you’re writing. This saves work in the client. The time a model takes to start replying still depends on the provider and the network.
 
 ## Everyday controls
 
@@ -97,10 +100,39 @@ SiopeChat keeps history and resource metadata in a local SQLite archive. Reposit
 
 Before upgrading from an older version, back up `archive.sqlite3` and the `files/` directory if it exists.
 
-## Project links
+## Dependencies
 
-[Release notes](CHANGELOG.md) · [GitHub issues](https://github.com/TahsinCr/siopechat/issues) · [WebAI Provider](https://github.com/TahsinCr/webai-provider/) · [GPL-3.0-only](LICENSE) · [Copyright](COPYRIGHT)
+- [WebAI Provider][webai-provider] · Web sessions, chat history, model catalogs and reply streaming
+- [FlowEvent][flowevent] · Events for application services
+- [prompt_toolkit][prompt-toolkit] · Terminal interface, keyboard shortcuts and mouse input
+- [Rich][rich] · Markdown rendering and syntax highlighting
+- [HTTPX][httpx] · HTTP transfers for downloads
+- [platformdirs][platformdirs] · Configuration and data directories for each operating system
+- [exceptiongroup][exceptiongroup] · Exception groups on Python 3.10
 
+[ci-shield]: https://img.shields.io/github/actions/workflow/status/TahsinCr/siopechat/ci.yml?branch=main&style=for-the-badge&label=CI
+[ci-url]: https://github.com/TahsinCr/siopechat/actions/workflows/ci.yml?query=branch%3Amain
 [version-shield]: https://img.shields.io/badge/version-v1.5.6--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
+[python-url]: https://www.python.org/downloads/
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge
+[readme-tr]: README-TR.md
+[readme-ru]: README-RU.md
+[repository]: https://github.com/TahsinCr/siopechat
+[changelog]: CHANGELOG.md
+[releases]: https://github.com/TahsinCr/siopechat/releases/latest
+[license]: LICENSE
+[screenshot]: assets/siopechat.png
+[webai-provider-pypi]: https://pypi.org/project/webai-provider/2.0.0/
+[webai-provider]: https://github.com/TahsinCr/webai-provider
+[flowevent]: https://github.com/TahsinCr/python-flowevent
+[prompt-toolkit]: https://github.com/prompt-toolkit/python-prompt-toolkit
+[rich]: https://github.com/Textualize/rich
+[httpx]: https://github.com/encode/httpx
+[platformdirs]: https://github.com/tox-dev/platformdirs
+[exceptiongroup]: https://github.com/agronholm/exceptiongroup
+[install]: #install
+[account]: #connect-an-account
+[providers]: #provider-capabilities
+[performance]: #performance
+[dependencies]: #dependencies
