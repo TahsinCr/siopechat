@@ -8,16 +8,29 @@ Python distributions use the corresponding PEP 440 version (`1.5.6b0` for `v1.5.
 
 ## [Unreleased]
 
+### Added
+
+- Prepare the provider session and conversation context in the background when a chat becomes active or the user starts composing. Reuse that preparation for the next send and refresh it after a completed reply.
+- Extend opt-in send timing with the delay before the send worker starts and the time from the first streamed text to the terminal frame that actually displays it.
+
 ### Changed
 
-- Use the published [WebAI Provider 2.0.0](https://pypi.org/project/webai-provider/2.0.0/) package for ChatGPT, Claude, Gemini, and Grok.
-- Draw the first visible assistant text without waiting for the streaming redraw intervals and time the frame that actually contains the answer.
-- Reuse the displayed project details in the edit form and save only changed fields.
-- Verify project chats in small batches after confirmed project deletion while preserving chats that still exist or cannot be verified.
+- Move ChatGPT, Claude, Gemini, and Grok to the published [WebAI Provider 2.0.0](https://pypi.org/project/webai-provider/2.0.0/) package. SiopeChat now uses its synchronous API for accounts, chat history, message operations, model catalogs, projects, and attachments.
+- Consume WebAI Provider's ordered response parts so one reply can display multiple visible text blocks and published reasoning summaries in order. Apply corrected parts when the provider supplies them after verification, and retain discovered sources and generated files with the completed reply.
+- Stop the generation indicator when the provider reports that generation has ended. Keep final verification and operation completion separate so visible text can appear before the send is confirmed.
+- Make the SQLite archive and saved workspace layouts built-in features. Move their actions and interface settings into the application, and package the English, Turkish, and Russian translations with the terminal UI.
+- Update the shared event bus to FlowEvent 2.0 and refresh the dependency lock for the new provider package.
+- Open the project edit form with the details already shown on screen and submit only fields the user changes.
 
 ### Fixed
 
-- Keep the terminal background queue running after a job fails. Drain running terminal jobs after requesting provider cancellation and before closing application services.
+- Render the first visible assistant text without waiting for the normal streaming redraw intervals. Later chunks continue to use batched redraws.
+- After a confirmed project deletion, check known member chats in small concurrent batches. Keep chats in the local archive when they still exist or their remote status cannot be verified.
+- Keep the terminal background queue running after an individual job fails. On exit, stop accepting new work, request provider cancellation, and let running terminal jobs finish before closing application services.
+
+### Removed
+
+- Remove the external Python extension loader, extension manifests, and the Extensions settings screen. The archive and split workspace features remain available as built-in modules. Existing third-party extensions are no longer loaded.
 
 ## [1.5.6-beta] - 2026-11-06
 
