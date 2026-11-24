@@ -19,7 +19,6 @@ Sohbetlerinizi, projelerinizi ve farklı modellerin yanıtlarını tek bir termi
 <p align="center">
   <a href="#kurulum-ve-giriş"><strong>Kurulum</strong></a> &nbsp; | &nbsp;
   <a href="#kullanım"><strong>Kullanım</strong></a> &nbsp; | &nbsp;
-  <a href="#eklenti-geliştirme"><strong>Eklentiler</strong></a> &nbsp; | &nbsp;
   <a href="#geliştirme"><strong>Geliştirme</strong></a>
 </p>
 
@@ -30,9 +29,9 @@ Sohbetlerinizi, projelerinizi ve farklı modellerin yanıtlarını tek bir termi
 | Taslak ve kaydırma konumlarını koruyan sekmeler kullanın; bir grupta en fazla dört paneli karşılaştırın. | ChatGPT ve Claude projeleri, Gemini defterleri ya da Grok çalışma alanlarıyla çalışın; sağlayıcının desteklediği talimat ve kaynakları yönetin. | Kayıtlı sohbetleri hemen açın, geçmişi arka planda eşitleyin. |
 | Hesaba göre model ve düşünme eforu seçin; desteklenen mesajları düzenleyin, yanıtı yeniden üretin veya sohbeti dallandırın. | Proje ve sohbetleri arayın, sıralayın ve sağlayıcı hesabına göre filtreleyin. | Sohbet geçmişini ve kaynak bilgilerini yerel SQLite arşivinde tutun. |
 
-| Dosyalar ve indirmeler | Kısayollar ve eklentiler | Diliniz |
+| Dosyalar ve indirmeler | Kısayollar | Diliniz |
 | --- | --- | --- |
-| Yanıtlarda üretilen dosyaları indirin; ilerlemeyi indirme yöneticisinde izleyin. | Komut paleti, değiştirilebilir kısayollar, fare kontrolleri ve yerel eklentileri kullanın. | İngilizce, Türkçe veya Rusça arayüzü seçin. |
+| Yanıtlarda üretilen dosyaları indirin; ilerlemeyi indirme yöneticisinde izleyin. | Komut paleti, değiştirilebilir kısayollar ve fare kontrollerini kullanın. | İngilizce, Türkçe veya Rusça arayüzü seçin. |
 
 > **v1.5.5-beta** ile Grok, hesaba göre sunulan model listesi, akış yanıtları, web arama kaynakları ve çalışma alanı/proje desteğiyle dördüncü web sohbeti sağlayıcısı olarak eklendi. Sağlayıcı istemcileri sabitlenmiş PyPI paketinden kuruluyor. Yanıtları yeniden deneme, geçmiş eşitleme, proje işlemleri, sekme çizimi, indirmeler ve kapanış akışı da iyileştirildi. Kurulu komut işletim sisteminin kullanıcı dizinlerini, depo başlatıcıları ise varsayılan olarak proje içindeki taşınabilir depolamayı kullanıyor.
 
@@ -170,7 +169,7 @@ Her mesajın altında küçük bir araç çubuğu bulunur. Kopyalama yerel olara
 
 Depo başlatıcılarıyla dosyalar arka planda `downloads/` klasörüne; kurulu komutla kullanıcının İndirilenler klasörüne iner. Konumu **Ayarlar → Genel → İndirme klasörü** bölümünden değiştirebilirsiniz. Aynı anda iki aktarım çalışabilir, mevcut dosyaların üzerine yazılmaz. Normal web bağlantıları tarayıcıda açılır; korumalı dosyalar kaynak sağlayıcının ve hesabın oturumuyla, hesap bilgileri başka adreslere gönderilmeden indirilir.
 
-İlerlemeyi ve kaynak sohbeti **İndirmeler** sekmesinde, `/downloads` komutuyla veya **Alt+J** ile görebilirsiniz. Liste aranabilir, filtrelenebilir ve sıralanabilir. **Eşitle** dosyaların varlığını on saniyede bir denetler. **Dosyayı sil** geçmiş kaydını korur; **Kaydı kaldır** dosyayı diskte bırakır. Arşiv eklentisi geçmişi yeniden başlatmalar arasında saklar; eklenti kapalıysa yalnızca geçerli oturumda tutulur. Yarım kalan aktarımlar **Kesildi** olarak işaretlenir. Varsayılan sınır 512 MiB’tır; ayarlardan değiştirilebilir ve yerel ağ indirmeleri ayrıca açılabilir.
+İlerlemeyi ve kaynak sohbeti **İndirmeler** sekmesinde, `/downloads` komutuyla veya **Alt+J** ile görebilirsiniz. Liste aranabilir, filtrelenebilir ve sıralanabilir. **Eşitle** dosyaların varlığını on saniyede bir denetler. **Dosyayı sil** geçmiş kaydını korur; **Kaydı kaldır** dosyayı diskte bırakır. Yerel arşiv, indirme geçmişini yeniden başlatmalar arasında saklar. Yarım kalan aktarımlar **Kesildi** olarak işaretlenir. Varsayılan sınır 512 MiB’tır; ayarlardan değiştirilebilir ve yerel ağ indirmeleri ayrıca açılabilir.
 
 ### Kısayollar, seçim ve arka plan yanıtları
 
@@ -191,7 +190,7 @@ Sohbet sekmesini kapatmak, devam eden yanıtı durdurmaz. Sol listede yeşil **�
 | Esc, ardından S | Varsa diğer kayıtlı taslağa geç |
 | F5 / F12 | Ayarlar / hesaplar |
 
-Kısayol değişiklikleri arayüzün tamamında anında geçerli olur. Tüm tuş atamaları **Ayarlar → Kısayollar** bölümünden veya yerel ayar dosyasından değiştirilebilir. Komut paleti, eklentilerin eklediği aksiyonlar dahil aynı işlemleri sunar.
+Kısayol değişiklikleri arayüzün tamamında anında geçerli olur. Tüm tuş atamaları **Ayarlar → Kısayollar** bölümünden veya yerel ayar dosyasından değiştirilebilir. Komut paleti aynı işlemleri sunar.
 
 Ayarlar normal bir çalışma alanı sekmesidir: Alt+Sol/Sağ ile sohbetlere geçebilir, F5 ile mevcut Ayarlar sekmesini yeniden açabilir ve Ctrl+W ile kapatabilirsiniz.
 
@@ -220,7 +219,7 @@ Dosya eki başına yerel sınır **20 MiB**’dır; sağlayıcı daha düşük b
 
 ### Ayarlar ve gizlilik
 
-Yapılandırma dosyası, depodan ayrı kullanıcı yapılandırma dizininde yerel olarak oluşturulur. Varsayılanlar `src/settings.py` içinde tanımlıdır. Dil, **Ayarlar → Genel → Dil** bölümünden (`en`, `tr`, `ru`); sağlayıcılar **Sağlayıcılar**, özellik paketleri **Eklentiler** bölümünden yönetilir. En az bir sağlayıcı etkin kalmalıdır.
+Yapılandırma dosyası, depodan ayrı kullanıcı yapılandırma dizininde yerel olarak oluşturulur. Varsayılanlar `src/settings.py` içinde tanımlıdır. Dil, **Ayarlar → Genel → Dil** bölümünden (`en`, `tr`, `ru`); sağlayıcılar ise **Sağlayıcılar** bölümünden yönetilir. En az bir sağlayıcı etkin kalmalıdır.
 
 Yalnızca bir konumu değiştirmek için ilgili ortam değişkenini ayarlayın. `SIOPECHAT_DOWNLOADS_DIR`, İndirme klasörü ayarından önceliklidir; bu değişken ayarlı değilse ayarlardan başka bir klasör seçilebilir. Yapılandırmayı ve hesap verilerini gizli tutun; hata raporlarına eklemeyin.
 
@@ -236,7 +235,7 @@ Yalnızca bir konumu değiştirmek için ilgili ortam değişkenini ayarlayın. 
 
 ### Arşiv ve dosya saklama
 
-Arşiv eklentisi sohbetleri, sıralı mesajları, yayımlanmış düşünme özetlerini, proje/defterleri, üyelikleri ve kaynak metaverilerini yapılandırılmış veri dizinindeki `archive.sqlite3` içinde tutar. Yüklenen dosyalar arşive kopyalanmaz; yalnızca sağlayıcı kimliği ve mevcut dosya metaverisi saklanır, yerel dosya yolu ve içerik tutulmaz. Eski arşivlerde, dosya içeriğine göre adlandırılmış yükleme kopyaları yükseltme sırasında kaldırılır; sohbet ve kaynak metaverileri korunur. İndirilen dosyalar seçilen klasörde kalır; arşiv yalnızca indirme geçmişinin metaverisini saklar. Uzak görsel ve kaynaklar başvuru olarak tutulur; her uzak dosya kendiliğinden indirilmez.
+Yerel arşiv sohbetleri, sıralı mesajları, yayımlanmış düşünme özetlerini, proje/defterleri, üyelikleri ve kaynak metaverilerini yapılandırılmış veri dizinindeki `archive.sqlite3` içinde tutar. Yüklenen dosyalar arşive kopyalanmaz; yalnızca sağlayıcı kimliği ve mevcut dosya metaverisi saklanır, yerel dosya yolu ve içerik tutulmaz. Eski arşivlerde, dosya içeriğine göre adlandırılmış yükleme kopyaları yükseltme sırasında kaldırılır; sohbet ve kaynak metaverileri korunur. İndirilen dosyalar seçilen klasörde kalır; arşiv yalnızca indirme geçmişinin metaverisini saklar. Uzak görsel ve kaynaklar başvuru olarak tutulur; her uzak dosya kendiliğinden indirilmez.
 
 **Yükseltme notu:** Şema v5 geçişi eski yükleme kopyalarını kalıcı olarak siler. Bu sürümle eski bir arşivi ilk kez açmadan önce, çevrimdışı kopyalara ihtiyacınız varsa veya eski bir SiopeChat sürümüne dönmeyi düşünüyorsanız yapılandırılmış veri dizinindeki `archive.sqlite3` dosyasını `files/` klasörüyle birlikte yedekleyin.
 
@@ -244,7 +243,7 @@ Arşiv eklentisi sohbetleri, sıralı mesajları, yayımlanmış düşünme öze
 
 Kayıtlı sohbetler önce arşivden açılır, ardından sağlayıcıyla arka planda eşitlenir. Geçmiş yüklenirken yazmaya ve mesaj göndermeye devam edebilirsiniz. Eski mesajlar, devam eden yanıt ezilmeden yeni yerel mesajlarla birleştirilir. Önbellekteki sohbet ve proje sayfaları yenileme sırasında kullanılabilir; yenileme başarısız olursa son sağlam veriler korunur.
 
-Büyük geçmişler arayüz olay döngüsü dışında hazırlanır; sol panel yalnızca görünür satırları çizer. Arşiv kuyrukları ve çizim önbellekleri sınırlıdır. Arşivi kapatmak dosyalarını silmez; doğrudan sağlayıcıyla çalışmaya devam edebilirsiniz. Düzen eklentisini kapatmak, sağlayıcıları etkilemeden bölünmüş görünüm kontrollerini kaldırır.
+Büyük geçmişler arayüz olay döngüsü dışında hazırlanır; sol panel yalnızca görünür satırları çizer. Arşiv kuyrukları ve çizim önbellekleri sınırlıdır.
 
 <details>
 <summary>Geçmiş sayfalama ve bellek sınırları</summary>
@@ -260,43 +259,6 @@ Sekme kapatıldığında mesaj ve çizim referansları serbest bırakılır. Ark
 Uzak bir yazma işleminin sonucu belirsizse yeniden göndermeden önce eşitleyin. SiopeChat, sağlayıcıya ulaşmış olabilecek bir işlemi kendiliğinden tekrarlamaz.
 
 
-
-## Eklenti geliştirme
-
-`extensions/my_feature/plugin.py` oluşturun. Ortak API üzerinden özellik kaydeden bir etkinleştirme fonksiyonu tanımlayın ve bunu bir `ExtensionSpec` ile dışa aktarın:
-
-```python
-from extension import Action, ExtensionSpec, SettingField
-
-
-def activate(context):
-    context.settings(SettingField("enabled", bool, True, "my_feature.enabled"))
-    context.translations("en", {"enabled": "Enable my feature"})
-    context.translations("tr", {"enabled": "Özelliğimi etkinleştir"})
-    context.translations("ru", {"enabled": "Включить расширение"})
-    context.action(Action("my_feature.hello", "Hello", lambda: "Hello"))
-
-
-SPEC = ExtensionSpec("my_feature", activate, api_version=3)
-```
-
-Her eklentide `plugin.py` yanında bir `manifest.json` bulunmalıdır. Dosya, Python kodunu çalıştırmadan eklenti bilgilerini bildirir:
-
-```json
-{"id": "my_feature", "api_version": 3, "requires": []}
-```
-
-`requires` alanını `ExtensionSpec` ile aynı tutun. Kapalı eklentiler import edilmez; etkinleştirildiğinde Python modülü yüklenir. Manifest ve `ExtensionSpec` aynı API sürümünü belirtmelidir.
-
-Eklentiye ait servisleri `context.provide()` ile kaydedin; diğer kaynakları `context.on_dispose()` ile temizleyin.
-
-Eklentinin keşfedilmesi için uygulamayı yeniden başlatın; ardından **Ayarlar → Eklentiler** bölümünden etkinleştirip devre dışı bırakabilirsiniz. Ayarları `extensions.my_feature` altında tutulur. Çeviriler eklentinin ad alanında tutulur ve uygulamanın dil kataloğuna eklenir. Gerektiğinde `requires=("archive",)` ile bağımlılık bildirin. Aksiyonlar komut paletinde giriş alanları sunabilir; eklentiler servis ve görünüm de kaydedebilir.
-
-Arşiv hizmetine `context.api.get("archive")` ile erişilir. `conversations`, `messages` ve `resources` metotları kayıtları sağlayıcı ve hesap kapsamında sayfalar halinde döndürür. Arşiv deposunun sözleşmesi ve SQLite uygulaması `extensions/archive/repository.py` içinde, sağlayıcı verilerinin normalleştirilmesi ise `adapters.py` içindedir.
-
-Eklentiler yerel kod çalıştırır. Yalnız güvendiğiniz paketleri yükleyin. Ağ işlerini çizim fonksiyonlarında yürütmeyin; kaynak temizliğinde ortak yaşam döngüsünü kullanın.
-
-Arşiv sorguları kayıtları uzak kimliklerine göre sabit bir sırayla döndürür; arayüz sıralaması ayrıca uygulanır. `siopechat action archive.inspect`, eksik dosya başvurularını ve hiçbir kayda bağlı olmayan içerikleri bildirir. `siopechat action archive.collect` varsayılan olarak yalnızca temizlik önizlemesi sunar. Bulunan adayları silmek için aksiyon parametresi olarak `'{"dry_run": false}'` verin. Ortak kullanılan dosyalar, bilinmeyen dosyalar ve son bir saat içinde kaydedilen içerikler korunur. Daha yeni bir şemaya sahip veritabanı değiştirilmeden reddedilir.
 
 ## Geliştirme
 
@@ -325,16 +287,16 @@ Kod denetimi, biçim kontrolü ve paket derlemesi ayrı adımlardır. SiopeChat 
 | Konum | Sorumluluk |
 | --- | --- |
 | `src/bootstrap.py`, `src/cli.py` | Uygulamanın kurulumu ve komut satırı girişleri |
-| `src/accounts/`, `src/tasks.py`, `src/runtime.py` | Hesap yönlendirme, görev sahipliği ve servis yaşam döngüsü |
+| `src/accounts/`, `src/runtime.py` | Hesap yönlendirme ve servis yaşam döngüsü |
 | PyPI `webai-provider` | Bağımsız web oturumu istemcileri, taşıma katmanları ve sağlayıcı sözleşmeleri |
 | `src/tui/` | Terminal görünümleri, kullanıcı girdisi ve çizim |
-| `src/extension.py`, `src/tui/api.py` | Eklenti yaşam döngüsü ve eklentilere açık terminal API’si |
-| `extensions/archive/`, `extensions/layout/` | Yerel geçmiş ve kaydedilmiş çalışma alanları |
+| `src/actions.py`, `src/tui/actions.py` | Yerleşik aksiyonlar ve komut paleti |
+| `src/archive/`, `src/tui/workspaces/` | Yerel sohbet geçmişi ve çalışma alanı düzenleri |
 | `tests/` | SiopeChat uygulama regresyonları |
 
-Protokol ayrıntılarını ilgili sağlayıcıda tutun. Sağlayıcı kodu uygulamanın veritabanını, ayarlarını, eklentilerini veya terminal arayüzünü içe aktarmamalıdır. Eklentiler servislerini `extension.py` üzerinden kaydeder; terminal arayüzüne katkı için `tui.api` kullanır. Ağ isteklerini ve maliyetli Markdown işlemlerini çizim işlevlerinin dışında yürütün.
+Protokol ayrıntılarını ilgili sağlayıcıda tutun. Ağ isteklerini ve maliyetli Markdown işlemlerini çizim işlevlerinin dışında yürütün.
 
-Gönderimler `TaskService` üzerinden her hesap için sıraya alınır. İptal durumunda hesap, bağlantı temizliği ve kabul edilmiş yanıtın kaydı tamamlandıktan sonra serbest bırakılır. Sekme kapatıldığında yanıt, uygulama açık kaldığı sürece arka planda devam eder. Değişiklikler sağlayıcı ve hesap kimliğini, mesajların üst mesaj ilişkilerini, dallanmayı ve iptal davranışını korumalıdır. Sonucu belirsiz uzak yazma işlemleri otomatik olarak tekrarlanmamalıdır.
+SiopeChat gönderimleri her hesap için sıraya alır. İptal durumunda hesap, bağlantı temizliği ve kabul edilmiş yanıtın kaydı tamamlandıktan sonra serbest bırakılır. Sekme kapatıldığında yanıt, uygulama açık kaldığı sürece arka planda devam eder. Değişiklikler sağlayıcı ve hesap kimliğini, mesajların üst mesaj ilişkilerini, dallanmayı ve iptal davranışını korumalıdır. Sonucu belirsiz uzak yazma işlemleri otomatik olarak tekrarlanmamalıdır.
 
 ### Sağlayıcı kütüphanesini bağımsız kullanma
 

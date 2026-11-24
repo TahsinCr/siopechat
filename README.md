@@ -19,7 +19,6 @@ Bring your chats, projects and model comparisons together in one terminal worksp
 <p align="center">
   <a href="#install-and-sign-in"><strong>Install</strong></a> &nbsp; | &nbsp;
   <a href="#everyday-use"><strong>Everyday use</strong></a> &nbsp; | &nbsp;
-  <a href="#extensions"><strong>Extensions</strong></a> &nbsp; | &nbsp;
   <a href="#development"><strong>Development</strong></a>
 </p>
 
@@ -30,9 +29,9 @@ Bring your chats, projects and model comparisons together in one terminal worksp
 | Keep chats open in tabs, preserve drafts and scroll positions, or compare up to four panes in a group. | Use ChatGPT and Claude projects, Gemini notebooks, or Grok workspaces with provider-supported instructions and sources. | Open saved conversations immediately while history refreshes in the background. |
 | Select models and effort per account; edit, retry or branch replies when the provider supports it. | Search and sort projects and chats, with filters for provider accounts. | Keep conversation history and resource metadata in a local SQLite archive. |
 
-| Files and downloads | Keyboard and extensions | Your language |
+| Files and downloads | Keyboard controls | Your language |
 | --- | --- | --- |
-| Download generated files from replies and track progress in the built-in download manager. | Use the command palette, configurable shortcuts, mouse controls and local extensions. | Choose the English, Turkish or Russian interface. |
+| Download generated files from replies and track progress in the built-in download manager. | Use the command palette, configurable shortcuts and mouse controls. | Choose the English, Turkish or Russian interface. |
 
 > **v1.5.5-beta** adds Grok as a fourth web-chat provider, with account-specific model discovery, streaming replies, web-search citations, and support for workspaces and projects. Provider clients now come from a pinned PyPI package. The release also improves retries, history sync, project actions, tab rendering, downloads, and shutdown. The installed command uses platform-standard user directories; repository launchers default to portable project-local storage.
 
@@ -170,7 +169,7 @@ Generated files appear inside the assistant reply as clickable file cards with t
 
 Files download in the background to `downloads/` when using a repository launcher, or to your Downloads folder with the installed command. Change the folder in **Settings → General → Download folder**. Two transfers can run at once; existing files are preserved, and ordinary web links open in your browser. Protected downloads use the owning provider and account without sending credentials to other sites.
 
-Open **Downloads** between Help and Settings, use `/downloads`, or press **Alt+J** to view progress and source chats. Search, filter and sort the list; **Sync** checks file presence every ten seconds. **Delete file** keeps its history entry, while **Remove entry** leaves the file on disk. The archive extension keeps download history across restarts; without it, history lasts for the current session. Interrupted transfers are marked **Interrupted**. Downloads default to 512 MiB; you can change the limit or allow local-network downloads in settings.
+Open **Downloads** between Help and Settings, use `/downloads`, or press **Alt+J** to view progress and source chats. Search, filter and sort the list; **Sync** checks file presence every ten seconds. **Delete file** keeps its history entry, while **Remove entry** leaves the file on disk. The built-in archive keeps download history across restarts. Interrupted transfers are marked **Interrupted**. Downloads default to 512 MiB; you can change the limit or allow local-network downloads in settings.
 
 ### Keyboard, selection and background replies
 
@@ -191,7 +190,7 @@ Closing a conversation tab keeps its running response in the background. In the 
 | Esc, then S | Switch to another saved prompt when one is available |
 | F5 / F12 | Settings / accounts |
 
-Shortcut changes take effect immediately throughout the interface. Every binding can be edited under **Settings → Keyboard** or in the local settings file. The command palette exposes the same actions, including those provided by extensions.
+Shortcut changes take effect immediately throughout the interface. Every binding can be edited under **Settings → Keyboard** or in the local settings file. The command palette exposes the same actions.
 
 Settings is a regular workspace tab: switch back to a conversation with Alt+Left/Right, reopen the same Settings tab with F5, or close it with Ctrl+W.
 
@@ -220,7 +219,7 @@ Attachments are limited locally to **20 MiB** per file; providers may have stric
 
 ### Settings and privacy
 
-The settings file is created in your per-user configuration directory and is outside the repository. Defaults are defined in `src/settings.py`. Choose a language under **Settings → General → Language** (`en`, `tr`, `ru`), enable providers under **Providers**, and manage feature packages under **Extensions**. At least one provider must remain enabled.
+The settings file is created in your per-user configuration directory and is outside the repository. Defaults are defined in `src/settings.py`. Choose a language under **Settings → General → Language** (`en`, `tr`, `ru`) and enable providers under **Providers**. At least one provider must remain enabled.
 
 Set an environment variable below to override only that path. `SIOPECHAT_DOWNLOADS_DIR` takes precedence over the Download folder setting; without it, the setting can select another folder. Keep configuration and account data private; do not attach them to bug reports.
 
@@ -236,7 +235,7 @@ Set an environment variable below to override only that path. `SIOPECHAT_DOWNLOA
 
 ### Archive and file retention
 
-The archive extension stores conversations, ordered messages, published thinking, projects/notebooks, memberships and resource metadata in `archive.sqlite3` inside the configured data directory. Uploaded files are never copied into the archive: only provider identifiers and available file metadata are retained, never the local path or file contents. Upgrading from an older archive removes stored upload copies named by their content hash while preserving conversation and resource metadata. Downloaded files remain in the configured downloads folder; the archive keeps only their download-history metadata. Remote images and sources are retained as references, and not every remote file is downloaded automatically.
+The local archive stores conversations, ordered messages, published thinking, projects/notebooks, memberships and resource metadata in `archive.sqlite3` inside the configured data directory. Uploaded files are never copied into the archive: only provider identifiers and available file metadata are retained, never the local path or file contents. Upgrading from an older archive removes stored upload copies named by their content hash while preserving conversation and resource metadata. Downloaded files remain in the configured downloads folder; the archive keeps only their download-history metadata. Remote images and sources are retained as references, and not every remote file is downloaded automatically.
 
 **Upgrade note:** The schema v5 migration permanently removes legacy upload copies. Before opening an older archive with this version, back up `archive.sqlite3` and `files/` from the configured data directory if you need those offline copies or may return to an older SiopeChat version.
 
@@ -244,7 +243,7 @@ The archive extension stores conversations, ordered messages, published thinking
 
 Saved chats open from the archive first, then refresh from the provider in the background. You can keep typing and sending while history loads. Older messages merge with newer local turns without overwriting an active reply. Cached sidebar and project pages remain usable during refresh; a failed refresh keeps the last good data.
 
-Large history preparation runs outside the UI event loop, and the sidebar draws only visible rows. Archive queues and render caches are bounded. Disabling the archive keeps its files and leaves direct provider operations available. Disabling the layout extension removes split controls without disabling providers.
+Large history preparation runs outside the UI event loop, and the sidebar draws only visible rows. Archive queues and render caches are bounded.
 
 <details>
 <summary>History paging and memory budgets</summary>
@@ -260,43 +259,6 @@ Closing a tab releases its transcript and render references; a running backgroun
 After an ambiguous remote write failure, synchronize before resending. SiopeChat does not automatically replay an operation that may already have reached the provider.
 
 
-
-## Extensions
-
-Add `extensions/my_feature/plugin.py`. Export an `ExtensionSpec` whose activation function registers contributions through the shared API:
-
-```python
-from extension import Action, ExtensionSpec, SettingField
-
-
-def activate(context):
-    context.settings(SettingField("enabled", bool, True, "my_feature.enabled"))
-    context.translations("en", {"enabled": "Enable my feature"})
-    context.translations("tr", {"enabled": "Özelliğimi etkinleştir"})
-    context.translations("ru", {"enabled": "Включить расширение"})
-    context.action(Action("my_feature.hello", "Hello", lambda: "Hello"))
-
-
-SPEC = ExtensionSpec("my_feature", activate, api_version=3)
-```
-
-Each extension must include a `manifest.json` beside `plugin.py`. It declares metadata without executing Python:
-
-```json
-{"id": "my_feature", "api_version": 3, "requires": []}
-```
-
-Keep `requires` consistent with `ExtensionSpec`. Disabled extensions are not imported; enabling one loads its Python module. The manifest and `ExtensionSpec` must declare the same API version.
-
-Register extension-owned services with `context.provide()` and release other resources with `context.on_dispose()`.
-
-Restart to discover the package, then enable or disable it in **Settings → Extensions**. Settings live under `extensions.my_feature`; contributed language bundles are namespaced and merged with the application catalog. Declare dependencies with `requires=("archive",)` when needed. Actions can declare input fields for the command palette; extensions can also contribute services and views.
-
-For archive access, use `context.api.get("archive")`. Its `conversations`, `messages` and `resources` methods provide paginated records scoped by provider/account. The replaceable repository contract and SQLite adapter live in `extensions/archive/repository.py`; provider normalization lives in `adapters.py`.
-
-Extensions execute local code. Load only packages you trust. Keep network work out of render functions and use the shared lifecycle for cleanup.
-
-Archive lists use a stable order by remote ID; the UI applies its own sorting. `siopechat action archive.inspect` reports missing references and unreferenced content files. `siopechat action archive.collect` previews cleanup; pass `'{"dry_run": false}'` as the action arguments only when you want to remove the candidates. Collection preserves shared references, unknown files and files saved within the last hour. A database with a newer schema version is rejected before any changes are made to it.
 
 ## Development
 
@@ -325,16 +287,16 @@ Lint, formatting and distribution builds are separate checks. SiopeChat's GitHub
 | Location | Responsibility |
 | --- | --- |
 | `src/bootstrap.py`, `src/cli.py` | Application setup and command-line entry points |
-| `src/accounts/`, `src/tasks.py`, `src/runtime.py` | Account routing, task ownership and service lifecycle |
+| `src/accounts/`, `src/runtime.py` | Account routing and service lifecycle |
 | PyPI `webai-provider` | Independent web-session clients, transports and provider contracts |
 | `src/tui/` | Terminal views, input handling and rendering |
-| `src/extension.py`, `src/tui/api.py` | Extension lifecycle and public TUI extension API |
-| `extensions/archive/`, `extensions/layout/` | Local history and saved workspace layouts |
+| `src/actions.py`, `src/tui/actions.py` | Built-in actions and command-palette integration |
+| `src/archive/`, `src/tui/workspaces/` | Local conversation history and workspace layouts |
 | `tests/` | SiopeChat application regressions |
 
-Keep protocol details inside the owning provider. Provider code must not import the application database, settings, extensions or TUI. Extensions register services through `extension.py` and use `tui.api` for terminal contributions. Keep network requests and expensive Markdown work out of render callbacks.
+Keep protocol details inside the owning provider. Keep network requests and expensive Markdown work out of render callbacks.
 
-Message sends are serialized per account through `TaskService`. Cancellation releases the account only after transport cleanup and persistence of any accepted response are complete. Closing a tab leaves its response running while the application remains open. Changes must preserve provider/account identity, message-parent links, branch behavior and cancellation; ambiguous remote writes must not be sent again automatically.
+SiopeChat serializes sends per account. Cancellation releases the account only after transport cleanup and persistence of any accepted response are complete. Closing a tab leaves its response running while the application remains open. Changes must preserve provider/account identity, message-parent links, branch behavior and cancellation; ambiguous remote writes must not be sent again automatically.
 
 ### Use the provider library independently
 
