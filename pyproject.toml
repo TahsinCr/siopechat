@@ -28,7 +28,7 @@ dependencies = [
     "webai-provider==2.0.0",
     "flowevent>=2.0.0,<3",
     "prompt-toolkit>=3.0,<4",
-    "rich>=13,<15",
+    "rich>=13,<16",
 ]
 
 [project.scripts]
