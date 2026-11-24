@@ -6,86 +6,27 @@
 
 # SiopeChat
 
-### ChatGPT, Gemini, Claude and Grok web chats — together in one terminal.
+**ChatGPT, Gemini, Claude and Grok web chats in one terminal.**
 
-Bring your chats, projects and model comparisons together in one terminal workspace. Move between tabs, compare replies side by side, and keep working without leaving the terminal.
+Keep your chats and projects in one place, or put two replies side by side when you want to compare them.
 
-> SiopeChat is an independent, unofficial client for ChatGPT, Gemini, Claude and Grok **web chats**. It uses your browser session, so no API key is required. Your plan's model access and usage limits still apply. It does not connect to official developer APIs, Codex or Claude Code. Changes to provider websites can affect compatibility.
+> SiopeChat is an independent client for web chats. It uses your existing browser session and requires no API key. It doesn’t connect to official developer APIs or run coding agents such as Codex, Claude Code or Google Antigravity CLI. Your account’s model access and usage limits still apply.
 
-![SiopeChat TUI screenshot](assets/siopechat.png)
+[Install](#install) · [Connect an account](#connect-an-account) · [Compare providers](#provider-capabilities) · [Performance](#performance) · [Changelog](CHANGELOG.md)
 
-*SiopeChat's terminal interface with sample conversations.*
+![SiopeChat terminal interface](assets/siopechat.png)
 
-<p align="center">
-  <a href="#install-and-sign-in"><strong>Install</strong></a> &nbsp; | &nbsp;
-  <a href="#everyday-use"><strong>Everyday use</strong></a> &nbsp; | &nbsp;
-  <a href="#development"><strong>Development</strong></a>
-</p>
+*SiopeChat’s terminal interface with sample conversations.*
 
-## What you can do
+## Install
 
-| Conversations | Projects and context | Local-first history |
-| --- | --- | --- |
-| Keep chats open in tabs, preserve drafts and scroll positions, or compare up to four panes in a group. | Use ChatGPT and Claude projects, Gemini notebooks, or Grok workspaces with provider-supported instructions and sources. | Open saved conversations immediately while history refreshes in the background. |
-| Select models and effort per account; edit, retry or branch replies when the provider supports it. | Search and sort projects and chats, with filters for provider accounts. | Keep conversation history and resource metadata in a local SQLite archive. |
-
-| Files and downloads | Keyboard controls | Your language |
-| --- | --- | --- |
-| Download generated files from replies and track progress in the built-in download manager. | Use the command palette, configurable shortcuts and mouse controls. | Choose the English, Turkish or Russian interface. |
-
-> **v1.5.5-beta** adds Grok as a fourth web-chat provider, with account-specific model discovery, streaming replies, web-search citations, and support for workspaces and projects. Provider clients now come from a pinned PyPI package. The release also improves retries, history sync, project actions, tab rendering, downloads, and shutdown. The installed command uses platform-standard user directories; repository launchers default to portable project-local storage.
-
-## Smoother Chats
-
-| Where it helps | What changed |
-| --- | --- |
-| **ChatGPT, Gemini, Claude and Grok** | Saved chats open from the local archive while provider history refreshes in the background. Valid model catalogs are reused, and large histories are prepared off the UI event loop. When a provider signals that text generation is complete, SiopeChat marks the reply complete and stops the timer; connection cleanup can continue in the background. You can queue a follow-up while the current send is finishing. |
-| **ChatGPT** | Reuse eligible conversation snapshots and messages captured from completed streams to avoid duplicate history requests. Prepare Sentinel headers before the next send. In the recorded offline benchmark, native Python Sentinel initial-proof generation had a **0.329 ms median**: about **10.7× faster** than a reused QuickJS-NG context and **12.6× faster** than an already-running Node/V8 process that creates a fresh VM for each sample. |
-| **Gemini** | Route Flash requests correctly, preserve the provider's default thinking policy, reuse valid continuation IDs, and avoid repeating the activity RPC within five minutes. Earlier limited live trials recorded first-text latency dropping from **65–110 s to 1.89–3.80 s**. These are reported ranges, not the results of a controlled benchmark or a guarantee for every model and account. |
-
-**About these figures:** ChatGPT timings measure local proof generation, not a full reply. Gemini figures are limited live ranges without paired samples or p95; shared UI improvements have no measured multiplier. Results vary with network, model and server load. See the [changelog](CHANGELOG.md). Python package version: `1.5.5b0`.
-
-## Install and sign in
-
-### Requirements
-
-Install Git and use **Python 3.10+** with a Unicode-capable terminal; true color and mouse support are recommended. The installers check your Python version. You can import an existing sign-in from a supported browser profile as described below. Routine chat operations use HTTP, so the browser does not need to stay open.
-
-The installed `siopechat` command uses per-user configuration, data, state, cache and runtime directories supplied by the operating system, and saves downloaded files in your Downloads folder. Linux follows XDG directories; macOS uses Application Support and Caches; Windows uses AppData. Repository launchers (`siopechat.sh`, `siopechat.bat` and `siopechat.ps1`) set `SIOPECHAT_PORTABLE=1` by default and keep files beside the checkout in `config.json`, `data/`, `downloads/`, `.cache/` and `.runtime/`. Set `SIOPECHAT_PORTABLE=0` before launching to use the platform directories. Existing project-local files are left in place. Each location can also be overridden independently with the environment variables below; relative override paths resolve from the project root.
-
-ChatGPT's supported Sentinel checks run in Python using the bundled `SentinelSpec` profile. **No Node.js or JavaScript engine is required.**
-
-<details>
-<summary>Performance figures: what was measured?</summary>
-
-The recorded offline benchmark used 60 samples on Linux x86_64 with Python 3.14.8 and Node.js 26.12.1. Both JavaScript implementations used the same 33,820-byte SDK. Python used the corresponding Sentinel profile instead of executing the SDK.
-
-| Initial-proof implementation | Median | p95 | Median time ÷ Python time |
-| --- | --- | --- | --- |
-| Pure Python, reused runtime | 0.329 ms | 1.925 ms | 1× |
-| QuickJS-NG, reused context | 3.526 ms | 11.220 ms | 10.7× |
-| QuickJS-NG, fresh context | 8.831 ms | 17.285 ms | 26.8× |
-| Node/V8, running process, fresh VM | 4.140 ms | 6.742 ms | 12.6× |
-| Node/V8, new process per operation | 57.944 ms | 62.409 ms | 176.1× |
-
-The last row includes process startup; launching an otherwise idle Node process alone measured 32.004 ms median / 32.448 ms p95. That is not equivalent to reusing a process. In this fixture, Node/V8 beat QuickJS-NG with fresh contexts, while Python had the lowest median for proof generation. These figures exclude network requests, model generation and UI rendering. They are historical measurements, not a new benchmark of this revision.
-
-</details>
-
-### Install and launch
-
-Clone the repository and enter its directory:
-
-```sh
-git clone https://github.com/TahsinCr/siopechat.git
-cd siopechat
-```
-
-Then install and launch SiopeChat with the commands for your operating system. Linux and macOS use the same pair. Install once; use the launcher for later starts.
+You’ll need Git, Python 3.10 or later, and a terminal with Unicode support.
 
 **Linux / macOS**
 
 ```sh
+git clone https://github.com/TahsinCr/siopechat.git
+cd siopechat
 ./install.sh
 ./siopechat.sh
 ```
@@ -93,240 +34,72 @@ Then install and launch SiopeChat with the commands for your operating system. L
 **Windows (PowerShell)**
 
 ```powershell
+git clone https://github.com/TahsinCr/siopechat.git
+cd siopechat
 .\install.ps1
 .\siopechat.ps1
 ```
 
-The installer checks for Python 3.10+, reuses a compatible virtual environment or creates `python/`, and installs the dependencies.
+Run the installer once, then use the launcher for everyday starts. To update a Git checkout, run `git pull --ff-only` and rerun the installer for your platform.
 
-<details>
-<summary>Virtual environments and dependency details</summary>
+## Connect an account
 
-Installers and launchers search for environments in this order: `python/`, `.venv/`, `venv/`, `env/`. Set `SIOPECHAT_VENV` to use a different directory; relative paths are resolved from the checkout. Installers create an environment only when none is available and leave an existing invalid directory untouched. Run the installer again after updating the checkout to install changed dependencies. Launchers check the required runtimes and start the selected environment directly; they do not install packages or access the network at launch.
+1. Sign in to the provider in the profile you last used in your default browser.
+2. Open **Settings → Accounts** in SiopeChat and add or select the matching account.
+3. Choose **Verify from profile** to import and verify the session. When it expires, sign in again in the browser and repeat this step.
 
-The installer uses the dependency ranges in `pyproject.toml` with pip, so uv is not required for end-user installation. `uv.lock` remains the exact dependency resolution used by CI and development workflows.
+## Features
 
-</details>
+- **Tabs and split panes.** Open several conversations without losing drafts or scroll positions. Compare up to four chats side by side and save the layout as a workspace.
+- **Accounts and models.** Switch between accounts and choose from the models available to each one. Set reasoning effort on models that offer it.
+- **Streaming replies.** Read replies as they arrive and switch tabs while a response is running. Edit messages, retry replies or branch a chat where the provider supports it.
+- **Projects and notebooks.** Work with ChatGPT and Claude projects, Gemini notebooks or Grok workspaces. Manage instructions and sources, and move chats where supported.
+- **History and downloads.** Reopen archived chats, export conversations as plain text or JSON, and keep track of generated files in the download manager.
 
-### Update SiopeChat
+## Provider capabilities
 
-SiopeChat installs the pinned `webai-provider==2.0.0` package from PyPI. No
-submodule initialization or synchronization is needed. After pulling an
-application update, rerun the installer if the dependency lock changed:
+| In SiopeChat | ChatGPT | Gemini | Claude | Grok |
+| --- | --- | --- | --- | --- |
+| Streaming, chat history and model selection | Yes | Yes | Yes | Yes |
+| Reasoning effort selection | Supported models | Supported models | Supported models | — |
+| Edit messages and retry replies | Yes | Yes | Yes | Yes |
+| Branch a chat | Yes | Yes | — | — |
+| Temporary or incognito chats | Yes | Yes | Yes, outside projects | Yes, outside workspaces |
+| Projects | Projects | Gemini notebooks | Projects | Workspaces |
+| Project instructions and text or file sources | Yes | Yes | Yes | Yes |
+| Move an existing chat into a project | Yes | — | Yes | Yes |
+| Chat attachments | Yes | Yes | Yes | Yes |
 
-```sh
-git pull --ff-only
-```
+The table describes SiopeChat’s integration. Model access, editable messages and attachment types depend on the provider, account and conversation. A dash marks an option SiopeChat does not offer for that provider.
 
-The application controls the provider version through its dependency pin and
-lockfile. Use a SiopeChat update to move to a newer provider release, then run
-`./install.sh` or `./install.ps1` to install the updated dependencies.
+## Performance
 
-### Connect an account
+When you open a saved chat, SiopeChat shows the local copy while it checks for newer messages in the background. As a reply arrives, the terminal draws the first visible text right away and batches later updates to keep the interface responsive.
 
-New installations start with no accounts. Under **Settings → Accounts**, add or select an account, then choose **Verify from profile**. First, sign in to the provider in the most recently used profile of your default browser. SiopeChat imports and verifies that session without opening a browser. Chat, history, model and project operations then use HTTP. If the session expires, sign in again in your usual browser and verify the session again.
+Under the hood, [WebAI Provider 2.0](https://pypi.org/project/webai-provider/2.0.0/) manages web sessions and streams replies. It reuses connections, valid model catalogs and conversation context where available. SiopeChat can warm up the next send while you’re writing. This saves work in the client. The time a model takes to start replying still depends on the provider and the network.
 
-Buttons for adding, editing and removing accounts sit beneath the list. Editing changes only the selected account’s display name; its sign-in and history remain intact. Profile verification and logout share a separate row below the session details. Labels shorten in narrow terminals.
+## Everyday controls
 
-<details>
-<summary>Supported browser profiles and troubleshooting</summary>
-
-**Verify from profile** reads the selected provider's session from the most recently used profile in your default browser. It does not launch the browser or require debugging flags. Only that provider's authentication cookies are retained, and SiopeChat verifies the new session before replacing a saved one.
-
-Chrome, Chromium, Brave/Brave Origin, Edge and Vivaldi use the Chromium profile reader. Firefox and Zen use a read-only Gecko reader based on `profiles.ini` and `installs.ini`. Safari uses a separate WebKit cookie reader on macOS. Cookie decryption uses browser-specific entries in the operating system's keyring, which may ask for your permission.
-
-Locked databases, custom or sandboxed profile locations, and unsupported encryption can prevent import, including some Chromium configurations on Windows. Errors distinguish missing dependencies, file permissions, database access, keyring access and decryption. A failed import preserves your saved session. Update dependencies in the environment that launches SiopeChat.
-
-The reader supports session cookies from the current Firefox/Zen recovery snapshot; separate containers and old snapshots are not merged. A locked cookie database is retried from a private temporary copy with its WAL/journal files. Your browser profile is not modified.
-
-Profile selection for Firefox and Zen follows `profiles.ini` and `installs.ini`; ambiguous profiles are reported rather than merged. Linux discovery includes Firefox Snap/Flatpak locations and Zen’s current XDG, legacy and Flatpak locations. Portable or custom profile roots are not guessed; set the browser as the system default and use its standard profile location.
-
-</details>
-
-### Multiple accounts
-
-You can add several accounts. SiopeChat uses one selected account per provider for sending; viewing another account’s history does not change that selection. To verify a different account, select its signed-in profile in your default browser, then choose **Verify from profile** for the matching SiopeChat account.
-
-Click an account row to select it; the arrow shows which account the controls apply to. **Remove account** (Alt+Backspace on the Accounts screen) asks for confirmation and removes the local account record, saved sign-in and model preferences. The provider-side account and archived conversations remain. Tabs belonging to the removed account close, obsolete filters are cleared, and another enabled account is selected. Add a replacement before removing the last enabled account.
-
-## Everyday use
-
-### Start and navigate conversations
-
-Write in the composer and press **Enter** to send. **Shift+Enter** inserts a newline on terminals that support extended keyboard reporting, which SiopeChat enables while running. If your terminal reports Enter and Shift+Enter identically, use **Alt+Enter** or **Ctrl+J**. The composer grows to its configured height, then scrolls internally. Ctrl+A selects text, Ctrl+C copies a selection, and Ctrl+V pastes. Click a message to select and copy its contents.
-
-A new chat offers models from the selected accounts of enabled providers. Its status shows the total number of models and how many provider catalogs have loaded; the remaining catalogs load in the background. An existing chat stays with its original account. Model and effort choices come from provider catalogs; unavailable or upgrade-only entries are filtered when that information is available. The server can still reject a listed model. Provider-published thinking summaries appear separately from answers; private reasoning is not available.
-
-Click a Markdown web link in a message to open it in your default browser. Clicking elsewhere in the message still selects it for copying.
-
-### Message actions and generated files
-
-A compact toolbar appears beneath each message. Copy works locally. Supported user messages can be edited and sent again, and replies can be retried when the message and provider support it. ChatGPT and Gemini also support branching into a separate conversation. Provider-published sources stay with the reply they belong to. Available model and effort details appear on the right, before the saved-version controls. Editing or retrying updates the active history after provider confirmation. Conversation deletion and split-view controls sit beside the upper synchronization button.
-
-Generated files appear inside the assistant reply as clickable file cards with their available name, type and size. Clicking a card starts a background transfer in the download manager; file references and metadata remain in the archived conversation. Downloads use the owning provider and account to resolve protected resources. Provider retention and file availability still apply.
-
-### Download manager
-
-Files download in the background to `downloads/` when using a repository launcher, or to your Downloads folder with the installed command. Change the folder in **Settings → General → Download folder**. Two transfers can run at once; existing files are preserved, and ordinary web links open in your browser. Protected downloads use the owning provider and account without sending credentials to other sites.
-
-Open **Downloads** between Help and Settings, use `/downloads`, or press **Alt+J** to view progress and source chats. Search, filter and sort the list; **Sync** checks file presence every ten seconds. **Delete file** keeps its history entry, while **Remove entry** leaves the file on disk. The built-in archive keeps download history across restarts. Interrupted transfers are marked **Interrupted**. Downloads default to 512 MiB; you can change the limit or allow local-network downloads in settings.
-
-### Keyboard, selection and background replies
-
-Drag across a response or thinking summary to select part of its rendered text, then press Ctrl+C. Click a message and press Ctrl+A to select the whole message.
-
-Closing a conversation tab keeps its running response in the background. In the sidebar, a green **●** marks a running conversation and **✓** marks a completed background reply. Select it to reopen the same conversation. You can open other conversations and synchronize history while a response is running. This continues only while SiopeChat is running.
-
-| Default shortcut | Action |
+| Shortcut | Action |
 | --- | --- |
-| F1 | Open or close help |
-| Ctrl+P | Command palette |
-| Ctrl+T / Ctrl+W | New tab / close tab |
-| Alt+Left / Alt+Right | Previous / next tab |
-| Alt+[ / Alt+] | Previous / next pane in the split group |
-| Alt+W | Close all idle tabs |
-| F7 | Toggle sidebar |
-| F8 / F10 | Synchronize conversation / library |
-| Esc, then S | Switch to another saved prompt when one is available |
-| F5 / F12 | Settings / accounts |
+| **Ctrl+P** | Open the command palette |
+| **Ctrl+T / Ctrl+W** | Open or close a tab |
+| **Alt+Left / Alt+Right** | Switch tabs |
+| **Alt+J** | Open downloads |
+| **F5 / F12** | Open Settings or Accounts |
+| **F1** | Open keyboard help |
 
-Shortcut changes take effect immediately throughout the interface. Every binding can be edited under **Settings → Keyboard** or in the local settings file. The command palette exposes the same actions.
+Choose English, Turkish or Russian under **Settings → General → Language**. Customize bindings under **Settings → Keyboard**.
 
-Settings is a regular workspace tab: switch back to a conversation with Alt+Left/Right, reopen the same Settings tab with F5, or close it with Ctrl+W.
+## Local data
 
-### Projects and split views
+SiopeChat keeps history and resource metadata in a local SQLite archive. Repository launchers default to portable storage beside the checkout. Set `SIOPECHAT_PORTABLE=0` before launching to use your operating system’s user directories instead. You can choose a download folder in Settings. Temporary chats are excluded from the local archive where supported, and the provider’s retention rules still apply.
 
-Use `/project` to assign a project to a new chat or move a supported chat. Choose **Unassigned** to remove it. Create a project with `/project-new`; edit its name, instructions and sources in project details (`Ctrl+S` saves). You can also start a project chat there by choosing its account's model and effort.
+Before upgrading from an older version, back up `archive.sqlite3` and the `files/` directory if it exists.
 
-Choose **Split**, `/split` or `/split-down`, then open another chat from the sidebar. Click a pane to activate it; `/unsplit` returns to one pane. `layout.create` saves the open chats, split direction and active pane. Open a saved workspace to restore it. Only chat references are saved, not temporary chats, drafts or running requests.
+## Project links
 
-Delete a chat with **Delete** beside the composer; use `/project-delete` or project details to delete a project. SiopeChat asks for confirmation and removes local records after the provider confirms. Provider rules determine what happens to chats in a deleted project. Closing a tab does not delete its chat.
-
-### Provider differences
-
-| Provider | Project support | Current limits |
-| --- | --- | --- |
-| ChatGPT | Projects, instructions, sources and supported chat moves | Models, effort, temporary mode and project options depend on the account. |
-| Gemini | Gemini notebooks shown as a distinct project type; notebook-context chats, instructions and text sources | Existing chats cannot be moved into notebooks. File/URL source import is not exposed. Thinking choices and defaults follow the account's native web model policy. |
-| Claude | Projects, instructions, text/file sources and supported membership changes | Incognito chats are supported outside projects; privacy/memory overrides beyond private/default are not exposed. |
-| Grok | Workspaces, instructions, file sources up to 3 MiB, chat attachments up to 3 MiB, user message editing and conversation membership; account-available models, retry, published thinking summaries and web-search sources | Shared effort controls and native branches are not exposed. |
-
-Gemini notebooks use the Gemini account session; a separate NotebookLM login is not required. Provider project types and metadata remain distinct, and available features vary by provider and account.
-
-Attachments are limited locally to **20 MiB** per file; providers may have stricter limits. Temporary mode is offered only when supported and does not save conversation snapshots locally. Provider retention rules still apply.
-
-## Configuration and local data
-
-### Settings and privacy
-
-The settings file is created in your per-user configuration directory and is outside the repository. Defaults are defined in `src/settings.py`. Choose a language under **Settings → General → Language** (`en`, `tr`, `ru`) and enable providers under **Providers**. At least one provider must remain enabled.
-
-Set an environment variable below to override only that path. `SIOPECHAT_DOWNLOADS_DIR` takes precedence over the Download folder setting; without it, the setting can select another folder. Keep configuration and account data private; do not attach them to bug reports.
-
-| Variable | Default | Contents |
-| --- | --- | --- |
-| `SIOPECHAT_PORTABLE` | `1` in repository launchers; unset for installed command | Set to `0` to use platform directories from a repository launcher |
-| `SIOPECHAT_CONFIG_PATH` | Platform user config directory | Application settings |
-| `SIOPECHAT_DATA_DIR` | Platform user data directory | Account records and archives |
-| `SIOPECHAT_STATE_DIR` | Platform user state directory | Open tabs, drafts and selected conversation |
-| `SIOPECHAT_DOWNLOADS_DIR` | User Downloads folder | Downloaded files |
-| `SIOPECHAT_CACHE_DIR` | Platform user cache directory | Reusable local cache |
-| `SIOPECHAT_RUNTIME_DIR` | Platform user runtime directory | Local sockets and temporary session files |
-
-### Archive and file retention
-
-The local archive stores conversations, ordered messages, published thinking, projects/notebooks, memberships and resource metadata in `archive.sqlite3` inside the configured data directory. Uploaded files are never copied into the archive: only provider identifiers and available file metadata are retained, never the local path or file contents. Upgrading from an older archive removes stored upload copies named by their content hash while preserving conversation and resource metadata. Downloaded files remain in the configured downloads folder; the archive keeps only their download-history metadata. Remote images and sources are retained as references, and not every remote file is downloaded automatically.
-
-**Upgrade note:** The schema v5 migration permanently removes legacy upload copies. Before opening an older archive with this version, back up `archive.sqlite3` and `files/` from the configured data directory if you need those offline copies or may return to an older SiopeChat version.
-
-### Loading, memory and synchronization
-
-Saved chats open from the archive first, then refresh from the provider in the background. You can keep typing and sending while history loads. Older messages merge with newer local turns without overwriting an active reply. Cached sidebar and project pages remain usable during refresh; a failed refresh keeps the last good data.
-
-Large history preparation runs outside the UI event loop, and the sidebar draws only visible rows. Archive queues and render caches are bounded.
-
-<details>
-<summary>History paging and memory budgets</summary>
-
-Each initial SQLite read returns up to 80 visible messages within a serialized-record budget of 262,144 characters. Scrolling adds older batches without dropping loaded messages; stable message IDs keep your position anchored. A single message is never truncated to fit the batch budget.
-
-The renderer prepares the viewport first, then two screens above and below it. Each view has a 1 MiB LRU row cache and a separate 256 KiB ANSI cache that compresses large entries. Inactive main-tab layouts share a 4 MiB eviction budget. Text is shared with its layout where possible, and accepted turns update only a bounded tail of the SQL history.
-
-Closing a tab releases its transcript and render references; a running background response retains its current turn until persistence finishes. Transcript data grows as you load more history, while render caches remain bounded. Python may retain freed allocations, so process RSS does not necessarily fall immediately.
-
-</details>
-
-After an ambiguous remote write failure, synchronize before resending. SiopeChat does not automatically replay an operation that may already have reached the provider.
-
-
-
-## Development
-
-### Set up and validate
-
-Use Python 3.10+ for application development. With [uv](https://docs.astral.sh/uv/) installed, run these commands from the repository root. Select the project's existing `python/` environment so development and the launchers use the same dependencies:
-
-```sh
-# Linux / macOS
-UV_PROJECT_ENVIRONMENT=python uv sync --locked --all-groups
-python/bin/python run_tests.py
-python/bin/python -m ruff check .
-python/bin/python -m ruff format --check .
-python/bin/python -m build
-python/bin/python -m twine check dist/*
-```
-
-In Windows PowerShell, set `$env:UV_PROJECT_ENVIRONMENT = "python"`, run `uv sync --locked --all-groups`, and replace `python/bin/python` with `./python/Scripts/python.exe` in the commands above.
-
-`run_tests.py` runs the application suite. Tests use fakes and fixtures; personal account sessions are not required. The runner prefers an active virtual environment, then project environments (`python/` before `.venv/`), then uv, and finally the interpreter that invoked it. Run it through the intended interpreter explicitly to avoid ambiguity. Provider tests run in the independent provider repository.
-
-Lint, formatting and distribution builds are separate checks. SiopeChat's GitHub Actions tests the application on Linux, Windows and macOS with Python 3.10/3.14; the provider repository runs its own package checks. Offline success does not prove live-provider compatibility or real-terminal behavior.
-
-### Find the right layer
-
-| Location | Responsibility |
-| --- | --- |
-| `src/bootstrap.py`, `src/cli.py` | Application setup and command-line entry points |
-| `src/accounts/`, `src/runtime.py` | Account routing and service lifecycle |
-| PyPI `webai-provider` | Independent web-session clients, transports and provider contracts |
-| `src/tui/` | Terminal views, input handling and rendering |
-| `src/actions.py`, `src/tui/actions.py` | Built-in actions and command-palette integration |
-| `src/archive/`, `src/tui/workspaces/` | Local conversation history and workspace layouts |
-| `tests/` | SiopeChat application regressions |
-
-Keep protocol details inside the owning provider. Keep network requests and expensive Markdown work out of render callbacks.
-
-SiopeChat serializes sends per account. Cancellation releases the account only after transport cleanup and persistence of any accepted response are complete. Closing a tab leaves its response running while the application remains open. Changes must preserve provider/account identity, message-parent links, branch behavior and cancellation; ambiguous remote writes must not be sent again automatically.
-
-### Use the provider library independently
-
-The application uses the `webaiprovider` import package. `src/accounts/` connects its account, chat, model, and project APIs to SiopeChat. [WebAI Provider documentation](https://github.com/TahsinCr/webai-provider/blob/v2.0/README.md).
-
-Transports, browser-profile discovery and local CDP access are implemented in Python. Gemini uses the bundled HTTPS transport without a separate Gemini SDK. ChatGPT handles supported Sentinel challenges with its Python runtime and bundled profile. Changed or unsupported server requirements need explicit compatibility checks; offline fixtures do not cover every live challenge.
-
-### Understand local storage
-
-| File | Contents |
-| --- | --- |
-| User config directory / `config.json` | Preferences, account labels and selection |
-| User data directory / `accounts.sqlite3` | Account sessions, model catalogs, verification records and fallback conversation cache |
-| User state directory / `session.json` | Open tabs, drafts and selected conversation |
-| User data directory / `archive.sqlite3` | Archived history, resource metadata, download records and local reply versions |
-| User data directory / `workspaces.sqlite3` | Saved chat layouts |
-| User cache directory | Reusable local cache |
-| User runtime directory | Local daemon socket and short-lived session-validation files |
-
-Paths follow the host platform's per-user conventions by default. Set `SIOPECHAT_PORTABLE=1` to keep them in the checkout; relative environment-variable values resolve from the project directory, while absolute values are used as given. Provider-specific fields remain JSON in the corresponding database. The provider library accepts credential storage from its caller and does not depend on these SQLite schemas. Account storage is not encrypted; on Unix, file permissions restrict access to its owner. Keep migrations transactional and preserve existing user data. See the upgrade warning above before opening an older archive.
-
-### Measure performance and report issues
-
-For ChatGPT send-stage diagnostics, enable `SIOPECHAT_SEND_TIMINGS=1` before launching. Compare the same account, model, effort, conversation state and network conditions. Distinguish connection setup, first provider text, first visible UI text and finalization; report sample counts, medians and p95. Never include sessions, prompts or token contents in diagnostic logs.
-
-When filing an issue, include the version, provider, operation, terminal, OS and sanitized error. Describe whether the problem occurred in offline tests or a live session. Release changes are recorded in the [changelog](CHANGELOG.md).
-
-## License
-
-Copyright © TahsinCr. Licensed under [GPL-3.0-only](LICENSE); see [COPYRIGHT](COPYRIGHT) for the project notice.
+[Release notes](CHANGELOG.md) · [GitHub issues](https://github.com/TahsinCr/siopechat/issues) · [WebAI Provider](https://github.com/TahsinCr/webai-provider/) · [GPL-3.0-only](LICENSE) · [Copyright](COPYRIGHT)
 
 [version-shield]: https://img.shields.io/badge/version-v1.5.6--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
