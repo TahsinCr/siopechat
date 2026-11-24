@@ -10,6 +10,7 @@ Python distributions use the corresponding PEP 440 version (`1.5.6b0` for `v1.5.
 
 ### Changed
 
+- Use the published [WebAI Provider 2.0.0](https://pypi.org/project/webai-provider/2.0.0/) package for ChatGPT, Claude, Gemini, and Grok.
 - Draw the first visible assistant text without waiting for the streaming redraw intervals and time the frame that actually contains the answer.
 - Reuse the displayed project details in the edit form and save only changed fields.
 - Verify project chats in small batches after confirmed project deletion while preserving chats that still exist or cannot be verified.

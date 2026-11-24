@@ -111,7 +111,7 @@ Son kullanıcı kurulumu `pyproject.toml` içindeki sürüm aralıklarını pip 
 
 ### SiopeChat'i güncelleme
 
-SiopeChat, PyPI'daki `webai-provider==1.2.0b0` sürümünü sabit bağımlılık olarak
+SiopeChat, PyPI'daki `webai-provider==2.0.0` sürümünü sabit bağımlılık olarak
 kurar. Submodule başlatmanız veya eşitlemeniz gerekmez. Uygulamayı güncelledikten
 sonra bağımlılık kilidi değiştiyse kurulum betiğini yeniden çalıştırın:
 
@@ -338,7 +338,7 @@ Gönderimler `TaskService` üzerinden her hesap için sıraya alınır. İptal d
 
 ### Sağlayıcı kütüphanesini bağımsız kullanma
 
-SiopeChat, PyPI'dan `webai-provider==1.2.0b0` paketini kurar ve Python'da `providers` adıyla içe aktarır; uygulama wheel'i artık bu paketin dosyalarını içermez. Kütüphaneyi bağımsız kullanmak için `python -m pip install webai-provider==1.2.0b0` komutunu çalıştırın. `ProviderClient` hesap adaptörlerini, akışları ve bağlantı temizliğini; `Backend` ise model, sohbet, proje, kaynak, dosya yükleme ve indirme çözümleme işlemlerini sunar. API örnekleri ve bağımsız testler için [sağlayıcı kılavuzuna](https://github.com/TahsinCr/webai-provider/blob/v1.2-beta/README-TR.md) bakın.
+Uygulama, kütüphaneyi `webaiprovider` adıyla içe aktarır. `src/accounts/`, hesap, sohbet, model ve proje API’lerini SiopeChat’e bağlar. [WebAI Provider belgeleri](https://github.com/TahsinCr/webai-provider/blob/v2.0/README-TR.md).
 
 Taşıma katmanları, tarayıcı profili keşfi ve yerel CDP erişimi Python ile uygulanmıştır. Gemini, ek bir Gemini SDK’sı gerektirmeden paketteki HTTPS taşıma katmanını kullanır. ChatGPT’nin desteklenen Sentinel kontrolleri Python çalışma zamanı ve paketteki profille yürütülür. Değişen veya desteklenmeyen sunucu gereksinimleri ayrıca doğrulanmalıdır; çevrimdışı test verileri canlı kontrollerin tümünü kapsamaz.
 

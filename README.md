@@ -111,7 +111,7 @@ The installer uses the dependency ranges in `pyproject.toml` with pip, so uv is 
 
 ### Update SiopeChat
 
-SiopeChat installs the pinned `webai-provider==1.2.0b0` package from PyPI. No
+SiopeChat installs the pinned `webai-provider==2.0.0` package from PyPI. No
 submodule initialization or synchronization is needed. After pulling an
 application update, rerun the installer if the dependency lock changed:
 
@@ -338,7 +338,7 @@ Message sends are serialized per account through `TaskService`. Cancellation rel
 
 ### Use the provider library independently
 
-SiopeChat installs `webai-provider==1.2.0b0` from PyPI and imports it as `providers`; the application wheel no longer bundles that package. To use the library on its own, run `python -m pip install webai-provider==1.2.0b0`. `ProviderClient` manages account adapters, streams and connection cleanup; `Backend` exposes models, chats, projects, sources, uploads and download resolution. See the [provider guide](https://github.com/TahsinCr/webai-provider/blob/v1.2-beta/README.md) for API examples and standalone tests.
+The application uses the `webaiprovider` import package. `src/accounts/` connects its account, chat, model, and project APIs to SiopeChat. [WebAI Provider documentation](https://github.com/TahsinCr/webai-provider/blob/v2.0/README.md).
 
 Transports, browser-profile discovery and local CDP access are implemented in Python. Gemini uses the bundled HTTPS transport without a separate Gemini SDK. ChatGPT handles supported Sentinel challenges with its Python runtime and bundled profile. Changed or unsupported server requirements need explicit compatibility checks; offline fixtures do not cover every live challenge.
 
