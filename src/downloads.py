@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import unquote, urljoin, urlsplit
 from urllib.parse import unquote as decode_id
 
-import httpx
+from curl_cffi.requests.exceptions import RequestException
 from webaiprovider.transport.downloader import NativeDownloadClient
 
 from utils.paths import downloads_dir
@@ -26,7 +26,7 @@ class Downloads:
         settings,
         root,
         accounts,
-        client_factory=httpx.Client,
+        client_factory=NativeDownloadClient,
         *,
         resolver=socket.getaddrinfo,
         default_directory=None,
@@ -306,10 +306,16 @@ class Downloads:
                 else:
                     self.remove_page(record_id)
                 return result
-            except httpx.HTTPError:
+            except RequestException:
                 raise ValueError(
                     "Dosya aktarımı kesildi; bağlantıyı kontrol edip yeniden deneyin"
                 ) from None
+            except ValueError as error:
+                if str(error).startswith("File transfer was interrupted"):
+                    raise ValueError(
+                        "Dosya aktarımı kesildi; bağlantıyı kontrol edip yeniden deneyin"
+                    ) from None
+                raise
         except Exception:
             if record_id in self._records:
                 self._update(record_id, persist=True, state="failed", error="download_failed")
@@ -448,36 +454,26 @@ class Downloads:
         factory = source.client_factory or self.client_factory
         is_native = isinstance(factory, type) and issubclass(factory, NativeDownloadClient)
         client_scope = (
-            factory(
-                timeout=httpx.Timeout(120, connect=15),
-                trust_env=False,
-                allow_private=allow_private,
-            )
+            factory(trust_env=False, allow_private=allow_private)
             if is_native
-            else factory(
-                timeout=httpx.Timeout(120, connect=15),
-                follow_redirects=False,
-                trust_env=False,
-            )
+            else factory(trust_env=False)
         )
         with client_scope as client:
             for _ in range(6):
                 origin = self._web_url(url)
-                address = self._address(origin)
+                if self.resolver is not socket.getaddrinfo or not isinstance(
+                    client, NativeDownloadClient
+                ):
+                    self._address(origin)
                 cookies = getattr(client, "cookies", None)
                 if cookies is not None:
                     cookies.clear()  # Only the explicit, origin-scoped source headers carry auth.
-                if isinstance(client, NativeDownloadClient):
-                    request_url, stream_options = url, {"allow_private": allow_private}
-                elif source.client_factory:
-                    request_url, stream_options = url, {}
-                else:
-                    request_url = str(httpx.URL(url).copy_with(host=address))
-                    headers = dict(headers, Host=origin.netloc)
-                    stream_options = {"extensions": {"sni_hostname": origin.hostname}}
-                with client.stream(
-                    "GET", request_url, headers=headers, **stream_options
-                ) as response:
+                stream_options = (
+                    {"allow_private": allow_private}
+                    if isinstance(client, NativeDownloadClient)
+                    else {}
+                )
+                with client.stream("GET", url, headers=headers, **stream_options) as response:
                     media_type = (
                         response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
                     )

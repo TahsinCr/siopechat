@@ -1,6 +1,7 @@
 """Safe, streaming and atomic file downloads."""
 
 import contextlib
+import http.client
 import os
 import tempfile
 import threading
@@ -10,12 +11,33 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from urllib.parse import urlsplit
 
-import httpx
-from webaiprovider.transport.downloader import DownloadSource, NativeDownloadClient
+from curl_cffi import CurlOpt
+from curl_cffi.requests.exceptions import RequestException
+from webaiprovider.transport.downloader import DownloadSource
 
 from downloads import Downloads
 from settings import Settings
 from tests.tui_support import terminal
+
+
+class _CaseInsensitiveHeaders(dict):
+    def __init__(self, values=None):
+        items = values.items() if isinstance(values, dict) else (values or ())
+        super().__init__({str(k).lower(): v for k, v in items})
+
+    def get(self, key, default=None):
+        return super().get(str(key).lower(), default)
+
+
+def _fake_response(status_code=200, *, headers=None, content=b"", text=None, stream=None):
+    payload = text.encode("utf-8") if text is not None else content
+    return SimpleNamespace(
+        status_code=status_code,
+        headers=_CaseInsensitiveHeaders(headers),
+        iter_bytes=lambda _chunk_size=65536: (
+            iter(stream) if stream is not None else iter((payload,))
+        ),
+    )
 
 
 class DownloadTests(unittest.TestCase):
@@ -28,16 +50,31 @@ class DownloadTests(unittest.TestCase):
         self.accounts.resolve_download.side_effect = lambda key, url, *args: DownloadSource(url)
 
     def service(self, respond):
+        class _Client:
+            def __init__(self, **_kw):
+                self.cookies = {}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                pass
+
+            @contextlib.contextmanager
+            def stream(self, method, url, headers=None, **_kw):
+                normalized = _CaseInsensitiveHeaders(headers)
+                yield respond(SimpleNamespace(method=method, url=url, headers=normalized))
+
         return Downloads(
             self.settings,
             self.root,
             self.accounts,
-            lambda **kw: httpx.Client(transport=httpx.MockTransport(respond), **kw),
+            _Client,
             resolver=lambda host, port, **kw: [(2, 1, 6, "", ("93.184.216.34", port))],
         )
 
     def test_explicit_file_card_downloads_a_resource_without_content_type(self):
-        service = self.service(lambda _: httpx.Response(200, content=b"artifact"))
+        service = self.service(lambda _: _fake_response(200, content=b"artifact"))
         result = service.fetch("account", "https://example.com/result", force_download=True)
         self.assertEqual(result["kind"], "file")
         self.assertEqual(Path(result["path"]).read_bytes(), b"artifact")
@@ -82,7 +119,7 @@ class DownloadTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 service.fetch("account", "https://example.com/file")
         service = self.service(
-            lambda _: httpx.Response(302, headers={"location": "http://example.com/file"})
+            lambda _: _fake_response(302, headers={"location": "http://example.com/file"})
         )
         with self.assertRaisesRegex(ValueError, "HTTPS"):
             service.fetch("account", "https://example.com/file")
@@ -90,14 +127,14 @@ class DownloadTests(unittest.TestCase):
     def test_download_limit_cleans_reserved_and_partial_files(self):
         self.settings.update("application", {"download_max_bytes": 3})
 
-        class Body(httpx.SyncByteStream):
+        class Body:
             def __iter__(self):
                 yield b"12"
                 yield b"34"
 
         for headers in ({"content-length": "4"}, {}):
             service = self.service(
-                lambda _: httpx.Response(
+                lambda _: _fake_response(
                     200,
                     headers=dict(headers, **{"content-type": "application/pdf"}),
                     stream=Body(),
@@ -108,22 +145,36 @@ class DownloadTests(unittest.TestCase):
             self.assertEqual(list((self.root / "downloads").iterdir()), [])
 
     def test_validated_ip_is_pinned_while_host_and_tls_name_are_preserved(self):
-        seen = []
-        service = self.service(
-            lambda request: (
-                seen.append(request)
-                or httpx.Response(200, headers={"content-type": "application/pdf"}, content=b"ok")
-            )
+        fake_session = Mock()
+        fake_session.curl_options = {}
+        fake_session.cookies = {}
+        fake_session.stream.return_value.__enter__ = lambda _s: SimpleNamespace(
+            status_code=200,
+            headers={"content-type": "application/pdf"},
+            iter_content=lambda chunk_size=65536: iter((b"ok",)),
         )
-        service.fetch("account", "https://example.com/file")
-        self.assertEqual(seen[0].url.host, "93.184.216.34")
-        self.assertEqual(seen[0].headers["host"], "example.com")
-        self.assertEqual(seen[0].extensions["sni_hostname"], "example.com")
+        fake_session.stream.return_value.__exit__ = lambda _s, *args: None
+        service = Downloads(self.settings, self.root, self.accounts)
+        with (
+            patch("curl_cffi.requests.Session", return_value=fake_session),
+            patch(
+                "webaiprovider.transport.downloader.resolve_network_addresses",
+                return_value=("93.184.216.34",),
+            ),
+        ):
+            result = service.fetch("account", "https://example.com/file")
+        self.assertEqual(Path(result["path"]).read_bytes(), b"ok")
+        self.assertEqual(
+            fake_session.curl_options[CurlOpt.RESOLVE], ["example.com:443:93.184.216.34"]
+        )
+        self.assertEqual(
+            fake_session.stream.call_args.args[:2], ("GET", "https://example.com/file")
+        )
 
     def test_streaming_atomic_filename_collision_and_custom_directory(self):
         data = b"abc" * 100000
         service = self.service(
-            lambda _: httpx.Response(
+            lambda _: _fake_response(
                 200,
                 headers={
                     "content-type": "application/octet-stream",
@@ -153,7 +204,7 @@ class DownloadTests(unittest.TestCase):
             url, filename="report.pdf"
         )
         page = self.service(
-            lambda _: httpx.Response(
+            lambda _: _fake_response(
                 200, headers={"content-type": "text/html"}, content=b"<html>sign in</html>"
             )
         )
@@ -165,7 +216,7 @@ class DownloadTests(unittest.TestCase):
             url, filename="report.html"
         )
         attachment = self.service(
-            lambda _: httpx.Response(
+            lambda _: _fake_response(
                 200,
                 headers={
                     "content-type": "text/html",
@@ -221,10 +272,12 @@ class DownloadTests(unittest.TestCase):
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
+                body = b"verified TLS"
                 self.send_response(200)
                 self.send_header("Content-Type", "application/pdf")
+                self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
-                self.wfile.write(b"verified TLS")
+                self.wfile.write(body)
 
             def log_message(self, *args):
                 pass
@@ -236,16 +289,21 @@ class DownloadTests(unittest.TestCase):
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
+            from curl_cffi.requests import Session as CurlSession
+
             self.settings.update("application", {"download_allow_private": True})
-            trusted = ssl.create_default_context(cafile=str(certificate))
-            service = Downloads(
-                self.settings,
-                self.root,
-                self.accounts,
-                lambda **options: httpx.Client(verify=trusted, **options),
-                resolver=lambda host, port, **options: [(2, 1, 6, "", ("127.0.0.1", port))],
-            )
-            result = service.fetch("account", f"https://localhost:{server.server_port}/file")
+            service = Downloads(self.settings, self.root, self.accounts)
+            with (
+                patch(
+                    "curl_cffi.requests.Session",
+                    side_effect=lambda **opts: CurlSession(**dict(opts, verify=str(certificate))),
+                ),
+                patch(
+                    "webaiprovider.transport.downloader.resolve_network_addresses",
+                    return_value=("127.0.0.1",),
+                ),
+            ):
+                result = service.fetch("account", f"https://localhost:{server.server_port}/file")
             self.assertEqual(Path(result["path"]).read_bytes(), b"verified TLS")
         finally:
             server.shutdown()
@@ -276,29 +334,35 @@ class DownloadTests(unittest.TestCase):
         try:
             self.settings.update("application", {"download_allow_private": True})
             service = Downloads(self.settings, self.root, self.accounts)
-            result = service.fetch("account", f"http://127.0.0.1:{server.server_port}/file")
-            self.assertEqual(Path(result["path"]).read_bytes(), payload)
 
             def native_session(**_kwargs):
-                client = httpx.Client(timeout=httpx.Timeout(120, connect=15), trust_env=False)
-
                 @contextlib.contextmanager
-                def stream_from_http(method, url, headers=None, **_opts):
-                    target = urlsplit(url)._replace(scheme="http").geturl()
-                    with client.stream(method, target, headers=headers) as resp:
+                def stream_from_http(_method, url, headers=None, **_opts):
+                    parsed = urlsplit(url)
+                    conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=15)
+                    try:
+                        conn.request("GET", parsed.path or "/", headers=headers or {})
+                        resp = conn.getresponse()
+
+                        def iter_content(chunk_size=65536):
+                            while True:
+                                chunk = resp.read(chunk_size)
+                                if not chunk:
+                                    break
+                                yield chunk
+
                         yield SimpleNamespace(
-                            status_code=resp.status_code,
-                            headers=resp.headers,
-                            iter_content=lambda chunk_size=65536: resp.iter_bytes(chunk_size),
+                            status_code=resp.status,
+                            headers=_CaseInsensitiveHeaders(resp.getheaders()),
+                            iter_content=iter_content,
                         )
+                    finally:
+                        conn.close()
 
                 return SimpleNamespace(
-                    cookies=client.cookies, stream=stream_from_http, close=client.close
+                    cookies={}, curl_options={}, stream=stream_from_http, close=lambda: None
                 )
 
-            self.accounts.resolve_download.side_effect = lambda key, url, *args: DownloadSource(
-                url, force_download=True, client_factory=NativeDownloadClient
-            )
             with patch("curl_cffi.requests.Session", side_effect=native_session):
                 native = service.fetch("account", f"https://127.0.0.1:{server.server_port}/file")
             self.assertEqual(Path(native["path"]).read_bytes(), payload)
@@ -325,7 +389,7 @@ class DownloadTests(unittest.TestCase):
             api.runtime.close()
 
     def test_media_still_generating_is_not_saved_as_a_completed_file(self):
-        service = self.service(lambda _: httpx.Response(206, content=b"not ready"))
+        service = self.service(lambda _: _fake_response(206, content=b"not ready"))
         self.accounts.resolve_download.side_effect = lambda key, url, *args: DownloadSource(
             url, force_download=True
         )
@@ -335,20 +399,20 @@ class DownloadTests(unittest.TestCase):
 
     def test_web_pages_and_failed_requests_do_not_create_files(self):
         service = self.service(
-            lambda _: httpx.Response(
+            lambda _: _fake_response(
                 200, headers={"content-type": "text/html"}, text="<html>Page</html>"
             )
         )
         self.assertEqual(service.fetch("account", "https://example.com")["kind"], "page")
         self.assertFalse((self.root / "downloads").exists())
-        service = self.service(lambda _: httpx.Response(404))
+        service = self.service(lambda _: _fake_response(404))
         with self.assertRaisesRegex(ValueError, "HTTP 404"):
             service.fetch("account", "https://example.com/missing")
         self.assertFalse((self.root / "downloads").exists())
 
     def test_browser_challenge_is_not_misreported_as_a_file_failure(self):
         service = self.service(
-            lambda _: httpx.Response(403, headers={"content-type": "text/html"}, text="challenge")
+            lambda _: _fake_response(403, headers={"content-type": "text/html"}, text="challenge")
         )
         self.assertEqual(
             service.fetch("account", "https://example.com/page"),
@@ -367,8 +431,8 @@ class DownloadTests(unittest.TestCase):
         def respond(request):
             seen.append(request)
             if len(seen) == 1:
-                return httpx.Response(302, headers={"location": "https://cdn.example.com/file"})
-            return httpx.Response(200, headers={"content-type": "application/pdf"}, content=b"file")
+                return _fake_response(302, headers={"location": "https://cdn.example.com/file"})
+            return _fake_response(200, headers={"content-type": "application/pdf"}, content=b"file")
 
         self.accounts.resolve_download.side_effect = None
         self.accounts.resolve_download.return_value = DownloadSource(
@@ -379,13 +443,13 @@ class DownloadTests(unittest.TestCase):
         self.assertNotIn("authorization", seen[1].headers)
 
     def test_cancelled_transfer_removes_partial_and_reserved_files(self):
-        class Broken(httpx.SyncByteStream):
+        class Broken:
             def __iter__(self):
                 yield b"partial"
-                raise httpx.ReadError("network interruption")
+                raise RequestException("network interruption")
 
         service = self.service(
-            lambda _: httpx.Response(
+            lambda _: _fake_response(
                 200, headers={"content-type": "application/pdf"}, stream=Broken()
             )
         )
@@ -396,7 +460,7 @@ class DownloadTests(unittest.TestCase):
     def test_duplicates_and_concurrency_are_bounded(self):
         entered, release = threading.Event(), threading.Event()
         service = self.service(
-            lambda _: httpx.Response(
+            lambda _: _fake_response(
                 200, headers={"content-type": "application/pdf"}, content=b"file"
             )
         )
@@ -471,7 +535,7 @@ class DownloadTests(unittest.TestCase):
             app.runtime.close()
 
     def test_remove_with_delete_file_never_unlinks_outside_download_directory(self):
-        service = self.service(lambda _: httpx.Response(200, content=b"ok"))
+        service = self.service(lambda _: _fake_response(200, content=b"ok"))
         service.directory().mkdir(parents=True, exist_ok=True)
         outside = self.root / "outside.txt"
         outside.write_text("outside file")
@@ -485,7 +549,7 @@ class DownloadTests(unittest.TestCase):
         self.assertFalse(inside.exists())
 
     def test_remove_with_delete_file_unlinks_symlink_without_deleting_target(self):
-        service = self.service(lambda _: httpx.Response(200, content=b"ok"))
+        service = self.service(lambda _: _fake_response(200, content=b"ok"))
         directory = service.directory()
         directory.mkdir(parents=True, exist_ok=True)
         inside_target = directory / "target.txt"

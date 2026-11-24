@@ -106,7 +106,6 @@ SiopeChat хранит историю и сведения об источник�
 - [FlowEvent][flowevent] · События для служб приложения
 - [prompt_toolkit][prompt-toolkit] · Интерфейс терминала, сочетания клавиш и поддержка мыши
 - [Rich][rich] · Отображение Markdown и подсветка синтаксиса
-- [HTTPX][httpx] · Загрузка файлов по HTTP
 - [platformdirs][platformdirs] · Каталоги настроек и данных для каждой операционной системы
 - [exceptiongroup][exceptiongroup] · Группы исключений в Python 3.10
 
@@ -128,7 +127,6 @@ SiopeChat хранит историю и сведения об источник�
 [flowevent]: https://github.com/TahsinCr/python-flowevent
 [prompt-toolkit]: https://github.com/prompt-toolkit/python-prompt-toolkit
 [rich]: https://github.com/Textualize/rich
-[httpx]: https://github.com/encode/httpx
 [platformdirs]: https://github.com/tox-dev/platformdirs
 [exceptiongroup]: https://github.com/agronholm/exceptiongroup
 [install]: #установка

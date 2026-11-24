@@ -106,7 +106,6 @@ Before upgrading from an older version, back up `archive.sqlite3` and the `files
 - [FlowEvent][flowevent] · Events for application services
 - [prompt_toolkit][prompt-toolkit] · Terminal interface, keyboard shortcuts and mouse input
 - [Rich][rich] · Markdown rendering and syntax highlighting
-- [HTTPX][httpx] · HTTP transfers for downloads
 - [platformdirs][platformdirs] · Configuration and data directories for each operating system
 - [exceptiongroup][exceptiongroup] · Exception groups on Python 3.10
 
@@ -128,7 +127,6 @@ Before upgrading from an older version, back up `archive.sqlite3` and the `files
 [flowevent]: https://github.com/TahsinCr/python-flowevent
 [prompt-toolkit]: https://github.com/prompt-toolkit/python-prompt-toolkit
 [rich]: https://github.com/Textualize/rich
-[httpx]: https://github.com/encode/httpx
 [platformdirs]: https://github.com/tox-dev/platformdirs
 [exceptiongroup]: https://github.com/agronholm/exceptiongroup
 [install]: #install

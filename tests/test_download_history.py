@@ -1,6 +1,7 @@
 """Persistent ledger and actual terminal navigation regressions."""
 
 import asyncio
+import contextlib
 import json
 import os
 import sqlite3
@@ -11,7 +12,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-import httpx
 from webaiprovider.transport.downloader import DownloadSource
 
 from archive import Archive, Files, SQLiteRepository
@@ -38,18 +38,29 @@ class DownloadHistoryTests(unittest.TestCase):
         self.service = self.make_service()
 
     def make_service(self):
+        class _Client:
+            def __init__(self, **_kw):
+                self.cookies = {}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                pass
+
+            @contextlib.contextmanager
+            def stream(self, _method, _url, **_kw):
+                yield SimpleNamespace(
+                    status_code=200,
+                    headers={"content-type": "text/plain"},
+                    iter_bytes=lambda _size=65536: iter((b"content",)),
+                )
+
         return Downloads(
             Settings(self.root / "config.json"),
             self.root,
             self.accounts,
-            lambda **kw: httpx.Client(
-                transport=httpx.MockTransport(
-                    lambda _: httpx.Response(
-                        200, content=b"content", headers={"content-type": "text/plain"}
-                    )
-                ),
-                **kw,
-            ),
+            _Client,
             resolver=lambda host, port, **kw: [(2, 1, 6, "", ("93.184.216.34", port))],
         )
 

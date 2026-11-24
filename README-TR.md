@@ -106,7 +106,6 @@ Eski bir sürümden geçiyorsanız arşivdeki `archive.sqlite3` dosyasını ve v
 - [FlowEvent][flowevent] · Uygulama servisleri arasındaki olaylar
 - [prompt_toolkit][prompt-toolkit] · Terminal arayüzü, klavye kısayolları ve fare girdisi
 - [Rich][rich] · Markdown gösterimi ve sözdizimi renklendirme
-- [HTTPX][httpx] · İndirmeler için HTTP aktarımı
 - [platformdirs][platformdirs] · İşletim sistemine uygun ayar ve veri dizinleri
 - [exceptiongroup][exceptiongroup] · Python 3.10 için istisna grupları
 
@@ -128,7 +127,6 @@ Eski bir sürümden geçiyorsanız arşivdeki `archive.sqlite3` dosyasını ve v
 [flowevent]: https://github.com/TahsinCr/python-flowevent
 [prompt-toolkit]: https://github.com/prompt-toolkit/python-prompt-toolkit
 [rich]: https://github.com/Textualize/rich
-[httpx]: https://github.com/encode/httpx
 [platformdirs]: https://github.com/tox-dev/platformdirs
 [exceptiongroup]: https://github.com/agronholm/exceptiongroup
 [install]: #kurulum
