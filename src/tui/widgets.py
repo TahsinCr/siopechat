@@ -152,6 +152,8 @@ class TranscriptControl(UIControl):
                     actions.append((action, icon, self.view.tr(label)))
         if role == "assistant" and message.get("_thinking_sources"):
             actions.append(("sources", ICONS["sources"].icon, self.view.tr("Sources")))
+        if role == "assistant" and (message.get("_artifacts") or message.get("_files")):
+            actions.append(("artifacts", ICONS["artifacts"].icon, self.view.tr("Artifacts")))
         tab_id = tab.get("tab_id")
         has_versions = version_count > 1 and role == "assistant"
         version_label = f"{version_index}/{version_count}"

@@ -456,6 +456,66 @@ def extract_message_files(*roots: Any) -> tuple[dict[str, Any], ...]:
     return files_from(*roots, rule=_TUI_FILE_RULE)
 
 
+def artifact_items(message: dict[str, Any]) -> tuple[dict[str, Any], ...]:
+    """Return normalized remote and inline artifacts for an assistant message."""
+    if not isinstance(message, dict):
+        return ()
+    items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def add(entry: dict[str, Any]) -> None:
+        url = entry.get("url") or entry.get("remote_url") or entry.get("download_url") or ""
+        name = str(entry.get("name") or entry.get("id") or "artifact").strip() or "artifact"
+        entry_id = entry.get("id")
+        keys: list[str] = []
+        if isinstance(url, str) and url:
+            keys.append(f"url:{url}")
+        if isinstance(entry_id, str) and entry_id:
+            keys.append(f"id:{entry_id}")
+        if not keys:
+            keys.append(f"inline:{name}:{entry.get('media_type') or entry.get('mime_type') or ''}")
+        if any(key in seen for key in keys):
+            return
+        seen.update(keys)
+        normalized: dict[str, Any] = {"name": name}
+        if isinstance(url, str) and url:
+            normalized["url"] = url
+        media_type = entry.get("media_type") or entry.get("mime_type")
+        if isinstance(media_type, str) and media_type:
+            normalized["media_type"] = media_type
+        size = entry.get("size_bytes")
+        if isinstance(size, int) and not isinstance(size, bool) and size >= 0:
+            normalized["size_bytes"] = size
+        for field in ("id", "kind", "message_id", "content", "content_b64"):
+            if entry.get(field) is not None:
+                normalized[field] = entry[field]
+        items.append(normalized)
+
+    raw_lists = [
+        message.get("_artifacts"),
+        message.get("_files"),
+        message.get("files"),
+    ]
+    metadata = message.get("metadata")
+    if isinstance(metadata, dict):
+        raw_lists.append(metadata.get("files"))
+    for raw_list in raw_lists:
+        if not isinstance(raw_list, (list, tuple)):
+            continue
+        for entry in raw_list:
+            if not isinstance(entry, dict):
+                continue
+            has_inline = entry.get("content") is not None or entry.get("content_b64") is not None
+            has_url = bool(entry.get("url") or entry.get("remote_url") or entry.get("download_url"))
+            if has_inline or has_url:
+                add(entry)
+
+    for file_item in extract_message_files(message):
+        if isinstance(file_item, dict):
+            add(file_item)
+    return tuple(items)
+
+
 def visible_chat_message(message: dict[str, Any]) -> dict[str, Any] | None:
     """Return user-facing turns while excluding web tool protocol nodes."""
     role = message.get("role")
@@ -494,7 +554,8 @@ def visible_chat_message(message: dict[str, Any]) -> dict[str, Any] | None:
     else:
         visible = False
     files = extract_message_files(message) if role == "assistant" and not reasoning else ()
-    if not visible or not isinstance(text, str) or not (text or files):
+    artifacts = artifact_items(message) if role == "assistant" and not reasoning else ()
+    if not visible or not isinstance(text, str) or not (text or files or artifacts):
         return None
     visible = {"role": "reasoning" if reasoning else role, "text": text} | {
         key: message[key]
@@ -510,11 +571,14 @@ def visible_chat_message(message: dict[str, Any]) -> dict[str, Any] | None:
             "_thinking_sources",
             "_body_length",
             "_files",
+            "_artifacts",
         )
         if key in message and message[key] is not None
     }
     if role == "assistant" and not reasoning:
         if "_body_length" in message:
+            if artifacts and "_artifacts" not in visible:
+                visible["_artifacts"] = artifacts
             return visible
         sources = _source_items(message)
         details = _response_settings(message)
@@ -522,6 +586,7 @@ def visible_chat_message(message: dict[str, Any]) -> dict[str, Any] | None:
             _thinking_sources=sources,
             _response_settings=details,
             _files=files,
+            _artifacts=artifacts,
             _body_length=len(text),
         )
         if files:
@@ -545,6 +610,18 @@ def visible_chat_message(message: dict[str, Any]) -> dict[str, Any] | None:
                 )
             file_list = "  ·  ".join(cards)
             visible["text"] = f"{text}\n\n{file_list}" if text else file_list
+        elif artifacts and not text:
+            inline_cards = []
+            for item in artifacts:
+                info = []
+                if item.get("media_type"):
+                    info.append(item["media_type"])
+                if "size_bytes" in item:
+                    size = item["size_bytes"]
+                    info.append(f"{size / 1024:.1f} KiB" if size >= 1024 else f"{size} B")
+                suffix = " · " + " · ".join(info) if info else ""
+                inline_cards.append(f"{ICONS['artifacts'].icon} {item['name']}{suffix}")
+            visible["text"] = "  ·  ".join(inline_cards)
     return visible
 
 

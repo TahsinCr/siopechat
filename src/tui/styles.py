@@ -80,6 +80,7 @@ ICONS: dict[str, IconStyleItem] = {
     "retry": IconStyleItem(name="icon.retry", color="#8ecfff", icon="↻"),
     "branch": IconStyleItem(name="icon.branch", color="#c3a6ff", icon="⎇"),
     "sources": IconStyleItem(name="icon.sources", color="#79c5d0", icon="↗"),
+    "artifacts": IconStyleItem(name="icon.artifacts", color="#86d49b", icon="❖"),
     "delete": IconStyleItem(name="icon.delete", color="#e58f8f", icon="⌫"),
     "attachment": IconStyleItem(name="icon.attachment", color="#c5cbd2", icon="▤"),
     "add": IconStyleItem(name="icon.add", color="#86d49b", icon="+"),

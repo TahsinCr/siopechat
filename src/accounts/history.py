@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -56,7 +57,7 @@ def _conversation_messages_to_dicts(raw_messages: Any) -> list[dict[str, Any]]:
 
 
 def _artifact_dict(artifact: Any) -> dict[str, Any]:
-    return {
+    data: dict[str, Any] = {
         "id": artifact.id,
         "name": artifact.name,
         "media_type": artifact.mime_type,
@@ -66,10 +67,20 @@ def _artifact_dict(artifact: Any) -> dict[str, Any]:
         "kind": artifact.kind,
         **artifact.metadata,
     }
+    raw_content = getattr(artifact, "content", None)
+    if isinstance(raw_content, bytes):
+        data["content_b64"] = base64.b64encode(raw_content).decode("ascii")
+        if data.get("size_bytes") is None:
+            data["size_bytes"] = len(raw_content)
+    elif isinstance(raw_content, str):
+        data["content"] = raw_content
+        if data.get("size_bytes") is None:
+            data["size_bytes"] = len(raw_content.encode("utf-8"))
+    return data
 
 
 def _source_dict(source: Any) -> dict[str, Any]:
-    return {
+    data: dict[str, Any] = {
         "id": source.id,
         "url": source.url,
         "title": source.title,
@@ -78,6 +89,10 @@ def _source_dict(source: Any) -> dict[str, Any]:
         "kind": source.kind,
         **source.metadata,
     }
+    cited = getattr(source, "cited", None)
+    if cited is not None:
+        data["cited"] = cited
+    return data
 
 
 def _model_slug_from(value: Any) -> str | None:
@@ -181,6 +196,18 @@ def _responses_to_messages(responses: list[Response], *, provider_id: str) -> li
                         "actions": actions if is_final_text else [],
                     }
                 )
+        if last_text_idx == -1 and (files or sources):
+            messages.append(
+                {
+                    "id": resp_id,
+                    "role": "assistant",
+                    "channel": "final",
+                    "text": "",
+                    "content": [],
+                    "metadata": base_meta,
+                    "actions": actions,
+                }
+            )
     return messages
 
 

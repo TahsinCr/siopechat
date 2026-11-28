@@ -244,12 +244,16 @@ class HistoryComponent:
                     return
                 if target_tab is self.tabs[self.active_tab]:
                     self._save_active_tab()
-                visible_messages = messages
-                visible_messages = visible_chat_messages(
-                    merge_conversation(
-                        {"messages": visible_messages},
-                        {"messages": target_tab.get("messages", [])},
-                    )["messages"]
+                existing_messages = target_tab.get("messages", [])
+                visible_messages = (
+                    visible_chat_messages(
+                        merge_conversation(
+                            {"messages": messages},
+                            {"messages": existing_messages},
+                        )["messages"]
+                    )
+                    if existing_messages
+                    else messages
                 )
                 project = conversation.get("project")
                 project = dict(project) if isinstance(project, dict) else {}

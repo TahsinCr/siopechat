@@ -442,6 +442,26 @@ class DownloadTests(unittest.TestCase):
         self.assertEqual(seen[0].headers["authorization"], "secret")
         self.assertNotIn("authorization", seen[1].headers)
 
+    def test_google_media_redirect_preserves_cookie_scope(self):
+        seen = []
+
+        def respond(request):
+            seen.append(request)
+            if len(seen) == 1:
+                return _fake_response(
+                    302, headers={"location": "https://lh3.googleusercontent.com/rd-gg/img"}
+                )
+            return _fake_response(200, headers={"content-type": "image/jpeg"}, content=b"jpeg")
+
+        self.accounts.resolve_download.side_effect = None
+        self.accounts.resolve_download.return_value = DownloadSource(
+            "https://lh3.google.com/rd-gg/img", headers={"Cookie": "SID=abc"}
+        )
+        result = self.service(respond).fetch("account", "https://lh3.google.com/rd-gg/img")
+        self.assertEqual(result["kind"], "file")
+        self.assertEqual(seen[0].headers["cookie"], "SID=abc")
+        self.assertEqual(seen[1].headers["cookie"], "SID=abc")
+
     def test_cancelled_transfer_removes_partial_and_reserved_files(self):
         class Broken:
             def __iter__(self):

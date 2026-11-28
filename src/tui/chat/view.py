@@ -409,6 +409,15 @@ class ChatView(
                     lambda reason: setattr(self, "status", reason),
                     session_bound=False,
                 )
+            if self.session_restored:
+                self._hydrate_restored_tab(self.tabs[self.active_tab])
+            elif self.load_on_start and self.conversation_id is not None:
+                self.resume_conversation(self.conversation_id)
+            else:
+                self.refresh_open_conversation()
+            self.refresh_provider_catalog()
+            self.refresh_sidebar()
+            self.refresh_other_provider_catalogs()
             if self.account_service and hasattr(self.account_service, "prepare_enabled"):
 
                 def show_warmup_failures(failures):
@@ -425,15 +434,6 @@ class ChatView(
                     lambda _: None,
                     session_bound=False,
                 )
-            self.refresh_provider_catalog()
-            self.refresh_other_provider_catalogs()
-            self.refresh_sidebar()
-            if self.session_restored:
-                self._hydrate_restored_tab(self.tabs[self.active_tab])
-            elif self.load_on_start and self.conversation_id is not None:
-                self.resume_conversation(self.conversation_id)
-            else:
-                self.refresh_open_conversation()
 
         try:
             from prompt_toolkit.patch_stdout import patch_stdout

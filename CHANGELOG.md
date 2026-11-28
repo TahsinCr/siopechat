@@ -6,6 +6,22 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 Python distributions use the corresponding PEP 440 version (`1.6.0b0` for `v1.6-beta`).
 
+## [Unreleased]
+
+### Added
+
+- Add an `Artifacts` message toolbar action (`❖`), generated artifact viewer (`_show_message_artifacts`), inline artifact saving through the download manager (`AccountsTransfers.save_artifact` / `Downloads.save_export`), `Source.cited` tagging, and synchronized `en`, `tr`, and `ru` translations.
+
+### Changed
+
+- Update the `webai-provider` dependency to `>=2.1.0,<3`, preserve inline `Artifact.content` (`content` / `content_b64`) and `Source.cited` in message metadata, and keep empty-text artifact responses visible.
+- Prioritize active-tab hydration and active catalog loading ahead of multi-account background warmup on startup, expand `BackgroundReads` (`workers=8, capacity=48`), and skip redundant UI-thread `visible_chat_messages(merge_conversation(...))` re-parsing when loading empty tabs.
+
+### Fixed
+
+- Preserve Google media cookie scope across `*.google.com` / `*.googleusercontent.com` `302` redirects in `Downloads._fetch()` via `_shares_cookie_scope`.
+- Deduplicate `artifact_items()` by both `url` and `id` so metadata file records and `extract_message_files()` results never appear twice.
+
 ## [1.6-beta] - 2026-11-24
 
 ### Added

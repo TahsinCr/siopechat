@@ -1139,6 +1139,108 @@ class MessageToolbarTests(unittest.TestCase):
             open_link.assert_called_once_with("https://example.com/source")
             view.open_message_link.assert_not_called()
 
+    def test_assistant_toolbar_opens_artifacts_and_saves_inline_content(self):
+        from webaiprovider.resources.response.artifact import Artifact
+        from webaiprovider.resources.response.source import Source
+
+        from accounts.history import _artifact_dict, _source_dict
+
+        art_text = Artifact(
+            id="rep-1",
+            kind="report",
+            name="report.md",
+            mime_type="text/markdown",
+            content="# Deep Research\nDone.",
+        )
+        art_bin = Artifact(
+            id="img-1",
+            kind="image",
+            name="img.png",
+            mime_type="image/png",
+            content=b"\x89PNG\r\n\x1a\n",
+        )
+        self.assertEqual(_artifact_dict(art_text)["content"], "# Deep Research\nDone.")
+        self.assertIn("content_b64", _artifact_dict(art_bin))
+        src = Source(id="s1", url="https://example.com", title="Ex", cited=True)
+        self.assertTrue(_source_dict(src)["cited"])
+
+        message = {
+            "id": "answer-art",
+            "role": "assistant",
+            "text": "",
+            "metadata": {"files": [_artifact_dict(art_text)]},
+            "actions": ["copy"],
+        }
+        with terminal(initial_messages=[message]) as (view, _):
+            from tui.widgets import TranscriptControl
+
+            fragments = TranscriptControl(view)._message_toolbar(0, 100)
+            labels = [
+                text for style, text, *_ in fragments if style == "class:message.toolbar.action"
+            ]
+            self.assertTrue(any("❖" in label for label in labels))
+
+            captured = {}
+            open_link_list = view.forms.open_link_list
+
+            def show_artifacts(title, items):
+                captured.update(title=title, items=items)
+                open_link_list(title, items)
+
+            view.forms.open_link_list = show_artifacts
+            view.account_service = Mock()
+            view.account_service.save_artifact.return_value = {"path": "/tmp/report.md"}
+            view._read_in_background = lambda fn, ok, err, **kw: ok(fn())
+
+            view.message_toolbar_action(view.tabs[0]["tab_id"], view.messages[0], "artifacts")
+            self.assertTrue(view.forms.visible)
+            self.assertEqual(captured["title"], view.tr("Generated artifacts"))
+            self.assertEqual(captured["items"][0]["title"], "report.md")
+            captured["items"][0]["callback"]()
+            view.account_service.save_artifact.assert_called_once()
+            args = view.account_service.save_artifact.call_args[0]
+            self.assertEqual(args[3], "report.md")
+            self.assertEqual(args[4], b"# Deep Research\nDone.")
+
+    def test_artifact_items_deduplicates_id_and_url_across_metadata_and_extracted_files(self):
+        from tui.markdown import artifact_items
+
+        gemini_msg = {
+            "role": "assistant",
+            "text": "Here is your file.",
+            "metadata": {
+                "files": [
+                    {
+                        "id": "code-generated-file-1",
+                        "kind": "file",
+                        "name": "game.py",
+                        "media_type": "text/x-python-script",
+                        "remote_url": "https://contribution.usercontent.google.com/download?c=1",
+                    }
+                ]
+            },
+        }
+        chatgpt_msg = {
+            "role": "assistant",
+            "text": "",
+            "metadata": {
+                "files": [
+                    {
+                        "id": "file_abc",
+                        "kind": "image",
+                        "name": "file_abc.png",
+                        "media_type": "image/png",
+                        "size_bytes": 1234,
+                        "remote_url": "sediment://file_abc",
+                    }
+                ]
+            },
+        }
+        self.assertEqual(len(artifact_items(gemini_msg)), 1)
+        self.assertEqual(artifact_items(gemini_msg)[0]["id"], "code-generated-file-1")
+        self.assertEqual(len(artifact_items(chatgpt_msg)), 1)
+        self.assertEqual(artifact_items(chatgpt_msg)[0]["id"], "file_abc")
+
     def test_deleted_chat_tabs_are_removed_without_creating_a_new_chat(self):
         with terminal() as (view, _):
             template = view.tabs[0]

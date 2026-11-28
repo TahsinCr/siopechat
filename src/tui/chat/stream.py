@@ -13,7 +13,12 @@ from webaiprovider.core.timing import SendTiming
 if TYPE_CHECKING:
     from .view import ChatView
 
-from ..markdown import extract_message_files, message_body_text, visible_chat_message
+from ..markdown import (
+    artifact_items,
+    extract_message_files,
+    message_body_text,
+    visible_chat_message,
+)
 from .contracts import Message
 
 
@@ -245,16 +250,21 @@ class _SendStream:
                         if event.get(key)
                     )
                     source_text = message_body_text(final)
-                    files = extract_message_files(
-                        {"text": source_text, "files": event.get("files", ())}
-                    )
-                    if files:
+                    raw_files = event.get("files", ())
+                    files = extract_message_files({"text": source_text, "files": raw_files})
+                    artifacts = artifact_items({"text": source_text, "files": raw_files})
+                    if files or artifacts:
                         prepared = visible_chat_message(
-                            {"role": "assistant", "text": source_text, "files": files}
+                            {"role": "assistant", "text": source_text, "files": raw_files}
                         )
-                        final.update(
-                            {key: prepared[key] for key in ("text", "_body_length", "_files")}
-                        )
+                        if prepared is not None:
+                            final.update(
+                                {
+                                    key: prepared[key]
+                                    for key in ("text", "_body_length", "_files", "_artifacts")
+                                    if key in prepared
+                                }
+                            )
                 if event.get("user_message_id"):
                     user = next(
                         (

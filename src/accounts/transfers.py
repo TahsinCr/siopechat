@@ -137,6 +137,23 @@ class AccountsTransfers:
             filename=filename,
         )
 
+    def save_artifact(
+        self,
+        key: str,
+        conversation_id: str | None,
+        title: str,
+        filename: str,
+        data: bytes,
+    ):
+        """Save inline artifact bytes through the download manager."""
+        return self.api.get("downloads").save_export(
+            key,
+            conversation_id,
+            title,
+            filename,
+            (data,),
+        )
+
     def upload_image(self, key: str, data: bytes, name: str, mime: str, width: int, height: int):
         if key.startswith("claude/") and Capability.ATTACHMENTS not in self.capabilities(key):
             raise ValueError("Claude dosya ekleme henüz kullanılamıyor")

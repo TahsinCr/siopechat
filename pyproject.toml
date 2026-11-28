@@ -25,7 +25,7 @@ classifiers = [
 dependencies = [
     "exceptiongroup>=1.2,<2; python_version < '3.11'",
     "platformdirs>=4,<5",
-    "webai-provider==2.0.0",
+    "webai-provider>=2.1.0,<3",
     "flowevent>=2.0.0,<3",
     "prompt-toolkit>=3.0,<4",
     "rich>=13,<16",

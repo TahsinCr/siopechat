@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 class BackgroundReads:
-    def __init__(self, workers: int = 6, capacity: int = 32) -> None:
+    def __init__(self, workers: int = 8, capacity: int = 48) -> None:
         self._pool = ThreadPoolExecutor(max_workers=max(1, workers), thread_name_prefix="tui-read")
         self._slots = threading.BoundedSemaphore(capacity)
         self._lock = threading.Lock()

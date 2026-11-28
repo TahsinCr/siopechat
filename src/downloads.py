@@ -15,7 +15,7 @@ from urllib.parse import unquote, urljoin, urlsplit
 from urllib.parse import unquote as decode_id
 
 from curl_cffi.requests.exceptions import RequestException
-from webaiprovider.transport.downloader import NativeDownloadClient
+from webaiprovider.transport.downloader import NativeDownloadClient, _shares_cookie_scope
 
 from utils.paths import downloads_dir
 
@@ -484,9 +484,14 @@ class Downloads:
                         next_origin = self._web_url(target)
                         if origin.scheme == "https" and next_origin.scheme != "https":
                             raise ValueError("HTTPS dosyası HTTP bağlantısına yönlendirilemez")
-                        if (next_origin.scheme, next_origin.netloc) != (
-                            origin.scheme,
-                            origin.netloc,
+                        if not (
+                            next_origin.scheme == origin.scheme
+                            and (
+                                next_origin.netloc == origin.netloc
+                                or _shares_cookie_scope(
+                                    origin.hostname or "", next_origin.hostname or ""
+                                )
+                            )
                         ):
                             headers = {}  # Never forward account credentials to another origin.
                         url = target

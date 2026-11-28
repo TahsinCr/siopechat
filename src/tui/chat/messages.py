@@ -13,6 +13,7 @@ from accounts import origin
 from utils import clipboard
 
 from ..markdown import (
+    artifact_items,
     extract_message_files,
     message_body_text,
     render_chatgpt_annotations,
@@ -243,6 +244,9 @@ class MessageComponent:
         message = messages[index]
         if action == "sources":
             self._show_message_sources(message)
+            return
+        if action == "artifacts":
+            self._show_message_artifacts(message)
             return
         if action in ("version_prev", "version_next"):
             self._navigate_response_version(
@@ -580,6 +584,9 @@ class MessageComponent:
             title = " ".join(str(source.get("title") or "Source").split())[:200]
             url = source.get("url")
             description = source.get("description") or source.get("snippet") or ""
+            if source.get("cited") is True:
+                cited_tag = f"[{self.tr('Cited')}]"
+                description = f"{cited_tag} {description}".strip()
 
             def open_source(source_url=url):
                 if not isinstance(source_url, str) or not source_url:
@@ -602,6 +609,90 @@ class MessageComponent:
             )
 
         self.forms.open_link_list(self.tr("Used sources"), items)
+
+    def _show_message_artifacts(self, message):
+        artifacts = artifact_items(message)
+        if not artifacts:
+            self.status = self.tr("No artifacts available")
+            self.app.invalidate()
+            return
+        items = []
+        for item in artifacts:
+            title = " ".join(str(item.get("name") or "Artifact").split())[:200]
+            url = item.get("url") or ""
+            info = []
+            if item.get("media_type"):
+                info.append(str(item["media_type"]))
+            size = item.get("size_bytes")
+            if isinstance(size, int) and not isinstance(size, bool) and size >= 0:
+                info.append(f"{size / 1024:.1f} KiB" if size >= 1024 else f"{size} B")
+            description = " · ".join(info)
+
+            def download_selected(artifact=item, target_message=message):
+                self._download_artifact(artifact, target_message)
+
+            items.append(
+                {
+                    "url": url,
+                    "title": title,
+                    "description": description,
+                    "callback": download_selected,
+                }
+            )
+
+        self.forms.open_link_list(self.tr("Generated artifacts"), items)
+
+    def _download_artifact(self, item, message):
+        url = item.get("url")
+        if isinstance(url, str) and url:
+            from urllib.parse import quote
+
+            msg_index = next(
+                (i for i, candidate in enumerate(self.messages) if candidate is message),
+                None,
+            )
+            self.open_message_link(f"siope-file:{quote(url, safe='')}", index=msg_index)
+            return
+
+        import base64
+
+        raw_b64 = item.get("content_b64")
+        raw_text = item.get("content")
+        if isinstance(raw_b64, str):
+            data = base64.b64decode(raw_b64)
+        elif isinstance(raw_text, str):
+            data = raw_text.encode("utf-8")
+        elif isinstance(raw_text, bytes):
+            data = raw_text
+        else:
+            self.status = self.tr("Artifact content is unavailable")
+            self.app.invalidate()
+            return
+
+        if self.account_service is None:
+            self.status = self.tr("Artifact content is unavailable")
+            self.app.invalidate()
+            return
+
+        key, conversation, title = self.account_key, self.conversation_id, self.title
+        filename = str(item.get("name") or "artifact.bin")
+        self.status = self.tr("Bağlantı hazırlanıyor…")
+        self.app.invalidate()
+
+        def completed(result):
+            self.status = self.tr("İndirildi: {0}").format(result["path"])
+            self.app.invalidate()
+
+        def failed(reason):
+            self.status = self.tr("İndirme başarısız: {0}").format(self.tr(str(reason)))
+            self.app.invalidate()
+
+        self._read_in_background(
+            lambda: self.account_service.save_artifact(key, conversation, title, filename, data),
+            completed,
+            failed,
+            session_bound=False,
+        )
 
     def _navigate_response_version(self, tab_id, message_ref, direction):
         index = self._toolbar_message_index(tab_id, message_ref)
