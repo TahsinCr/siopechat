@@ -1,5 +1,5 @@
 [![CI][ci-shield]][ci-url]
-[![Sürüm: v1.6-beta][version-shield]][releases]
+[![Sürüm: v1.6.1-beta][version-shield]][releases]
 [![Python 3.10+][python-shield]][python-url]
 [![GPL-3.0-only][license-shield]][license]
 
@@ -111,7 +111,7 @@ Eski bir sürümden geçiyorsanız arşivdeki `archive.sqlite3` dosyasını ve v
 
 [ci-shield]: https://img.shields.io/github/actions/workflow/status/TahsinCr/siopechat/ci.yml?branch=main&style=for-the-badge&label=CI
 [ci-url]: https://github.com/TahsinCr/siopechat/actions/workflows/ci.yml?query=branch%3Amain
-[version-shield]: https://img.shields.io/badge/version-v1.6--beta-b7a3e3.svg?style=for-the-badge
+[version-shield]: https://img.shields.io/badge/version-v1.6.1--beta-b7a3e3.svg?style=for-the-badge
 [python-shield]: https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white
 [python-url]: https://www.python.org/downloads/
 [license-shield]: https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge
@@ -122,7 +122,7 @@ Eski bir sürümden geçiyorsanız arşivdeki `archive.sqlite3` dosyasını ve v
 [releases]: https://github.com/TahsinCr/siopechat/releases/latest
 [license]: LICENSE
 [screenshot]: assets/siopechat.png
-[webai-provider-pypi]: https://pypi.org/project/webai-provider/2.0.0/
+[webai-provider-pypi]: https://pypi.org/project/webai-provider/2.1.1/
 [webai-provider]: https://github.com/TahsinCr/webai-provider
 [flowevent]: https://github.com/TahsinCr/python-flowevent
 [prompt-toolkit]: https://github.com/prompt-toolkit/python-prompt-toolkit
